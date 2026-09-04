@@ -9,11 +9,11 @@
 - **한 번에 하나만 연다.** 기능 하나를 끝내고 이슈를 닫은 뒤 다음 이슈를 만든다. 슬라이스의 이슈를 미리 등록하지 않는다.
 - **테스트는 부가 작업이 아니라 절차의 일부다.** 리뷰어가 없으므로 테스트가 유일한 확인 수단이다.
 - **차기 범위 기능은 착수하지 않고 범위 밖임을 알린다.** 판단 근거는 `docs/features/overview.md`.
-- **`main`·`develop`에 직접 push하지 않는다.** PR만 사용한다.
+- **공통 클래스·설정·스키마를 기능보다 먼저 만든다.** 공통 응답 형식과 예외 처리가 없으면 첫 컨트롤러부터 규칙 없이 작성된다.
 
 ---
 
-## 2. 기능 작업 (USER · PROP · RISK · LOAN · NOTI · ADMIN)
+## 2. 작업 순서
 
 | # | 단계 | 수단 | 근거 문서 |
 | --- | --- | --- | --- |
@@ -21,12 +21,14 @@
 | 2 | 이슈를 만든다 | — | `docs/git/issue.md` |
 | 3 | `develop`에서 브랜치를 딴다 | — | `docs/git/branch.md` |
 | 4 | **계획을 제시하고 승인을 받는다** | — | `docs/template.md` |
-| 5 | 구현한다 | `backend-dev` · `frontend-dev` | `docs/conventions.md` · `docs/architecture/` |
-| 6 | 테스트를 작성한다 | `test-engineer` / 판정 로직이면 `add-judgment` | `docs/architecture/testing.md` |
+| 5 | 구현한다 | 담당 에이전트 | `docs/conventions.md` · `docs/architecture/` |
+| 6 | 테스트를 작성한다 | 담당 에이전트 / 판정 로직이면 `add-judgment` | `docs/architecture/testing.md` |
 | 7 | 커밋한다 | — | `docs/git/commit.md` |
 | 8 | 검토를 받는다 | `code-reviewer` | — |
 | 9 | PR을 만든다 (`develop` 대상, `closes #N`) | — | `docs/git/pull-request.md` |
 | 10 | CI 통과 후 squash merge, 브랜치 삭제 | — | `docs/git/branch.md` |
+
+**작업 종류와 무관하게 이 순서를 따른다.** 5·6단계를 어느 에이전트가 맡는지는 각 에이전트 정의가 정한다.
 
 **승인 전에는 코드를 쓰지 않는다.** 계획에는 대상 기능 ID, 손댈 파일, 변경 범위, 검증 방법을 담는다. 양식은 `docs/template.md`를 따른다.
 
@@ -34,11 +36,11 @@
 
 ---
 
-## 3. 인프라 작업 (INF-01 ~ 06)
+## 3. 인프라 작업의 차이
 
-인프라도 2장의 순서를 따른다. 다만 **CI가 검증하지 못하므로 커밋 body의 확인 명령 결과가 게이트이고, 함께 커밋해야 하는 짝이 다르다.** 둘 다 `docs/git/commit.md`.
+인프라도 2장의 순서를 그대로 따른다. 다만 **10단계의 CI가 게이트 역할을 하지 못한다.** Nginx 설정, `prometheus.yml`, Compose 파일은 컴파일도 테스트도 되지 않아 CI가 통과해도 확인된 것이 없다.
 
-구성·배포·복제·복구는 `infra-builder`, 관측은 `monitoring-engineer`, 부하 시험과 장애 주입은 `load-tester`·`chaos-runner`가 맡는다.
+**게이트는 7단계로 옮겨간다.** 커밋 body에 남기는 확인 명령 결과가 유일한 검증이다. 어떤 명령을 쓰는지는 `docs/git/commit.md`.
 
 ---
 

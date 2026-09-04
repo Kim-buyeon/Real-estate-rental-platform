@@ -16,17 +16,17 @@
 
 | 문서 | 경로 | 다루는 범위 | 읽어야 할 때 |
 | --- | --- | --- | --- |
-| 데이터베이스 설계 | `doc/architecture/database.md` | 테이블 구조, 제약 | 스키마 변경, 매퍼 작성 |
-| 영속성 구조 | `doc/architecture/persistence.md` | JPA와 MyBatis의 역할 경계, 정밀 연산 규칙, 위경도 반경 검색 방식, 커서 페이지네이션 | 조회·저장 코드 작성 |
-| 데이터 적재 | `doc/architecture/data-loading.md` | 사전 적재와 요청 시점 조회의 구분, 데이터 출처와 인증키, 적재 절차, 갱신 주기, 캐싱과 병렬 호출 | 초기 적재, 갱신 배치 작성, 외부 API 연동 |
-| 알림 전달 구조 | `doc/architecture/notification.md` | 생성과 발송의 분리, SSE 다중 인스턴스 팬아웃, 유실 시 폴백 | NOTI 작업 전량 |
-| 횡단 관심사 | `doc/architecture/spring-aop.md` | 로깅 · 측정 · 분산 락 · 이력 적재, 무상태화 | **USER-02 · NOTI-03 · RISK-08**, 그 밖의 배치·인증 작업 |
-| 성능 및 확장성 | `doc/architecture/performance.md` | 병목별 대응과 검증 방법 | 부하 시험 결과 반영, 쿼리 개선 |
-| 테스트 전략 | `doc/architecture/testing.md` | 계층별 테스트 범위, Testcontainers 운용, 판정 경계값 케이스 | 테스트 작성 |
-| 개발 환경 | `doc/architecture/dev-environment.md` | 로컬 환경 운용 규칙, 식별된 구현 리스크와 대응 | 환경 구성, 착수 시점 |
+| 데이터베이스 설계 | `docs/architecture/database.md` | 테이블 구조, 인덱스, 제약 | **엔티티·초기 스키마 작성**, 스키마 변경, 매퍼 작성 |
+| 영속성 구조 | `docs/architecture/persistence.md` | JPA와 MyBatis의 역할 경계, 정밀 연산 규칙, 위경도 반경 검색 방식, 커서 페이지네이션 | **엔티티 작성**, 조회·저장 코드 작성 |
+| 데이터 적재 | `docs/architecture/data-loading.md` | 사전 적재와 요청 시점 조회의 구분, 데이터 출처와 인증키, 적재 절차, 갱신 주기, 캐싱과 병렬 호출 | 초기 적재, 갱신 배치 작성, 외부 API 연동 |
+| 알림 전달 구조 | `docs/architecture/notification.md` | 생성과 발송의 분리, SSE 다중 인스턴스 팬아웃, 유실 시 폴백 | NOTI 작업 전량 |
+| 횡단 관심사 | `docs/architecture/spring-aop.md` | 로깅 · 측정 · 분산 락 · 이력 적재, 무상태화 | **AOP·인증 설정 작성**, **USER-02 · NOTI-03 · RISK-08**, 그 밖의 배치 작업 |
+| 성능 및 확장성 | `docs/architecture/performance.md` | 병목별 대응과 검증 방법 | 부하 시험 결과 반영, 쿼리 개선 |
+| 테스트 전략 | `docs/architecture/testing.md` | 계층별 테스트 범위, Testcontainers 운용, 판정 경계값 케이스 | 테스트 작성, **테스트 지원 클래스 구성** |
+| 개발 환경 | `docs/architecture/dev-environment.md` | 로컬 환경 운용 규칙, 식별된 구현 리스크와 대응 | 환경 구성, 착수 시점 |
 
-- 경로는 `doc/api/` · `doc/features/`와 같은 규칙(영문 소문자)을 따른다. **파일명은 확정 후 이 표에 반영한다.**
-- 어느 문서를 읽을지는 작업 대상 기능 ID로 판단한다. 영역별 매핑은 `doc/features/` 개요를 따른다.
+- 경로는 `docs/api/` · `docs/features/`와 같은 규칙(영문 소문자)을 따른다. **파일명은 확정 후 이 표에 반영한다.**
+- 어느 문서를 읽을지는 작업 대상 기능 ID로 판단한다. 영역별 매핑은 `docs/features/` 개요를 따른다.
 
 ## 3. 차기 범위
 
