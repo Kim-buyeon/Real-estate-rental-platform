@@ -20,12 +20,15 @@
 | 1 | 읽을 문서를 고른다 | `slice-start` | — |
 | 2 | 이슈를 만든다 | — | `docs/git/issue.md` |
 | 3 | `develop`에서 브랜치를 딴다 | — | `docs/git/branch.md` |
-| 4 | 구현한다 | `backend-dev` · `frontend-dev` | `docs/conventions.md` · `docs/architecture/` |
-| 5 | 테스트를 작성한다 | `test-engineer` / 판정 로직이면 `add-judgment` | `docs/architecture/testing.md` |
-| 6 | 커밋한다 | — | `docs/git/commit.md` |
-| 7 | 검토를 받는다 | `code-reviewer` | — |
-| 8 | PR을 만든다 (`develop` 대상, `closes #N`) | — | `docs/git/pull-request.md` |
-| 9 | CI 통과 후 squash merge, 브랜치 삭제 | — | `docs/git/branch.md` |
+| 4 | **계획을 제시하고 승인을 받는다** | — | `docs/template.md` |
+| 5 | 구현한다 | `backend-dev` · `frontend-dev` | `docs/conventions.md` · `docs/architecture/` |
+| 6 | 테스트를 작성한다 | `test-engineer` / 판정 로직이면 `add-judgment` | `docs/architecture/testing.md` |
+| 7 | 커밋한다 | — | `docs/git/commit.md` |
+| 8 | 검토를 받는다 | `code-reviewer` | — |
+| 9 | PR을 만든다 (`develop` 대상, `closes #N`) | — | `docs/git/pull-request.md` |
+| 10 | CI 통과 후 squash merge, 브랜치 삭제 | — | `docs/git/branch.md` |
+
+**승인 전에는 코드를 쓰지 않는다.** 계획에는 대상 기능 ID, 손댈 파일, 변경 범위, 검증 방법을 담는다. 양식은 `docs/template.md`를 따른다.
 
 **커밋 전에 `git-check`로 확인한다.** 메시지 규약, 커밋 단위, 함께 커밋해야 하는 짝.
 
