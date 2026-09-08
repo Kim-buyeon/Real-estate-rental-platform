@@ -167,7 +167,10 @@ Nginx는 upstream 호스트명을 설정 로드 시점에 한 번만 해석한�
 | 대상 | 확인 명령 |
 | --- | --- |
 | Nginx 설정 | `nginx -t` |
-| 알림 규칙 | `promtool check rules` |
+| 스크레이프 설정 | `promtool check config` |
+| 알림 규칙 | `promtool check rules` + `promtool test rules` |
+| 알림 라우팅 | `amtool check-config` |
+| 로그 수집 · 저장 | `promtail -check-syntax` · `loki -verify-config` |
 | Compose | `docker compose config` |
 | 배포 스크립트 | 실제 슬롯 교체 1회 |
 | k6 스크립트 | `dropped_iterations == 0` 확인 |
@@ -198,4 +201,5 @@ Nginx는 upstream 호스트명을 설정 로드 시점에 한 번만 해석한�
 | exporter 추가 + Prometheus 스크레이프 설정 | **한쪽만 하면 지표가 조용히 빈다.** 오류가 발생하지 않는다 |
 | Nginx upstream + 배포 스크립트 | 슬롯 이름·포트가 양쪽에 나온다. 한쪽만 바꾸면 배포가 존재하지 않는 슬롯을 건드린다 |
 | 알림 규칙 + 조치 절차 | 알림 본문이 절차를 참조한다. 규칙만 추가하면 알림을 받고도 조치를 알 수 없다 |
+| 알림 임계 + `observe.sh` 임계 + `docs/infra/runbook.md` 3.3의 스크립트 본문 | 배포 판정이 알림보다 느슨하면 배포는 통과했는데 직후에 알림이 울린다. 스크립트 전문이 절차서에 실려 있어 셋이 함께 움직인다 |
 | Compose 포트 추가 + 접근 통제 표 | `docs/infra/system.md` 4장과 `docs/api/infra.md` 1장이 낡는다 |

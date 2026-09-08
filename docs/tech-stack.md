@@ -25,7 +25,7 @@
 | 언어 | Java 21 (LTS) | 가상 스레드로 외부 API 병렬 호출 처리 |
 | 프레임워크 | Spring Boot 4.1.x | 3.5 계열 지원 종료(2026.06.30) |
 | 영속성 (엔티티) | Spring Data JPA + Hibernate 7 | 30개 테이블 매핑, 모든 변경 경로 |
-| 영속성 (DTO 조회) | MyBatis 4.0.x | 화면 전달용 조회. SQL 직접 통제 |
+| 영속성 (DTO 조회) | MyBatis (Spring Boot Starter 4.1.x) | 화면 전달용 조회. SQL 직접 통제 |
 | DB | PostgreSQL 17 | 컨테이너로 기동. 로컬·CI·운영 동일 |
 | 공유 저장소 | Redis 7 | 캐시 · 토큰 · 분산 락 · 이벤트 팬아웃 |
 | 배치 | Spring Batch + 스케줄러 | 등기 변동 감지 · 위험도 재분석 |
@@ -48,7 +48,7 @@
 | Spring Boot | 4.1.x | 3.5 계열이 2026년 6월 30일자로 오픈소스 지원이 종료되어 3.x 신규 채택 근거가 없다. 4.1은 Spring Framework 7 · Spring Security 7 · Hibernate 7 기반이며 2027년 7월까지 지원된다. 최소 요구는 Java 17이나 가상 스레드 활용을 위해 21로 구동한다 |
 | Spring Web MVC | — | WebFlux 대신 MVC를 선택한다. 가상 스레드로 동시성 요구가 해소되므로 리액티브의 학습 비용을 감수할 이유가 없다. JPA가 블로킹 기반인 점도 MVC 쪽이 정합적이다 |
 | Spring Data JPA + Hibernate 7 | — | 알림(NOTIFICATION + 하위)과 보증보험 기준(GUARANTEE_CRITERIA + HUG/HF/SGI)이 배타적 슈퍼타입-서브타입이므로 JOINED 상속 전략으로 설계 의도를 코드에 그대로 반영한다. **엔티티를 반환하는 모든 경로를 담당한다** — 등록·수정·삭제, 변경 대상 로딩, 연관 탐색 |
-| MyBatis | 4.0.x | **화면에 전달할 데이터를 반환하는 조회를 담당한다.** 매물 검색의 동적 조건 조합은 동적 SQL로, 순위번호 기준 선순위채권 합산과 자치구 집계는 SQL을 직접 작성해 실행 계획을 통제한다. 경계는 반환 타입으로 나눈다 — 엔티티가 필요하면 JPA, 화면 전달용이면 MyBatis. 역할 분담은 `docs/architecture/persistence.md`를 따른다. **4.0.x가 Spring Boot 4 대응 라인이다** |
+| MyBatis | 스타터 4.1.x | **화면에 전달할 데이터를 반환하는 조회를 담당한다.** 매물 검색의 동적 조건 조합은 동적 SQL로, 순위번호 기준 선순위채권 합산과 자치구 집계는 SQL을 직접 작성해 실행 계획을 통제한다. 경계는 반환 타입으로 나눈다 — 엔티티가 필요하면 JPA, 화면 전달용이면 MyBatis. 역할 분담은 `docs/architecture/persistence.md`를 따른다. **스타터 4.1.x가 Spring Boot 4.1 대응 라인이다** — 4.0.x는 Boot 4.0용. 코어 MyBatis 버전은 스타터가 고정한다 |
 | Spring Security + JWT | — | 액세스·리프레시 토큰 발급과 회전. 토큰은 Redis에 보관한다. `USER_AUTH`의 `auth_type`·`provider_id` 컬럼은 소셜 로그인 확장 지점으로 남긴다 |
 | RestClient | Spring Framework 7 | 외부 API 연동용. 동기식이지만 가상 스레드 위에서 동작하므로 병렬 호출에 문제가 없고 WebClient 대비 코드가 단순하다. **연동 대상별로 인터페이스를 두고 Mock·Real·Fault 세 구현을 둔다** |
 | Resilience4j | — | 등기 API 한 곳의 장애가 매물 조회 전체를 멈추게 해서는 안 되므로 타임아웃·재시도·서킷 브레이커와 대상별 폴백을 적용한다. 서킷 상태는 커스텀 지표로 노출한다 |
@@ -97,6 +97,11 @@
 |---|---|---|
 | Docker Compose | — | PostgreSQL과 Redis를 컨테이너로 구동한다. **로컬 호스트에 데이터베이스를 직접 설치하지 않는 것을 원칙으로 한다.** 버전 고정으로 로컬·CI·운영의 DB 버전 불일치를 제거하고, 명령 한 줄로 환경을 초기화할 수 있어 스키마를 반복 재생성하는 초기 단계에 유리하다 |
 | Testcontainers | — | 통합 테스트의 기본 실행 환경. 개발 환경에 Docker가 이미 전제되므로 추가 설치 비용이 없다. H2는 방언 차이로 통과와 실패가 어긋나 사용하지 않는다 |
+| Vitest | — | 프론트 테스트 실행기. Vite 설정을 그대로 공유하므로 테스트용 빌드 설정을 따로 두지 않는다 |
+| React Testing Library | — | 구현 내부가 아니라 화면에 드러나는 동작을 기준으로 검증한다. 마크업이 바뀌었다고 깨지는 테스트는 회귀 신호가 되지 못한다 |
+| MSW | v2 | 네트워크 계층에서 응답을 대체한다. 쿼리 무효화 연쇄를 검증하려면 실제 요청 흐름이 필요하고, `sse()` 핸들러로 SSE 스트림도 같은 방식으로 다룰 수 있어 도구가 하나로 끝난다 |
+
+프론트 테스트의 대상 범위는 `docs/architecture/testing.md`를 따른다.
 
 운영 환경 구성과 배포·관측·시험 도구는 `docs/infra/tech-stack.md`를 따른다.
 
@@ -127,9 +132,10 @@
 |---|---|---|
 | Java | 21 (LTS) | 장기 지원 버전 |
 | Spring Boot | 4.1.x | 2027년 7월까지 지원 |
-| MyBatis Spring Boot Starter | 4.0.x | 3.0.x는 Boot 3 전용 |
+| MyBatis Spring Boot Starter | 4.1.x | Boot 4.1 대응 라인. 4.0.x는 Boot 4.0, 3.0.x는 Boot 3 전용. 코어 MyBatis 버전은 스타터가 고정한다 |
 | PostgreSQL | 17 | `docs/infra/tech-stack.md`와 동일 |
 | Redis | 7 | `docs/infra/tech-stack.md`와 동일 |
 | TanStack Query | v5 (React) | v4 문법 혼용 금지 |
 | Node.js | 22 LTS | 프론트엔드 빌드 |
+| MSW | v2 | `sse()` 핸들러가 2.x에 있다 |
 | Docker 이미지 | `postgres:17-alpine` · `redis:7-alpine` | 로컬·CI·운영 공통 고정 |

@@ -3,7 +3,7 @@
 > JPA·MyBatis 역할 분담, 정밀 연산, 반경 검색
 > JPA · MyBatis · BigDecimal
 >
-> ※ 기능 정의는 「서비스 기능 정의서」를, 판정 규칙은 「비즈니스 로직 정의서」를 따른다.
+> ※ 기능 정의는 `docs/features/`를, 판정 규칙은 `docs/business-logic.md`를 따른다.
 > 작성 기준일 : 2026년 7월
 
 ## 1. 영속성 구조
