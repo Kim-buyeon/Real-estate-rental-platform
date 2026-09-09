@@ -5,6 +5,12 @@ spring:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${POSTGRES_DB:rental}
     username: ${POSTGRES_USER:rental}
     password: ${POSTGRES_PASSWORD:rental}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
   jpa:
     hibernate:
       ddl-auto: validate
