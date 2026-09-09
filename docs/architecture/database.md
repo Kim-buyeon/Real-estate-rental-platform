@@ -47,9 +47,9 @@
 | BUILDING_REGISTRY | MORTGAGE_HISTORY | 1:N | ● 필수 | 식별 | 을구 채무 이력 |
 | BUILDING_REGISTRY | RISK_ANALYSIS | 1:N | ● 필수 | 비식별 | 등기 분석 근거 |
 | BUILDING_LEDGER | RISK_ANALYSIS | 1:N | ● 필수 | 비식별 | 대장 분석 근거 |
-| GUARANTEE_CRITERIA | HUG_CRITERIA | 1:0..1 | ○ 선택 | 식별 | HUG 서브타입 (배타적) |
-| GUARANTEE_CRITERIA | HF_CRITERIA | 1:0..1 | ○ 선택 | 식별 | HF 서브타입 (배타적) |
-| GUARANTEE_CRITERIA | SGI_CRITERIA | 1:0..1 | ○ 선택 | 식별 | SGI 서브타입 (배타적) |
+| GUARANTEE_CRITERIA | HUG_CRITERIA | 1:0..1 | ● 필수 | 식별 | HUG 서브타입 (배타적) |
+| GUARANTEE_CRITERIA | HF_CRITERIA | 1:0..1 | ● 필수 | 식별 | HF 서브타입 (배타적) |
+| GUARANTEE_CRITERIA | SGI_CRITERIA | 1:0..1 | ● 필수 | 식별 | SGI 서브타입 (배타적) |
 | GUARANTEE_CRITERIA | GUARANTEE_PREMIUM_RATE | 1:N | ● 필수 | 식별 | 구간별 보증료율 |
 | GUARANTEE_CRITERIA | INSURANCE_PRODUCT | 1:N | ● 필수 | 비식별 | 보증보험 상품 |
 | GUARANTEE_CRITERIA | RISK_ANALYSIS | 1:N | ○ 선택 | 비식별 | 가입 판정 기준 (불가 시 NULL) |
