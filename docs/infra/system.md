@@ -15,7 +15,7 @@
 
 ## 2. 논리 구성도
 
-논리 구성도: `docs/infra/system-diagram.png`
+논리 구성도: `docs/infra/systemdiagram.png`
 APP-01 · DB-01 · DB-02 세 노드의 구성과 상시 경로.
 
 | 노드 | 담긴 것 |

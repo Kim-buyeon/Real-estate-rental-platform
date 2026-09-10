@@ -151,9 +151,35 @@ feature/infra/INF-05-observability       관측 스택 기동
 3. 작업, 커밋, push
 4. PR 생성 (`develop` 대상)
 5. **CI 통과 후** merge
-6. 브랜치 삭제
-   - 원격: GitHub의 Delete branch
-   - 로컬: `git branch -d feature/be/RISK-05-guarantee-judgment`
+6. 브랜치 삭제 — **원격과 로컬 둘 다.** 아래 절을 따른다.
+
+---
+
+## 브랜치 삭제
+
+저장소 안에서 `gh pr merge --delete-branch`로 merge하면 원격과 로컬이 함께 지워진다. **GitHub 웹에서 merge하면 로컬 브랜치가 남으므로 직접 지운다.**
+
+```bash
+git switch develop
+git pull origin develop
+git fetch --prune
+git branch -d feature/be/RISK-05-guarantee-judgment
+```
+
+`-d`는 브랜치의 커밋이 전부 현재 브랜치 이력에 있을 때만 지운다. **작업 브랜치는 squash merge로 들어가므로 `-d`가 거부된다.** squash merge는 내용만 합쳐 해시가 다른 새 커밋 하나를 만들고, 원래 커밋은 `develop` 이력에 남지 않는다.
+
+그때는 **반영 여부를 커밋이 아니라 내용으로 확인한 뒤** `-D`로 지운다.
+
+```bash
+git diff develop..feature/be/RISK-05-guarantee-judgment   # 비어야 한다
+git branch -D feature/be/RISK-05-guarantee-judgment
+```
+
+`git log develop..<브랜치>`로 판단하지 않는다. squash merge 후에는 원래 커밋이 그대로 남아 **항상 비지 않으므로** 반영 여부를 가리지 못한다. 확인해야 할 것은 커밋이 옮겨졌는지가 아니라 내용이 `develop`에 들어갔는지다.
+
+`git diff`가 비어 있지 않으면 아직 반영되지 않은 변경이 있다는 뜻이므로 지우지 않는다.
+
+**뒷정리를 미루지 않는다.** 남은 브랜치가 쌓이면 어느 것이 진행 중인 작업인지 구분되지 않는다.
 
 ---
 
