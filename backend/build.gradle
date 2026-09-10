@@ -29,6 +29,9 @@ dependencies {
 	// jjwt 를 쓰지 않는 이유: jjwt 의 JSON 연동 모듈이 Jackson 2(com.fasterxml.jackson.databind)를
 	// 요구하는데 이 프로젝트 런타임은 Jackson 3(tools.jackson) 단독이다.
 	implementation 'org.springframework.security:spring-security-oauth2-jose'
+	// MyBatis 조회 전용 매퍼. 버전을 직접 적는 이유: Spring Boot BOM 이 이 스타터를 관리하지 않아
+	// 생략하면 의존성 해석이 실패한다. 4.1.0 이 Boot 4.1 대응 릴리스다 — 4.0.x 는 Boot 4.0 용이다.
+	implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
 	implementation 'org.springframework.boot:spring-boot-flyway'
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-database-postgresql'
