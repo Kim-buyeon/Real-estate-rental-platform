@@ -31,7 +31,7 @@ feature/*, fix/*, chore/*, docs/* ─► 작업 브랜치 (develop에서 분기)
 <prefix>/<scope>/<기능ID>-<기능명(영문)>[_<작업-키워드>]
 ```
 
-**scope는 `docs/git/commit.md`와 같은 값을 쓴다** — `be` · `fe` · `infra`. 어느 쪽도 아니면 scope를 생략한다.
+**scope는 `docs/git/commit-convention.md`와 같은 값을 쓴다** — `be` · `fe` · `infra`. 어느 쪽도 아니면 scope를 생략한다.
 
 | Scope | 대상 | 형식 |
 | --- | --- | --- |
@@ -89,7 +89,7 @@ git branch --list '*/infra/*'         # 인프라 작업 전체
 git branch --list '*RISK-05*'         # 기능별은 와일드카드로
 ```
 
-`docs/git/commit.md`의 `feat(be):`와 순서가 같아 브랜치와 커밋을 나란히 읽을 수 있다.
+`docs/git/commit-convention.md`의 `feat(be):`와 순서가 같아 브랜치와 커밋을 나란히 읽을 수 있다.
 
 ---
 
@@ -104,7 +104,7 @@ git branch --list '*RISK-05*'         # 기능별은 와일드카드로
 
 프런트를 먼저 열면 작업 도중 API 응답 형태가 바뀌어 두 번 고치게 된다. 백엔드를 먼저 `develop`에 넣으면 프런트는 **고정된 API를 상대로** 작업한다.
 
-부득이하게 한 브랜치에서 양쪽을 건드리면 **커밋은 반드시 분리한다.** `docs/git/commit.md`의 `feat(be,fe):`는 정말 나눌 수 없을 때만 쓴다.
+부득이하게 한 브랜치에서 양쪽을 건드리면 **커밋은 반드시 분리한다.** `docs/git/commit-convention.md`의 `feat(be,fe):`는 정말 나눌 수 없을 때만 쓴다.
 
 ---
 
@@ -151,9 +151,43 @@ feature/infra/INF-05-observability       관측 스택 기동
 3. 작업, 커밋, push
 4. PR 생성 (`develop` 대상)
 5. **CI 통과 후** merge
-6. 브랜치 삭제
-   - 원격: GitHub의 Delete branch
-   - 로컬: `git branch -d feature/be/RISK-05-guarantee-judgment`
+6. 브랜치 삭제 — **원격과 로컬 둘 다.** 아래 절을 따른다.
+
+---
+
+## 브랜치 삭제
+
+저장소 안에서 `gh pr merge --delete-branch`로 merge하면 원격과 로컬이 함께 지워진다. **GitHub 웹에서 merge하면 로컬 브랜치가 남으므로 직접 지운다.**
+
+```bash
+git switch develop
+git pull origin develop
+git fetch --prune
+git branch -d feature/be/RISK-05-guarantee-judgment
+```
+
+`-d`는 브랜치의 커밋이 전부 현재 브랜치 이력에 있을 때만 지운다. **작업 브랜치는 squash merge로 들어가므로 `-d`가 거부된다.** squash merge는 내용만 합쳐 해시가 다른 새 커밋 하나를 만들고, 원래 커밋은 `develop` 이력에 남지 않는다.
+
+그때는 **반영 여부를 커밋이 아니라 내용으로 확인한 뒤** `-D`로 지운다.
+
+```bash
+git diff develop..feature/be/RISK-05-guarantee-judgment   # 비어야 한다
+git branch -D feature/be/RISK-05-guarantee-judgment
+```
+
+`git log develop..<브랜치>`로 판단하지 않는다. squash merge 후에는 원래 커밋이 그대로 남아 **항상 비지 않으므로** 반영 여부를 가리지 못한다. 확인해야 할 것은 커밋이 옮겨졌는지가 아니라 내용이 `develop`에 들어갔는지다.
+
+**이 판정은 merge 직후에만 성립한다.** `..`은 두 끝점을 비교하므로 `develop`이 다음 작업으로 나아간 뒤에는 그 앞선 변경이 역방향으로 나타나 `git diff`가 비지 않는다. 반영이 끝났는데 안 됐다고 오판정한다.
+
+그래서 뒷정리를 미루지 않는 것이 절차의 일부다. 이미 미뤄 `develop`이 나아갔다면 `git diff`로 판단하지 말고 **PR이 merge된 상태인지로 확인한다.**
+
+```bash
+gh pr view <PR 번호> --json state -q .state   # MERGED 면 지운다
+```
+
+merge 직후이고 `git diff`가 비어 있지 않으면 아직 반영되지 않은 변경이 있다는 뜻이므로 지우지 않는다.
+
+**뒷정리를 미루지 않는다.** 남은 브랜치가 쌓이면 어느 것이 진행 중인 작업인지 구분되지 않는다.
 
 ---
 
@@ -165,7 +199,7 @@ feature/infra/INF-05-observability       관측 스택 기동
 | `develop` → `main` | Merge commit | 배포 시점을 이력에 남긴다 |
 | `hotfix/*` → `main` · `develop` | Squash merge | 수정 내용을 커밋 하나로 명확히 남긴다 |
 
-Squash merge 시 커밋 메시지는 `docs/git/commit.md` 형식으로 정리한다. **브랜치의 scope와 squash 커밋의 scope를 일치시킨다.**
+Squash merge 시 커밋 메시지는 `docs/git/commit-convention.md` 형식으로 정리한다. **브랜치의 scope와 squash 커밋의 scope를 일치시킨다.**
 
 - `feature/infra/INF-02-rolling-deploy` → `feat(infra): 슬롯 순차 교체 배포 스크립트 추가 (INF-02)`
 
@@ -198,7 +232,7 @@ hotfix/infra/INF-01-health-path
 
 커밋 type은 `fix`를 쓴다.
 
-**인프라 hotfix는 별도로 유의한다.** 설정 파일 변경은 컴파일도 테스트도 되지 않으므로, CI만으로는 검증되지 않는다. `docs/git/commit.md`에 따라 `nginx -t`·`promtool check rules` 같은 확인 결과를 body에 남긴다.
+**인프라 hotfix는 별도로 유의한다.** 설정 파일 변경은 컴파일도 테스트도 되지 않으므로, CI만으로는 검증되지 않는다. `docs/git/commit-convention.md`에 따라 `nginx -t`·`promtool check rules` 같은 확인 결과를 body에 남긴다.
 
 ---
 

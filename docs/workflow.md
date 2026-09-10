@@ -19,15 +19,15 @@
 | # | 단계 | 수단 | 근거 문서 |
 | --- | --- | --- | --- |
 | 1 | 읽을 문서를 고른다 | `slice-start` | — |
-| 2 | 이슈를 만든다 | — | `docs/git/issue.md` |
-| 3 | `develop`에서 브랜치를 딴다 | — | `docs/git/branch.md` |
-| 4 | **계획을 제시하고 승인을 받아 이슈에 남긴다** | — | `docs/template.md` · `docs/git/issue.md` |
+| 2 | 이슈를 만든다 | — | `docs/git/issue-guide.md` |
+| 3 | `develop`에서 브랜치를 딴다 | — | `docs/git/branch-strategy.md` |
+| 4 | **계획을 제시하고 승인을 받아 이슈에 남긴다** | — | `docs/template.md` · `docs/git/issue-guide.md` |
 | 5 | 구현한다 | 담당 에이전트 | `docs/conventions.md` · `docs/architecture/` |
 | 6 | 테스트를 작성한다 | 담당 에이전트 / 판정 로직이면 `add-judgement` | `docs/architecture/testing.md` |
-| 7 | 커밋한다 | — | `docs/git/commit.md` |
+| 7 | 커밋한다 | — | `docs/git/commit-convention.md` |
 | 8 | 검토를 받는다 | `code-reviewer` | — |
-| 9 | push하고 PR을 만든다 (`develop` 대상, `closes #N`) | — | `docs/git/pull-request.md` |
-| 10 | CI 통과 후 squash merge, 브랜치 삭제 | — | `docs/git/branch.md` |
+| 9 | push하고 PR을 만든다 (`develop` 대상, `closes #N`) | — | `docs/git/pr-guide.md` |
+| 10 | CI 통과 후 squash merge, 브랜치 삭제 | — | `docs/git/branch-strategy.md` |
 
 **저장소를 바꾸는 작업은 종류와 무관하게 이 순서를 따른다.** 서버의 상태를 바꾸는 운영 작업은 4장. 5·6단계를 어느 에이전트가 맡는지는 각 에이전트 정의가 정한다.
 
@@ -47,7 +47,7 @@
 
 인프라도 2장의 순서를 그대로 따른다. 다만 **10단계의 CI가 게이트 역할을 하지 못한다.** Nginx 설정, `prometheus.yml`, Compose 파일은 컴파일도 테스트도 되지 않아 CI가 통과해도 확인된 것이 없다.
 
-**게이트는 7단계로 옮겨간다.** 커밋 body에 남기는 확인 명령 결과가 유일한 검증이다. 어떤 명령을 쓰는지는 `docs/git/commit.md`.
+**게이트는 7단계로 옮겨간다.** 커밋 body에 남기는 확인 명령 결과가 유일한 검증이다. 어떤 명령을 쓰는지는 `docs/git/commit-convention.md`.
 
 ---
 

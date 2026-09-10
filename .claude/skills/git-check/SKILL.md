@@ -23,15 +23,15 @@ description: 커밋하거나 push하기 전에 git 규칙을 지켰는지 확인
 
 | # | 검사 | 어긋난 예 | 근거 |
 | --- | --- | --- | --- |
-| 1 | 작업 브랜치에 있다 | `develop`에서 커밋 | `docs/git/branch.md` |
+| 1 | 작업 브랜치에 있다 | `develop`에서 커밋 | `docs/git/branch-strategy.md` |
 | 2 | 브랜치 이름이 형식에 맞다 | `feature/RISK-05` — scope 없음 |〃|
-| 3 | 이 브랜치에 해당하는 이슈가 열려 있다 | 이슈 없이 브랜치를 팠다 | `docs/git/issue.md` |
-| 4 | 메시지가 `<type>(<scope>): <subject> (<기능ID>)` 형식이다 | `RISK-05: 판정 추가` | `docs/git/commit.md` |
+| 3 | 이 브랜치에 해당하는 이슈가 열려 있다 | 이슈 없이 브랜치를 팠다 | `docs/git/issue-guide.md` |
+| 4 | 메시지가 `<type>(<scope>): <subject> (<기능ID>)` 형식이다 | `RISK-05: 판정 추가` | `docs/git/commit-convention.md` |
 | 5 | type이 변경 내용과 맞다 | 사람이 재작성했는데 `style` |〃|
 | 6 | subject가 50자 이내이고 마침표가 없다 | |〃|
 | 7 | 인프라 변경이면 body에 확인 명령 결과가 있다 | `nginx -t` 결과 없음 |〃|
-| 8 | scope와 기능 ID가 세 곳에서 같다 | 3장 |〃 · `docs/git/branch.md` |
-| 9 | 커밋 단위가 하나다 | 4장 | `docs/git/commit.md` |
+| 8 | scope와 기능 ID가 세 곳에서 같다 | 3장 |〃 · `docs/git/branch-strategy.md` |
+| 9 | 커밋 단위가 하나다 | 4장 | `docs/git/commit-convention.md` |
 | 10 | 짝이 함께 들어 있다 | 5장 |〃|
 
 ## 3. scope와 기능 ID는 세 곳에서 같다
@@ -44,7 +44,7 @@ description: 커밋하거나 push하기 전에 git 규칙을 지켰는지 확인
 
 **경로가 기준이다.** 브랜치나 메시지가 다르면 그쪽을 고친다. 경로가 두 scope에 걸치면 scope 문제가 아니라 9번 위반이다.
 
-인프라로 치는 경로 목록은 `docs/git/commit.md`의 「`infra` 범위」 표를 읽는다.
+인프라로 치는 경로 목록은 `docs/git/commit-convention.md`의 「`infra` 범위」 표를 읽는다.
 
 ## 4. 커밋 단위
 
@@ -58,7 +58,7 @@ description: 커밋하거나 push하기 전에 git 규칙을 지켰는지 확인
 
 ## 5. 짝
 
-`docs/git/commit.md`의 「함께 커밋해야 하는 것」 두 표를 읽는다. **왼쪽에 해당하는 파일이 스테이징에 있으면 오른쪽도 있는지 본다.** 없으면 왜 없는지 답할 수 있어야 하고, 답이 없으면 함께 스테이징한다.
+`docs/git/commit-convention.md`의 「함께 커밋해야 하는 것」 두 표를 읽는다. **왼쪽에 해당하는 파일이 스테이징에 있으면 오른쪽도 있는지 본다.** 없으면 왜 없는지 답할 수 있어야 하고, 답이 없으면 함께 스테이징한다.
 
 **짝 목록을 여기에 옮겨 적지 않는다.** 표가 늘면 여기가 낡는다.
 

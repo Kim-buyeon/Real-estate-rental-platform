@@ -88,7 +88,7 @@ artifacts/sites/<슬러그>/
 | `examples/<아키타입>/layout.md` | 정본 위치의 `examples/<아키타입>/` | — |
 | `reference-*.png` · `tokens.md` · `reviews/` | **커밋하지 않는다.** 작업 폴더에 남긴다 | — |
 
-정의서와 코드 토큰 파일의 짝은 `docs/git/commit.md` 짝 표에 올릴 후보다.
+정의서와 코드 토큰 파일의 짝은 `docs/git/commit-convention.md` 짝 표에 올릴 후보다.
 
 ## 6. 확장 · 통합 — 같은 사이트에 아키타입 추가
 

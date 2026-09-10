@@ -18,7 +18,7 @@
 | 대출 | LOAN-01 | `docs/features/loan.md` | `docs/api/loan.md` | **비즈니스 로직 정의** |
 | 알림 | NOTI-01 · 02 · 03 · 05 | `docs/features/notification.md` | `docs/api/notification.md` | — |
 | 관리자 | ADMIN-01 | `docs/features/admin.md` | `docs/api/admin.md` | — |
-| 인프라 | INF-01 ~ 06 | `docs/features/infra.md` | `docs/api/infra.md` · `docs/api/observability.md` | `docs/infra/` 해당 문서 |
+| 인프라 | INF-01 ~ 06 | `docs/features/infra.md` | `docs/api/infra.md` · `docs/api/infra-observation.md` | `docs/infra/` 해당 문서 |
 
 - **`docs/api/common.md`는 모든 영역에서 함께 읽는다.** 요청·응답 형식과 오류 코드가 거기 있다.
 - **인프라는 `docs/api/common.md`를 읽지 않는다.** 공통 규약이 적용되지 않는다.
