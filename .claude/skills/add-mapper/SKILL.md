@@ -108,14 +108,14 @@ OFFSET을 쓰지 않는 이유는 `performance.md` 1.1. 좌표 조건 조회는 
 | 확인 | 방법 | 결과 |
 | --- | --- | --- |
 | 인덱스를 타는가 | 로컬 · 컨테이너 DB에 더미 데이터를 넣고 `EXPLAIN (ANALYZE, BUFFERS)` | 자주 필터 · 정렬하는 컬럼에서 Seq Scan이면 인덱스 누락 |
-| 인덱스가 없다 | 마이그레이션에 `CREATE INDEX`. 커밋 type은 `docs/git/commit.md` 「마이그레이션의 type」 | — |
+| 인덱스가 없다 | 마이그레이션에 `CREATE INDEX`. 커밋 type은 `docs/git/commit-convention.md` 「마이그레이션의 type」 | — |
 | 더미가 없다 | 「미검증」으로 적고 넘긴다. 예비 부하 측정이 인덱스를 확정한다 — `docs/roadmap.md` 1주차 | — |
 
 수치를 기록한다 — 적용 전후 비교가 `performance.md` 1.2의 검증 방법이다.
 
 ## 8. 함께 커밋한다
 
-짝은 `docs/git/commit.md`의 「함께 커밋해야 하는 것」 두 표가 갖고 `git-check`가 본다. 「매퍼 + 매퍼 테스트」가 거기 있다.
+짝은 `docs/git/commit-convention.md`의 「함께 커밋해야 하는 것」 두 표가 갖고 `git-check`가 본다. 「매퍼 + 매퍼 테스트」가 거기 있다.
 
 ## 9. 하지 않는다
 

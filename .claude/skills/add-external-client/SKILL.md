@@ -84,7 +84,7 @@ description: 외부 API 연동 클라이언트(건축물대장·실거래가·�
 
 ## 7. 함께 커밋한다
 
-짝은 `docs/git/commit.md`의 표가 갖고 `git-check`가 본다. 환경 변수 이름이 `data-loading.md` 1.3 · `.env.example` · 코드 세 곳에 같아야 하는데, 이것은 커밋 짝이 아니다(경로가 scope를 넘는다) — `doc-check` 2장의 `.env.example` 행이 본다.
+짝은 `docs/git/commit-convention.md`의 표가 갖고 `git-check`가 본다. 환경 변수 이름이 `data-loading.md` 1.3 · `.env.example` · 코드 세 곳에 같아야 하는데, 이것은 커밋 짝이 아니다(경로가 scope를 넘는다) — `doc-check` 2장의 `.env.example` 행이 본다.
 
 ## 8. 멈춘다
 

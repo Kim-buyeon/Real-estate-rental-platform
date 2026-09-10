@@ -57,8 +57,8 @@ description: 기능이나 인프라 작업에 착수할 때 어느 문서를 읽
 | `load-tester` | `docs/infra/test-plan.md` · `docs/infra/traffic.md` · `docs/infra/observability.md` | 부하 시험 |
 | `chaos-runner` | `docs/infra/test-plan.md` · `docs/infra/traffic.md` · `docs/infra/runbook.md` · `docs/infra/observability.md` | 장애 주입 시험 |
 | `traffic-builder` | `docs/infra/traffic.md` · `docs/infra/test-plan.md` · `docs/api/common.md` · 요청 조합의 엔드포인트가 속한 영역의 API 명세 | 부하 스크립트 작성 |
-| `infra-operator` | `docs/infra/runbook.md` · `docs/infra/system.md` · `docs/infra/observability.md` · `docs/api/observability.md` · `docs/infra/tech-stack.md` · `docs/infra/test-plan.md` · `docs/features/infra.md` | 운영 갈래 전부 |
-| `monitoring-engineer` | `docs/infra/observability.md` · `docs/api/observability.md` · `docs/api/infra.md` · `docs/infra/system.md` · `docs/infra/tech-stack.md` · `docs/infra/runbook.md` · `docs/infra/test-plan.md` · `docs/features/infra.md` | 관측 설정 작성 |
+| `infra-operator` | `docs/infra/runbook.md` · `docs/infra/system.md` · `docs/infra/observability.md` · `docs/api/infra-observation.md` · `docs/infra/tech-stack.md` · `docs/infra/test-plan.md` · `docs/features/infra.md` | 운영 갈래 전부 |
+| `monitoring-engineer` | `docs/infra/observability.md` · `docs/api/infra-observation.md` · `docs/api/infra.md` · `docs/infra/system.md` · `docs/infra/tech-stack.md` · `docs/infra/runbook.md` · `docs/infra/test-plan.md` · `docs/features/infra.md` | 관측 설정 작성 |
 
 `traffic-builder`는 인프라 갈래인데도 `docs/api/common.md`를 올린다. 1장의 제외 규칙은 인프라 구성이 앱 API를 쓰지 않기 때문인데, 부하 스크립트는 앱 API를 호출하고 응답 봉투를 파싱하므로 예외다.
 

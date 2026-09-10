@@ -49,11 +49,11 @@ description: 바꾼 것과 문서가 어긋나지 않았는지 확인한다. 변
 | 바뀐 것 | 볼 문서 | 어긋나는 것 |
 | --- | --- | --- |
 | `infra/nginx/` | `docs/infra/runbook.md` · `docs/api/infra.md` · `docs/infra/observability.md` | 슬롯 · 포트 · 타임아웃 · `/actuator` 차단. `max_fails`가 알림 임계의 근거다 |
-| `infra/prometheus/` 스크레이프 | `docs/infra/observability.md` · `docs/api/observability.md` · `docs/api/infra.md` | 주기 · 대상 노드 · 바인딩 주소 |
-| `infra/prometheus/` 알림 규칙 | `docs/infra/runbook.md` · `docs/infra/observability.md` · `docs/api/observability.md` | 그 알림의 조치 절차 · 임계 근거 · 규칙 이름과 그룹 |
+| `infra/prometheus/` 스크레이프 | `docs/infra/observability.md` · `docs/api/infra-observation.md` · `docs/api/infra.md` | 주기 · 대상 노드 · 바인딩 주소 |
+| `infra/prometheus/` 알림 규칙 | `docs/infra/runbook.md` · `docs/infra/observability.md` · `docs/api/infra-observation.md` | 그 알림의 조치 절차 · 임계 근거 · 규칙 이름과 그룹 |
 | `infra/alertmanager/` | `docs/api/infra.md` · `docs/infra/observability.md` | 채널 · 묶음 주기 · 템플릿 필드 |
 | `infra/grafana/` | `docs/infra/observability.md` | 대시보드 구성 · 패널 PromQL |
-| `infra/promtail/` | `docs/api/observability.md` · `docs/infra/observability.md` | 로그 라벨 · 구조화 전제 |
+| `infra/promtail/` | `docs/api/infra-observation.md` · `docs/infra/observability.md` | 로그 라벨 · 구조화 전제 |
 | PostgreSQL · Redis 설정 | `docs/infra/tech-stack.md` · `docs/infra/system.md` | 자원 상한 · WAL · 복제 슬롯 · 보존 기간 |
 | `docker-compose*.yml` | `docs/infra/system.md` · `docs/api/infra.md` · `docs/infra/tech-stack.md` | 포트와 접근 통제 표 · 구성 요소 목록 |
 | 배포 · 관측 스크립트 | `docs/infra/runbook.md` | **스크립트 전문이 문서에 실려 있다.** 인자 · 대기 시간 · 임계 |
@@ -66,11 +66,11 @@ description: 바꾼 것과 문서가 어긋나지 않았는지 확인한다. 변
 
 | 바뀐 것 | 볼 문서 |
 | --- | --- |
-| `.github/workflows/` | `docs/git/branch.md` · `docs/architecture/testing.md` · `docs/infra/test-plan.md` · `docs/infra/runbook.md` · `docs/tech-stack.md` |
-| `.github/ISSUE_TEMPLATE/` · `PULL_REQUEST_TEMPLATE.md` | `docs/git/issue.md` · `docs/git/pull-request.md` |
+| `.github/workflows/` | `docs/git/branch-strategy.md` · `docs/architecture/testing.md` · `docs/infra/test-plan.md` · `docs/infra/runbook.md` · `docs/tech-stack.md` |
+| `.github/ISSUE_TEMPLATE/` · `PULL_REQUEST_TEMPLATE.md` | `docs/git/issue-guide.md` · `docs/git/pr-guide.md` |
 | `.claude/agents/` · `.claude/skills/` | `docs/workflow.md` · `docs/infra/test-plan.md` |
 | 커밋 훅 | `docs/workflow.md` |
-| 디렉터리 재배치 | `docs/git/commit.md`「`infra` 범위」 · 루트 `CLAUDE.md` 프로젝트 구조 |
+| 디렉터리 재배치 | `docs/git/commit-convention.md`「`infra` 범위」 · 루트 `CLAUDE.md` 프로젝트 구조 |
 
 ## 3. 개수와 목록이 적힌 것
 
@@ -81,10 +81,10 @@ description: 바꾼 것과 문서가 어긋나지 않았는지 확인한다. 변
 | 알림 규칙 | `docs/infra/observability.md` · `docs/roadmap.md` |
 | 대시보드 | `docs/infra/observability.md` · `docs/infra/tech-stack.md` · `docs/roadmap.md` |
 | 장애 주입 시나리오 | `docs/infra/test-plan.md` · `docs/features/infra.md` · `docs/infra/traffic.md` |
-| 부하 프로파일 `T…` | `docs/infra/traffic.md` · `docs/git/commit.md` · `docs/git/pull-request.md` |
+| 부하 프로파일 `T…` | `docs/infra/traffic.md` · `docs/git/commit-convention.md` · `docs/git/pr-guide.md` |
 | 1단계 기능 | `docs/features/overview.md` · `docs/roadmap.md` |
 | 더미 데이터 건수 | `docs/infra/traffic.md` · `docs/roadmap.md` |
-| 인프라 기능 `INF-…` | `docs/features/infra.md` · `docs/git/branch.md` · `docs/git/commit.md` |
+| 인프라 기능 `INF-…` | `docs/features/infra.md` · `docs/git/branch-strategy.md` · `docs/git/commit-convention.md` |
 
 **여기에 숫자를 적지 않는다.** 적으면 이 파일이 먼저 낡는다.
 
