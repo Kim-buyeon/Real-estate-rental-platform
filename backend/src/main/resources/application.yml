@@ -1,6 +1,11 @@
 spring:
   application:
     name: rental-platform
+  config:
+    # 저장소 루트의 .env 를 읽는다. 앱과 Gradle 테스트의 작업 디렉터리가 backend/ 라 상대 경로는 ../.env 다.
+    # Boot 에는 dotenv 기능이 없으므로 [.properties] 확장자 힌트로 properties 처럼 읽힌다.
+    # optional: 은 필수다 — CI 와 컨테이너에는 이 파일이 없다. 운영에서는 실제 환경 변수가 이 파일을 이긴다.
+    import: "optional:file:../.env[.properties]"
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${POSTGRES_DB:rental}
     username: ${POSTGRES_USER:rental}
@@ -21,3 +26,12 @@ spring:
           time_zone: Asia/Seoul
   flyway:
     enabled: true
+
+# 토큰 만료 시간은 비밀도 환경 차이도 아니므로 환경 변수로 두지 않는다(.env.example 말미).
+# access-token-validity 는 로그인 응답의 expiresIn 과 같은 값이다 — API 명세서(회원·인증) 1.2.
+jwt:
+  # 기본값을 두지 않는다. 주입을 빠뜨린 채 앱이 뜨면 서명 키가 조용히 고정된다.
+  # HS256 은 256비트 이상을 요구하므로 32바이트 미만이면 기동 시점에 실패한다.
+  secret: ${JWT_SECRET}
+  access-token-validity: 1800s
+  refresh-token-validity: 14d

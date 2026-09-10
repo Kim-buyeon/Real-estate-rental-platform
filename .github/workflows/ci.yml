@@ -10,6 +10,11 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      # 러너에는 .env 가 없어 application.yml 의 ${JWT_SECRET} 이 풀리지 않는다.
+      # 시험 전용 값이며 실제 토큰 서명에 쓰이지 않는다. 비밀이 아니므로 Secret 으로 두지 않는다.
+      # HS256 최소 길이(256비트)를 넘겨야 기동한다.
+      JWT_SECRET: ci-only-dummy-signing-key-not-used-in-any-environment
     steps:
       - uses: actions/checkout@v5
       - name: Set up JDK 21
