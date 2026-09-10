@@ -81,7 +81,7 @@ description: 바꾼 것과 문서가 어긋나지 않았는지 확인한다. 변
 | 알림 규칙 | `docs/infra/observability.md` · `docs/roadmap.md` |
 | 대시보드 | `docs/infra/observability.md` · `docs/infra/tech-stack.md` · `docs/roadmap.md` |
 | 장애 주입 시나리오 | `docs/infra/test-plan.md` · `docs/features/infra.md` · `docs/infra/traffic.md` |
-| 부하 프로파일 `T…` | `docs/infra/traffic.md` · `docs/git/commit-convention.md` · `docs/git/pr-guide.md` |
+| 부하 프로파일 `T…` | `docs/infra/traffic.md` · `docs/git/commit-convention.md` · `.github/pull_request_template.md` |
 | 1단계 기능 | `docs/features/overview.md` · `docs/roadmap.md` |
 | 더미 데이터 건수 | `docs/infra/traffic.md` · `docs/roadmap.md` |
 | 인프라 기능 `INF-…` | `docs/features/infra.md` · `docs/git/branch-strategy.md` · `docs/git/commit-convention.md` |
