@@ -2,7 +2,9 @@
 
 **PR을 만드는 이유는 승인이 아니라 CI 실행과 변경 이력 정리다.** 1인 개발이라 리뷰어가 없고 승인 인원도 두지 않는다. 리뷰어 역할은 CI와 `code-reviewer` 에이전트가 대신한다.
 
-작업 순서에서 PR이 어디에 오는지는 `docs/workflow.md` 2장, merge 방식과 브랜치 삭제는 `docs/git/branch-strategy.md`가 정한다. 본 문서는 **PR 자체의 대상·제목·본문**만 정한다.
+본 문서는 **PR 자체의 정책** — 대상 브랜치, 제목, 템플릿을 쓰는 방식, 두지 않는 것을 정한다.
+
+나머지는 각 문서가 갖는다. 작업 순서에서 PR이 어디에 오는지는 `docs/workflow.md` 2장, merge 방식과 브랜치 삭제는 `docs/git/branch-strategy.md`, 제목 형식은 `docs/git/commit-convention.md`, **본문 절 구성은 `.github/pull_request_template.md`**다.
 
 ---
 
@@ -13,8 +15,6 @@
 | `feature/*` · `fix/*` · `chore/*` · `docs/*` | `develop` | 평시 작업 전부 |
 | `develop` | `main` | 배포 시점 |
 | `hotfix/*` | `main`, 그리고 `develop`에도 별도로 | 배포 후 긴급 수정 |
-
-hotfix를 `develop`에 반영하는 PR을 빠뜨리면 다음 배포에서 같은 버그가 되살아난다.
 
 ---
 
@@ -52,11 +52,3 @@ squash merge 시 이 제목이 그대로 `develop` 이력에 남으므로, PR �
 | 리뷰어 지정 | 같은 이유 |
 | CI 실패 상태로 merge | CI가 유일한 게이트다 |
 | 본문에 규칙 전재 | 커밋 형식·머지 방식·순서는 각 문서가 갖는다. 참조만 한다 |
-
----
-
-## merge 이후
-
-merge 방식과 브랜치 삭제는 `docs/git/branch-strategy.md`가 정한다. 절차를 여기에 옮겨 적지 않는다.
-
-**뒷정리를 미루지 않는다.** 남은 브랜치가 쌓이면 어느 것이 진행 중인 작업인지 구분되지 않는다.
