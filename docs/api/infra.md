@@ -5,7 +5,7 @@
 >
 > ※ `docs/api/common.md`은 적용되지 않는다. 본 문서의 엔드포인트는 우리가 정의한 것이 아니라 Spring Actuator · exporter · Prometheus 등이 제공하는 고정 경로이며, 경로 규칙·응답 봉투·오류 코드 체계가 모두 도구를 따른다.
 > ※ 인증 대신 **노출 범위**로 통제한다.
-> ※ 서비스 API는 `docs/api/`의 도메인별 명세를, 포트별 접근 통제는 `docs/infra/system.md` 4장을, 관측 스택 질의와 설정 반영은 `docs/api/observability.md`을 따른다.
+> ※ 서비스 API는 `docs/api/`의 도메인별 명세를, 포트별 접근 통제는 `docs/infra/system.md` 4장을, 관측 스택 질의와 설정 반영은 `docs/api/infra-observation.md`을 따른다.
 > 작성 기준일 : 2026년 8월
 
 ## 1. 노출 엔드포인트

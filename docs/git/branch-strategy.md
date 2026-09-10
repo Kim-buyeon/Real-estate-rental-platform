@@ -31,7 +31,7 @@ feature/*, fix/*, chore/*, docs/* ─► 작업 브랜치 (develop에서 분기)
 <prefix>/<scope>/<기능ID>-<기능명(영문)>[_<작업-키워드>]
 ```
 
-**scope는 `docs/git/commit.md`와 같은 값을 쓴다** — `be` · `fe` · `infra`. 어느 쪽도 아니면 scope를 생략한다.
+**scope는 `docs/git/commit-convention.md`와 같은 값을 쓴다** — `be` · `fe` · `infra`. 어느 쪽도 아니면 scope를 생략한다.
 
 | Scope | 대상 | 형식 |
 | --- | --- | --- |
@@ -89,7 +89,7 @@ git branch --list '*/infra/*'         # 인프라 작업 전체
 git branch --list '*RISK-05*'         # 기능별은 와일드카드로
 ```
 
-`docs/git/commit.md`의 `feat(be):`와 순서가 같아 브랜치와 커밋을 나란히 읽을 수 있다.
+`docs/git/commit-convention.md`의 `feat(be):`와 순서가 같아 브랜치와 커밋을 나란히 읽을 수 있다.
 
 ---
 
@@ -104,7 +104,7 @@ git branch --list '*RISK-05*'         # 기능별은 와일드카드로
 
 프런트를 먼저 열면 작업 도중 API 응답 형태가 바뀌어 두 번 고치게 된다. 백엔드를 먼저 `develop`에 넣으면 프런트는 **고정된 API를 상대로** 작업한다.
 
-부득이하게 한 브랜치에서 양쪽을 건드리면 **커밋은 반드시 분리한다.** `docs/git/commit.md`의 `feat(be,fe):`는 정말 나눌 수 없을 때만 쓴다.
+부득이하게 한 브랜치에서 양쪽을 건드리면 **커밋은 반드시 분리한다.** `docs/git/commit-convention.md`의 `feat(be,fe):`는 정말 나눌 수 없을 때만 쓴다.
 
 ---
 
@@ -165,7 +165,7 @@ feature/infra/INF-05-observability       관측 스택 기동
 | `develop` → `main` | Merge commit | 배포 시점을 이력에 남긴다 |
 | `hotfix/*` → `main` · `develop` | Squash merge | 수정 내용을 커밋 하나로 명확히 남긴다 |
 
-Squash merge 시 커밋 메시지는 `docs/git/commit.md` 형식으로 정리한다. **브랜치의 scope와 squash 커밋의 scope를 일치시킨다.**
+Squash merge 시 커밋 메시지는 `docs/git/commit-convention.md` 형식으로 정리한다. **브랜치의 scope와 squash 커밋의 scope를 일치시킨다.**
 
 - `feature/infra/INF-02-rolling-deploy` → `feat(infra): 슬롯 순차 교체 배포 스크립트 추가 (INF-02)`
 
@@ -198,7 +198,7 @@ hotfix/infra/INF-01-health-path
 
 커밋 type은 `fix`를 쓴다.
 
-**인프라 hotfix는 별도로 유의한다.** 설정 파일 변경은 컴파일도 테스트도 되지 않으므로, CI만으로는 검증되지 않는다. `docs/git/commit.md`에 따라 `nginx -t`·`promtool check rules` 같은 확인 결과를 body에 남긴다.
+**인프라 hotfix는 별도로 유의한다.** 설정 파일 변경은 컴파일도 테스트도 되지 않으므로, CI만으로는 검증되지 않는다. `docs/git/commit-convention.md`에 따라 `nginx -t`·`promtool check rules` 같은 확인 결과를 body에 남긴다.
 
 ---
 
