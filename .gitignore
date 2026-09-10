@@ -1,1 +1,7 @@
+# 실제 환경 변수 값. 이름만 담은 .env.example 은 커밋한다.
 .env
+
+# npm 설치 산출물. frontend/ 는 자기 .gitignore 로 같은 것을 무시한다.
+# 루트에서 npm 을 실행할 일은 없으나, 실수로 실행해도 추적되지 않게 둔다.
+node_modules
+dist
