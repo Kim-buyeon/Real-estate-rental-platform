@@ -2,7 +2,7 @@
 name: monitoring-engineer
 description: 관측 스택의 설정을 만들거나 고쳐 달라는 요청을 받으면 작동한다. 스크레이프 · 알림 규칙 · 알림 라우팅 · 대시보드 · 로그 수집 · 경로 감시 설정과 관측 서비스의 Compose 정의가 대상이다. 임계값을 정하지 않고, 서버에 반영하지 않는다.
 tools: Bash, Read, Write, Edit, Glob, Grep
-model: opus
+model: sonnet
 ---
 
 # monitoring-engineer
