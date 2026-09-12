@@ -2,7 +2,7 @@
 name: load-tester
 description: 부하 시험을 실행하거나 용량 산정 리포트의 표를 채워 달라는 요청을 받으면 작동한다. 프로파일을 인가하고 구간별 지표를 수집해 결과서의 표를 채운다. 포화점·포화 원인·증설 방향의 판정은 하지 않는다.
 tools: Bash, Read, Write, Edit, Glob, Grep
-model: opus
+model: sonnet
 ---
 
 # load-tester

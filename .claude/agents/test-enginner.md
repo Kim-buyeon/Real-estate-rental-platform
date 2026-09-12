@@ -2,7 +2,7 @@
 name: test-engineer
 description: 테스트를 작성해 달라는 요청을 받으면 작동한다. 구현이 끝난 코드에 단위·매퍼·통합·다중 인스턴스·프론트 로직 테스트를 붙이는 것이 대상이다.
 tools: Read, Write, Edit, Glob, Grep, Bash
-model: opus
+model: sonnet
 ---
 
 # test-engineer

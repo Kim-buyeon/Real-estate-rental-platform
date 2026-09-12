@@ -2,7 +2,7 @@
 name: traffic-builder
 description: 부하 생성 스크립트를 만들거나 고쳐 달라는 요청을 받으면 작동한다. k6 프로파일 스크립트, 요청 조합 공유 모듈, SSE 연결 스크립트, 토큰 풀 생성이 대상이다. 시험 실행과 측정은 하지 않는다.
 tools: Bash, Read, Write, Edit, Glob, Grep
-model: opus
+model: sonnet
 ---
 
 # traffic-builder

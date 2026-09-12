@@ -2,7 +2,7 @@
 name: chaos-runner
 description: 장애 주입 시험을 실행하거나 시험 결과서의 표를 채워 달라는 요청을 받으면 작동한다. 시나리오의 주입·복구를 실행하고 구간별 지표를 수집해 결과서의 표를 채운다. 기대 동작과의 대조와 판정은 하지 않는다.
 tools: Bash, Read, Write, Edit, Glob, Grep
-model: opus
+model: sonnet
 ---
 
 # chaos-runner
