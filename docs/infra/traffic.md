@@ -65,7 +65,7 @@
 | `GET /api/me/wishlist` | PROP-05 | 6% | 인증 사용자별 조회. 조회 경로가 공개 매물 조회와 다르다 |
 | `GET /api/notifications` | NOTI-05 | 4% | **SSE 유실 시의 폴백 경로.** 앱 정지 시 이 경로로 몰린다 |
 | `POST · DELETE /api/me/wishlist` | PROP-05 | 3% | 쓰기 |
-| `POST /api/auth/refresh` | USER-02 | 2% | **Redis를 치는 유일한 상시 요청.** 토큰 회전 포함 |
+| `POST /api/auth/reissue` | USER-02 | 2% | **Redis를 치는 유일한 상시 요청.** 토큰 회전 포함 |
 | `GET /api/loans/limit` | LOAN-01 | 2% | 계산 |
 | `POST /api/properties/{id}/risk/reanalyze` | RISK-08 | 1% | **분산 락 경합과 외부 API 호출을 유발하는 유일한 경로** |
 
