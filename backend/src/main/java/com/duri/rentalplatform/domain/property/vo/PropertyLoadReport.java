@@ -17,6 +17,9 @@ import lombok.Getter;
 @Getter
 public class PropertyLoadReport {
 
+    /** 실패 사유를 남기는 최대 건수. 그 뒤로는 계수기만 오른다. */
+    private static final int MAX_RECORDED_FAILURES = 100;
+
     /** 실거래 응답으로 받은 건수. */
     private int fetched;
 
@@ -37,6 +40,12 @@ public class PropertyLoadReport {
 
     /** 외부 연동이 응답하지 못해 실패한 건수. */
     private int failedExternal;
+
+    /** 자료가 성기거나 어긋나 한 건을 처리하지 못한 건수. 다시 돌려도 같은 건에서 같은 결과다. */
+    private int failedInvalidData;
+
+    /** 저장 덩어리 실패 · 자치구 중단처럼 예상하지 못한 자리에서 난 실패 건수. */
+    private int failedUnexpected;
 
     /** 실패 사유 목록. 어느 구 · 어느 달에서 무엇이 났는지 남긴다. */
     private final List<String> failures = new ArrayList<>();
@@ -67,12 +76,41 @@ public class PropertyLoadReport {
 
     public void failExternal(String reason) {
         failedExternal++;
-        failures.add(reason);
+        record(reason);
+    }
+
+    public void failInvalidData(String reason) {
+        failedInvalidData++;
+        record(reason);
+    }
+
+    public void failUnexpected(String reason) {
+        failedUnexpected++;
+        record(reason);
     }
 
     public String summary() {
-        return ("받은 %d건 · 저장 %d건 · 중복 %d건 · 주소없음 %d건 · 좌표없음 %d건 · 시세없음 %d건 · 연동실패 %d건")
+        return ("받은 %d건 · 저장 %d건 · 중복 %d건 · 주소없음 %d건 · 좌표없음 %d건 · 시세없음 %d건"
+                + " · 연동실패 %d건 · 자료이상 %d건 · 처리실패 %d건")
                 .formatted(fetched, saved, skippedDuplicate, skippedAddressNotFound,
-                        skippedCoordinatesNotFound, skippedMarketPriceNotFound, failedExternal);
+                        skippedCoordinatesNotFound, skippedMarketPriceNotFound, failedExternal,
+                        failedInvalidData, failedUnexpected);
+    }
+
+    /**
+     * 사유를 목록에 남긴다. 앞의 {@link #MAX_RECORDED_FAILURES} 건까지만 담는다.
+     *
+     * <p>자료 이상은 건 단위로 잡히므로 제공처 응답이 통째로 어긋나면 사유가 수만 건이 된다. 건수는
+     * 위 계수기가 전부 세므로 목록은 원인을 알아볼 만큼만 있으면 된다.
+     */
+    private void record(String reason) {
+        if (failures.size() < MAX_RECORDED_FAILURES) {
+            failures.add(reason);
+            return;
+        }
+        if (failures.size() == MAX_RECORDED_FAILURES) {
+            failures.add("… 실패 사유는 앞의 %d건만 남긴다. 전체 건수는 요약을 본다"
+                    .formatted(MAX_RECORDED_FAILURES));
+        }
     }
 }

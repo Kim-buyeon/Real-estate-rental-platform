@@ -90,8 +90,8 @@ public class RealRentTransactionClient implements RentTransactionClient {
      * 서킷이 열려 있거나 재시도가 모두 실패했을 때의 폴백.
      *
      * <p>빈 목록을 돌려주지 않는다. 「해당 월에 거래가 없었다」와 「조회하지 못했다」가 같은 값이 되면
-     * 적재가 실패를 성공으로 기록하고, 그 달 표본이 빠진 채 시세 중앙값이 산출된다. 시세는 RISK-02
-     * 전세가율의 분모이므로 폴백이 값을 지어내면 판정이 조용히 틀어진다.
+     * 적재가 실패를 성공으로 기록하고, 그 달 표본이 빠진 채 시세 중앙값이 산출된다. 시세는 깡통전세
+     * 판정(RISK-02) 기준금액의 밑값이자 전세가율의 분모이므로 폴백이 값을 지어내면 판정이 조용히 틀어진다.
      */
     @SuppressWarnings("unused")
     private List<RentTransaction> unavailable(RentTransactionQuery query, Throwable cause) {

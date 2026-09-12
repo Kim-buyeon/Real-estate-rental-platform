@@ -38,41 +38,64 @@ import org.springframework.stereotype.Service;
  *
  * <p><b>QueryService · CommandService 로 나누지 않은 이유</b> — 이 클래스는 사용자 요청을 처리하지
  * 않는다. 적재는 서비스 기능이 아니라 개발 · 운영 준비 작업이며(같은 절), 매물을 등록하는 API 경로는
- * 두지 않는다. 저장은 {@link PropertyLoadWriter} 가 맡고 여기에는 트랜잭션이 없다 — <b>외부 호출을
- * 트랜잭션 안에 두지 않기 위해서</b>다.
+ * 두지 않는다. 적재 서비스를 {@code <도메인>LoadService} + {@code <도메인>LoadWriter} 로 두는 것은
+ * {@code backend/CLAUDE.md} Service 절이 적은 예외다. 저장은 {@link PropertyLoadWriter} 가 맡고
+ * 여기에는 트랜잭션이 없다 — <b>외부 호출을 트랜잭션 안에 두지 않기 위해서</b>다.
  *
- * <p><b>실패를 다루는 방식</b> — 한 구 · 한 달의 조회가 실패해도 다음으로 넘어간다. 한 건의 주소
- * 정규화가 실패해도 그 건만 건너뛴다. 일부 실패가 전체 적재를 중단시키지 않는다.
+ * <p><b>실패를 다루는 방식</b> — 「적재 실패한 항목은 건너뛰고 기록한다. 일부 실패가 전체 적재를
+ * 중단시키지 않는다」(같은 절)를 네 층으로 지킨다.
+ *
+ * <ol>
+ *   <li>한 구 · 한 달의 조회가 실패해도 나머지 달로 넘어간다.</li>
+ *   <li>필수 값이 빠진 실거래 한 건은 시세 표본에 넣기 전에 걸러 낸다 — 면적이나 보증금이 없으면
+ *       면적대 분류와 금액 계산에서 예외가 난다.</li>
+ *   <li>한 건을 옮기다 무엇이 나든 그 건만 버린다. 예상하지 못한 예외까지 잡는 이유는, 한 건의
+ *       자료 이상이 25개 구 전체를 멈추게 두지 않기 위해서다.</li>
+ *   <li>저장 한 덩어리가 실패하거나 한 자치구가 통째로 멈춰도 다음 자치구는 돈다.</li>
+ * </ol>
+ *
+ * <p>무엇을 몇 건 버렸는지는 {@link PropertyLoadReport} 에 남고 실행이 끝난 뒤 한 번에 출력된다.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PropertyLoadService {
 
-    private final RentTransactionClient rentTransactionClient;
-    private final AddressNormalizeClient addressNormalizeClient;
-    private final GeocodeClient geocodeClient;
-    private final PropertyLoadWriter propertyLoadWriter;
-
     /** 한 트랜잭션에 넣는 건수. 한 구를 통째로 한 트랜잭션에 담으면 커넥션을 오래 붙든다. */
     private static final int SAVE_CHUNK_SIZE = 500;
 
     private static final String SEOUL = "서울특별시";
 
+    private final RentTransactionClient rentTransactionClient;
+    private final AddressNormalizeClient addressNormalizeClient;
+    private final GeocodeClient geocodeClient;
+    private final PropertyLoadWriter propertyLoadWriter;
+
     /**
      * 서울 25개 자치구의 최근 {@code months} 개월 실거래를 적재한다.
      *
+     * <p>집계를 만들어 돌려주지 않고 <b>받아서 채운다.</b> 여기서 만들어 반환하면 무엇이 던져졌을 때
+     * 그때까지의 건수와 실패 목록이 호출자에게 닿지 못하고 사라진다. 호출자가 들고 있으면 예외가
+     * 나가도 남은 기록을 출력할 수 있다.
+     *
      * @param months 오늘이 속한 달의 직전 달부터 거슬러 올라갈 개월 수. 이번 달은 신고분이 거의 없다
+     * @param report 적재 결과 집계. 호출자가 만들어 넘긴다
      */
-    public PropertyLoadReport load(int months) {
-        PropertyLoadReport report = new PropertyLoadReport();
+    public void load(int months, PropertyLoadReport report) {
         List<YearMonth> targetMonths = recentMonths(months);
 
         for (SeoulDistrict district : SeoulDistrict.values()) {
-            loadDistrict(district, targetMonths, report);
+            try {
+                loadDistrict(district, targetMonths, report);
+            } catch (RuntimeException cause) {
+                // 한 자치구에서 무엇이 나든 남은 자치구는 돈다. 여기서 막지 않으면 적재가 통째로 끝난다.
+                String reason = "자치구 적재 중단 — %s (%s)"
+                        .formatted(district.getDistrictName(), cause);
+                report.failUnexpected(reason);
+                log.warn("[매물 적재] {}", reason, cause);
+            }
             log.info("[매물 적재] {} 완료 — {}", district.getDistrictName(), report.summary());
         }
-        return report;
     }
 
     private List<YearMonth> recentMonths(int months) {
@@ -92,11 +115,13 @@ public class PropertyLoadService {
      */
     private void loadDistrict(SeoulDistrict district, List<YearMonth> targetMonths,
                               PropertyLoadReport report) {
-        List<RentTransaction> transactions = fetchTransactions(district, targetMonths, report);
+        List<RentTransaction> fetched = fetchTransactions(district, targetMonths, report);
+        report.addFetched(fetched.size());
+
+        List<RentTransaction> transactions = filterUsable(fetched, district, report);
         if (transactions.isEmpty()) {
             return;
         }
-        report.addFetched(transactions.size());
 
         MarketPriceCalculator marketPrices = MarketPriceCalculator.from(transactions);
         Set<PropertyNaturalKey> seenKeys =
@@ -109,8 +134,8 @@ public class PropertyLoadService {
 
         List<PropertyRegistration> pending = new ArrayList<>(SAVE_CHUNK_SIZE);
         for (RentTransaction transaction : transactions) {
-            PropertyRegistration registration =
-                    toRegistration(transaction, district, marketPrices, addressMemo, coordinateMemo, report);
+            PropertyRegistration registration = toRegistrationSafely(
+                    transaction, district, marketPrices, addressMemo, coordinateMemo, report);
             if (registration == null) {
                 continue;
             }
@@ -121,12 +146,12 @@ public class PropertyLoadService {
             pending.add(registration);
 
             if (pending.size() >= SAVE_CHUNK_SIZE) {
-                report.addSaved(propertyLoadWriter.saveAll(pending));
+                report.addSaved(saveChunk(pending, district, report));
                 pending.clear();
             }
         }
         if (!pending.isEmpty()) {
-            report.addSaved(propertyLoadWriter.saveAll(pending));
+            report.addSaved(saveChunk(pending, district, report));
         }
     }
 
@@ -151,6 +176,65 @@ public class PropertyLoadService {
             }
         }
         return transactions;
+    }
+
+    /**
+     * 필수 값이 빠진 건을 걸러 낸다.
+     *
+     * <p>{@code RentTransaction} 은 제공처가 비워 보내는 필드를 그대로 받는 레코드라 null 을 막지
+     * 않는다. 걸러 내지 않으면 면적대 분류와 금액 계산에서 예외가 나고, 그 예외는 한 건이 아니라
+     * 시세표를 만드는 단계에서 터져 자치구 전체를 멈춘다.
+     */
+    private List<RentTransaction> filterUsable(List<RentTransaction> transactions, SeoulDistrict district,
+                                               PropertyLoadReport report) {
+        List<RentTransaction> usable = new ArrayList<>(transactions.size());
+        for (RentTransaction transaction : transactions) {
+            String missingField = missingRequiredField(transaction);
+            if (missingField == null) {
+                usable.add(transaction);
+                continue;
+            }
+            report.failInvalidData("필수 값 누락(%s) — %s"
+                    .formatted(missingField, describe(district, transaction)));
+        }
+        return usable;
+    }
+
+    /** 없으면 처리할 수 없는 값. 하나라도 비면 그 이름을 돌려준다. */
+    private String missingRequiredField(RentTransaction transaction) {
+        if (transaction.areaSqm() == null) {
+            return "전용면적";
+        }
+        if (transaction.deposit() == null) {
+            return "보증금";
+        }
+        if (transaction.contractDate() == null) {
+            return "계약일";
+        }
+        return null;
+    }
+
+    /**
+     * 한 건을 옮긴다. 예상하지 못한 예외가 나도 그 건만 버리고 다음으로 넘어간다.
+     *
+     * <p>{@link BusinessException} 만 잡으면 자료 한 건의 이상이 자치구 · 나아가 전체 적재를 멈춘다.
+     */
+    private PropertyRegistration toRegistrationSafely(
+            RentTransaction transaction,
+            SeoulDistrict district,
+            MarketPriceCalculator marketPrices,
+            Map<String, Optional<NormalizedAddress>> addressMemo,
+            Map<String, Optional<Coordinates>> coordinateMemo,
+            PropertyLoadReport report) {
+
+        try {
+            return toRegistration(transaction, district, marketPrices, addressMemo, coordinateMemo, report);
+        } catch (RuntimeException cause) {
+            String reason = "매물 변환 실패 — %s (%s)".formatted(describe(district, transaction), cause);
+            report.failInvalidData(reason);
+            log.warn("[매물 적재] {}", reason, cause);
+            return null;
+        }
     }
 
     /**
@@ -194,7 +278,8 @@ public class PropertyLoadService {
         Optional<MarketPriceCalculator.MarketPrice> marketPrice =
                 marketPrices.find(transaction.legalDongName(), transaction.areaSqm());
         if (marketPrice.isEmpty()) {
-            // 시세는 전세가율의 분모다. 표본이 없으면 값을 지어내지 않고 그 매물을 버린다.
+            // 시세는 깡통전세 판정 기준금액의 밑값이자 전세가율의 분모다. 표본이 없으면 값을 지어내지
+            // 않고 그 매물을 버린다.
             report.skipMarketPriceNotFound();
             return null;
         }
@@ -224,6 +309,25 @@ public class PropertyLoadService {
     }
 
     /**
+     * 한 덩어리를 저장한다. 실패하면 그 덩어리만 버리고 다음 덩어리로 넘어간다.
+     *
+     * <p>여기서 막지 않으면 덩어리 하나의 저장 실패가 자치구 반복문 밖으로 나가, 그때까지의 건수와
+     * 실패 목록이 출력되기 전에 실행이 끝난다.
+     */
+    private int saveChunk(List<PropertyRegistration> pending, SeoulDistrict district,
+                          PropertyLoadReport report) {
+        try {
+            return propertyLoadWriter.saveAll(pending);
+        } catch (RuntimeException cause) {
+            String reason = "저장 실패 — %s %d건 (%s)"
+                    .formatted(district.getDistrictName(), pending.size(), cause);
+            report.failUnexpected(reason);
+            log.warn("[매물 적재] {}", reason, cause);
+            return 0;
+        }
+    }
+
+    /**
      * 주소 문자열을 만든다. 실거래가는 시 · 구를 코드로만 주므로 앞에 붙여 완전한 주소로 만든다.
      */
     private String composeRawAddress(SeoulDistrict district, RentTransaction transaction) {
@@ -234,6 +338,15 @@ public class PropertyLoadService {
                         transaction.jibun() == null ? "" : transaction.jibun())
                 .replaceAll("\\s+", " ")
                 .trim();
+    }
+
+    /** 실패 기록에 쓰는 한 건의 표시. 어느 구 · 어느 건물인지 알아볼 만큼만 적는다. */
+    private String describe(SeoulDistrict district, RentTransaction transaction) {
+        return "%s %s %s %s".formatted(
+                district.getDistrictName(),
+                transaction.legalDongName(),
+                transaction.jibun(),
+                transaction.buildingName());
     }
 
     private LocalDate basePriceDate(LocalDate baseDate) {

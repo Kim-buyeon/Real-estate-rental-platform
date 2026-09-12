@@ -22,7 +22,8 @@ import lombok.NoArgsConstructor;
  *
  * <p><b>감사 상위 클래스를 상속하지 않는다.</b> {@code property_code} 에는 {@code created_at} 도
  * {@code updated_at} 도 없다(데이터베이스 설계서 3장 1절). 상속하면 매핑에만 있는 컬럼이 생겨
- * {@code ddl-auto: validate} 에서 기동이 실패한다.
+ * {@code ddl-auto: validate} 에서 기동이 실패한다. 감사 컬럼이 없는 코드성 테이블은 상속 규칙의
+ * 예외이며, 그 예외는 {@code backend/CLAUDE.md} Entity 절에 적혀 있다.
  */
 @Entity
 @Getter

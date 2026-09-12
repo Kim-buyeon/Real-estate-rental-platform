@@ -49,6 +49,19 @@ public class MockRentTransactionClient implements RentTransactionClient {
     /** 금액 단위. 제공처가 만원 단위로 주므로 Mock 도 만원 단위로 떨어뜨린다. */
     private static final long AMOUNT_UNIT = 10_000L;
 
+    /**
+     * 보증금을 월세로 환산할 때 나누는 값. 보증금 200에 월세 1이며 월 0.5%(연 6%) 전환율에 해당한다.
+     * 전환율을 문서가 정하지 않아 Mock 안에서만 쓰는 눈금이다.
+     */
+    private static final long RENT_CONVERSION_DIVISOR = 200L;
+
+    /** 금액 흔들기 폭(%). 93~107 이면 ±7% 다. */
+    private static final int JITTER_MIN_PERCENT = 93;
+    private static final int JITTER_MAX_PERCENT = 107;
+
+    /** 백분율 나눗수. */
+    private static final int PERCENT_SCALE = 100;
+
     @Override
     public List<RentTransaction> findRentTransactions(RentTransactionQuery query) {
         Random random = new Random(seedOf(query));
@@ -61,15 +74,16 @@ public class MockRentTransactionClient implements RentTransactionClient {
             long leaseEquivalent = roundToUnit(
                     areaSqm.multiply(BigDecimal.valueOf(DEPOSIT_PER_SQM)).longValue(), random);
 
-            boolean monthlyContract = random.nextInt(100) < MONTHLY_CONTRACT_PERCENT;
+            boolean monthlyContract = random.nextInt(PERCENT_SCALE) < MONTHLY_CONTRACT_PERCENT;
             long deposit = leaseEquivalent;
             long monthlyRent = 0L;
             if (monthlyContract) {
                 int depositPercent = MONTHLY_DEPOSIT_MIN_PERCENT
                         + random.nextInt(MONTHLY_DEPOSIT_MAX_PERCENT - MONTHLY_DEPOSIT_MIN_PERCENT + 1);
-                deposit = roundToUnit(leaseEquivalent / 100 * depositPercent, random);
-                // 남은 보증금을 월세로 환산한다. 전환율을 문서가 정하지 않아 Mock 안에서만 쓰는 눈금이다.
-                monthlyRent = roundToUnit((leaseEquivalent - deposit) / 200, random);
+                deposit = roundToUnit(leaseEquivalent / PERCENT_SCALE * depositPercent, random);
+                // 보증금으로 받지 않은 몫을 월세로 환산한다.
+                monthlyRent = roundToUnit(
+                        (leaseEquivalent - deposit) / RENT_CONVERSION_DIVISOR, random);
             }
 
             transactions.add(new RentTransaction(
@@ -97,9 +111,14 @@ public class MockRentTransactionClient implements RentTransactionClient {
                 .hashCode();
     }
 
-    /** 만원 단위로 떨어뜨리고 ±7% 안에서 흔든다. 같은 면적이 전부 같은 금액이면 중앙값이 무의미해진다. */
+    /**
+     * 만원 단위로 떨어뜨리고 흔들기 폭 안에서 금액을 흔든다. 같은 면적이 전부 같은 금액이면 중앙값이
+     * 무의미해진다.
+     */
     private long roundToUnit(long amount, Random random) {
-        long jittered = amount * (93 + random.nextInt(15)) / 100;
+        int jitterPercent = JITTER_MIN_PERCENT
+                + random.nextInt(JITTER_MAX_PERCENT - JITTER_MIN_PERCENT + 1);
+        long jittered = amount * jitterPercent / PERCENT_SCALE;
         return Math.max(AMOUNT_UNIT, jittered / AMOUNT_UNIT * AMOUNT_UNIT);
     }
 }

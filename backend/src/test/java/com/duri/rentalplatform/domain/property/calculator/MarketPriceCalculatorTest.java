@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 /**
  * {@link MarketPriceCalculator} 시세(중앙값) 산출 검증.
  *
- * <p>이 값은 RISK-02 전세가율의 분모다. 기대값 표는 클래스 Javadoc이 근거다.
+ * <p>이 값은 깡통전세 판정(RISK-02) 기준금액의 밑값이자 전세가율의 분모다. 기대값 표는 클래스 Javadoc이 근거다.
  *
  * <table border="1">
  *   <caption>기대값 표</caption>

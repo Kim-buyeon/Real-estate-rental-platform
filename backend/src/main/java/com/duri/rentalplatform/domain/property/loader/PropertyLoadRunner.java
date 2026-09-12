@@ -41,15 +41,25 @@ public class PropertyLoadRunner implements ApplicationRunner {
 
     private final PropertyLoadService propertyLoadService;
 
+    /**
+     * 적재를 돌리고 결과를 남긴다.
+     *
+     * <p>집계를 여기서 만들어 넘기고 출력을 {@code finally} 에 두는 이유는, 적재가 무엇을 던지더라도
+     * <b>그때까지의 건수와 실패 목록이 남게</b> 하기 위해서다. 반환값으로 받으면 예외가 난 순간
+     * 기록이 통째로 사라진다.
+     */
     @Override
     public void run(ApplicationArguments args) {
         int months = readMonths(args);
         log.info("[매물 적재] 시작 — 최근 {}개월", months);
 
-        PropertyLoadReport report = propertyLoadService.load(months);
-
-        log.info("[매물 적재] 종료 — {}", report.summary());
-        report.getFailures().forEach(failure -> log.warn("[매물 적재] 실패 — {}", failure));
+        PropertyLoadReport report = new PropertyLoadReport();
+        try {
+            propertyLoadService.load(months, report);
+        } finally {
+            log.info("[매물 적재] 종료 — {}", report.summary());
+            report.getFailures().forEach(failure -> log.warn("[매물 적재] 실패 — {}", failure));
+        }
     }
 
     private int readMonths(ApplicationArguments args) {

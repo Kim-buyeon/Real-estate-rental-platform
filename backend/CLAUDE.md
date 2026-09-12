@@ -38,7 +38,7 @@ MyBatis XML은 `resources/mapper/<도메인>/`에, Flyway 마이그레이션은 
 
 | 패키지 | 들어가는 것 | 예 |
 | --- | --- | --- |
-| `service/` | `@Service` | `PropertyLoadService` · `UserCommandService` |
+| `service/` | `@Service` | `UserCommandService` · `PropertyLoadService` · `PropertyLoadWriter` |
 | `calculator/` | 빈이 아닌 순수 함수 클래스 | `MarketPriceCalculator` · `RiskGradeCalculator` · `ContractTypeClassifier` |
 | `vo/` | 값 객체 · 집계 객체 | `PropertyNaturalKey` · `PropertyLoadReport` |
 | `loader/` | 적재 실행 진입점 | `PropertyLoadRunner` |
@@ -50,6 +50,7 @@ MyBatis XML은 `resources/mapper/<도메인>/`에, Flyway 마이그레이션은 
 
 - JPA 전용이다. 컨트롤러나 응답에 노출하지 않는다.
 - **모든 엔티티는 감사 상위 클래스를 상속한다.** 생성일시·수정일시를 개별 엔티티에 선언하지 않는다. 둘 중 어느 것을 상속하는지는 아래 「감사 상위 클래스」가 정한다.
+- **예외는 감사 컬럼이 없는 코드성 테이블이다.** `created_at`도 `updated_at`도 없는 테이블 — 시드 마이그레이션이 값을 넣고 애플리케이션은 읽기만 하는 공통 코드가 그것이다(`PropertyCode`). 상속시키면 매핑에만 있는 컬럼이 생겨 `ddl-auto: validate`가 기동을 막는다. 예외인 엔티티는 그 사유를 클래스 주석에 남긴다.
 - `@Data`, `@Setter`를 붙이지 않는다. 변경은 의도가 드러나는 메서드로 표현한다.
 - 기본 생성자는 `@NoArgsConstructor(access = PROTECTED)`.
 - 생성은 정적 팩토리 메서드로 한다. 생성자를 공개하지 않는다.
@@ -82,6 +83,7 @@ public abstract class BaseEntity extends CreatedAtEntity {
 - `@EnableJpaAuditing`을 활성화한다.
 - **테이블에 `updated_at`이 있으면 `BaseEntity`를, 없으면 `CreatedAtEntity`를 상속한다.** 어느 테이블이 그 컬럼을 갖는지는 「데이터베이스 설계서」가 정한다. 상속 대상을 편의로 고르지 않는다.
 - 상속을 잘못 고르면 기동 시점에 드러난다. `ddl-auto`가 `validate`라 매핑에 있는 컬럼이 스키마에 없으면 Hibernate가 예외를 던지고 앱이 뜨지 않는다. 마이그레이션이 컬럼을 만들어 주지 않는다.
+- **컬럼명이 `created_at`이 아니어도 상속한다.** 생성 시각을 담는 컬럼 이름이 다를 뿐이면 `@AttributeOverride(name = "createdAt", column = @Column(name = "...", updatable = false))`로 이름을 맞춘다. 컬럼명이 다르다는 이유로 상속을 끊고 감사 필드를 엔티티에 직접 선언하지 않는다. `Property`의 `registered_at`이 그 경우다.
 - `@EntityListeners`는 `CreatedAtEntity`에만 붙인다. 상위 클래스에 선언된 리스너는 하위 클래스에 상속되므로 `BaseEntity`에 다시 붙일 필요가 없다. 끊으려면 `@ExcludeSuperclassListeners`를 써야 한다.
 - 시각을 코드에서 직접 넣지 않는다. 감사 기능이 채운다.
 
@@ -241,6 +243,18 @@ public interface PropertyMapper {
 - 하나의 CommandService 메서드가 하나의 트랜잭션 경계다. 서비스끼리 호출해 트랜잭션을 중첩시키지 않는다.
 - 외부 API 호출을 트랜잭션 안에 두지 않는다. 커넥션을 오래 점유한다.
 - 동일 트랜잭션에서 JPA로 변경한 데이터를 매퍼로 조회하지 않는다. 반영되지 않은 값을 읽는다.
+
+### 적재 서비스는 예외다
+
+**초기 적재는 조회도 변경도 아니다.** 사용자 요청을 처리하지 않고, 외부에서 받아 가공한 뒤 저장까지 한 번에 도는 준비 작업이다. Query·Command로 가르면 한쪽에 전부 들어가거나 같은 흐름이 둘로 쪼개진다. 그래서 **반환 타입이 아니라 외부 호출과 트랜잭션을 기준으로 나눈다.**
+
+| 클래스 | 하는 일 | 트랜잭션 |
+| --- | --- | --- |
+| `<도메인>LoadService` | 외부 호출·가공·건너뛸 건 판정 | 걸지 않는다. 외부 호출을 트랜잭션 안에 두지 않는다 |
+| `<도메인>LoadWriter` | 넘겨받은 값을 저장 | `@Transactional` 메서드 레벨. 한 덩어리가 한 경계다 |
+
+- 둘 다 `@Service`이므로 `service/`에 둔다. 실행 진입점은 `loader/`가 갖는다.
+- **이 예외는 초기 적재에만 해당한다.** 사용자 요청을 처리하는 기능은 Query·Command로 나눈다.
 
 ---
 

@@ -1,11 +1,12 @@
 package com.duri.rentalplatform.domain.property.entity;
 
+import com.duri.rentalplatform.common.CreatedAtEntity;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
 import com.duri.rentalplatform.domain.property.vo.PropertyRegistration;
+import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
@@ -17,23 +18,20 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 /**
  * 매물. 국토교통부 전월세 실거래가에서 적재하며, 사용자나 관리자가 등록하는 경로는 없다 —
  * 데이터 적재 설계서 1.4.
  *
- * <p><b>감사 상위 클래스를 상속하지 않는 이유</b> — 규칙은 「{@code updated_at} 이 있으면 BaseEntity,
- * 없으면 CreatedAtEntity」다. 그런데 {@code property} 에는 {@code updated_at} 도 {@code created_at} 도
- * 없고 {@code registered_at} 이 그 자리를 대신한다(데이터베이스 설계서 3장 4절). {@code CreatedAtEntity}
- * 를 상속하면 스키마에 없는 {@code created_at} 이 매핑에 생겨 {@code ddl-auto: validate} 가 기동을
- * 막는다. 그래서 상속 대신 <b>같은 감사 리스너를 이 엔티티에 직접 붙여</b> {@code registered_at} 을
- * 채운다. 규칙이 지키려는 것(시각을 코드에서 넣지 않는다)은 그대로 유지된다.
+ * <p><b>감사 상위 클래스</b> — {@code property} 에는 {@code updated_at} 이 없고, 생성 시각을 담는
+ * 컬럼 이름이 {@code created_at} 이 아니라 {@code registered_at} 이다(데이터베이스 설계서 3장
+ * 4절). 뜻은 같고 이름만 다르므로 {@link CreatedAtEntity} 를 상속하고
+ * {@code @AttributeOverride} 로 컬럼명을 맞춘다. 시각은 감사 리스너가 채우며, 리스너는 상위
+ * 클래스에 붙어 있어 여기에 다시 붙이지 않는다. 적재 시점을 함께 저장한다는 요구는
+ * 데이터 적재 설계서 1.4 에 있다.
  *
  * <p><b>금액을 {@code Long} 으로 두는 이유</b> — {@code backend/CLAUDE.md} 는 「금액 · 이율은
  * BigDecimal」이라고 적지만 스키마는 {@code deposit} · {@code monthly_rent} · {@code market_price} 를
@@ -45,9 +43,9 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @Entity
 @Getter
 @Table(name = "property")
-@EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Property {
+@AttributeOverride(name = "createdAt", column = @Column(name = "registered_at", updatable = false))
+public class Property extends CreatedAtEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -80,7 +78,11 @@ public class Property {
 
     private Long monthlyRent;
 
-    /** 시세. RISK-02 전세가율의 분모다. */
+    /**
+     * 시세(주택가액). 깡통전세 판정(RISK-02) 기준금액의 밑값이자, 전세가율
+     * ({@code debtRatio} = (선순위채권 + 보증금) ÷ 주택가액)의 분모다 — 비즈니스 로직
+     * 정의서 2장 · 4장.
+     */
     @Column(nullable = false)
     private Long marketPrice;
 
@@ -102,11 +104,6 @@ public class Property {
 
     @Column(precision = 10, scale = 7)
     private BigDecimal longitude;
-
-    /** 적재 시점. 감사 리스너가 채운다 — 데이터 적재 설계서 1.4 「적재 시점을 함께 저장한다」. */
-    @CreatedDate
-    @Column(updatable = false)
-    private LocalDateTime registeredAt;
 
     /**
      * 적재된 실거래 한 건을 매물로 만든다.

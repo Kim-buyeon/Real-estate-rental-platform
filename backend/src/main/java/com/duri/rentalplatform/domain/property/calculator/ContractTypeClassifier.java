@@ -15,9 +15,6 @@ import com.duri.rentalplatform.domain.property.enums.ContractType;
  */
 public final class ContractTypeClassifier {
 
-    private ContractTypeClassifier() {
-    }
-
     /** 준전세(반전세) 경계. 보증금 ÷ 월세 가 이 값을 넘으면 반전세다. */
     private static final long SEMI_DEPOSIT_MONTHS = 240L;
 
@@ -29,5 +26,8 @@ public final class ContractTypeClassifier {
             return ContractType.SEMI_DEPOSIT;
         }
         return ContractType.MONTHLY_RENT;
+    }
+
+    private ContractTypeClassifier() {
     }
 }

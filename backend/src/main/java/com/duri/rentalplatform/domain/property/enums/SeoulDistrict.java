@@ -1,7 +1,5 @@
 package com.duri.rentalplatform.domain.property.enums;
 
-import java.util.Arrays;
-import java.util.Optional;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
@@ -46,10 +44,4 @@ public enum SeoulDistrict {
 
     /** 자치구명. {@code property.district} 에 그대로 저장한다 — 규약 문서 도메인 용어 {@code district}. */
     private final String districtName;
-
-    public static Optional<SeoulDistrict> ofLawdCode(String lawdCode) {
-        return Arrays.stream(values())
-                .filter(district -> district.lawdCode.equals(lawdCode))
-                .findFirst();
-    }
 }
