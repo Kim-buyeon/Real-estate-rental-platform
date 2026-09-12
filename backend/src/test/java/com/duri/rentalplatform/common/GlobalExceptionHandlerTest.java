@@ -21,9 +21,14 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 전역 예외 처리기가 각 예외를 API 명세서 §1.2 봉투로 변환하는지 확인한다.
- * 보안 설정 슬라이스가 아직 없으므로 필터를 끄고 처리기 동작만 본다.
+ *
+ * <p>필터를 꺼서 인증·인가를 배제한다. 필터체인이 만드는 응답은 {@code SecurityConfigTest}가 따로 본다.
+ *
+ * <p>슬라이스에는 운영 컨트롤러를 올리지 않는다. {@code controllers}로 아래 {@link TestController}만 지정해
+ * 스캔 범위를 묶어 둔다. 여기서 보는 것은 처리기의 변환이지 특정 컨트롤러의 동작이 아니므로 예외를 던지는 시험용
+ * 엔드포인트로 충분하고, 운영 컨트롤러를 끌어들이면 그 컨트롤러의 서비스 의존까지 이 슬라이스에 올려야 한다.
  */
-@WebMvcTest
+@WebMvcTest(controllers = GlobalExceptionHandlerTest.TestController.class)
 @AutoConfigureMockMvc(addFilters = false)
 @Import({GlobalExceptionHandler.class, GlobalExceptionHandlerTest.TestController.class})
 class GlobalExceptionHandlerTest {
