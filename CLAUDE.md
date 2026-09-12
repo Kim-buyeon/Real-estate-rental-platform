@@ -34,23 +34,26 @@
 │   ├── business-logic.md   판정 산식과 임계값
 │   ├── conventions.md      네이밍 · 도메인 용어 · 코딩 규칙
 │   ├── roadmap.md          주차별 일정과 판정 지점
+│   ├── tech-stack.md       애플리케이션 기술 선정과 사유. 인프라 기술은 docs/infra/tech-stack.md
+│   ├── template.md         작업 계획 양식
 │   └── workflow.md         작업 순서와 각 단계의 수단
 │
-├── infra/                운영 구성. 서버에 반영되는 설정과 스크립트
+├── infra/                운영 구성. 서버에 반영되는 설정과 스크립트 — 미작성
 │   ├── nginx/              요청 분산 · 점검 모드 · TLS
 │   ├── prometheus/         스크레이프 설정 · 알림 규칙
 │   ├── alertmanager/       라우팅 · 수신자
 │   ├── promtail/           로그 수집
 │   └── grafana/            대시보드 정의
 │
-├── chaos-harness/        시험 실행. 부하 생성 노드에서 구동
+├── chaos-harness/        시험 실행. 부하 생성 노드에서 구동 — 미작성
 │   ├── load/               k6 프로파일과 토큰 풀
 │   ├── scenarios/          장애 주입·복구 스크립트
 │   └── report/             지표 수집과 결과서 생성
 │
 ├── .github/
-│   ├── workflows/          빌드·테스트 · 배포 · 시험 실행
-│   └── ISSUE_TEMPLATE/     이슈 템플릿
+│   ├── workflows/          빌드·테스트(ci.yml). 배포 · 시험 실행은 미작성
+│   ├── ISSUE_TEMPLATE/     이슈 템플릿
+│   └── pull_request_template.md   PR 본문의 정본
 │
 ├── .claude/
 │   ├── agents/             역할별 에이전트 정의. 하위 폴더까지 읽힌다
@@ -60,9 +63,12 @@
 │   │   └── *.md              갈래를 넘는 것 — 검토 · 테스트
 │   └── skills/             반복 작업 절차
 │
-├── docker-compose.yml    로컬 구성. PostgreSQL · Redis · 관측 스택
+├── docker-compose.yml    로컬 구성. PostgreSQL · Redis · 관측 스택 — 미작성
 ├── .env.example          환경 변수 목록. 값 없음, 커밋 대상
 ├── .env                  실제 값. 커밋하지 않음
 ├── .gitignore
+├── README.md             저장소 표지
 └── CLAUDE.md             본 문서
 ```
+
+**「미작성」은 로드맵에 있으나 아직 만들지 않은 것이다.** 착수 시점은 `docs/roadmap.md`가 정한다. 여기에 주차를 옮겨 적지 않는다.
