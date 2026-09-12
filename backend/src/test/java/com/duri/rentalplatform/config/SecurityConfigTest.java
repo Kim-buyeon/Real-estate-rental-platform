@@ -33,8 +33,10 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>{@link SecurityConfig}를 그대로 올리고 {@link JwtTokenProvider}만 고정 키·고정 만료로 갈아 끼운다.
  * 데이터베이스는 관여하지 않으므로 컨트롤러 슬라이스로 충분하다(testing.md §1.1).
  *
- * <p>운영 경로에는 아직 컨트롤러가 없다. 인가 규칙이 보는 것은 경로이므로, 실제 경로 모양({@code /api/auth/**},
- * {@code /api/me/**})에 시험용 엔드포인트를 매달아 상태 코드로 판정한다.
+ * <p>슬라이스에는 운영 컨트롤러를 올리지 않는다. {@code controllers}로 아래 {@link ProbeController}만 지정해
+ * 스캔 범위를 묶어 둔다. 여기서 보는 것은 필터체인의 경로 인가이지 특정 컨트롤러의 동작이 아니다. 인가 규칙이 보는
+ * 것은 경로이므로 실제 경로 모양({@code /api/auth/**}, {@code /api/me/**})을 빌린 시험용 엔드포인트로 충분하고,
+ * 운영 컨트롤러를 끌어들이면 그 컨트롤러의 서비스 의존까지 이 슬라이스에 올려야 한다.
  *
  * <p>확인하는 것은 네 가지다. 첫째, 보호 경로는 토큰 없이 뚫리지 않는다. 둘째, 실패 사유가 만료
  * ({@code AUTH_TOKEN_EXPIRED})와 무효({@code AUTH_INVALID_CREDENTIAL})로 갈린다. 셋째, 실패 응답이
@@ -42,7 +44,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 권한 문자열이다 — 관리자 전용 경로(API 명세서 공통 규약 §1.5)의 인가가 이 문자열을 보고 판단하므로
  * 접두와 role 값을 모두 고정해 둔다.
  */
-@WebMvcTest
+@WebMvcTest(controllers = SecurityConfigTest.ProbeController.class)
 @Import({
     SecurityConfig.class,
     SecurityConfigTest.TokenProviderTestConfig.class,

@@ -29,7 +29,7 @@ MyBatis XML은 `resources/mapper/<도메인>/`에, Flyway 마이그레이션은 
 ## Entity
 
 - JPA 전용이다. 컨트롤러나 응답에 노출하지 않는다.
-- **모든 엔티티는 `BaseEntity`를 상속한다.** 생성일시·수정일시를 개별 엔티티에 선언하지 않는다.
+- **모든 엔티티는 감사 상위 클래스를 상속한다.** 생성일시·수정일시를 개별 엔티티에 선언하지 않는다. 둘 중 어느 것을 상속하는지는 아래 「감사 상위 클래스」가 정한다.
 - `@Data`, `@Setter`를 붙이지 않는다. 변경은 의도가 드러나는 메서드로 표현한다.
 - 기본 생성자는 `@NoArgsConstructor(access = PROTECTED)`.
 - 생성은 정적 팩토리 메서드로 한다. 생성자를 공개하지 않는다.
@@ -37,31 +37,39 @@ MyBatis XML은 `resources/mapper/<도메인>/`에, Flyway 마이그레이션은 
 - 금액·이율은 `BigDecimal`.
 - 연관 관계는 지연 로딩을 기본으로 한다.
 
-### BaseEntity
+### 감사 상위 클래스
+
+둘로 나눈다. 생성일시만 갖는 것과, 거기에 수정일시를 더한 것이다.
 
 ```java
 @Getter
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
-public abstract class BaseEntity {
+public abstract class CreatedAtEntity {
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime createdAt;
+}
 
+@Getter
+@MappedSuperclass
+public abstract class BaseEntity extends CreatedAtEntity {
     @LastModifiedDate
     private LocalDateTime updatedAt;
 }
 ```
 
 - `@EnableJpaAuditing`을 활성화한다.
-- 생성일시만 필요한 테이블도 `BaseEntity`를 상속한다. 컬럼 유무는 마이그레이션이 정한다.
+- **테이블에 `updated_at`이 있으면 `BaseEntity`를, 없으면 `CreatedAtEntity`를 상속한다.** 어느 테이블이 그 컬럼을 갖는지는 「데이터베이스 설계서」가 정한다. 상속 대상을 편의로 고르지 않는다.
+- 상속을 잘못 고르면 기동 시점에 드러난다. `ddl-auto`가 `validate`라 매핑에 있는 컬럼이 스키마에 없으면 Hibernate가 예외를 던지고 앱이 뜨지 않는다. 마이그레이션이 컬럼을 만들어 주지 않는다.
+- `@EntityListeners`는 `CreatedAtEntity`에만 붙인다. 상위 클래스에 선언된 리스너는 하위 클래스에 상속되므로 `BaseEntity`에 다시 붙일 필요가 없다. 끊으려면 `@ExcludeSuperclassListeners`를 써야 한다.
 - 시각을 코드에서 직접 넣지 않는다. 감사 기능이 채운다.
 
 ```java
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Wishlist extends BaseEntity {
+public class Wishlist extends CreatedAtEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long wishlistId;
 

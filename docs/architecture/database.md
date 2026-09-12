@@ -109,10 +109,12 @@
 | Auth ID | auth_id | ● | ● | BIGINT | — | — | IDENTITY | 인증 정보 고유 ID |
 | User ID | user_id (FK) |  | ● | BIGINT | — | — | — | 사용자 ID |
 | Auth Type | auth_type (UQ) |  | ● | VARCHAR | 10 | — | — | 인증 수단 |
-| Provider ID | provider_id (UQ) |  |  | VARCHAR | 100 | — | — | OAuth 제공자 발급 ID |
+| Provider ID | provider_id (UQ) |  |  | VARCHAR | 100 | — | — | 인증 수단별 계정 식별자. 소셜은 제공자 발급 ID, 이메일은 이메일 주소 |
 | Password Hash | password_hash |  |  | VARCHAR | 255 | — | — | 비밀번호 해시값 |
 | Last Login At | last_login_at |  |  | TIMESTAMP | — | — | — | 최종 로그인 일시 |
 | Created At | created_at |  | ● | TIMESTAMP | — | — | now() | 인증 등록 일시 |
+
+※ 이메일 가입도 provider_id를 채운다. 비워 두면 4.3의 자연 식별자 `auth_type + provider_id`에 걸린 UNIQUE 제약이 무력해진다 — PostgreSQL은 NULL끼리를 중복으로 보지 않으므로 같은 이메일로 몇 번이든 가입된다. USER에는 email에 대한 UNIQUE 제약이 없다.
 
 ### 4. PROPERTY — 매물
 

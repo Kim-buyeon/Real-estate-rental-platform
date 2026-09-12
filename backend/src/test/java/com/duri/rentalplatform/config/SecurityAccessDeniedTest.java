@@ -31,6 +31,10 @@ import org.springframework.web.bind.annotation.RestController;
  * 인증된 요청을 거부하는 경로가 없다. 그래서 접근 거부를 {@link AccessDeniedException}으로 일으켜
  * {@code exceptionHandling}에 등록된 처리기가 공통 봉투(API 명세서 공통 규약 §1.2)로 응답하는지 본다.
  *
+ * <p>슬라이스에는 운영 컨트롤러를 올리지 않는다. {@code controllers}로 아래 {@link DeniedProbeController}만
+ * 지정해 스캔 범위를 묶어 둔다. 여기서 보는 것은 거부 처리기가 만드는 응답이지 특정 컨트롤러의 동작이 아니므로
+ * 시험용 엔드포인트로 충분하고, 운영 컨트롤러를 끌어들이면 그 컨트롤러의 서비스 의존까지 이 슬라이스에 올려야 한다.
+ *
  * <p>{@link GlobalExceptionHandler}를 슬라이스에서 제외한다. 실제 인가 거부는 컨트롤러 밖(인가 필터)에서
  * 발생해 전역 처리기를 거치지 않는데, 시험용 예외는 컨트롤러 안에서 던져야 해서 그대로 두면 전역 처리기가 먼저
  * 잡아 500으로 바꾼다. 제외해야 필터 단계의 거부와 같은 경로가 된다.
@@ -38,8 +42,10 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>같은 이유로 <b>메서드 보안({@code @PreAuthorize})의 거부도 컨트롤러 안에서 발생</b>하므로 전역 처리기가
  * 500으로 바꾼다. 메서드 보안을 켜는 슬라이스는 이 지점을 함께 처리해야 한다.
  */
-@WebMvcTest(excludeFilters = @ComponentScan.Filter(
-        type = FilterType.ASSIGNABLE_TYPE, classes = GlobalExceptionHandler.class))
+@WebMvcTest(
+        controllers = SecurityAccessDeniedTest.DeniedProbeController.class,
+        excludeFilters = @ComponentScan.Filter(
+                type = FilterType.ASSIGNABLE_TYPE, classes = GlobalExceptionHandler.class))
 @Import({
     SecurityConfig.class,
     SecurityAccessDeniedTest.TokenProviderTestConfig.class,
