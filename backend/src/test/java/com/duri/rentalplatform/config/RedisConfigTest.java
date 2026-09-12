@@ -12,12 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * RedisConfig의 RedisTemplate 연결·직렬화 설정 검증.
@@ -25,30 +20,17 @@ import org.testcontainers.utility.DockerImageName;
  * <p>실제 Redis 7 컨테이너를 기동해(H2 격 인메모리 대체 없이) 값이 왕복되는지와 JSON으로 저장되는지를 확인한다
  * (testing.md §1.1 통합 테스트, tech-stack.md §7 {@code redis:7-alpine} 고정).
  *
- * <p>전체 컨텍스트가 뜨므로 {@code ddl-auto=validate}·Flyway가 함께 동작한다. 따라서 기존 Postgres 컨테이너
- * ({@link TestcontainersConfiguration})를 {@code @Import}로 재사용한다. Redis는 전용 모듈 없이
- * 코어 {@link GenericContainer}로 띄우고, 접속 정보는 {@code @DynamicPropertySource}로
- * {@code spring.data.redis.host/port}에 덮어쓴다.
+ * <p>전체 컨텍스트가 뜨므로 {@code ddl-auto=validate}·Flyway가 함께 동작한다. PostgreSQL과 Redis 모두
+ * {@link TestcontainersConfiguration}의 static 싱글턴 컨테이너를 {@code @Import}로 공유한다. 자기 Redis를
+ * 따로 띄우면 컨테이너가 한 벌 더 뜨고, 애노테이션이 달라져 컨텍스트 캐시도 갈린다. Redis는 전용 모듈 없이
+ * 코어 {@link GenericContainer}로 띄우며 접속 정보는 {@code @ServiceConnection}이 넘긴다.
  *
  * <p>이 테스트가 검증하는 것은 RedisConfig의 직렬화기 조합이다 — 키는 문자열, 값은 타입 힌트를 보존하는 JSON.
  * 임의의 값 하나가 아니라 타입이 다른 값(record·Map)이 각각 원형으로 복원되는지, raw 저장 형태가 JSON인지를 단언한다.
  */
 @SpringBootTest
-@Testcontainers
 @Import(TestcontainersConfiguration.class)
 class RedisConfigTest {
-
-    /** tech-stack.md §7: Redis 이미지는 redis:7-alpine으로 고정한다. */
-    @Container
-    static final GenericContainer<?> REDIS =
-            new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
-                    .withExposedPorts(6379);
-
-    @DynamicPropertySource
-    static void redisProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.data.redis.host", REDIS::getHost);
-        registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
-    }
 
     /** RedisConfig가 정의한 빈. 키=String, 값=JSON 직렬화기. */
     @Autowired
