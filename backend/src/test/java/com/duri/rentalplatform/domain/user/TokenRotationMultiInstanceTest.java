@@ -20,7 +20,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,7 +65,6 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * 더 있다. 인스턴스 B는 자기 데이터소스로 접속하므로 A가 열어 둔 트랜잭션 안의 미커밋 데이터를 볼 수 없다.
  * 대신 각 테스트 앞에서 테이블을 비우고 리프레시 키를 지운다.
  */
-@Tag("integration")
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 // 인스턴스 B 기동은 컨텍스트를 하나 더 올리는 일이라 느리다. 테스트마다 띄우지 않고 클래스에서 한 번만

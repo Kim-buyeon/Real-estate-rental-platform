@@ -51,51 +51,6 @@ dependencies {
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
-// 단위 테스트만 돈다. 컨테이너를 띄우는 것은 @Tag("integration") 으로 갈라 뺀다.
-// 전체 테스트 시간의 94%(214초/236초)가 통합 테스트 7개 클래스에 몰려 있어, 구현 중 반복
-// 실행에서 그 비용을 매번 물지 않게 한다. 검증을 줄이는 것이 아니라 언제 돌릴지를 가른다.
 tasks.named('test') {
-	useJUnitPlatform {
-		excludeTags 'integration'
-	}
-}
-
-// Testcontainers 로 실제 PostgreSQL·Redis 를 띄우는 테스트. check 에 물리므로
-// ./gradlew build 는 지금처럼 단위와 통합을 모두 돈다 — CI 워크플로가 build 를 쓴다.
-tasks.register('integrationTest', Test) {
-	useJUnitPlatform {
-		includeTags 'integration'
-	}
-	testClassesDirs = sourceSets.test.output.classesDirs
-	classpath = sourceSets.test.runtimeClasspath
-	shouldRunAfter tasks.named('test')
-}
-
-// Testcontainers 는 통합·매퍼·다중 인스턴스 테스트에서만 쓴다. 단위 테스트가 컨테이너를 띄우면
-// 구현 중 반복 실행에 매번 수 분이 붙는다. 문서로 막으면 다시 같은 일이 나므로 빌드가 막는다.
-// 지원 클래스(@TestConfiguration)는 컨테이너를 정의할 뿐 테스트가 아니므로 제외한다.
-tasks.register('checkIntegrationTagging') {
-	def testSrc = file('src/test/java')
-	inputs.dir testSrc
-	outputs.upToDateWhen { false }
-	doLast {
-		def offenders = []
-		testSrc.eachFileRecurse { f ->
-			if (!f.name.endsWith('.java')) return
-			def text = f.getText('UTF-8')
-			def usesContainers = text.contains('org.testcontainers') || text.contains('TestcontainersConfiguration')
-			if (usesContainers && !text.contains('@TestConfiguration') && !text.contains('@Tag("integration")')) {
-				offenders << f.name
-			}
-		}
-		if (offenders) {
-			throw new GradleException(
-				'Testcontainers 를 쓰면서 @Tag("integration") 이 없는 테스트: ' + offenders.join(', ') +
-				' — 통합 테스트가 아니면 컨테이너를 쓰지 않는다. 통합 테스트면 태그를 붙인다.')
-		}
-	}
-}
-
-tasks.named('check') {
-	dependsOn tasks.named('integrationTest'), tasks.named('checkIntegrationTagging')
+	useJUnitPlatform()
 }

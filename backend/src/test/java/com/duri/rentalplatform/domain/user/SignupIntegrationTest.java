@@ -10,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -36,7 +35,6 @@ import org.springframework.test.web.servlet.ResultActions;
  * <p>기대값 근거는 API 명세서(회원·인증)의 가입 응답과 {@code common/ErrorCode}의 상태 코드이며,
  * 비밀번호 길이 경계는 {@code common/validation/PasswordPolicy}가 정한 8자·64자·72바이트다.
  */
-@Tag("integration")
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
