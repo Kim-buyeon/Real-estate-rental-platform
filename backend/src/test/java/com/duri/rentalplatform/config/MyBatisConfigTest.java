@@ -9,6 +9,7 @@ import org.apache.ibatis.mapping.MappedStatement;
 import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mybatis.spring.mapper.MapperFactoryBean;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,7 @@ import org.springframework.context.annotation.Import;
  *   <li>위 두 설정이 XML 매퍼 경로에서도 동일하게 적용된다.
  * </ol>
  */
+@Tag("integration")
 @SpringBootTest
 @Import({TestcontainersConfiguration.class, MyBatisConfigTest.ProbeMapperConfig.class})
 class MyBatisConfigTest {
