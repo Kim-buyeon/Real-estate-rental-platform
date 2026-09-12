@@ -17,6 +17,7 @@ import java.text.ParseException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -86,28 +87,57 @@ public class JwtTokenProvider {
      * @throws BusinessException 만료면 {@code AUTH_TOKEN_EXPIRED}, 그 밖의 무효면 {@code AUTH_INVALID_CREDENTIAL}
      */
     public TokenClaims parseAccessToken(String token) {
-        JWTClaimsSet claims = verifyAndExtract(token);
-
-        // 리프레시 토큰이 액세스 토큰 자리에 그대로 통하면 권한 없는 주체가 인증된다.
-        if (!TOKEN_TYPE_ACCESS.equals(claims.getClaim(CLAIM_TOKEN_TYPE))) {
-            throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL);
-        }
-
-        Date expiresAt = claims.getExpirationTime();
-        // 만료 클레임이 없는 토큰은 만료된 것이 아니라 형식이 잘못된 것이다. 재발급을 유도하지 않는다.
-        if (expiresAt == null) {
-            throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL);
-        }
-        if (expiresAt.toInstant().isBefore(Instant.now())) {
-            throw new BusinessException(ErrorCode.AUTH_TOKEN_EXPIRED);
-        }
-
+        JWTClaimsSet claims = extractValidClaims(token, TOKEN_TYPE_ACCESS, ErrorCode.AUTH_TOKEN_EXPIRED);
         return toTokenClaims(claims);
     }
 
+    /**
+     * 리프레시 토큰을 검증하고 사용자 식별자를 꺼낸다.
+     *
+     * <p>리프레시 토큰에는 권한 클레임이 없으므로 {@link TokenClaims}가 아니라 식별자만 돌려준다.
+     *
+     * <p>만료를 {@code AUTH_TOKEN_EXPIRED}가 아니라 {@code AUTH_INVALID_CREDENTIAL}로 던진다.
+     * 명세의 오류표가 {@code AUTH_TOKEN_EXPIRED}를 「액세스 토큰 만료. 재발급 필요」로 정의했고,
+     * 그 코드는 클라이언트에게 재발급하라는 신호다. 리프레시 토큰이 만료되면 필요한 것은 재발급이 아니라
+     * 재로그인이므로, 그 코드를 주면 클라이언트가 재발급을 무한히 되풀이한다.
+     *
+     * @throws BusinessException 만료를 포함한 모든 무효에 {@code AUTH_INVALID_CREDENTIAL}
+     */
+    public Long parseRefreshTokenUserId(String token) {
+        JWTClaimsSet claims =
+                extractValidClaims(token, TOKEN_TYPE_REFRESH, ErrorCode.AUTH_INVALID_CREDENTIAL);
+        return toUserId(claims);
+    }
+
+    /**
+     * 액세스 토큰의 유효 시간을 초로 돌려준다. 로그인·재발급 응답의 {@code expiresIn}이 쓴다.
+     *
+     * <p>설정값에서 꺼낸다 — {@code application.yml}의 {@code access-token-validity}와 응답의
+     * {@code expiresIn}은 같은 값이어야 하므로, 둘 중 한쪽을 코드에 박으면 설정만 바뀔 때 어긋난다.
+     */
+    public long getAccessTokenValiditySeconds() {
+        return accessTokenValidity.toSeconds();
+    }
+
+    /**
+     * 두 토큰이 공통으로 갖는 클레임을 만든다.
+     *
+     * <p>{@code jti}는 장식이 아니다. 지우면 리프레시 토큰 회전이 깨진다. JWT의 시각 클레임(iat·exp)은
+     * 초 단위(NumericDate)이므로, 나머지 클레임(sub·tokenType)이 같은 사용자에게 같은 초 안에 발급한
+     * 토큰은 바이트까지 동일해진다. 리프레시 토큰은 보관된 현재 값과 같은지로 유효성을 가리므로, 새로 발급한
+     * 토큰이 옛 토큰과 같은 값이면 회전으로 밀려났어야 할 토큰이 계속 일치해 401이 나갈 자리에 200이 나간다.
+     * 발급마다 달라지는 값을 하나 담아 그 충돌을 없앤다.
+     *
+     * <p>값은 {@link UUID#randomUUID()}다. 시각 기반 값은 이 결함을 그대로 되풀이하고 순번은 예측할 수 있는데,
+     * type 4 UUID는 암호학적으로 강한 난수원에서 나오므로 둘 다 아니다.
+     *
+     * <p>검증에는 쓰지 않는다. 유일성을 위해 담을 뿐이어서 {@code parseAccessToken}·
+     * {@code parseRefreshTokenUserId}는 이 클레임을 보지 않는다.
+     */
     private JWTClaimsSet.Builder claimsOf(Long userId, Duration validity) {
         Instant issuedAt = Instant.now();
         return new JWTClaimsSet.Builder()
+                .jwtID(UUID.randomUUID().toString())
                 .subject(String.valueOf(userId))
                 .issueTime(Date.from(issuedAt))
                 .expirationTime(Date.from(issuedAt.plus(validity)));
@@ -121,6 +151,33 @@ public class JwtTokenProvider {
             throw new IllegalStateException("JWT 서명에 실패했습니다.", e);
         }
         return signedJwt.serialize();
+    }
+
+    /**
+     * 서명·알고리즘, 토큰 종류, 만료를 차례로 확인하고 클레임을 돌려준다.
+     *
+     * <p>만료에 어떤 코드를 던질지는 토큰 종류마다 다르므로 호출자가 정해 넘긴다.
+     */
+    private JWTClaimsSet extractValidClaims(
+            String token, String expectedTokenType, ErrorCode expiredErrorCode) {
+        JWTClaimsSet claims = verifyAndExtract(token);
+
+        // 한 종류의 토큰이 다른 종류의 자리에 그대로 통하면, 리프레시 토큰으로 인증되거나
+        // 액세스 토큰으로 재발급받는 구멍이 생긴다.
+        if (!expectedTokenType.equals(claims.getClaim(CLAIM_TOKEN_TYPE))) {
+            throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL);
+        }
+
+        Date expiresAt = claims.getExpirationTime();
+        // 만료 클레임이 없는 토큰은 만료된 것이 아니라 형식이 잘못된 것이다. 재발급을 유도하지 않는다.
+        if (expiresAt == null) {
+            throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL);
+        }
+        if (expiresAt.toInstant().isBefore(Instant.now())) {
+            throw new BusinessException(expiredErrorCode);
+        }
+
+        return claims;
     }
 
     private JWTClaimsSet verifyAndExtract(String token) {
@@ -138,13 +195,20 @@ public class JwtTokenProvider {
     }
 
     private TokenClaims toTokenClaims(JWTClaimsSet claims) {
-        String subject = claims.getSubject();
         Object role = claims.getClaim(CLAIM_ROLE);
-        if (subject == null || !(role instanceof String roleName) || roleName.isBlank()) {
+        if (!(role instanceof String roleName) || roleName.isBlank()) {
+            throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL);
+        }
+        return new TokenClaims(toUserId(claims), roleName);
+    }
+
+    private Long toUserId(JWTClaimsSet claims) {
+        String subject = claims.getSubject();
+        if (subject == null) {
             throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL);
         }
         try {
-            return new TokenClaims(Long.valueOf(subject), roleName);
+            return Long.valueOf(subject);
         } catch (NumberFormatException e) {
             throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL);
         }
