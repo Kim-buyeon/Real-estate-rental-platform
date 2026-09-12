@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.duri.rentalplatform.TestcontainersConfiguration;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,7 +20,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
  *
  * <p>기대값 근거는 {@code db/migration/V1__init_schema.sql}이며, 아래 상수는 그 SQL을 세어 얻은 값이다.
  */
-@Tag("integration")
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class SchemaMigrationTest {

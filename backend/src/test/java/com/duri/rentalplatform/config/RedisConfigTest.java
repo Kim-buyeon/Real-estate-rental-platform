@@ -6,7 +6,6 @@ import com.duri.rentalplatform.TestcontainersConfiguration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -29,7 +28,6 @@ import org.testcontainers.containers.GenericContainer;
  * <p>이 테스트가 검증하는 것은 RedisConfig의 직렬화기 조합이다 — 키는 문자열, 값은 타입 힌트를 보존하는 JSON.
  * 임의의 값 하나가 아니라 타입이 다른 값(record·Map)이 각각 원형으로 복원되는지, raw 저장 형태가 JSON인지를 단언한다.
  */
-@Tag("integration")
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class RedisConfigTest {

@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,7 +44,6 @@ import org.springframework.test.web.servlet.ResultActions;
  * <p>소셜 로그인과 다중 인스턴스 토큰 회전은 이 파일의 범위가 아니다. 비밀번호 정책 경계는
  * {@code SignupIntegrationTest}가 덮었고 로그인 요청은 그 제약을 쓰지 않는다.
  */
-@Tag("integration")
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
