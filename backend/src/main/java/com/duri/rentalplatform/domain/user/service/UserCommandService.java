@@ -12,6 +12,7 @@ import com.duri.rentalplatform.domain.user.entity.UserAuth;
 import com.duri.rentalplatform.domain.user.enums.AuthType;
 import com.duri.rentalplatform.domain.user.repository.UserAuthRepository;
 import com.duri.rentalplatform.domain.user.repository.UserRepository;
+import com.duri.rentalplatform.domain.user.store.RefreshTokenStore;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

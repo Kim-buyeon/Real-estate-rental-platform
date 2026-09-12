@@ -1,4 +1,4 @@
-package com.duri.rentalplatform.domain.user.service;
+package com.duri.rentalplatform.domain.user.store;
 
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,8 +14,9 @@ import org.springframework.stereotype.Component;
  * <p>이 클래스가 아는 것은 Redis뿐이다. 토큰을 만들거나 서명을 검증하는 일은 {@code JwtTokenProvider}가,
  * 저장된 값과 다를 때 401을 낼지 정하는 일은 {@code UserCommandService}가 한다. 여기서는 예외를 던지지 않는다.
  *
- * <p>서비스를 {@code QueryService}·{@code CommandService} 둘로 한정하는 규칙에 이 역할이 들어갈 자리가
- * 없으므로 {@code @Service}가 아닌 {@code @Component}로 둔다.
+ * <p>{@code service/}가 아니라 {@code store/}에 둔다. 서비스는 {@code QueryService}·{@code CommandService}
+ * 둘로 한정되고 이 클래스는 어느 쪽도 아니다. JPA 밖의 저장소를 감싸는 {@code @Component}이므로
+ * 「JPA 밖의 저장소 보관소」 자리에 들어간다.
  */
 @Component
 public class RefreshTokenStore {
