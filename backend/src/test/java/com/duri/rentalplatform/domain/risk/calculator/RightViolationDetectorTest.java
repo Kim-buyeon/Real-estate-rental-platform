@@ -79,11 +79,12 @@ class RightViolationDetectorTest {
         );
     }
 
+    /** 순위번호 · 권리자는 검출에 쓰이지 않는다. 고정값을 넣는다. */
     private static OwnershipRightEntry valid(OwnershipRightType type) {
-        return new OwnershipRightEntry(type, true);
+        return new OwnershipRightEntry(1, type, "권리자", true);
     }
 
     private static OwnershipRightEntry cancelled(OwnershipRightType type) {
-        return new OwnershipRightEntry(type, false);
+        return new OwnershipRightEntry(1, type, "권리자", false);
     }
 }

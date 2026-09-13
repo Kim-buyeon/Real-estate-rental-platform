@@ -7,10 +7,13 @@ import com.duri.rentalplatform.domain.risk.enums.OwnershipRightType;
 import com.duri.rentalplatform.domain.risk.enums.RegistryDataSource;
 import com.duri.rentalplatform.external.registry.RegistryDocument.MortgageEntry;
 import com.duri.rentalplatform.external.registry.RegistryDocument.OwnershipEntry;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -31,6 +34,8 @@ import org.springframework.stereotype.Component;
  *       거의 나오지 않아 대출 한도 화면을 확인할 매물이 모자란다.</li>
  *   <li>근저당은 흔하다 — 없음 40% · 1건 40% · 2건 20%. 금액은 시세의 20~50% 에서 골라, 보증금과 합쳤을 때
  *       판정 기준선의 양쪽에 매물이 고루 걸리게 한다. 기준선 자체는 기준 테이블이 갖고 여기서 읽지 않는다.</li>
+ *   <li>표제부 주소 · 전용면적은 매물 값 그대로다 — 건축물대장 Mock 도 매물 값을 쓰므로 둘이 일치한다. 주소 · 면적
+ *       불일치는 각 3% 로 따로 뽑는다.</li>
  * </ul>
  * 표본 2,000건 기준 가장 드문 항목(3%)이 약 60건이다.
  *
@@ -67,6 +72,20 @@ public class MockRegistryClient implements RegistryClient {
     static final int TRUST_PERCENT = 5;
     static final int PROVISIONAL_REGISTRATION_PERCENT = 5;
     static final int TENANCY_REGISTRATION_ORDER_PERCENT = 5;
+
+    /**
+     * 표제부 주소 · 전용면적이 대장과 어긋나는 매물. 명의 · 문서 정합(RISK-04)의 불일치 분기를 태운다. 권리 침해 항목과
+     * 같은 높이로 낮게 둔다 — 불일치는 안내 항목이라 판정을 막지 않지만, 흔하면 화면 대부분이 경고로 덮인다.
+     */
+    static final int ADDRESS_MISMATCH_PERCENT = 3;
+    static final int AREA_MISMATCH_PERCENT = 3;
+
+    /** 면적 불일치 매물의 표제부 전용면적 = 매물 전용면적 + 이 값(㎡). 소수 둘째 자리 비교에서 확실히 갈린다. */
+    static final BigDecimal AREA_MISMATCH_DELTA = new BigDecimal("1.00");
+
+    /** 주소 불일치 매물은 주소의 마지막 숫자(번지)에 이 값을 더한다. 숫자가 없는 주소면 뒤에 붙인다. */
+    private static final int ADDRESS_LOT_OFFSET = 1;
+    private static final Pattern LAST_NUMBER = Pattern.compile("(\\d+)(?!.*\\d)");
 
     // ---- 금액 ----
 
@@ -139,7 +158,9 @@ public class MockRegistryClient implements RegistryClient {
         MORTGAGE_COUNT, MORTGAGE_BANK, LOAN_RATIO, DISCHARGED, SECOND_MORTGAGE_GAP,
         PRIOR_TENANT, PRIOR_TENANT_GAP, PRIOR_TENANT_NAME,
         SEIZURE, PROVISIONAL_SEIZURE, AUCTION, TRUST, PROVISIONAL_REGISTRATION, TENANCY_ORDER,
-        RIGHT_GAP, RIGHT_HOLDER
+        RIGHT_GAP, RIGHT_HOLDER,
+        // 뒤에만 더한다 — 앞 항목의 씨앗이 바뀌면 이미 수집된 등기와 달라진다.
+        ADDRESS_MISMATCH, AREA_MISMATCH
     }
 
     @Override
@@ -161,6 +182,8 @@ public class MockRegistryClient implements RegistryClient {
         return new RegistryDocument(
                 buildingPurpose(lookup.propertyType()),
                 BUILDING_STRUCTURE,
+                registryAddress(id, lookup.naturalKey().address()),
+                exclusiveArea(id, lookup.naturalKey().areaSqm()),
                 RegistryDataSource.MOCK,
                 rankOwnerships(ownerships),
                 rankMortgages(mortgages));
@@ -269,6 +292,30 @@ public class MockRegistryClient implements RegistryClient {
         LocalDate date = acquiredDate.plusDays(
                 RIGHT_MIN_GAP_DAYS + pick(id, Draw.RIGHT_GAP, draw.ordinal(), RIGHT_GAP_SPAN_DAYS));
         ownerships.add(new OwnershipEntry(0, type, holder, date, cause, true));
+    }
+
+    /**
+     * 표제부 주소. 매물 주소 그대로이고 — 건축물대장 Mock 도 매물 주소를 쓰므로 둘이 같다 — 불일치로 뽑힌 매물만 번지를
+     * 바꾼다. 번지 하나 차이가 곧 다른 집이라 이 정도면 불일치다.
+     */
+    private static String registryAddress(long id, String address) {
+        if (address == null || percent(id, Draw.ADDRESS_MISMATCH, 0) >= ADDRESS_MISMATCH_PERCENT) {
+            return address;
+        }
+        Matcher matcher = LAST_NUMBER.matcher(address);
+        if (!matcher.find()) {
+            return address + " " + ADDRESS_LOT_OFFSET;
+        }
+        long shifted = Long.parseLong(matcher.group(1)) + ADDRESS_LOT_OFFSET;
+        return address.substring(0, matcher.start(1)) + shifted + address.substring(matcher.end(1));
+    }
+
+    /** 표제부 전용면적. 매물 전용면적 그대로이고, 불일치로 뽑힌 매물만 {@link #AREA_MISMATCH_DELTA} 만큼 크다. */
+    private static BigDecimal exclusiveArea(long id, BigDecimal areaSqm) {
+        if (areaSqm == null || percent(id, Draw.AREA_MISMATCH, 0) >= AREA_MISMATCH_PERCENT) {
+            return areaSqm;
+        }
+        return areaSqm.add(AREA_MISMATCH_DELTA);
     }
 
     private String buildingPurpose(PropertyType propertyType) {

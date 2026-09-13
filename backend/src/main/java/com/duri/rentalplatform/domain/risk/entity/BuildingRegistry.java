@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -43,17 +44,28 @@ public class BuildingRegistry extends BaseEntity {
     @Column(length = 50)
     private String buildingStructure;
 
+    /** 표제부 건물 주소. V8 이전에 수집된 행은 비어 있다. */
+    @Column(length = 200)
+    private String registryAddress;
+
+    /** 표제부 전용면적(㎡). V8 이전에 수집된 행은 비어 있다. */
+    @Column(precision = 7, scale = 2)
+    private BigDecimal exclusiveArea;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private RegistryDataSource dataSource;
 
     /** 떼어 온 표제부를 매물에 붙인다. */
     public static BuildingRegistry collect(
-            Long propertyId, String buildingPurpose, String buildingStructure, RegistryDataSource dataSource) {
+            Long propertyId, String buildingPurpose, String buildingStructure, String registryAddress,
+            BigDecimal exclusiveArea, RegistryDataSource dataSource) {
         BuildingRegistry registry = new BuildingRegistry();
         registry.propertyId = propertyId;
         registry.buildingPurpose = buildingPurpose;
         registry.buildingStructure = buildingStructure;
+        registry.registryAddress = registryAddress;
+        registry.exclusiveArea = exclusiveArea;
         registry.dataSource = dataSource;
         return registry;
     }

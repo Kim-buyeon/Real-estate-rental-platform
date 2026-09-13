@@ -180,6 +180,8 @@
 | Property ID | property_id (FK, UQ) |  | ● | BIGINT | — | — | — | 매물 ID — 매물당 1건 |
 | Building Purpose | building_purpose |  | ● | VARCHAR | 50 | — | — | 등기상 건물 용도 |
 | Building Structure | building_structure |  |  | VARCHAR | 50 | — | — | 건물 구조 |
+| Registry Address | registry_address |  |  | VARCHAR | 200 | — | — | 표제부 건물 주소 — 대장 주소와 대조 |
+| Exclusive Area | exclusive_area |  |  | NUMERIC | 7 | 2 | — | 표제부 전용면적 (㎡) — 대장 전용면적과 대조 |
 | Data Source | data_source |  | ● | VARCHAR | 20 | — | — | 수집 출처 (MOCK) |
 | Created At | created_at |  | ● | TIMESTAMP | — | — | now() | 최초 수집일시 |
 | Updated At | updated_at |  | ● | TIMESTAMP | — | — | now() | 등기 정보 갱신일시 |

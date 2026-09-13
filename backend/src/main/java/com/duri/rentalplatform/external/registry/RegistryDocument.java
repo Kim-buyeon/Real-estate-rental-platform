@@ -3,6 +3,7 @@ package com.duri.rentalplatform.external.registry;
 import com.duri.rentalplatform.domain.risk.enums.MortgageRightType;
 import com.duri.rentalplatform.domain.risk.enums.OwnershipRightType;
 import com.duri.rentalplatform.domain.risk.enums.RegistryDataSource;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -12,6 +13,8 @@ import java.util.List;
  *
  * @param buildingPurpose   표제부 건물 용도
  * @param buildingStructure 표제부 건물 구조
+ * @param registryAddress   표제부 건물 주소
+ * @param exclusiveArea     표제부 전용면적(㎡). 없으면 null
  * @param dataSource        수집 출처
  * @param ownerships        갑구. 순위번호 순
  * @param mortgages         을구. 순위번호 순
@@ -19,6 +22,8 @@ import java.util.List;
 public record RegistryDocument(
         String buildingPurpose,
         String buildingStructure,
+        String registryAddress,
+        BigDecimal exclusiveArea,
         RegistryDataSource dataSource,
         List<OwnershipEntry> ownerships,
         List<MortgageEntry> mortgages
