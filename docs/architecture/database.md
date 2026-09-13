@@ -15,7 +15,7 @@
 - 이력성 엔티티 — OWNERSHIP_HISTORY(갑구)·MORTGAGE_HISTORY(을구)·RISK_ANALYSIS·INTEREST_RATE_HISTORY·CRITERIA_CHANGE_HISTORY — 변경 이력 누적
 - 판정 기준 — GUARANTEE_CRITERIA 계열 · GUARANTEE_PREMIUM_RATE · LOAN_REGULATION · RISK_CRITERIA — 코드가 아닌 테이블로 두고 ADMIN-01이 갱신한다
 - 슈퍼타입-서브타입 — GUARANTEE_CRITERIA + HUG/HF/SGI_CRITERIA(보증보험), NOTIFICATION + 4개 하위(알림) — 배타적 1:0..1
-- 보증료율 분리 — GUARANTEE_PREMIUM_RATE — 주택유형·부채비율 구간별 요율을 별도 관리
+- 보증료율 분리 — GUARANTEE_PREMIUM_RATE — 주택유형·보증금·부채비율 구간별 요율을 별도 관리
 - 위험 판정 중심 — RISK_ANALYSIS — 보증보험 가입 가능 여부(3사)로 안전 판정, 대출 추천의 전제
 
 ---
@@ -278,7 +278,7 @@
 | Broker Contract Required | broker_contract_required_yn |  | ● | BOOLEAN | 1 | — | TRUE | 공인중개사 계약 필수 여부 (SGI고유) |
 | Updated At | updated_at |  | ● | TIMESTAMP | — | — | now() | 기준 갱신일시 |
 
-### 14. GUARANTEE_PREMIUM_RATE — 보증료율 (주택유형·부채비율 구간별)
+### 14. GUARANTEE_PREMIUM_RATE — 보증료율 (주택유형·보증금·부채비율 구간별)
 
 | 속성명 | 컬럼명 | 실질 식별자 | Not Null | 데이터타입 | 길이 | 소수점 | 기본값 | 설명 |
 |---|---|---|---|---|---|---|---|---|

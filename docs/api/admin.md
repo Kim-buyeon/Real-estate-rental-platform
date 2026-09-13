@@ -47,10 +47,10 @@ PUT /api/admin/criteria/guarantee/HUG — 요청
 
 ```json
 {
-  "collateralRatio": 80.0,
-  "maxDeposit": 700000000,
+  "collateralRatio": 90.0,
+  "maxDeposit": 500000000,
   "requiresLoanLink": false,
-  "changeReason": "2026년 하반기 보증비율 조정 반영"
+  "changeReason": "보증금 한도 예시 — 비수도권 5억 적용"
 }
 ```
 
@@ -84,10 +84,10 @@ PUT 요청은 두 값과 `changeReason`을 받는다. `cautionLeaseRatio`는 `ne
         "historyId": 14,
         "target": "GUARANTEE_CRITERIA",
         "targetKey": "HUG",
-        "field": "collateralRatio",
-        "beforeValue": "90.0",
-        "afterValue": "80.0",
-        "changeReason": "2026년 하반기 보증비율 조정 반영",
+        "field": "maxDeposit",
+        "beforeValue": "700000000",
+        "afterValue": "500000000",
+        "changeReason": "보증금 한도 예시 — 비수도권 5억 적용",
         "changedBy": "admin@example.com",
         "changedAt": "2026-07-29T11:00:00+09:00"
       }
