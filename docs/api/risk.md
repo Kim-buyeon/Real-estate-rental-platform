@@ -105,6 +105,21 @@ GET /api/properties/1024/risk — 응답
 
 ### 1.3 등기 이력 응답
 
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| ownerships[].rankNo | 정수 | 갑구 순위번호 |
+| ownerships[].rightType | 열거 | OWNERSHIP_PRESERVATION(소유권보존) · OWNERSHIP_TRANSFER(소유권이전) · SEIZURE(압류) · PROVISIONAL_SEIZURE(가압류) · AUCTION_COMMENCEMENT(경매개시결정) · TRUST(신탁) · PROVISIONAL_REGISTRATION(가등기) · TENANCY_REGISTRATION_ORDER(임차권등기명령) |
+| ownerships[].holderName | 문자열 | 권리자명 |
+| ownerships[].receivedDate / cause | 일자 / 문자열 | 접수일 · 등기원인 |
+| ownerships[].isActive | 논리 | 말소되지 않은 등기 여부 |
+| mortgages[].rankNo | 정수 | 을구 순위번호 |
+| mortgages[].creditor / maxClaimAmount | 문자열 / 정수 | 근저당권자 · 채권최고액 (원) |
+| mortgages[].receivedDate / isActive | 일자 / 논리 | 접수일 · 현재 유효 여부 |
+| collectedAt | 일시 | 등기 수집 시각 |
+| dataSource | 열거 | MOCK. 유료 중계 연동 전까지 Mock 어댑터만 쓴다 |
+
+갑구 · 을구 모두 접수일 오름차순, 같으면 순위번호 순이다. 접수일이 우선변제 순서를 정한다.
+
 GET /api/properties/1024/registry
 
 ```json
