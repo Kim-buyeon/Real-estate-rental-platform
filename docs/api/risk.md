@@ -23,7 +23,7 @@
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | riskGrade | 열거 | SAFE, CAUTION, DANGER |
-| gradeReason | 열거 | 등급 결정 사유 (깡통전세 해당, 3사 가입 불가, 전세가율 초과 등) |
+| gradeReason | 열거 | 등급 결정 사유. NEGATIVE_EQUITY(깡통전세 해당 — DANGER), INSURANCE_INELIGIBLE(3사 가입 불가 — DANGER), LEASE_RATIO_CAUTION(전세가율이 CAUTION 경계 초과 — CAUTION), INSURANCE_ELIGIBLE(가입 가능 · 경계 이하 — SAFE). 두 DANGER 조건이 겹치면 NEGATIVE_EQUITY |
 | debtRatio | 실수 | 전세가율 (%) |
 | marketPrice | 정수 | 적용 시세 (원) |
 | priceType / priceDate | 열거 / 일자 | 시세 산출 출처와 기준일 |
