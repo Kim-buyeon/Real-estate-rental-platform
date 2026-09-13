@@ -47,35 +47,45 @@
 
 - 전세가율 조건: (선순위채권 합계 + 전세보증금) ÷ 주택가액 ≤ 기관별 담보인정비율(3사 90%. 2023.5.1 신규 · 2024.1.1 갱신부터, 이후 변경 없음 — 국회입법조사처 2024.6, HUG 해명 2024.12)
 - 선순위채권 조건: 선순위채권 합계 ÷ 주택가액 ≤ 기관별 선순위 한도(GUARANTEE_CRITERIA.senior_debt_ratio_limit. HUG 60%). HUG 단독 · 다중 · 다가구의 80% 완화를 담을 컬럼과 HF · SGI 값은 **미확정** — 기준 시드 슬라이스에서 공식 페이지로 확인한다. 값이 없는 기관은 이 조건을 검사하지 않는다
-- 보증금 한도: 전세보증금 ≤ 기관별 최대 보증 가능 보증금 (HUG·HF 수도권 7억 · 그 외 5억 / SGI 아파트 제한 없음 · 그 외 10억)
+- 보증금 한도: 전세보증금 ≤ 기관별 최대 보증 가능 보증금 (HUG·HF 수도권 7억 · 그 외 5억 / SGI 아파트 제한 없음 · 그 외 10억). SGI 아파트는 SGI_CRITERIA.apartment_unlimited_yn 이 참이면 검사하지 않는다
 - 주택 상태: 위반건축물이 아닐 것 (BUILDING_LEDGER.violation_yn = FALSE)
 - 권리 침해 없음: 압류·가압류·경매·신탁 등기가 없을 것 (OWNERSHIP_HISTORY 확인)
 - 명의 일치: 등기상 소유자 = 임대인(PROPERTY.landlord_name), 대장 주소 = 등기 주소
-- 대항력 요건: 전입신고 + 확정일자 가능할 것 (3사 공통)
 
-HF는 추가로 전세자금보증부 대출과 연계되는 경우만 가입 가능하다는 고유 조건이 있다.
+위배된 조건은 첫 위배에서 멈추지 않고 **모두** 모은다 — 응답의 기관별 위배 조건이 목록이다.
+
+대항력 요건(전입신고 + 확정일자)은 판정하지 않는다. 계약 후 임차인이 하는 행위라 매물 데이터로 알 수 없으므로 아래 「가입 시 추가 확인 사항」으로 안내한다.
+
+HF는 추가로 전세자금보증부 대출과 연계되는 경우만 가입 가능하다는 고유 조건이 있다. 이 조건은 **가입 불가 사유가 아니라 기관 결과에 표기한다**(HF_CRITERIA.loan_linked_required_yn). 가입 불가 사유로 두면 HF가 늘 가입 불가가 되어 3사 판정이 무의미해진다.
 
 ### 판정 의사코드
 
 ```
-// 각 기관별 가입 가능 여부 판정
+// 각 기관별 가입 판정 — 위배 조건을 모두 모은다
 function checkEligibility(property, registry, ledger, criteria):
-    debtRatio = (선순위채권합계 + 전세보증금) / 주택가액
-
-    if debtRatio > criteria.담보인정비율:        return false
+    failed = []
+    // 비교는 반올림 없이 곱셈으로 — 경계 +1원이 반올림으로 뒤집히지 않게
+    if (선순위채권합계 + 전세보증금) × 100 > 주택가액 × criteria.담보인정비율:
+        failed += DEBT_RATIO_EXCEEDED
     if criteria.선순위한도 != null
-       and 선순위채권합계 / 주택가액 > criteria.선순위한도: return false
-    if 전세보증금 > criteria.최대보증금:           return false
-    if ledger.violation_yn == true:              return false
-    if registry.압류 or 가압류 or 경매 or 신탁:    return false
-    if 등기소유자 != PROPERTY.landlord_name:        return false
-    if 대장주소 != 등기주소:                        return false
-    return true
+       and 선순위채권합계 × 100 > 주택가액 × criteria.선순위한도:
+        failed += SENIOR_DEBT_RATIO_EXCEEDED
+    if 전세보증금 > criteria.최대보증금
+       and not (criteria.SGI아파트무제한 and 주택유형 == APARTMENT):
+        failed += DEPOSIT_LIMIT_EXCEEDED
+    if ledger.violation_yn == true and criteria.위반건축물불가:
+        failed += VIOLATION_BUILDING
+    if (registry.압류 or 가압류 or 경매 or 신탁) and criteria.권리침해불가:
+        failed += RIGHT_VIOLATION
+    if 등기소유자 != PROPERTY.landlord_name:     failed += OWNER_MISMATCH
+    if 대장주소 != 등기주소:                     failed += ADDRESS_MISMATCH
+    return { eligible: failed is empty, failed,
+             loanLinkRequired: criteria.대출연계필수 }   // HF 고유 조건은 표기만
 
 // 종합 판정 → RISK_ANALYSIS에 저장
-hug_eligible_yn = checkEligibility(..., HUG_CRITERIA)
-hf_eligible_yn  = checkEligibility(..., HF_CRITERIA)
-sgi_eligible_yn = checkEligibility(..., SGI_CRITERIA)
+hug_eligible_yn = checkEligibility(..., HUG_CRITERIA).eligible
+hf_eligible_yn  = checkEligibility(..., HF_CRITERIA).eligible
+sgi_eligible_yn = checkEligibility(..., SGI_CRITERIA).eligible
 insurance_eligible_yn = hug OR hf OR sgi   // 하나라도 가능하면 안전
 ```
 
@@ -85,6 +95,7 @@ insurance_eligible_yn = hug OR hf OR sgi   // 하나라도 가능하면 안전
 
 **3사 공통**
 
+- 대항력 요건: 전입신고 + 확정일자를 갖출 것. 계약 후 임차인이 하는 행위라 매물 데이터로 판정할 수 없다
 - 신청기한: 전세계약 기간의 1/2이 경과하기 전까지만 가입 가능
 - 신규 계약: 잔금지급일과 전입신고일 중 늦은 날 ~ 계약기간 1/2 경과 전
 - 갱신 계약: 갱신 전세계약서 상 계약기간의 1/2 경과 전
