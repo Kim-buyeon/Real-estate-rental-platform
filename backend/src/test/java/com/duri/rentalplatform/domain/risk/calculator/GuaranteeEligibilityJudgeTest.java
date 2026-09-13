@@ -147,7 +147,9 @@ class GuaranteeEligibilityJudgeTest {
                 input(MARKET, DEPOSIT, 0L, HouseType.APARTMENT), seed());
 
         assertThat(result.personalConditions()).containsExactly(PersonalCondition.ANNUAL_INCOME,
-                PersonalCondition.APPLICATION_DEADLINE, PersonalCondition.MOVE_IN_AND_FIXED_DATE);
+                PersonalCondition.APPLICATION_DEADLINE, PersonalCondition.NEW_OR_RENEWAL,
+                PersonalCondition.RESIDENTIAL_USE_NOTATION, PersonalCondition.BROKER_CONTRACT,
+                PersonalCondition.MOVE_IN_AND_FIXED_DATE);
         assertThat(result.providers())
                 .extracting(ProviderJudgement::provider, ProviderJudgement::eligible,
                         ProviderJudgement::loanLinkRequired)
