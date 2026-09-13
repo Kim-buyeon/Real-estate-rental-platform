@@ -7,7 +7,7 @@ import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
+import java.net.URI;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -19,6 +19,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -35,8 +36,8 @@ import org.w3c.dom.NodeList;
  * {@code DEAL_YMD}(계약년월 YYYYMM) · {@code pageNo} · {@code numOfRows} 다.
  * 응답은 XML 이며 JSON 옵션이 없다. XML 파서를 따로 들이지 않고 JDK 내장 DOM 으로 읽는다.
  *
- * <p>인증키는 <b>디코딩(일반) 키</b>를 {@code .env} 에 넣는다. 인코딩된 키를 넣으면 여기서 한 번 더
- * 인코딩되어 인증이 깨진다.
+ * <p>인증키는 포털의 <b>인코딩 키</b>를 {@code .env} 에 그대로 넣는다. 이 클래스는 키를 다시 인코딩하지
+ * 않는다 — {@link #request} 참고.
  *
  * <p>호출 로깅은 이 클래스에 쓰지 않는다. 「외부 API 호출 로깅」은 관점의 몫이며(횡단 관심사 설계서 1.1),
  * 포인트컷 애노테이션은 아직 만들어지지 않았다. 그 기반 작업이 끝나면 애노테이션만 붙인다.
@@ -98,23 +99,36 @@ public class RealRentTransactionClient implements RentTransactionClient {
         throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
     }
 
-    private String request(RentTransactionQuery query, int pageNo) {
+    /**
+     * 요청 URI 를 <b>이미 인코딩된 것으로</b> 조립한다({@code build(true)}).
+     *
+     * <p>포털이 발급하는 인코딩 키({@code %2B} · {@code %3D} 포함)를 그대로 보낸다. RestClient 의 URI
+     * 빌더에 맡기면 {@code %} 가 {@code %25} 로 한 번 더 인코딩되어 「등록되지 않은 서비스키」(403)가
+     * 난다. 나머지 값은 서비스 경로 · 숫자뿐이라 인코딩할 문자가 없다.
+     */
+    private byte[] request(RentTransactionQuery query, int pageNo) {
         RentBuildingType type = query.buildingType();
+        URI uri = UriComponentsBuilder.fromUriString(settings.baseUrl())
+                .pathSegment(type.getServicePath(), type.getOperation())
+                .queryParam("serviceKey", settings.apiKey())
+                .queryParam("LAWD_CD", query.lawdCode())
+                .queryParam("DEAL_YMD", query.contractYearMonth().format(DEAL_YMD))
+                .queryParam("pageNo", pageNo)
+                .queryParam("numOfRows", ROWS_PER_PAGE)
+                .build(true)
+                .toUri();
         return restClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/{servicePath}/{operation}")
-                        .queryParam("serviceKey", settings.apiKey())
-                        .queryParam("LAWD_CD", query.lawdCode())
-                        .queryParam("DEAL_YMD", query.contractYearMonth().format(DEAL_YMD))
-                        .queryParam("pageNo", pageNo)
-                        .queryParam("numOfRows", ROWS_PER_PAGE)
-                        .build(type.getServicePath(), type.getOperation()))
+                .uri(uri)
                 .retrieve()
-                .body(String.class);
+                .body(byte[].class);
     }
 
-    private Document parse(String xml) {
-        if (xml == null || xml.isBlank()) {
+    /**
+     * 바이트 그대로 파서에 넘긴다. 문자열로 받으면 Content-Type 에 charset 이 빠진 응답을 ISO-8859-1 로
+     * 읽어 한글이 깨진다. 파서는 XML 선언의 encoding 을 따른다.
+     */
+    private Document parse(byte[] xml) {
+        if (xml == null || xml.length == 0) {
             throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
         }
         try {
@@ -125,7 +139,7 @@ public class RealRentTransactionClient implements RentTransactionClient {
             factory.setXIncludeAware(false);
             factory.setExpandEntityReferences(false);
             return factory.newDocumentBuilder()
-                    .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+                    .parse(new ByteArrayInputStream(xml));
         } catch (Exception cause) {
             throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
         }
