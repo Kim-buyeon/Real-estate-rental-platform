@@ -70,8 +70,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p><b>저장 기준</b> — 최신 분석과 등급 · 3사 가입 · 저장 전세가율이 모두 같으면 저장하지 않는다. 다르거나 없으면
  * 기존 최신을 이력으로 내리고({@code is_latest = false}) 새 행을 최신으로 넣는다({@code previous_grade} = 이전 등급).
  *
- * <p><b>동시 분석</b> — 두 인스턴스가 같은 매물을 동시에 처음 분석하면 최신 행이 둘 생길 수 있다.
- * {@code risk_analysis} 에 최신 행 유일 제약이 없다 — 스키마 변경은 이 기능 범위 밖이다.
+ * <p><b>동시 분석</b> — 두 인스턴스가 같은 매물을 동시에 처음 분석하면 한쪽이 최신 분석 유일 인덱스
+ * ({@code uq_risk_analysis_latest}, V9)에 걸린다. 그때는 한 번 다시 판정한다 — 다른 쪽이 같은 입력으로 저장했으므로
+ * 「결론 같음 — 저장 안 함」으로 끝난다.
  */
 @Service
 public class RiskAnalysisCommandService {

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -55,6 +56,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -169,6 +171,23 @@ class RiskAnalysisCommandServiceTest {
 
         verify(riskAnalysisRepository, never()).save(any());
         assertThat(latest.isLatest()).isTrue();
+        assertThat(response.analyzedAt()).isEqualTo(OffsetDateTime.of(EARLIER, ZoneOffset.ofHours(9)));
+    }
+
+    @Test
+    @DisplayName("동시 첫 분석으로 최신 분석 유일 인덱스에 걸리면 다시 판정해 저장하지 않고 끝낸다")
+    void concurrentFirstAnalysisIsRejudged() {
+        givenSafeProperty();
+        RiskAnalysis savedByOtherInstance = analysis(RiskGrade.SAFE, true, "50.00");
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(savedByOtherInstance));
+        when(riskAnalysisRepository.save(any())).thenThrow(new DataIntegrityViolationException("uq_risk_analysis_latest"));
+
+        RiskResponse response = service.analyze(PROPERTY_ID);
+
+        verify(riskAnalysisRepository, times(1)).save(any());
+        assertThat(response.riskGrade()).isEqualTo(RiskGrade.SAFE);
         assertThat(response.analyzedAt()).isEqualTo(OffsetDateTime.of(EARLIER, ZoneOffset.ofHours(9)));
     }
 
