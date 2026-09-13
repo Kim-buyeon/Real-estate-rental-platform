@@ -25,6 +25,8 @@ VALUES ('HUG', 700000000, 90.00, 60.00),
        ('SGI', 1000000000, 90.00, NULL);
 
 -- 11. HUG_CRITERIA — 할인 대상은 보증료 할인이며 판정에 쓰이지 않는다(개인 자격 — business-logic.md 2장).
+--   신혼부부 · 다자녀 · 사회배려계층(저소득 · 한부모) 할인 모두 있음 — 서울주거포털 「전세 보증금 반환보증」
+--   (housing.seoul.go.kr/site/main/content/sh01_060400), 사회배려계층 할인 10~60% 스마트KR 2026-03-27. 할인율은 저장하지 않는다.
 INSERT INTO hug_criteria (guarantee_id, metro_deposit_limit, ltv_premium_tiered_yn,
                           newlywed_discount_yn, multichild_discount_yn, social_discount_yn)
 SELECT guarantee_id, 700000000, TRUE, TRUE, TRUE, TRUE
