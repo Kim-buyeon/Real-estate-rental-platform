@@ -101,6 +101,11 @@ external:
     fault:
       kind: error
       delay: 10s
+  # 등기부등본. 개방 API 가 없어 Mock 만 있다(데이터 적재 설계서 1.3). 중계 서비스가 정해지기 전에는
+  # real · fault 구현이 없으므로 mock 외의 값을 주면 구현 빈이 없어 기동이 실패한다.
+  # 기본 URL · 키 · 타임아웃 · 서킷 인스턴스도 Real 이 붙는 변경에서 더한다.
+  registry:
+    mode: mock
 
 # 외부 한 곳의 장애가 전체를 멈추게 하지 않기 위한 격리. 인스턴스 이름은 연동 인터페이스의
 # RESILIENCE_INSTANCE 상수와 같아야 한다 — 이름이 어긋나면 애노테이션이 조용히 기본 설정으로 돈다.
