@@ -9,8 +9,8 @@ import java.util.List;
 /**
  * 깡통전세를 판정한다(RISK-02).
  *
- * <p>말소된 을구({@code active = false})는 보지 않는다. 등기에 적힌 유효한 을구는 모두 신규 임차인보다 앞서므로
- * 순위를 비교하지 않고 채권최고액과 선순위 임차보증금(null 은 0)을 전부 더한다.
+ * <p>순위가 임차인보다 앞서고({@code senior}) 말소되지 않은({@code active}) 을구만 채권최고액과 선순위 임차보증금(null 은 0)을
+ * 더한다 — business-logic.md 4장. 선순위 여부는 등기 수집 시 {@code senior_debt_yn} 으로 저장된 값을 쓴다.
  *
  * <p>위험금액(선순위채권 합계 + 보증금)이 시세 × 기준 비율 ÷ 100 을 <b>초과</b>하면 깡통전세다. 비교는 반올림 없이
  * {@code 위험금액 × 100 > 시세 × 비율} 로 한다 — 반올림한 전세가율로 비교하면 경계 +1원이 기준값으로 반올림돼 뒤집힌다.
@@ -35,22 +35,23 @@ public final class NegativeEquityCalculator {
             throw new IllegalArgumentException("시세가 없어 깡통전세를 판정할 수 없다: " + marketPrice);
         }
 
-        long seniorDebtTotal = 0;
+        BigDecimal seniorDebt = BigDecimal.ZERO;
         for (MortgageEntry entry : entries) {
-            if (!entry.active()) {
+            if (!entry.senior() || !entry.active()) {
                 continue;
             }
             long priorTenantDeposit = entry.priorTenantDeposit() == null ? 0 : entry.priorTenantDeposit();
-            seniorDebtTotal = Math.addExact(seniorDebtTotal, Math.addExact(entry.maxBondAmount(), priorTenantDeposit));
+            seniorDebt = seniorDebt.add(BigDecimal.valueOf(entry.maxBondAmount()))
+                    .add(BigDecimal.valueOf(priorTenantDeposit));
         }
 
-        BigDecimal riskAmount = BigDecimal.valueOf(Math.addExact(seniorDebtTotal, deposit));
+        BigDecimal riskAmount = seniorDebt.add(BigDecimal.valueOf(deposit));
         BigDecimal market = BigDecimal.valueOf(marketPrice);
 
         boolean negativeEquity = riskAmount.multiply(PERCENT).compareTo(market.multiply(negativeEquityRatio)) > 0;
         BigDecimal debtRatio = riskAmount.multiply(PERCENT).divide(market, RATIO_SCALE, RoundingMode.HALF_UP);
 
-        return new NegativeEquityResult(seniorDebtTotal, debtRatio, negativeEquity);
+        return new NegativeEquityResult(seniorDebt.longValueExact(), debtRatio, negativeEquity);
     }
 
     private NegativeEquityCalculator() {

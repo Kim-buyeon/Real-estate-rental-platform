@@ -5,11 +5,13 @@ package com.duri.rentalplatform.domain.risk.vo;
  *
  * @param maxBondAmount       채권최고액(원) — {@code mortgage_history.max_bond_amount}
  * @param priorTenantDeposit  선순위 임차보증금(원). 없으면 {@code null} — {@code mortgage_history.prior_tenant_deposit}
+ * @param senior              임차인보다 순위가 앞서는가 — {@code mortgage_history.senior_debt_yn}
  * @param active              말소되지 않았는가 — {@code mortgage_history.is_active}
  */
 public record MortgageEntry(
         long maxBondAmount,
         Long priorTenantDeposit,
+        boolean senior,
         boolean active
 ) {
 }

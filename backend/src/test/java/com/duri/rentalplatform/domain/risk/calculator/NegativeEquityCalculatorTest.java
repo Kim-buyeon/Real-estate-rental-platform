@@ -15,7 +15,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * {@link NegativeEquityCalculator} 판정 검증. 기대값 표는 이슈 #51 계획의 12행이고, 한 행이 한 케이스다.
+ * {@link NegativeEquityCalculator} 판정 검증. 기대값 표는 이슈 #51 계획의 12행과 계획 변경의 13행이고, 한 행이 한 케이스다.
  *
  * <p>기준 비율은 계산기에 인자로 넘기는 픽스처 값이다. 판정 기준을 테스트가 정하지 않는다.
  */
@@ -59,7 +59,10 @@ class NegativeEquityCalculatorTest {
                 Arguments.of("RISK-02-10 기준 비율 70.00 — 기준값을 바꾸면 깡통",
                         List.of(), 240_000_000L, new BigDecimal("70.00"), 0L, "80.00", true),
                 Arguments.of("RISK-02-11 선순위 임차보증금 NULL — 0 으로 합산",
-                        List.of(active(0L, null)), 10_000_000L, RATIO, 0L, "3.33", false)
+                        List.of(active(0L, null)), 10_000_000L, RATIO, 0L, "3.33", false),
+                Arguments.of("RISK-02-13 유효하지만 선순위 아님 — 제외",
+                        List.of(new MortgageEntry(250_000_000L, 0L, false, true)), 100_000_000L, RATIO, 0L, "33.33",
+                        false)
         );
     }
 
@@ -71,10 +74,10 @@ class NegativeEquityCalculatorTest {
     }
 
     private static MortgageEntry active(long maxBondAmount, Long priorTenantDeposit) {
-        return new MortgageEntry(maxBondAmount, priorTenantDeposit, true);
+        return new MortgageEntry(maxBondAmount, priorTenantDeposit, true, true);
     }
 
     private static MortgageEntry cancelled(long maxBondAmount, Long priorTenantDeposit) {
-        return new MortgageEntry(maxBondAmount, priorTenantDeposit, false);
+        return new MortgageEntry(maxBondAmount, priorTenantDeposit, true, false);
     }
 }
