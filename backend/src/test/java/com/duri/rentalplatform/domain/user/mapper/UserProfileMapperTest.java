@@ -43,9 +43,9 @@ class UserProfileMapperTest {
         assertThat(account).extracting(ProfileResponse.Account::name, ProfileResponse.Account::phone,
                         ProfileResponse.Account::email, ProfileResponse.Account::role)
                 .containsExactly("매퍼테스트", "010-0000-0000", "mapper@example.com", Role.ADMIN);
-        // 오프셋 표기는 세션 시간대에 따라 달라질 수 있어 시각(instant)으로 비교한다.
-        assertThat(account.createdAt().toInstant())
-                .isEqualTo(OffsetDateTime.of(2026, 7, 1, 9, 12, 0, 0, ZoneOffset.ofHours(9)).toInstant());
+        // 드라이버가 어떤 오프셋으로 돌려주든 응답은 서울 오프셋이어야 한다(API 명세서 공통 규약 일시 표기).
+        assertThat(account.createdAt())
+                .isEqualTo(OffsetDateTime.of(2026, 7, 1, 9, 12, 0, 0, ZoneOffset.ofHours(9)));
     }
 
     @Test
