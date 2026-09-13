@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -37,6 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 쓰고, 조회는 그 자치구로 좁힌다. 계약 · 매물 유형 코드는 FK 대상이라 V2 시드의 코드값을 코드 식별자로
  * 찾아 쓴다(값을 새로 넣으면 유일 제약에 걸린다).
  */
+@Tag("integration")
 @SpringBootTest
 @Transactional
 @Import(TestcontainersConfiguration.class)
