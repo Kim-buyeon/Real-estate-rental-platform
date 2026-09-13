@@ -27,11 +27,15 @@ public final class RightViolationDetector {
             }
             OwnershipRightType type = entry.rightType();
             // switch 식이라 default 없이 모든 분류를 다뤄야 컴파일된다. 분류가 늘면 여기서 멈춘다.
-            boolean ignored = switch (type.getCategory()) {
-                case VIOLATION -> violations.add(type);
-                case WARNING -> warnings.add(type);
-                case NONE -> false;
+            // 식은 담을 목록을 고르기만 하고, 담는 것은 아래 한 곳에서 한다. 해당 없음은 담을 곳이 없다.
+            Set<OwnershipRightType> bucket = switch (type.getCategory()) {
+                case VIOLATION -> violations;
+                case WARNING -> warnings;
+                case NONE -> null;
             };
+            if (bucket != null) {
+                bucket.add(type);
+            }
         }
         return new RightViolationResult(List.copyOf(violations), List.copyOf(warnings));
     }

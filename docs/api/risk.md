@@ -32,11 +32,12 @@
 | insuranceEligible | 논리 | 3사 중 하나 이상 가입 가능 여부 |
 | providers[].provider | 열거 | HUG, HF, SGI |
 | providers[].eligible | 논리 | 기관별 가입 가능 여부 |
-| providers[].failedConditions[] | 배열 | 위배된 집 단위 조건 목록 |
+| providers[].failedConditions[] | 배열 | 위배된 집 단위 조건 목록. 위배를 모두 담는다. DEBT_RATIO_EXCEEDED, SENIOR_DEBT_RATIO_EXCEEDED, DEPOSIT_LIMIT_EXCEEDED, VIOLATION_BUILDING, RIGHT_VIOLATION, OWNER_MISMATCH, ADDRESS_MISMATCH |
+| providers[].loanLinkRequired | 논리 | 기관 고유 조건인 전세자금보증부 대출 연계가 필요한지(HF). 가입 불가 사유가 아니라 표기다 |
 | providers[].guaranteeLimit | 정수 | 보증한도 (주택가격 × 담보인정비율 − 선순위채권) |
 | providers[].estimatedPremium | 정수 | 예상 보증료 (원) |
 | providers[].productName | 문자열 | 가입 가능한 보증 상품명 |
-| personalConditions[] | 배열 | 시스템이 판정하지 않는 개인 자격 확인 사항 |
+| personalConditions[] | 배열 | 시스템이 판정하지 않는 개인 자격 확인 사항. ANNUAL_INCOME, APPLICATION_DEADLINE, NEW_OR_RENEWAL, RESIDENTIAL_USE_NOTATION, BROKER_CONTRACT(SGI), MOVE_IN_AND_FIXED_DATE(대항력) |
 | rightViolations[] | 배열 | 판정에 반영된 권리 침해 항목 (압류·가압류·경매개시결정·신탁) |
 | warnings[] | 배열 | 판정에 반영되지 않는 경고 (가등기·임차권등기명령 등) |
 | consistency | 객체 | 명의 일치·주소 일치·위반건축물·면적 대조 결과 |
@@ -61,7 +62,8 @@ GET /api/properties/1024/risk — 응답
       {
         "provider": "HUG",
         "eligible": false,
-        "failedConditions": ["DEBT_RATIO_EXCEEDED"],
+        "failedConditions": ["DEBT_RATIO_EXCEEDED", "SENIOR_DEBT_RATIO_EXCEEDED"],
+        "loanLinkRequired": false,
         "guaranteeLimit": 20000000,
         "estimatedPremium": null,
         "productName": null
@@ -69,7 +71,8 @@ GET /api/properties/1024/risk — 응답
       {
         "provider": "HF",
         "eligible": false,
-        "failedConditions": ["DEBT_RATIO_EXCEEDED", "LOAN_LINK_REQUIRED"],
+        "failedConditions": ["DEBT_RATIO_EXCEEDED"],
+        "loanLinkRequired": true,
         "guaranteeLimit": 20000000,
         "estimatedPremium": null,
         "productName": null
@@ -78,12 +81,13 @@ GET /api/properties/1024/risk — 응답
         "provider": "SGI",
         "eligible": false,
         "failedConditions": ["DEBT_RATIO_EXCEEDED"],
+        "loanLinkRequired": false,
         "guaranteeLimit": 20000000,
         "estimatedPremium": null,
         "productName": null
       }
     ],
-    "personalConditions": ["ANNUAL_INCOME", "APPLICATION_DEADLINE"],
+    "personalConditions": ["ANNUAL_INCOME", "APPLICATION_DEADLINE", "NEW_OR_RENEWAL", "RESIDENTIAL_USE_NOTATION", "BROKER_CONTRACT", "MOVE_IN_AND_FIXED_DATE"],
     "rightViolations": [],
     "warnings": ["PROVISIONAL_REGISTRATION"],
     "consistency": {
