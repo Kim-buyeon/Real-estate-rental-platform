@@ -28,7 +28,7 @@
 | marketPrice | 정수 | 적용 시세 (원) |
 | priceType / priceDate | 열거 / 일자 | 시세 산출 출처와 기준일 |
 | seniorDebtTotal | 정수 | 선순위채권 합계 (원) |
-| isNegativeEquity | 논리 | 깡통전세 해당 여부. 선순위채권과 보증금의 합이 시세 기준 안전선을 초과한 상태 |
+| isNegativeEquity | 논리 | 깡통전세 해당 여부. 선순위채권과 보증금의 합이 시세 기준 안전선(RISK_CRITERIA.negative_equity_ratio, 현재 80%)을 초과한 상태 |
 | insuranceEligible | 논리 | 3사 중 하나 이상 가입 가능 여부 |
 | providers[].provider | 열거 | HUG, HF, SGI |
 | providers[].eligible | 논리 | 기관별 가입 가능 여부 |

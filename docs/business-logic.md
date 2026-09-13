@@ -45,8 +45,9 @@
 
 각 보증기관(HUG·HF·SGI)에 대해 다음 조건을 **모두** 만족하는지 검사한다. 하나라도 위배되면 해당 기관은 가입 불가로 판정한다.
 
-- 전세가율 조건: (선순위채권 합계 + 전세보증금) ÷ 주택가액 ≤ 기관별 담보인정비율(통상 90%)
-- 보증금 한도: 전세보증금 ≤ 기관별 최대 보증 가능 보증금 (HUG·HF 수도권 7억 / SGI 고액 가능)
+- 전세가율 조건: (선순위채권 합계 + 전세보증금) ÷ 주택가액 ≤ 기관별 담보인정비율(3사 90%. 2023.5.1 신규 · 2024.1.1 갱신부터, 이후 변경 없음 — 국회입법조사처 2024.6, HUG 해명 2024.12)
+- 선순위채권 조건: 선순위채권 합계 ÷ 주택가액 ≤ 기관별 선순위 한도(GUARANTEE_CRITERIA.senior_debt_ratio_limit. HUG 60%, 단독 · 다중 · 다가구 80%). HF · SGI 값은 **미확정** — 기준 시드 슬라이스에서 공식 페이지로 확인한다. 값이 없는 기관은 이 조건을 검사하지 않는다
+- 보증금 한도: 전세보증금 ≤ 기관별 최대 보증 가능 보증금 (HUG·HF 수도권 7억 · 그 외 5억 / SGI 아파트 제한 없음 · 그 외 10억)
 - 주택 상태: 위반건축물이 아닐 것 (BUILDING_LEDGER.violation_yn = FALSE)
 - 권리 침해 없음: 압류·가압류·경매·신탁 등기가 없을 것 (OWNERSHIP_HISTORY 확인)
 - 명의 일치: 등기상 소유자 = 임대인(PROPERTY.landlord_name), 대장 주소 = 등기 주소
@@ -62,6 +63,8 @@ function checkEligibility(property, registry, ledger, criteria):
     debtRatio = (선순위채권합계 + 전세보증금) / 주택가액
 
     if debtRatio > criteria.담보인정비율:        return false
+    if criteria.선순위한도 != null
+       and 선순위채권합계 / 주택가액 > criteria.선순위한도: return false
     if 전세보증금 > criteria.최대보증금:           return false
     if ledger.violation_yn == true:              return false
     if registry.압류 or 가압류 or 경매 or 신탁:    return false
@@ -112,17 +115,19 @@ insurance_eligible_yn = hug OR hf OR sgi   // 하나라도 가능하면 안전
 
 | 등급 | 조건 | 의미 |
 |---|---|---|
-| SAFE (안전) | 보험 가입 가능 AND 전세가율 < 80% | 보증보험사가 인정한 집. 전세가율도 여유 |
-| CAUTION (주의) | 보험 가입 가능 BUT 전세가율 80% 이상 | 가입은 되나 시세 하락 시 위험 여지. 사용자 인지 필요 |
-| DANGER (위험) | 3사 모두 가입 불가 OR 깡통전세 해당 | 보증보험사도 거부. 전세사기·보증금 미반환 위험 높음 |
+| SAFE (안전) | 보험 가입 가능 AND 전세가율 ≤ 70% | 보증보험사가 인정한 집. 70%는 HUG 보증료율의 저위험 경계(2025.3.31~) |
+| CAUTION (주의) | 보험 가입 가능 AND 70% < 전세가율 ≤ 80% | 가입은 되나 정부 위험선에 근접. 사용자 인지 필요 |
+| DANGER (위험) | 깡통전세 해당(전세가율 > 80%) OR 3사 모두 가입 불가 | 깡통전세는 가입 가능해도 DANGER. 전세사기·보증금 미반환 위험 높음 |
+
+두 경계는 RISK_CRITERIA(`caution_lease_ratio` 70 · `negative_equity_ratio` 80)에서 읽는다. 세 선은 단조여야 한다 — SAFE/CAUTION 경계 < 깡통전세 선 < 가입 상한(담보인정비율 90). 4장의 깡통전세는 「전세가율 > 안전기준비율」과 같은 판정이므로, CAUTION 경계가 안전기준비율 이상이면 CAUTION이 나올 수 없다.
 
 ### 판정 의사코드
 
 ```
-function decideRiskGrade(insurance_eligible, lease_ratio, isKkangtong):
+function decideRiskGrade(insurance_eligible, lease_ratio, isKkangtong, riskCriteria):
     if isKkangtong or insurance_eligible == false:
         return 'DANGER'
-    if lease_ratio >= 80:
+    if lease_ratio > riskCriteria.caution_lease_ratio:   // 70
         return 'CAUTION'
     return 'SAFE'
 
@@ -148,11 +153,17 @@ if new_grade != previous_grade:
 
 if 위험금액 > 기준금액:  깡통전세 위험 (DANGER)
 
-// 안전기준비율: 통상 70%, HUG 보증비율 하향(2025.9)으로 60% 적용 가능
+// 안전기준비율: 80% — RISK_CRITERIA.negative_equity_ratio
 // 채권최고액은 통상 실제 대출액의 120%로 설정됨
 ```
 
-**예시**: 주택시세 3억, 채권최고액 2.5억인 경우, 채권최고액만으로 이미 시세의 83%를 차지한다. 여기에 전세보증금이 더해지면 기준(70% = 2.1억)을 크게 초과하므로 깡통전세 위험으로 판정한다.
+**안전기준비율 80%의 근거**: 국토교통부 · 한국부동산원 「임대차시장 사이렌」이 깡통전세 우려지역을 가르는 선(2022.9~ 매월 공개, 2023.4 우려지역 선정 기준)이고, HUG 안심전세앱(2026.9 개편)의 위험 예시도 「선순위 + 보증금 ≥ 시세의 80%」다. 2026.8 서울 경매 낙찰가율이 빌라 74.4% · 오피스텔 68.1%(지지옥션)라 이 선을 넘으면 비아파트는 경매로 보증금이 회수되지 않는다.
+
+**전세가율과 같은 판정이다**: 전세가율(2장) = (선순위채권 합계 + 전세보증금) ÷ 주택가액이고 주택가액과 주택시세는 같은 PROPERTY.market_price이므로, 깡통전세 ⇔ 전세가율 > 80이다. 등급 경계는 3장이 이 관계를 전제로 정한다.
+
+주택유형별 낙찰가율을 안전기준비율로 쓰는 방식은 **미확정**이다 — 정해질 때: 데이터 적재 설계서에 낙찰가율 출처와 갱신 규칙이 생길 때.
+
+**예시**: 주택시세 3억, 채권최고액 2.5억인 경우, 채권최고액만으로 이미 시세의 83%를 차지한다. 여기에 전세보증금이 더해지면 기준(80% = 2.4억)을 크게 초과하므로 깡통전세 위험으로 판정한다.
 
 선순위채권 합계는 MORTGAGE_HISTORY에서 순위번호(priority_no)가 임차인보다 앞서고 현재 유효한(is_active = TRUE) 항목의 채권최고액(max_bond_amount)과 선순위 임차보증금(prior_tenant_deposit)을 합산하여 구한다. 다가구주택처럼 먼저 입주한 세입자가 여럿인 경우 그 보증금 합계가 선순위채권에 포함된다.
 
