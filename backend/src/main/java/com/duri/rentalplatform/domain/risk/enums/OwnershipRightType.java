@@ -13,18 +13,23 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>임차권등기명령을 갑구에 두는 이유 — 데이터베이스 설계서 3장 8절이 그 여부 컬럼
  * ({@code lease_registration_yn})을 갑구 테이블에 두었다. 설계서를 따른다.
+ *
+ * <p>{@link #category} — 권리 침해는 비즈니스 로직 정의서 2장 「압류·가압류·경매·신탁 등기가 없을 것」,
+ * 경고는 기능 정의서(위험도) RISK-03 「가등기, 임차권등기명령 등 … 경고로 표시」를 따른다.
+ * 검출 결과 목록은 이 선언 순서로 나간다.
  */
 @Getter
 @RequiredArgsConstructor
 public enum OwnershipRightType {
-    OWNERSHIP_PRESERVATION("소유권보존"),
-    OWNERSHIP_TRANSFER("소유권이전"),
-    SEIZURE("압류"),
-    PROVISIONAL_SEIZURE("가압류"),
-    AUCTION_COMMENCEMENT("경매개시결정"),
-    TRUST("신탁"),
-    PROVISIONAL_REGISTRATION("가등기"),
-    TENANCY_REGISTRATION_ORDER("임차권등기명령");
+    OWNERSHIP_PRESERVATION("소유권보존", RightViolationCategory.NONE),
+    OWNERSHIP_TRANSFER("소유권이전", RightViolationCategory.NONE),
+    SEIZURE("압류", RightViolationCategory.VIOLATION),
+    PROVISIONAL_SEIZURE("가압류", RightViolationCategory.VIOLATION),
+    AUCTION_COMMENCEMENT("경매개시결정", RightViolationCategory.VIOLATION),
+    TRUST("신탁", RightViolationCategory.VIOLATION),
+    PROVISIONAL_REGISTRATION("가등기", RightViolationCategory.WARNING),
+    TENANCY_REGISTRATION_ORDER("임차권등기명령", RightViolationCategory.WARNING);
 
     private final String label;
+    private final RightViolationCategory category;
 }
