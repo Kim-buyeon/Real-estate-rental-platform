@@ -37,7 +37,7 @@
 | providers[].guaranteeLimit | 정수 | 보증한도 (주택가격 × 담보인정비율 − 선순위채권) |
 | providers[].estimatedPremium | 정수 | 예상 보증료 (원) |
 | providers[].productName | 문자열 | 가입 가능한 보증 상품명 |
-| personalConditions[] | 배열 | 시스템이 판정하지 않는 개인 자격 확인 사항. ANNUAL_INCOME, APPLICATION_DEADLINE, MOVE_IN_AND_FIXED_DATE |
+| personalConditions[] | 배열 | 시스템이 판정하지 않는 개인 자격 확인 사항. ANNUAL_INCOME, APPLICATION_DEADLINE, NEW_OR_RENEWAL, RESIDENTIAL_USE_NOTATION, BROKER_CONTRACT(SGI), MOVE_IN_AND_FIXED_DATE(대항력) |
 | rightViolations[] | 배열 | 판정에 반영된 권리 침해 항목 (압류·가압류·경매개시결정·신탁) |
 | warnings[] | 배열 | 판정에 반영되지 않는 경고 (가등기·임차권등기명령 등) |
 | consistency | 객체 | 명의 일치·주소 일치·위반건축물·면적 대조 결과 |
@@ -87,7 +87,7 @@ GET /api/properties/1024/risk — 응답
         "productName": null
       }
     ],
-    "personalConditions": ["ANNUAL_INCOME", "APPLICATION_DEADLINE", "MOVE_IN_AND_FIXED_DATE"],
+    "personalConditions": ["ANNUAL_INCOME", "APPLICATION_DEADLINE", "NEW_OR_RENEWAL", "RESIDENTIAL_USE_NOTATION", "BROKER_CONTRACT", "MOVE_IN_AND_FIXED_DATE"],
     "rightViolations": [],
     "warnings": ["PROVISIONAL_REGISTRATION"],
     "consistency": {
