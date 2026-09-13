@@ -13,12 +13,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param rentTransaction  국토교통부 전월세 실거래가
  * @param addressNormalize 도로명주소 주소 정규화
  * @param geocode          카카오 로컬 좌표 변환
+ * @param buildingLedger   국토교통부 건축물대장. Real 이 없어 기본 URL · 키 · 타임아웃은 Fault 의 timeout 모드만 쓴다
  */
 @ConfigurationProperties(prefix = "external")
 public record ExternalApiProperties(
         ClientSettings rentTransaction,
         ClientSettings addressNormalize,
-        ClientSettings geocode
+        ClientSettings geocode,
+        ClientSettings buildingLedger
 ) {
 
     /**

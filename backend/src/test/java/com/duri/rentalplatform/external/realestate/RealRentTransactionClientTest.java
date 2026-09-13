@@ -91,7 +91,7 @@ class RealRentTransactionClientTest {
         ExternalApiProperties.ClientSettings settings =
                 new ExternalApiProperties.ClientSettings("real", BASE_URL, apiKey, null, null, null);
         return new RealRentTransactionClient(
-                builder.build(), new ExternalApiProperties(settings, settings, settings));
+                builder.build(), new ExternalApiProperties(settings, settings, settings, null));
     }
 
     private String okBody() {

@@ -156,13 +156,18 @@
 | 속성명 | 컬럼명 | 실질 식별자 | Not Null | 데이터타입 | 길이 | 소수점 | 기본값 | 설명 |
 |---|---|---|---|---|---|---|---|---|
 | Ledger ID | ledger_id | ● | ● | BIGINT | — | — | IDENTITY | 건축물관리대장 고유 ID |
-| Property ID | property_id (FK) |  | ● | BIGINT | — | — | — | 매물 ID |
+| Property ID | property_id (FK, UQ) |  | ● | BIGINT | — | — | — | 매물 ID — 매물당 1건 |
 | Ledger Address | ledger_address |  | ● | VARCHAR | 200 | — | — | 대장상 건물 주소 |
 | Owner Name | owner_name |  | ● | VARCHAR | 50 | — | — | 대장상 소유자명 |
 | Building Purpose | building_purpose |  | ● | VARCHAR | 50 | — | — | 건물 실제 용도 |
 | Building Structure | building_structure |  |  | VARCHAR | 50 | — | — | 건물 구조 |
 | Building Area | building_area |  | ● | NUMERIC | 7 | 2 | — | 건축 면적 (㎡) |
+| Total Floor Area | total_floor_area |  |  | NUMERIC | 10 | 2 | — | 연면적 (㎡) |
+| Exclusive Area | exclusive_area |  |  | NUMERIC | 7 | 2 | — | 전용면적 (㎡) |
+| Approval Date | approval_date |  |  | DATE | — | — | — | 사용승인일 |
 | Violation YN | violation_yn |  | ● | BOOLEAN | 1 | — | FALSE | 위반 건축물 여부 (대장 표기) |
+| Data Source | data_source |  | ● | VARCHAR | 20 | — | — | 수집 출처 (MOCK) |
+| Created At | created_at |  | ● | TIMESTAMP | — | — | now() | 최초 수집일시 |
 | Updated At | updated_at |  | ● | TIMESTAMP | — | — | now() | 대장 정보 갱신일시 |
 
 ### 7. BUILDING_REGISTRY — 표제부 — 등기부등본

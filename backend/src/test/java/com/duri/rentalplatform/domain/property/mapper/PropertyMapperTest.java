@@ -361,8 +361,8 @@ class PropertyMapperTest {
     /**
      * 최신 분석 한 건. FK 가 요구하는 표제부 · 건축물대장 최소 행을 함께 넣는다.
      *
-     * <p>표제부는 매물당 하나다(property_id UNIQUE — V4). 한 매물에 분석을 두 번 넣는 테스트가 있어 이미 있으면
-     * 그 표제부를 쓴다.
+     * <p>표제부 · 대장은 매물당 하나다(property_id UNIQUE — V4 · V5). 한 매물에 분석을 두 번 넣는 테스트가 있어 이미
+     * 있으면 그 행을 쓴다.
      */
     private void insertRisk(long propertyId, String grade, String leaseRatio, boolean latest, boolean seniorDebt) {
         Long registryId = jdbc.queryForObject("""
@@ -371,8 +371,11 @@ class PropertyMapperTest {
                 RETURNING registry_id
                 """, Long.class, propertyId);
         Long ledgerId = jdbc.queryForObject("""
-                INSERT INTO building_ledger (property_id, ledger_address, owner_name, building_purpose, building_area)
-                VALUES (?, '주소', '김임대', '공동주택', 42.50) RETURNING ledger_id
+                INSERT INTO building_ledger (property_id, ledger_address, owner_name, building_purpose, building_area,
+                    data_source)
+                VALUES (?, '주소', '김임대', '공동주택', 42.50, 'MOCK')
+                ON CONFLICT (property_id) DO UPDATE SET building_purpose = EXCLUDED.building_purpose
+                RETURNING ledger_id
                 """, Long.class, propertyId);
         jdbc.update("""
                 INSERT INTO risk_analysis (property_id, registry_id, ledger_id, lease_ratio, risk_grade,

@@ -84,7 +84,7 @@ class FaultGeocodeClientTest {
     private FaultGeocodeClient clientOf(String kind, Duration delay, Duration readTimeout) {
         ExternalApiProperties.ClientSettings settings = new ExternalApiProperties.ClientSettings(
                 "fault", null, null, null, readTimeout, new ExternalApiProperties.FaultSettings(kind, delay));
-        ExternalApiProperties properties = new ExternalApiProperties(null, null, settings);
+        ExternalApiProperties properties = new ExternalApiProperties(null, null, settings, null);
         return new FaultGeocodeClient(properties);
     }
 }
