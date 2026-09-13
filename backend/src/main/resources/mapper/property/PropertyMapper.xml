@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  매물 조회. API 명세서(매물) 1.4 ~ 1.7.
+
+  위험 정보는 최신 분석(is_latest = TRUE)을 LEFT JOIN 한다. 분석 이력이 없는 매물도 조회되며
+  risk_grade · lease_ratio 가 NULL 로 나온다.
+  계약 유형 · 매물 유형은 property_code.code_value 가 열거 상수명과 같다.
+  registered_at 은 서울 벽시계 시각으로 저장되어 있어 AT TIME ZONE 으로 시각(timestamptz)을 확정해 넘긴다.
+-->
+<mapper namespace="com.duri.rentalplatform.domain.property.mapper.PropertyMapper">
+
+    <sql id="fromProperty">
+        FROM property p
+        JOIN property_code ct ON ct.code_id = p.contract_type_code_id
+        JOIN property_code pt ON pt.code_id = p.property_type_code_id
+        LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
+    </sql>
+
+    <!-- 공통 검색 필터(명세 1.1) + 바운딩 박스(영속성 구조 1.3). 경계를 포함한다. -->
+    <sql id="filter">
+        <where>
+            <if test="district != null and district != ''">
+                AND p.district = #{district}
+            </if>
+            <if test="contractType != null">
+                AND ct.code_value = #{contractType}
+            </if>
+            <if test="propertyType != null">
+                AND pt.code_value = #{propertyType}
+            </if>
+            <if test="depositMin != null">
+                AND p.deposit &gt;= #{depositMin}
+            </if>
+            <if test="depositMax != null">
+                AND p.deposit &lt;= #{depositMax}
+            </if>
+            <if test="monthlyRentMax != null">
+                AND COALESCE(p.monthly_rent, 0) &lt;= #{monthlyRentMax}
+            </if>
+            <if test="areaMin != null">
+                AND p.area_sqm &gt;= #{areaMin}
+            </if>
+            <if test="areaMax != null">
+                AND p.area_sqm &lt;= #{areaMax}
+            </if>
+            <!-- 등급을 지정하면 분석된 매물만 대상이다. NULL 은 IN 에 걸리지 않는다. -->
+            <if test="riskGrades != null and !riskGrades.isEmpty()">
+                AND ra.risk_grade IN
+                <foreach collection="riskGrades" item="grade" open="(" separator="," close=")">
+                    #{grade}
+                </foreach>
+            </if>
+            <if test="minLat != null and maxLat != null and minLng != null and maxLng != null">
+                AND p.latitude BETWEEN #{minLat} AND #{maxLat}
+                AND p.longitude BETWEEN #{minLng} AND #{maxLng}
+            </if>
+            <!-- 목록 키셋. 정렬 값이 같은 행은 식별자로 가른다. 목록 외 조회는 lastId 가 null 이다. -->
+            <if test="lastId != null">
+                AND (<include refid="sortExpr"/> <include refid="keysetOp"/> <include refid="lastSortValue"/>
+                     OR (<include refid="sortExpr"/> = <include refid="lastSortValue"/>
+                         AND p.property_id <include refid="keysetOp"/> #{lastId}))
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectDistrictCounts" resultType="com.duri.rentalplatform.domain.property.vo.DistrictCountRow">
+        SELECT p.district AS name,
+               COUNT(*) AS total_count,
+               SUM(CASE WHEN ra.risk_grade = 'SAFE' THEN 1 ELSE 0 END) AS safe_count,
+               SUM(CASE WHEN ra.risk_grade = 'CAUTION' THEN 1 ELSE 0 END) AS caution_count,
+               SUM(CASE WHEN ra.risk_grade = 'DANGER' THEN 1 ELSE 0 END) AS danger_count
+        <include refid="fromProperty"/>
+        <include refid="filter"/>
+        GROUP BY p.district
+        ORDER BY p.district
+    </select>
+
+    <select id="selectMarkers" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse">
+        SELECT p.property_id,
+               p.latitude,
+               p.longitude,
+               p.deposit,
+               ra.risk_grade,
+               ct.code_value AS contract_type,
+               COALESCE(p.monthly_rent, 0) AS monthly_rent,
+               p.district,
+               ra.lease_ratio AS debt_ratio,
+               CASE WHEN ra.risk_id IS NULL THEN NULL
+                    ELSE EXISTS (SELECT 1
+                                   FROM mortgage_history mh
+                                  WHERE mh.registry_id = ra.registry_id
+                                    AND mh.senior_debt_yn = TRUE
+                                    AND mh.is_active = TRUE)
+               END AS has_senior_debt
+        <include refid="fromProperty"/>
+        <include refid="filter"/>
+        ORDER BY p.property_id
+    </select>
+
+    <!-- 목록 정렬 식. 전세가율은 미분석을 대체값으로 바꿔 방향과 무관하게 맨 뒤로 보낸다. -->
+    <sql id="sortExpr">
+        <choose>
+            <when test="sortKey.name() == 'DEPOSIT'">p.deposit</when>
+            <when test="sortKey.name() == 'DEBT_RATIO'">COALESCE(ra.lease_ratio, #{nullDebtRatio})</when>
+            <otherwise>p.registered_at</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="lastSortValue">
+        <choose>
+            <when test="sortKey.name() == 'DEPOSIT'">#{lastDeposit}</when>
+            <when test="sortKey.name() == 'DEBT_RATIO'">#{lastDebtRatio}</when>
+            <otherwise>#{lastRegisteredAt}</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="keysetOp">
+        <choose>
+            <when test="ascending">&gt;</when>
+            <otherwise>&lt;</otherwise>
+        </choose>
+    </sql>
+
+    <sql id="sortDir">
+        <choose>
+            <when test="ascending">ASC</when>
+            <otherwise>DESC</otherwise>
+        </choose>
+    </sql>
+
+    <select id="selectList" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse">
+        SELECT p.property_id,
+               p.district,
+               p.address,
+               pt.code_value AS property_type,
+               ct.code_value AS contract_type,
+               p.deposit,
+               COALESCE(p.monthly_rent, 0) AS monthly_rent,
+               p.area_sqm,
+               p.floor,
+               ra.risk_grade,
+               ra.lease_ratio AS debt_ratio,
+               p.registered_at AT TIME ZONE 'Asia/Seoul' AS registered_at
+        <include refid="fromProperty"/>
+        <include refid="filter"/>
+        ORDER BY <include refid="sortExpr"/> <include refid="sortDir"/>, p.property_id <include refid="sortDir"/>
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectDetail" resultType="com.duri.rentalplatform.domain.property.vo.PropertyDetailRow">
+        SELECT p.property_id,
+               p.district,
+               p.address,
+               p.latitude,
+               p.longitude,
+               pt.code_value AS property_type,
+               ct.code_value AS contract_type,
+               p.deposit,
+               COALESCE(p.monthly_rent, 0) AS monthly_rent,
+               p.area_sqm,
+               p.floor,
+               p.landlord_name,
+               p.market_price,
+               p.price_type,
+               p.price_date,
+               ra.risk_grade,
+               ra.lease_ratio AS debt_ratio,
+               ra.insurance_eligible_yn AS insurance_eligible,
+               <choose>
+                   <when test="userId != null">
+                       EXISTS (SELECT 1 FROM wishlist w
+                                WHERE w.property_id = p.property_id AND w.user_id = #{userId})
+                   </when>
+                   <otherwise>FALSE</otherwise>
+               </choose> AS wishlisted,
+               p.registered_at AT TIME ZONE 'Asia/Seoul' AS registered_at
+        <include refid="fromProperty"/>
+        WHERE p.property_id = #{propertyId}
+    </select>
+</mapper>

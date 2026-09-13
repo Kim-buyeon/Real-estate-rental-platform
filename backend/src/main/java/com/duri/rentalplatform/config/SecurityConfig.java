@@ -7,6 +7,7 @@ import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -51,6 +52,12 @@ public class SecurityConfig {
         "/api/auth/**", "/actuator/health", "/actuator/health/**"
     };
 
+    /**
+     * 인증 「선택」 조회 경로(API 명세서 매물 1장). 토큰 없이 통과하되, 토큰이 있으면 필터가 인증 사용자를
+     * 채워 개인화 필드(관심 등록 여부)에 쓰인다. GET 만 연다 — 같은 접두의 다른 메서드는 기본 규칙을 따른다.
+     */
+    private static final String[] OPTIONAL_AUTH_GET_PATHS = {"/api/properties", "/api/properties/**"};
+
     private final JwtTokenProvider jwtTokenProvider;
     private final JsonMapper jsonMapper;
 
@@ -67,6 +74,7 @@ public class SecurityConfig {
                         // 그것이 먼저 오면 이 규칙은 평가되지 않고 로그아웃이 조용히 열린다.
                         .requestMatchers(TOKEN_REQUIRED_AUTH_PATHS).authenticated()
                         .requestMatchers(PUBLIC_PATHS).permitAll()
+                        .requestMatchers(HttpMethod.GET, OPTIONAL_AUTH_GET_PATHS).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(new JwtAuthenticationEntryPoint(jsonMapper))
