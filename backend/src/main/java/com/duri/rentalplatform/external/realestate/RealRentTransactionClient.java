@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -54,6 +55,9 @@ public class RealRentTransactionClient implements RentTransactionClient {
 
     private static final List<String> SUCCESS_RESULT_CODES = List.of("00", "000");
 
+    /** 인코딩 키는 비예약 문자와 퍼센트 인코딩으로만 이루어진다. */
+    private static final Pattern ENCODED_KEY = Pattern.compile("(?:[A-Za-z0-9\\-._~]|%[0-9A-Fa-f]{2})+");
+
     /** 금액 단위 환산. 제공처는 만원 단위로 준다. */
     private static final long AMOUNT_UNIT = 10_000L;
 
@@ -65,6 +69,21 @@ public class RealRentTransactionClient implements RentTransactionClient {
             ExternalApiProperties properties) {
         this.restClient = restClient;
         this.settings = properties.rentTransaction();
+        verifyEncodedKey(settings.apiKey());
+    }
+
+    /**
+     * 인코딩 키가 아니면 기동에서 멈춘다.
+     *
+     * <p>디코딩 키({@code +} · {@code /} · {@code =} 포함)가 들어오면 요청마다 URI 조립이 실패하거나
+     * 403 이 나고, 재시도 · 서킷을 거쳐 폴백이 {@code EXTERNAL_API_UNAVAILABLE} 로 바꾼다. 그러면 설정
+     * 오류가 25개 구 전부의 「연동실패」로 기록되어 외부 장애와 구분되지 않는다.
+     */
+    private static void verifyEncodedKey(String apiKey) {
+        if (apiKey == null || !ENCODED_KEY.matcher(apiKey).matches()) {
+            throw new IllegalStateException(
+                    "external.rent-transaction.api-key 에는 공공데이터포털의 인코딩 키를 넣는다 — 비었거나 디코딩 키다");
+        }
     }
 
     @Override

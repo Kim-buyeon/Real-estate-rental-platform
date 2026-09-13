@@ -74,9 +74,22 @@ class RealRentTransactionClientTest {
                         .isEqualTo(ErrorCode.EXTERNAL_API_UNAVAILABLE));
     }
 
+    @Test
+    @DisplayName("디코딩 키나 빈 키면 요청 전에 생성에서 실패한다 — 설정 오류가 연동실패로 기록되지 않게")
+    void rejectsDecodedOrBlankKeyAtConstruction() {
+        assertThatThrownBy(() -> clientOf(RestClient.builder(), "abc+def/ghi=="))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> clientOf(RestClient.builder(), ""))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
     private RealRentTransactionClient clientOf(RestClient.Builder builder) {
+        return clientOf(builder, ENCODED_KEY);
+    }
+
+    private RealRentTransactionClient clientOf(RestClient.Builder builder, String apiKey) {
         ExternalApiProperties.ClientSettings settings =
-                new ExternalApiProperties.ClientSettings("real", BASE_URL, ENCODED_KEY, null, null, null);
+                new ExternalApiProperties.ClientSettings("real", BASE_URL, apiKey, null, null, null);
         return new RealRentTransactionClient(
                 builder.build(), new ExternalApiProperties(settings, settings, settings));
     }
