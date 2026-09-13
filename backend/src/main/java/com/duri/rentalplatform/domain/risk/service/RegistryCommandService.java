@@ -104,7 +104,8 @@ public class RegistryCommandService {
     private void save(Long propertyId, RegistryDocument document) {
         // saveAndFlush — 제약 위반을 이 블록 안에서 드러내 이력 행을 넣기 전에 멈춘다.
         BuildingRegistry registry = buildingRegistryRepository.saveAndFlush(BuildingRegistry.collect(
-                propertyId, document.buildingPurpose(), document.buildingStructure(), document.dataSource()));
+                propertyId, document.buildingPurpose(), document.buildingStructure(), document.registryAddress(),
+                document.exclusiveArea(), document.dataSource()));
 
         ownershipHistoryRepository.saveAll(document.ownerships().stream()
                 .map(entry -> OwnershipHistory.record(registry, entry.rankNo(), entry.rightType(),

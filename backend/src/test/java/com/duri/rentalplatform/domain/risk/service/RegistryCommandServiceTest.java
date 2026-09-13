@@ -116,6 +116,8 @@ class RegistryCommandServiceTest {
         assertThat(registry.getValue().getPropertyId()).isEqualTo(PROPERTY_ID);
         assertThat(registry.getValue().getBuildingPurpose()).isEqualTo("업무시설");
         assertThat(registry.getValue().getBuildingStructure()).isEqualTo("철근콘크리트구조");
+        assertThat(registry.getValue().getRegistryAddress()).isEqualTo("서울특별시 시험구 시험로 1");
+        assertThat(registry.getValue().getExclusiveArea()).isEqualByComparingTo("42.50");
         assertThat(registry.getValue().getDataSource()).isEqualTo(RegistryDataSource.MOCK);
 
         List<OwnershipHistory> ownerships = captureList(ownershipHistoryRepository);
@@ -213,7 +215,8 @@ class RegistryCommandServiceTest {
     }
 
     private static RegistryDocument document() {
-        return new RegistryDocument("업무시설", "철근콘크리트구조", RegistryDataSource.MOCK,
+        return new RegistryDocument("업무시설", "철근콘크리트구조", "서울특별시 시험구 시험로 1",
+                new BigDecimal("42.50"), RegistryDataSource.MOCK,
                 List.of(
                         new OwnershipEntry(1, OwnershipRightType.OWNERSHIP_TRANSFER, "김임대",
                                 LocalDate.of(2019, 3, 11), "매매", true),

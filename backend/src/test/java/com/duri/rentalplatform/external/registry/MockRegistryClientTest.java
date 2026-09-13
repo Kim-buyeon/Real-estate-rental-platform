@@ -128,6 +128,32 @@ class MockRegistryClientTest {
     }
 
     @Test
+    @DisplayName("표제부 주소 · 전용면적은 매물 값 그대로이고, 어긋나는 매물은 번지 · 면적만 다르며 비율이 설계값 근처다")
+    void headerAddressAndAreaFollowPropertyExceptDesignedMismatches() {
+        long addressMismatches = 0;
+        long areaMismatches = 0;
+        for (RegistryLookup lookup : sample()) {
+            RegistryDocument document = client.fetch(lookup);
+            String address = lookup.naturalKey().address();
+            BigDecimal area = lookup.naturalKey().areaSqm();
+
+            if (!document.registryAddress().equals(address)) {
+                addressMismatches++;
+                // 시험 주소는 「… 시험로 <ID>」 — 마지막 숫자(번지)만 1 커진다.
+                assertThat(document.registryAddress())
+                        .isEqualTo("서울특별시 시험구 시험로 " + (lookup.propertyId() + 1));
+            }
+            if (document.exclusiveArea().compareTo(area) != 0) {
+                areaMismatches++;
+                assertThat(document.exclusiveArea())
+                        .isEqualByComparingTo(area.add(MockRegistryClient.AREA_MISMATCH_DELTA));
+            }
+        }
+        assertWithin(addressMismatches, SAMPLE_SIZE, MockRegistryClient.ADDRESS_MISMATCH_PERCENT);
+        assertWithin(areaMismatches, SAMPLE_SIZE, MockRegistryClient.AREA_MISMATCH_PERCENT);
+    }
+
+    @Test
     @DisplayName("근저당 건수 · 말소 · 선순위 임차인 비율이 설계값 근처다")
     void mortgageDistribution() {
         List<RegistryDocument> documents = sample().stream().map(client::fetch).toList();
