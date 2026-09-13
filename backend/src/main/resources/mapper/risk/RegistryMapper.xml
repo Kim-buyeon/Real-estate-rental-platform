@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  등기 이력 조회. API 명세서(위험도 분석) 1.3.
+
+  응답 필드와 컬럼 이름이 다른 것은 V1 컬럼을 그대로 두고 별칭으로 맞춘다.
+    갑구 holderName ← owner_name, receivedDate ← ownership_date, cause ← registration_cause, isActive ← is_current
+    을구 rankNo ← priority_no, creditor ← mortgage_creditor, maxClaimAmount ← max_bond_amount, receivedDate ← receipt_date
+    표제부 collectedAt ← updated_at
+  정렬은 접수일 → 순위번호다(기능 정의 RISK-07 「시간순」). 접수일이 비어 있는 행은 뒤로 보내고, 식별자로 마지막을 고정한다.
+  updated_at 은 서울 벽시계 시각으로 저장되어 있어 AT TIME ZONE 으로 시각(timestamptz)을 확정해 넘긴다.
+-->
+<mapper namespace="com.duri.rentalplatform.domain.risk.mapper.RegistryMapper">
+
+    <select id="selectHeader" resultType="com.duri.rentalplatform.domain.risk.vo.RegistryHeaderRow">
+        SELECT br.updated_at AT TIME ZONE 'Asia/Seoul' AS collected_at,
+               br.property_id,
+               br.data_source
+          FROM building_registry br
+         WHERE br.property_id = #{propertyId}
+    </select>
+
+    <select id="selectOwnerships" resultType="com.duri.rentalplatform.domain.risk.dto.response.RegistryResponse$Ownership">
+        SELECT oh.is_current AS is_active,
+               oh.registration_cause AS cause,
+               oh.ownership_date AS received_date,
+               oh.owner_name AS holder_name,
+               oh.right_type,
+               oh.rank_no
+          FROM ownership_history oh
+          JOIN building_registry br ON br.registry_id = oh.registry_id
+         WHERE br.property_id = #{propertyId}
+         ORDER BY oh.ownership_date ASC NULLS LAST, oh.rank_no ASC, oh.ownership_id ASC
+    </select>
+
+    <select id="selectMortgages" resultType="com.duri.rentalplatform.domain.risk.dto.response.RegistryResponse$Mortgage">
+        SELECT mh.is_active,
+               mh.receipt_date AS received_date,
+               mh.max_bond_amount AS max_claim_amount,
+               mh.mortgage_creditor AS creditor,
+               mh.priority_no AS rank_no
+          FROM mortgage_history mh
+          JOIN building_registry br ON br.registry_id = mh.registry_id
+         WHERE br.property_id = #{propertyId}
+         ORDER BY mh.receipt_date ASC NULLS LAST, mh.priority_no ASC, mh.mortgage_id ASC
+    </select>
+</mapper>

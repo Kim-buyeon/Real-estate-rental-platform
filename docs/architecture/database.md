@@ -170,9 +170,11 @@
 | 속성명 | 컬럼명 | 실질 식별자 | Not Null | 데이터타입 | 길이 | 소수점 | 기본값 | 설명 |
 |---|---|---|---|---|---|---|---|---|
 | Registry ID | registry_id | ● | ● | BIGINT | — | — | IDENTITY | 등기 고유 ID |
-| Property ID | property_id (FK) |  | ● | BIGINT | — | — | — | 매물 ID |
+| Property ID | property_id (FK, UQ) |  | ● | BIGINT | — | — | — | 매물 ID — 매물당 1건 |
 | Building Purpose | building_purpose |  | ● | VARCHAR | 50 | — | — | 등기상 건물 용도 |
 | Building Structure | building_structure |  |  | VARCHAR | 50 | — | — | 건물 구조 |
+| Data Source | data_source |  | ● | VARCHAR | 20 | — | — | 수집 출처 (MOCK) |
+| Created At | created_at |  | ● | TIMESTAMP | — | — | now() | 최초 수집일시 |
 | Updated At | updated_at |  | ● | TIMESTAMP | — | — | now() | 등기 정보 갱신일시 |
 
 ### 8. OWNERSHIP_HISTORY — 갑구 — 소유권 이력
@@ -181,15 +183,18 @@
 |---|---|---|---|---|---|---|---|---|
 | Ownership ID | ownership_id | ● | ● | BIGINT | — | — | IDENTITY | 소유권 이력 고유 ID |
 | Registry ID | registry_id (FK) |  | ● | BIGINT | — | — | — | 등기 ID |
-| Owner Name | owner_name |  | ● | VARCHAR | 50 | — | — | 소유자명 |
-| Ownership Date | ownership_date |  |  | DATE | — | — | — | 소유권 취득일 |
+| Rank No | rank_no |  | ● | INTEGER | 4 | — | — | 순위번호 |
+| Right Type | right_type |  | ● | VARCHAR | 30 | — | — | 등기 목적 (OWNERSHIP_PRESERVATION/OWNERSHIP_TRANSFER/SEIZURE/PROVISIONAL_SEIZURE/AUCTION_COMMENCEMENT/TRUST/PROVISIONAL_REGISTRATION/TENANCY_REGISTRATION_ORDER) |
+| Registration Cause | registration_cause |  |  | VARCHAR | 50 | — | — | 등기원인 (매매/압류 등) |
+| Owner Name | owner_name |  | ● | VARCHAR | 50 | — | — | 권리자명 — 소유권 등기면 소유자 |
+| Ownership Date | ownership_date |  |  | DATE | — | — | — | 접수일자 — 소유권 등기면 소유권 취득일 |
 | Provisional Seizure | provisional_seizure_yn |  | ● | BOOLEAN | 1 | — | FALSE | 가압류 여부 |
 | Seizure YN | seizure_yn |  | ● | BOOLEAN | 1 | — | FALSE | 압류 여부 |
 | Auction YN | auction_yn |  | ● | BOOLEAN | 1 | — | FALSE | 경매 개시 여부 |
 | Provisional Registration | provisional_registration_yn |  | ● | BOOLEAN | 1 | — | FALSE | 가등기 설정 여부 |
 | Trust Registration | trust_registration_yn |  | ● | BOOLEAN | 1 | — | FALSE | 신탁등기 설정 여부 |
 | Lease Registration | lease_registration_yn |  | ● | BOOLEAN | 1 | — | FALSE | 임차권등기명령 여부 |
-| Is Current | is_current |  | ● | BOOLEAN | 1 | — | TRUE | 현재 소유자 여부 |
+| Is Current | is_current |  | ● | BOOLEAN | 1 | — | TRUE | 현재 소유자 여부 — 소유권 외 등기면 말소되지 않았는지 |
 | Recorded At | recorded_at |  | ● | TIMESTAMP | — | — | now() | 등기 기록일시 |
 
 ### 9. MORTGAGE_HISTORY — 을구 — 채무 이력
