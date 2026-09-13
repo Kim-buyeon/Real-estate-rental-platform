@@ -332,12 +332,15 @@
 | Regulation ID | regulation_id | ● | ● | BIGINT | — | — | IDENTITY | 규제 고유 ID |
 | House Type | house_type |  | ● | VARCHAR | 30 | — | — | 주택 유형 |
 | Region Type | region_type |  | ● | VARCHAR | 30 | — | — | 지역 유형 |
-| LTV Limit | ltv_limit |  | ● | NUMERIC | 5 | 2 | — | LTV 한도 (%) |
-| DSR Limit | dsr_limit |  | ● | NUMERIC | 5 | 2 | 40.00 | DSR 한도 (%) |
-| Stress DSR Rate | stress_dsr_rate |  | ● | NUMERIC | 5 | 2 | — | 스트레스 금리 가산율 (%) |
-| Stress DSR Limit | stress_dsr_limit |  | ● | NUMERIC | 5 | 2 | — | Stress DSR 한도 (%) |
-| DTI Limit | dti_limit |  | ● | NUMERIC | 5 | 2 | — | DTI 한도 (%) — 참고용 |
+| DSR Limit | dsr_limit |  | ● | NUMERIC | 5 | 2 | 40.00 | DSR 한도 (%) — 주택 보유자 전세대출 이자상환분 |
+| Stress DSR Rate | stress_dsr_rate |  | ● | NUMERIC | 5 | 2 | — | 스트레스 금리 가산율 (%p) — 참고 한도 계산용 |
+| DTI Limit | dti_limit |  | ● | NUMERIC | 5 | 2 | — | DTI 참고 수치 (%) — 한도 판정에 미사용 |
+| Deposit Ratio Limit | deposit_ratio_limit |  | ● | NUMERIC | 5 | 2 | — | 임차보증금 대비 대출 비율 (%) |
+| Guarantee Cap No House | guarantee_cap_no_house |  | ● | BIGINT | — | — | — | 보증기관 상한 — 무주택 (원) |
+| Guarantee Cap One House | guarantee_cap_one_house |  | ● | BIGINT | — | — | — | 보증기관 상한 — 주택 보유 (원) |
 | Effective Date | effective_date |  | ● | DATE | — | — | — | 규제 적용 시작일 |
+
+LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담보대출 규제로 전세자금대출에 적용되지 않는다 — 산식은 비즈니스 로직 정의서 6장.
 
 ### 18. LOAN_PRODUCT — 대출 상품
 

@@ -107,7 +107,7 @@
 | RISK_NOT_ANALYZED | 404 | 아직 분석되지 않은 매물 |
 | RISK_REANALYZE_TOO_SOON | 429 | 재분석 최소 간격 미경과 |
 | WISHLIST_DUPLICATED | 409 | 이미 등록된 관심 매물 |
-| LOAN_PROPERTY_NOT_ELIGIBLE | 422 | 보증보험 가입 불가 매물로 추천 대상 아님 |
+| LOAN_PROPERTY_NOT_ELIGIBLE | 422 | 보증보험 가입 불가 매물로 한도 계산 · 추천 대상 아님 |
 | CONSULT_QUOTA_EXCEEDED | 429 | 상담 호출 한도 초과 |
 | CONSULT_OUT_OF_SCOPE | 200 | 응답 범위 밖. 오류가 아닌 안내로 처리 |
 | EXTERNAL_API_UNAVAILABLE | 503 | 외부 연동 장애 |

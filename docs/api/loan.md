@@ -20,29 +20,37 @@
 
 ### 1.1 한도 계산 응답
 
+요청 파라미터: `propertyId` (정수, 필수).
+
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| ltvLimit | 정수 | 담보인정비율 기준 한도 (원) |
-| dsrLimit | 정수 | 총부채원리금상환비율 기준 한도 (원) |
-| stressDsrLimit | 정수 | 가산금리 적용 한도 (원) |
-| finalLimit | 정수 | 세 한도 중 최솟값 |
-| appliedRegulation | 문자열 | 최종 한도를 결정한 규제 항목 |
-| dtiReference | 실수 | 참고용 총부채상환비율 (한도 판정에 미사용) |
-| missingFields[] | 배열 | 계산에 필요하나 미입력된 자격 정보 항목 |
+| depositLimit | 정수 | 보증금 기준 한도 (원) — 임차보증금 × 보증금 비율 |
+| guaranteeCapLimit | 정수 | 보증기관 상한 (원) — 무주택 · 주택 보유 구분 |
+| dsrLimit | 정수 | DSR 기준 한도 (원). 주택 보유자만, 무주택이면 null |
+| stressDsrLimit | 정수 | 스트레스 금리 적용 한도 (원) — **참고, 최종 한도에 미반영.** 주택 보유자만, 무주택이면 null |
+| finalLimit | 정수 | 보증금 기준 · 보증기관 상한 · DSR(해당 시) · 상품 한도 중 최솟값 |
+| appliedRegulation | 문자열 | 최종 한도를 결정한 항목. DEPOSIT_RATIO / GUARANTEE_CAP / DSR / PRODUCT_LIMIT. 같은 값이면 이 순서의 앞 항목 |
+| dtiReference | 실수 | 참고용 총부채상환비율 (%, 소수 첫째 자리, 한도 판정에 미사용). 연소득이 0이면 null |
+| missingFields[] | 배열 | 계산에 필요하나 미입력된 자격 정보 항목. 성공 응답에서는 빈 배열 |
 
-자격 정보가 부족하면 422로 응답하고 missingFields를 반환한다. 다만 소득 구간을 파라미터로 전달하면 해당 구간 기준의 추정 한도를 반환한다.
+- 보증보험 가입이 불가한 매물이면 422 `LOAN_PROPERTY_NOT_ELIGIBLE`.
+- 주택 보유자인데 연소득이 없으면 422 `PROFILE_INCOMPLETE`, 오류 봉투의 `field`에 `annualIncome`(공통 규약 1.2).
+- 매물이 없으면 404 `PROPERTY_NOT_FOUND`.
+- 소득 구간 파라미터로 추정 한도를 반환하는 방식은 **미구현(차기)**이다.
+
 GET /api/loans/limit?propertyId=1024 — 응답
 
 ```json
 {
   "success": true,
   "data": {
-    "ltvLimit": 240000000,
-    "dsrLimit": 180000000,
-    "stressDsrLimit": 162000000,
-    "finalLimit": 162000000,
-    "appliedRegulation": "STRESS_DSR",
-    "dtiReference": 38.5,
+    "depositLimit": 160000000,
+    "guaranteeCapLimit": 180000000,
+    "dsrLimit": 95238095,
+    "stressDsrLimit": 55555555,
+    "finalLimit": 95238095,
+    "appliedRegulation": "DSR",
+    "dtiReference": 40.0,
     "missingFields": []
   }
 }
