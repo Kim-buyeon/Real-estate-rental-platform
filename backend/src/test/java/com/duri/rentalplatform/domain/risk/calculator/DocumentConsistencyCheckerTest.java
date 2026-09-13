@@ -76,7 +76,10 @@ class DocumentConsistencyCheckerTest {
                         result(true, true, false, true)),
                 Arguments.of("RISK-04-12 등기 면적 NULL — 불일치",
                         input(OWNED_BY_LANDLORD, LEDGER_ADDRESS, null, false),
-                        result(true, true, false, false))
+                        result(true, true, false, false)),
+                Arguments.of("RISK-04-13 소유자명 안쪽 공백 — 이름은 접지 않아 불일치",
+                        input(List.of(valid(1, OWNERSHIP_TRANSFER, "김 임대")), LEDGER_ADDRESS, LEDGER_AREA, false),
+                        result(false, true, false, true))
         );
     }
 

@@ -29,11 +29,11 @@ public final class DocumentConsistencyChecker {
 
     public static ConsistencyResult check(ConsistencyInput input) {
         boolean ownerNameMatched = currentOwner(input)
-                .map(owner -> sameText(owner.holderName(), input.landlordName()))
+                .map(owner -> sameName(owner.holderName(), input.landlordName()))
                 .orElse(false);
         return new ConsistencyResult(
                 ownerNameMatched,
-                sameText(input.ledgerAddress(), input.registryAddress()),
+                sameAddress(input.ledgerAddress(), input.registryAddress()),
                 input.violationBuilding(),
                 sameArea(input.ledgerExclusiveArea(), input.registryExclusiveArea()));
     }
@@ -46,14 +46,20 @@ public final class DocumentConsistencyChecker {
                 .max(Comparator.comparingInt(OwnershipRightEntry::rankNo));
     }
 
-    private static boolean sameText(String left, String right) {
+    /** 이름은 앞뒤 공백만 걷는다. 이름 안의 공백은 다른 사람을 가를 수 있다. */
+    private static boolean sameName(String left, String right) {
+        return left != null && right != null && left.strip().equals(right.strip());
+    }
+
+    /** 주소는 앞뒤 공백을 걷고 연속 공백을 한 칸으로 접는다. 번지 · 동 표기는 적재 단계 정규화가 맡는다. */
+    private static boolean sameAddress(String left, String right) {
         if (left == null || right == null) {
             return false;
         }
-        return normalize(left).equals(normalize(right));
+        return collapse(left).equals(collapse(right));
     }
 
-    private static String normalize(String text) {
+    private static String collapse(String text) {
         return WHITESPACES.matcher(text.strip()).replaceAll(" ");
     }
 
