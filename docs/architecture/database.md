@@ -323,6 +323,8 @@
 | Is Latest | is_latest |  | ● | BOOLEAN | 1 | — | TRUE | 최신 분석 결과 여부 |
 | Analyzed At | analyzed_at |  | ● | TIMESTAMP | — | — | now() | 분석 일시 |
 
+인덱스 — (property_id) WHERE is_latest UNIQUE: 매물마다 최신 분석은 하나다. 두 인스턴스의 동시 첫 분석을 DB 가 막고, 목록 · 지도 · 집계의 최신 분석 조인을 겸한다.
+
 ### 17. LOAN_REGULATION — 대출 규제
 
 | 속성명 | 컬럼명 | 실질 식별자 | Not Null | 데이터타입 | 길이 | 소수점 | 기본값 | 설명 |
