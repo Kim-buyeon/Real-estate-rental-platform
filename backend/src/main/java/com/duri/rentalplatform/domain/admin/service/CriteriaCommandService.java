@@ -59,7 +59,7 @@ public class CriteriaCommandService {
     @Transactional
     public void updateGuarantee(Long adminId, GuaranteeProvider provider, GuaranteeCriteriaUpdateRequest request) {
         GuaranteeCriteria criteria = guaranteeCriteriaRepository.findByProvider(provider)
-                .orElseThrow(() -> new IllegalStateException("guarantee_criteria 행이 없다: " + provider));
+                .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
         BigDecimal collateralRatio = request.collateralRatio().setScale(RATIO_SCALE);
         BigDecimal seniorDebtRatioLimit = request.seniorDebtRatioLimit() == null
                 ? criteria.getSeniorDebtRatioLimit()
@@ -84,7 +84,7 @@ public class CriteriaCommandService {
 
         if (provider == GuaranteeProvider.HF) {
             HfCriteria hf = hfCriteriaRepository.findByGuaranteeId(criteria.getGuaranteeId())
-                    .orElseThrow(() -> new IllegalStateException("hf_criteria 행이 없다"));
+                    .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
             if (hf.isLoanLinkedRequired() != request.requiresLoanLink()) {
                 changes.add(CriteriaTarget.HF_CRITERIA, hf.getHfCriteriaId(), key, "requiresLoanLink",
                         String.valueOf(hf.isLoanLinkedRequired()), String.valueOf(request.requiresLoanLink()));
@@ -135,7 +135,7 @@ public class CriteriaCommandService {
         BigDecimal minCollateralRatio = guaranteeCriteriaRepository.findAll().stream()
                 .map(GuaranteeCriteria::getCollateralRatio)
                 .min(Comparator.naturalOrder())
-                .orElseThrow(() -> new IllegalStateException("guarantee_criteria 행이 없다"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
         if (negativeEquityRatio.compareTo(minCollateralRatio) >= 0) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "negativeEquityRatio");
         }
@@ -154,7 +154,7 @@ public class CriteriaCommandService {
 
     private RiskCriteria loadRiskCriteria() {
         return riskCriteriaRepository.findFirstByOrderByRiskCriteriaIdAsc()
-                .orElseThrow(() -> new IllegalStateException("risk_criteria 행이 없다"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
     }
 
     /** 데이터베이스 설계서 31절의 사람이 읽는 대상 식별 — 기관/주택 유형/보증금 구간/부채비율 구간. */

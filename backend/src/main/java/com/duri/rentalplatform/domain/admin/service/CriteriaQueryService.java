@@ -41,7 +41,7 @@ public class CriteriaQueryService {
     public RiskThresholdResponse getRiskThreshold() {
         RiskThresholdResponse threshold = criteriaMapper.selectRiskThreshold();
         if (threshold == null) {
-            throw new IllegalStateException("risk_criteria 행이 없다");
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR);
         }
         return threshold;
     }
