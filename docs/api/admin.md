@@ -54,6 +54,46 @@ PUT /api/admin/criteria/guarantee/HUG — 요청
 }
 ```
 
+- 조회 응답에는 `seniorDebtRatioLimit`(선순위채권 한도, %)가 함께 나간다. 값이 확인되지 않은 기관은 `null`이며 검사하지 않는다.
+- 수정 요청은 `collateralRatio`(0 ~ 100) · `maxDeposit`(0 이상) · `requiresLoanLink` · `changeReason`(필수, 200자 이하)이 필수이고 `seniorDebtRatioLimit`(0 ~ 100)은 선택이다. `seniorDebtRatioLimit`이 없으면 기존 값을 유지한다 — 이력의 변경 후 값이 비어 있을 수 없어 `null`로 되돌리는 수정은 받지 않는다.
+- `requiresLoanLink`는 HF만 저장한다. HUG · SGI는 늘 `false`로 조회되고 요청 값은 무시한다.
+- `collateralRatio`는 위험 등급 기준 `negativeEquityRatio`보다 커야 한다(아래 세 선 단조). 어기면 400 `INVALID_REQUEST`.
+- 비율은 소수 둘째 자리까지 받는다.
+
+GET /api/admin/criteria/premium-rates — 응답
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "premiumRateId": 1,
+        "provider": "HUG",
+        "houseType": "APARTMENT",
+        "depositMin": 0,
+        "depositMax": 200000000,
+        "debtRatioMin": 0.00,
+        "debtRatioMax": 80.00,
+        "premiumRate": 0.097,
+        "updatedAt": "2026-09-13T00:00:00+09:00"
+      }
+    ]
+  }
+}
+```
+
+PUT /api/admin/criteria/premium-rates — 요청. 구간(보증금 · 부채비율 · 주택 유형)은 바꾸지 않고 요율 값만 수정한다. `premiumRate`는 0 이상 100 미만, 소수 셋째 자리까지. 없는 `premiumRateId`나 같은 식별자가 두 번 오면 400 `INVALID_REQUEST`.
+
+```json
+{
+  "rates": [
+    { "premiumRateId": 1, "premiumRate": 0.115 }
+  ],
+  "changeReason": "요율 개정 반영"
+}
+```
+
 GET /api/admin/criteria/risk-thresholds — 응답
 
 ```json
@@ -67,9 +107,17 @@ GET /api/admin/criteria/risk-thresholds — 응답
 }
 ```
 
-PUT 요청은 두 값과 `changeReason`을 받는다. `cautionLeaseRatio`는 `negativeEquityRatio`보다 작아야 한다 — 같거나 크면 CAUTION이 나올 수 없다(비즈니스 로직 정의서 3장). 어기면 400 `INVALID_REQUEST`.
+PUT 요청은 두 값과 `changeReason`을 받는다. `cautionLeaseRatio`는 `negativeEquityRatio`보다 작아야 한다 — 같거나 크면 CAUTION이 나올 수 없다(비즈니스 로직 정의서 3장). 어기면 400 `INVALID_REQUEST`. `negativeEquityRatio`는 보증기관 `collateralRatio`의 최솟값보다 작아야 한다 — 세 선 `cautionLeaseRatio < negativeEquityRatio < min(collateralRatio)`. 어기면 400 `INVALID_REQUEST`.
+
+수정(PUT) 응답은 같은 경로 조회(GET)의 응답과 같다 — 기관별 기준 수정은 `GET /api/admin/criteria/guarantee`와 같은 `providers[]`. 값이 바뀐 필드만 이력으로 남고, 바뀐 필드가 없으면 이력을 남기지 않는다.
+
+`GET /api/admin/criteria/loan-regulations` · `PUT`의 요청 · 응답은 미확정이다 — 대출 한도 산식(LOAN-01)의 기준이 정해진 뒤 정한다.
 
 ### 1.2 변경 이력 응답
+
+- 파라미터 — `cursor`(선택), `size`(기본 20, 최대 100)
+- `field` — 변경된 API 필드명. `beforeValue` · `afterValue`는 문자열이다(비율은 저장 자릿수 그대로, 금액은 정수). 처음 값이 없던 필드는 `beforeValue`가 `null`
+- `targetKey` — 사람이 읽는 대상 식별. 기관 기준은 `HUG`, 보증료율은 `HUG/APARTMENT/0-200000000/0.00-80.00`(보증금 상한이 없으면 비움), 위험 등급 기준은 `RISK_CRITERIA`
 
 - `target` — `GUARANTEE_CRITERIA` · `HUG_CRITERIA` · `HF_CRITERIA` · `SGI_CRITERIA` · `GUARANTEE_PREMIUM_RATE` · `LOAN_REGULATION` · `RISK_CRITERIA`
 - `changedBy` — 변경한 관리자의 이메일. 탈퇴해 개인 정보가 파기된 관리자는 `null`

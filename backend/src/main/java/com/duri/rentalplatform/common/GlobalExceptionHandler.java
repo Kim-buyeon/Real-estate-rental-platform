@@ -2,6 +2,7 @@ package com.duri.rentalplatform.common;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -38,6 +39,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
         return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getStatus())
                 .body(ApiResponse.fail(ErrorCode.INVALID_REQUEST, e.getName()));
+    }
+
+    /**
+     * 컨트롤러 · 서비스 안에서 난 권한 거부(메서드 보안 등). 필터 단계의 거부는 접근 거부 처리기가 맡지만, 디스패처
+     * 안에서 던져진 것은 여기로 온다. 처리하지 않으면 아래 {@code Exception} 처리기가 500 으로 바꾼다.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException e) {
+        return ResponseEntity.status(ErrorCode.AUTH_FORBIDDEN.getStatus())
+                .body(ApiResponse.fail(ErrorCode.AUTH_FORBIDDEN, null));
     }
 
     /** 예상하지 못한 예외. 내부 메시지를 응답에 노출하지 않고 500으로 변환한다. */

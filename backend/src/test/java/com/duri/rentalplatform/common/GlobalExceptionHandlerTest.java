@@ -81,8 +81,23 @@ class GlobalExceptionHandlerTest {
                         org.hamcrest.Matchers.containsString("보안상 노출 금지 내부 사유"))));
     }
 
+    @Test
+    @DisplayName("컨트롤러 안의 권한 거부는 500 이 아니라 403 AUTH_FORBIDDEN 이다")
+    void accessDenied() throws Exception {
+        mockMvc.perform(get("/test/denied"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("AUTH_FORBIDDEN"))
+                .andExpect(jsonPath("$.error.field").doesNotExist());
+    }
+
     @RestController
     static class TestController {
+
+        @GetMapping("/test/denied")
+        void denied() {
+            throw new org.springframework.security.access.AccessDeniedException("거부");
+        }
 
         @GetMapping("/test/business")
         void business() {

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  판정 기준 관리 조회. API 명세서(관리자) 1.1 · 1.2.
+
+  일시 컬럼은 서울 벽시계 시각으로 저장되어 있어 AT TIME ZONE 으로 시각(timestamptz)을 확정해 넘기고, DTO 가 서울
+  오프셋으로 바꾼다. 평면 record 는 자동 생성자 매핑이다.
+-->
+<mapper namespace="com.duri.rentalplatform.domain.admin.mapper.CriteriaMapper">
+
+    <!--
+      requiresLoanLink 는 HF 세부 기준에만 있다. 다른 기관은 조인되는 행이 없어 FALSE.
+      updatedAt 은 기관 기준과 HF 세부 기준 중 늦은 쪽 — HF 의 연계 여부만 바꿔도 수정일시가 움직인다.
+    -->
+    <select id="selectGuaranteeCriteria"
+            resultType="com.duri.rentalplatform.domain.admin.dto.response.GuaranteeCriteriaResponse$Provider">
+        SELECT gc.provider,
+               gc.collateral_ratio,
+               gc.max_deposit,
+               gc.senior_debt_ratio_limit,
+               COALESCE(hf.loan_linked_required_yn, FALSE) AS requires_loan_link,
+               (CASE WHEN hf.updated_at IS NOT NULL AND hf.updated_at &gt; gc.updated_at
+                     THEN hf.updated_at ELSE gc.updated_at END) AT TIME ZONE 'Asia/Seoul' AS updated_at
+        FROM guarantee_criteria gc
+        LEFT JOIN hf_criteria hf ON hf.guarantee_id = gc.guarantee_id AND gc.provider = 'HF'
+        ORDER BY gc.guarantee_id
+    </select>
+
+    <select id="selectPremiumRates"
+            resultType="com.duri.rentalplatform.domain.admin.dto.response.PremiumRatesResponse$Item">
+        SELECT r.premium_rate_id,
+               gc.provider,
+               r.house_type,
+               r.deposit_min,
+               r.deposit_max,
+               r.debt_ratio_min,
+               r.debt_ratio_max,
+               r.premium_rate,
+               r.updated_at AT TIME ZONE 'Asia/Seoul' AS updated_at
+        FROM guarantee_premium_rate r
+        JOIN guarantee_criteria gc ON gc.guarantee_id = r.guarantee_id
+        ORDER BY gc.guarantee_id, r.house_type, r.deposit_min, r.debt_ratio_min, r.premium_rate_id
+    </select>
+
+    <select id="selectRiskThreshold"
+            resultType="com.duri.rentalplatform.domain.admin.dto.response.RiskThresholdResponse">
+        SELECT rc.negative_equity_ratio,
+               rc.caution_lease_ratio,
+               rc.updated_at AT TIME ZONE 'Asia/Seoul' AS updated_at
+        FROM risk_criteria rc
+        ORDER BY rc.risk_criteria_id
+        LIMIT 1
+    </select>
+
+    <!-- 탈퇴(deleted_at 이 있는) 관리자는 이메일을 내보내지 않는다. 조인 조건에 두어 이력 행은 남긴다. -->
+    <select id="selectHistory"
+            resultType="com.duri.rentalplatform.domain.admin.dto.response.CriteriaHistoryResponse">
+        SELECT h.history_id,
+               h.target_table AS target,
+               h.target_key,
+               h.field_name AS field,
+               h.before_value,
+               h.after_value,
+               h.change_reason,
+               u.email AS changed_by,
+               h.changed_at AT TIME ZONE 'Asia/Seoul' AS changed_at
+        FROM criteria_change_history h
+        LEFT JOIN users u ON u.user_id = h.changed_by AND u.deleted_at IS NULL
+        <where>
+            <if test="lastId != null">
+                (h.changed_at &lt; #{lastChangedAt}
+                 OR (h.changed_at = #{lastChangedAt} AND h.history_id &lt; #{lastId}))
+            </if>
+        </where>
+        ORDER BY h.changed_at DESC, h.history_id DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

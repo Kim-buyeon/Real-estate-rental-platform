@@ -33,4 +33,10 @@ public class RiskCriteria extends BaseEntity {
     /** SAFE/CAUTION 경계(%). */
     @Column(nullable = false, precision = 5, scale = 2)
     private BigDecimal cautionLeaseRatio;
+
+    /** 기준값 수정(ADMIN-01). 단조 검증 · 이력은 호출자가 한다. */
+    public void changeThresholds(BigDecimal negativeEquityRatio, BigDecimal cautionLeaseRatio) {
+        this.negativeEquityRatio = negativeEquityRatio;
+        this.cautionLeaseRatio = cautionLeaseRatio;
+    }
 }
