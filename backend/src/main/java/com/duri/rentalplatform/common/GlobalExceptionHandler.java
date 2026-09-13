@@ -6,6 +6,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
  * 전역 예외 처리. 모든 오류를 공통 응답 봉투(§1.2)로 변환한다.
@@ -30,6 +31,13 @@ public class GlobalExceptionHandler {
         String field = fieldError != null ? fieldError.getField() : null;
         return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getStatus())
                 .body(ApiResponse.fail(ErrorCode.INVALID_REQUEST, field));
+    }
+
+    /** 경로 변수 · 요청 파라미터의 타입 불일치(예: 숫자 자리에 문자). 400으로 변환한다. */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getStatus())
+                .body(ApiResponse.fail(ErrorCode.INVALID_REQUEST, e.getName()));
     }
 
     /** 예상하지 못한 예외. 내부 메시지를 응답에 노출하지 않고 500으로 변환한다. */
