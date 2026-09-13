@@ -84,7 +84,7 @@ class FaultAddressNormalizeClientTest {
     private FaultAddressNormalizeClient clientOf(String kind, Duration delay, Duration readTimeout) {
         ExternalApiProperties.ClientSettings settings = new ExternalApiProperties.ClientSettings(
                 "fault", null, null, null, readTimeout, new ExternalApiProperties.FaultSettings(kind, delay));
-        ExternalApiProperties properties = new ExternalApiProperties(null, settings, null);
+        ExternalApiProperties properties = new ExternalApiProperties(null, settings, null, null);
         return new FaultAddressNormalizeClient(properties);
     }
 }

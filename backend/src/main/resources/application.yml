@@ -106,6 +106,15 @@ external:
   # 기본 URL · 키 · 타임아웃 · 서킷 인스턴스도 Real 이 붙는 변경에서 더한다.
   registry:
     mode: mock
+  # 국토교통부 건축물대장. Mock · Fault 만 있다 — 활용 신청 승인과 요청 파라미터(시군구 · 법정동 코드, 번 · 지)
+  # 저장이 확인되지 않아 Real 은 후속이다. real 을 주면 구현 빈이 없어 기동이 실패한다.
+  # 기본 URL · 키 · 연결 타임아웃은 Real 이 붙는 변경에서 더한다. read-timeout 은 Fault 의 timeout 모드가 읽는다(미확정 잠정치).
+  building-ledger:
+    mode: mock
+    read-timeout: 5s
+    fault:
+      kind: error
+      delay: 10s
 
 # 외부 한 곳의 장애가 전체를 멈추게 하지 않기 위한 격리. 인스턴스 이름은 연동 인터페이스의
 # RESILIENCE_INSTANCE 상수와 같아야 한다 — 이름이 어긋나면 애노테이션이 조용히 기본 설정으로 돈다.
@@ -133,10 +142,12 @@ resilience4j:
         base-config: default
       geocode:
         base-config: default
+      buildingLedger:
+        base-config: default
   retry:
     configs:
       default:
-        # 조회(멱등)만 재시도한다. 이 세 연동은 모두 조회다.
+        # 조회(멱등)만 재시도한다. 아래 연동은 모두 조회다.
         max-attempts: 3
         wait-duration: 500ms
         enable-exponential-backoff: true
@@ -147,4 +158,6 @@ resilience4j:
       addressNormalize:
         base-config: default
       geocode:
+        base-config: default
+      buildingLedger:
         base-config: default
