@@ -24,13 +24,23 @@ public final class CursorCodec {
     private CursorCodec() {
     }
 
-    /** 커서에 담기는 값. {@code v} 는 정렬 값, {@code id} 는 동률을 가르는 식별자다. */
-    public record Cursor(String v, Long id) {
+    /**
+     * 커서에 담기는 값. {@code s} 는 커서를 만든 정렬 기준과 방향, {@code v} 는 정렬 값, {@code id} 는 동률을
+     * 가르는 식별자다.
+     *
+     * <p>{@code s} 가 있어야 다른 정렬로 받은 커서를 거부할 수 있다. 없으면 보증금 값이 전세가율로 읽혀
+     * 틀린 페이지가 오류 없이 돌아온다.
+     */
+    public record Cursor(String s, String v, Long id) {
     }
 
     public static String encode(String sortValue, long id) {
+        return encode(null, sortValue, id);
+    }
+
+    public static String encode(String sort, String sortValue, long id) {
         try {
-            byte[] json = JSON.writeValueAsBytes(new Cursor(sortValue, id));
+            byte[] json = JSON.writeValueAsBytes(new Cursor(sort, sortValue, id));
             return ENCODER.encodeToString(json);
         } catch (JacksonException e) {
             throw new IllegalStateException("커서 인코딩 실패", e);

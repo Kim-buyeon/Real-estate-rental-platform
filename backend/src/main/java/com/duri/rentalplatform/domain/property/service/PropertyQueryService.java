@@ -142,6 +142,8 @@ public class PropertyQueryService {
             }
         }
         BigDecimal nullDebtRatio = ascending ? NULL_DEBT_RATIO_ASC : NULL_DEBT_RATIO_DESC;
+        // 커서를 만든 정렬과 지금 요청의 정렬이 다르면 정렬 값을 다른 기준으로 읽게 된다 — 거부한다.
+        String sortSignature = sortKey.name() + (ascending ? ",asc" : ",desc");
 
         Long lastId = null;
         Long lastDeposit = null;
@@ -149,6 +151,9 @@ public class PropertyQueryService {
         LocalDateTime lastRegisteredAt = null;
         if (request.cursor() != null && !request.cursor().isBlank()) {
             CursorCodec.Cursor cursor = CursorCodec.decode(request.cursor());
+            if (!sortSignature.equals(cursor.s())) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST, "cursor");
+            }
             lastId = cursor.id();
             try {
                 switch (sortKey) {
@@ -171,7 +176,7 @@ public class PropertyQueryService {
         String nextCursor = null;
         if (hasNext) {
             PropertyListResponse last = items.get(items.size() - 1);
-            nextCursor = CursorCodec.encode(sortValue(last, sortKey, nullDebtRatio), last.propertyId());
+            nextCursor = CursorCodec.encode(sortSignature, sortValue(last, sortKey, nullDebtRatio), last.propertyId());
         }
         return new CursorPage<>(List.copyOf(items), nextCursor, hasNext);
     }

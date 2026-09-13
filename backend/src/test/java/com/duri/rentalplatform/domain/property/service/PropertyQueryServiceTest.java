@@ -104,6 +104,27 @@ class PropertyQueryServiceTest {
     }
 
     @Test
+    @DisplayName("다른 정렬로 받은 커서를 넣으면 틀린 페이지 대신 INVALID_REQUEST(cursor)다")
+    void rejectsCursorIssuedForAnotherSort() {
+        OffsetDateTime base = OffsetDateTime.now(ZoneOffset.UTC);
+        when(propertyMapper.selectList(any())).thenReturn(List.of(
+                listRow(1L, base), listRow(2L, base.minusMinutes(1)), listRow(3L, base.minusMinutes(2))));
+        CursorPage<?> depositPage = (CursorPage<?>) service.search(new PropertySearchRequest(
+                null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, "deposit,asc", null, 2));
+
+        for (String otherSort : List.of("debtRatio,asc", "deposit,desc")) {
+            PropertySearchRequest reused = new PropertySearchRequest(
+                    null, null, null, null, null, null, null, null, null,
+                    null, null, null, null, null, null, null, otherSort, depositPage.nextCursor(), 2);
+            assertThatThrownBy(() -> service.search(reused))
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                            .isEqualTo(ErrorCode.INVALID_REQUEST));
+        }
+    }
+
+    @Test
     @DisplayName("좌표 조건이 없고 조회 결과가 size건이면 hasNext=false·nextCursor=null이다")
     void searchListNoNextWhenRowsEqualSize() {
         OffsetDateTime base = OffsetDateTime.now(ZoneOffset.UTC);
