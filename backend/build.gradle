@@ -32,6 +32,15 @@ dependencies {
 	// MyBatis 조회 전용 매퍼. 버전을 직접 적는 이유: Spring Boot BOM 이 이 스타터를 관리하지 않아
 	// 생략하면 의존성 해석이 실패한다. 4.1.0 이 Boot 4.1 대응 릴리스다 — 4.0.x 는 Boot 4.0 용이다.
 	implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:4.1.0'
+	// Spring AOP 프록시. Boot 4 에는 spring-boot-starter-aop 가 없다(3.5 계열까지만 배포됐다).
+	// aspectjweaver 를 직접 넣어야 @Aspect 기반 자동 프록시(AnnotationAwareAspectJAutoProxyCreator)가 산다.
+	// 버전은 Boot BOM 이 관리한다.
+	implementation 'org.aspectj:aspectjweaver'
+	// 외부 연동 격리 — 타임아웃 · 재시도 · 서킷 · 폴백. 기술 스택 정의서 2장.
+	// 좌표에 주의한다: Boot 4 대응 라인은 resilience4j-spring-boot4 다. resilience4j-spring-boot3 는
+	// Spring Boot 3 용이며 같은 2.4.0 버전으로 함께 배포된다.
+	// 애노테이션(@Retry · @CircuitBreaker)은 Spring AOP 프록시로 동작하므로 starter-aop 가 함께 필요하다.
+	implementation 'io.github.resilience4j:resilience4j-spring-boot4:2.4.0'
 	implementation 'org.springframework.boot:spring-boot-flyway'
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-database-postgresql'

@@ -7,12 +7,16 @@ Spring Boot 4.1 · Java 21 · JPA + MyBatis · PostgreSQL 17
 ```
 com.duri.rentalplatform
 ├── domain/<도메인>/          user · property · risk · loan · notification · admin
-│   ├── controller/
-│   ├── service/                <도메인>QueryService · <도메인>CommandService
-│   ├── repository/             JPA
+│   ├── controller/             @RestController
+│   ├── service/                @Service. <도메인>QueryService · <도메인>CommandService
+│   ├── repository/             JPA 인터페이스
 │   ├── mapper/                 MyBatis 인터페이스
-│   ├── entity/
+│   ├── entity/                 @Entity
 │   ├── enums/                  해당 도메인 전용 열거형
+│   ├── calculator/             빈이 아닌 순수 함수 클래스 — 판정 · 계산 · 생성
+│   ├── vo/                     값 객체 · 집계 객체
+│   ├── loader/                 적재 실행 진입점 (@Component)
+│   ├── store/                  외부 저장소 보관소 (@Component)
 │   └── dto/
 │       ├── request/
 │       ├── response/
@@ -24,12 +28,29 @@ com.duri.rentalplatform
 
 MyBatis XML은 `resources/mapper/<도메인>/`에, Flyway 마이그레이션은 `resources/db/migration/`에 둔다.
 
+### 패키지 이름이 계층이고, 그 계층의 것만 들어간다
+
+**`service/`는 `@Service`가 붙는 것만 담는다.** 비즈니스 로직을 수행하는 빈의 자리다. 같은 방식으로 `entity/`는 `@Entity`만, `repository/`는 JPA 인터페이스만, `controller/`는 `@RestController`만 담는다.
+
+**넣을 자리가 없으면 기존 계층에 밀어 넣지 말고 새 패키지를 만든다.** 순수 함수 클래스를 `service/`에, 값 객체를 `entity/`에 두면 그 패키지를 열었을 때 무엇이 들어 있는지 이름으로 알 수 없게 된다. `calculator/` · `vo/` · `loader/` · `store/`가 그래서 생겼다.
+
+**모든 도메인이 같은 패키지를 갖지 않는다.** `loader/`는 외부에서 데이터를 가져와 적재하는 도메인에만, `store/`는 JPA 밖의 저장소를 쓰는 도메인에만 둔다. 쓰지 않는 패키지를 미리 만들지 않는다.
+
+| 패키지 | 들어가는 것 | 예 |
+| --- | --- | --- |
+| `service/` | `@Service` | `UserCommandService` · `PropertyLoadService` · `PropertyLoadWriter` |
+| `calculator/` | 빈이 아닌 순수 함수 클래스 | `MarketPriceCalculator` · `RiskGradeCalculator` · `ContractTypeClassifier` |
+| `vo/` | 값 객체 · 집계 객체 | `PropertyNaturalKey` · `PropertyLoadReport` |
+| `loader/` | 적재 실행 진입점 | `PropertyLoadRunner` |
+| `store/` | JPA 밖의 저장소 보관소 | `RefreshTokenStore` |
+
 ---
 
 ## Entity
 
 - JPA 전용이다. 컨트롤러나 응답에 노출하지 않는다.
 - **모든 엔티티는 감사 상위 클래스를 상속한다.** 생성일시·수정일시를 개별 엔티티에 선언하지 않는다. 둘 중 어느 것을 상속하는지는 아래 「감사 상위 클래스」가 정한다.
+- **예외는 감사 컬럼이 없는 코드성 테이블이다.** `created_at`도 `updated_at`도 없는 테이블 — 시드 마이그레이션이 값을 넣고 애플리케이션은 읽기만 하는 공통 코드가 그것이다(`PropertyCode`). 상속시키면 매핑에만 있는 컬럼이 생겨 `ddl-auto: validate`가 기동을 막는다. 예외인 엔티티는 그 사유를 클래스 주석에 남긴다.
 - `@Data`, `@Setter`를 붙이지 않는다. 변경은 의도가 드러나는 메서드로 표현한다.
 - 기본 생성자는 `@NoArgsConstructor(access = PROTECTED)`.
 - 생성은 정적 팩토리 메서드로 한다. 생성자를 공개하지 않는다.
@@ -62,6 +83,7 @@ public abstract class BaseEntity extends CreatedAtEntity {
 - `@EnableJpaAuditing`을 활성화한다.
 - **테이블에 `updated_at`이 있으면 `BaseEntity`를, 없으면 `CreatedAtEntity`를 상속한다.** 어느 테이블이 그 컬럼을 갖는지는 「데이터베이스 설계서」가 정한다. 상속 대상을 편의로 고르지 않는다.
 - 상속을 잘못 고르면 기동 시점에 드러난다. `ddl-auto`가 `validate`라 매핑에 있는 컬럼이 스키마에 없으면 Hibernate가 예외를 던지고 앱이 뜨지 않는다. 마이그레이션이 컬럼을 만들어 주지 않는다.
+- **컬럼명이 `created_at`이 아니어도 상속한다.** 생성 시각을 담는 컬럼 이름이 다를 뿐이면 `@AttributeOverride(name = "createdAt", column = @Column(name = "...", updatable = false))`로 이름을 맞춘다. 컬럼명이 다르다는 이유로 상속을 끊고 감사 필드를 엔티티에 직접 선언하지 않는다. `Property`의 `registered_at`이 그 경우다.
 - `@EntityListeners`는 `CreatedAtEntity`에만 붙인다. 상위 클래스에 선언된 리스너는 하위 클래스에 상속되므로 `BaseEntity`에 다시 붙일 필요가 없다. 끊으려면 `@ExcludeSuperclassListeners`를 써야 한다.
 - 시각을 코드에서 직접 넣지 않는다. 감사 기능이 채운다.
 
@@ -222,6 +244,18 @@ public interface PropertyMapper {
 - 외부 API 호출을 트랜잭션 안에 두지 않는다. 커넥션을 오래 점유한다.
 - 동일 트랜잭션에서 JPA로 변경한 데이터를 매퍼로 조회하지 않는다. 반영되지 않은 값을 읽는다.
 
+### 적재 서비스는 예외다
+
+**초기 적재는 조회도 변경도 아니다.** 사용자 요청을 처리하지 않고, 외부에서 받아 가공한 뒤 저장까지 한 번에 도는 준비 작업이다. Query·Command로 가르면 한쪽에 전부 들어가거나 같은 흐름이 둘로 쪼개진다. 그래서 **반환 타입이 아니라 외부 호출과 트랜잭션을 기준으로 나눈다.**
+
+| 클래스 | 하는 일 | 트랜잭션 |
+| --- | --- | --- |
+| `<도메인>LoadService` | 외부 호출·가공·건너뛸 건 판정 | 걸지 않는다. 외부 호출을 트랜잭션 안에 두지 않는다 |
+| `<도메인>LoadWriter` | 넘겨받은 값을 저장 | `@Transactional` 메서드 레벨. 한 덩어리가 한 경계다 |
+
+- 둘 다 `@Service`이므로 `service/`에 둔다. 실행 진입점은 `loader/`가 갖는다.
+- **이 예외는 초기 적재에만 해당한다.** 사용자 요청을 처리하는 기능은 Query·Command로 나눈다.
+
 ---
 
 ## Controller
@@ -285,6 +319,24 @@ public class WishlistController {
     }
 }
 ```
+
+---
+
+## 외부 연동
+
+`external/<연동 대상>/`에 인터페이스 하나와 구현 셋을 둔다. 절차는 `add-external-client`를 따르고, 여기서는 **첫 연동에서 정해진 이름과 선택 방식**만 정한다.
+
+| 항목 | 값 |
+| --- | --- |
+| 인터페이스 | `<연동대상>Client` — `RentTransactionClient` · `AddressNormalizeClient` · `GeocodeClient` |
+| 구현 | 접두사 `Mock` · `Real` · `Fault` |
+| 구현 선택 | 설정 키 `external.<대상>.mode`. 값은 `mock` · `real` · `fault`, 기본은 `mock` |
+
+**프로파일로 고르지 않는다.** 연동 대상이 여럿이라 프로파일로 가르면 「실거래가만 Real, 좌표는 Mock」 같은 조합을 만들 수 없다.
+
+**서킷·재시도 인스턴스 이름은 인터페이스가 상수로 갖는다**(`RESILIENCE_INSTANCE`). 격리 단위는 연동 대상이지 구현이 아니다. 구현마다 이름이 따로 있으면 `Fault`로 연 서킷이 `Real`의 서킷과 다른 것이 되어 서킷 동작을 확인할 수 없다. 같은 이유로 `Fault`에도 `Real`과 같은 재시도·서킷·폴백을 건다.
+
+**폴백은 예외를 던진다.** 빈 목록이나 빈 값을 돌려주면 「거래가 없었다」·「그런 주소가 없다」와 구분되지 않아, 외부가 죽은 것을 정상 결과로 기록하게 된다.
 
 ---
 
