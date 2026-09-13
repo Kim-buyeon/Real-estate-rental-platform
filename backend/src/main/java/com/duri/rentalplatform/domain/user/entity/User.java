@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -64,6 +65,9 @@ public class User extends CreatedAtEntity {
     @Column(nullable = false)
     private Long ownFund;
 
+    // 탈퇴(USER-05, 차기)가 채운다. 지금은 읽기만 한다 — 탈퇴한 사용자를 수정 대상에서 거르기 위해서다.
+    private LocalDateTime deletedAt;
+
     /**
      * 이메일 가입으로 사용자를 만든다.
      */
@@ -84,5 +88,22 @@ public class User extends CreatedAtEntity {
         user.ownFund = 0L;
 
         return user;
+    }
+
+    /** 계정 정보 중 수정 가능한 이름 · 전화번호를 바꾼다. 이메일은 별도 절차라 여기서 바꾸지 않는다. */
+    public void changeAccount(String name, String phone) {
+        this.name = name;
+        this.phone = phone;
+    }
+
+    /** 자격 정보를 바꾼다. 미입력은 호출 측이 0 · false 로 넘긴다. */
+    public void changeQualification(Long annualIncome, Integer creditScore, Long existingLoan,
+            Long existingLoanAnnualPayment, boolean hasHouse, Long ownFund) {
+        this.annualIncome = annualIncome;
+        this.creditScore = creditScore;
+        this.existingLoan = existingLoan;
+        this.existingLoanAnnualPayment = existingLoanAnnualPayment;
+        this.hasHouse = hasHouse;
+        this.ownFund = ownFund;
     }
 }

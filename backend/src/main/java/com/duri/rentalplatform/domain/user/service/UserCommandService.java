@@ -4,6 +4,7 @@ import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.domain.user.dto.request.LoginRequest;
+import com.duri.rentalplatform.domain.user.dto.request.ProfileUpdateRequest;
 import com.duri.rentalplatform.domain.user.dto.request.ReissueRequest;
 import com.duri.rentalplatform.domain.user.dto.request.SignupRequest;
 import com.duri.rentalplatform.domain.user.dto.response.TokenResponse;
@@ -121,6 +122,24 @@ public class UserCommandService {
      */
     public void logout(Long userId) {
         refreshTokenStore.delete(userId);
+    }
+
+    /**
+     * 계정 · 자격 정보를 수정한다. 조회한 엔티티의 변경 메서드를 부르고 변경 감지가 UPDATE 한다.
+     *
+     * <p>사용자가 없거나 탈퇴했으면 401 {@code AUTH_INVALID_CREDENTIAL} 이다. 유효한 토큰이 가리키는 사용자가 없는 것은
+     * 정상 경로가 아니고, 공통 오류표에 사용자 없음 코드가 없다. {@link #reissue}의 판단과 같다.
+     */
+    @Transactional
+    public void updateProfile(Long userId, ProfileUpdateRequest request) {
+        User user = userRepository.findByUserIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL));
+
+        ProfileUpdateRequest.Account account = request.account();
+        ProfileUpdateRequest.Profile profile = request.profile();
+        user.changeAccount(account.name(), account.phone());
+        user.changeQualification(profile.annualIncome(), profile.creditScore(), profile.existingLoan(),
+                profile.existingLoanAnnualPayment(), profile.hasHouse(), profile.ownFund());
     }
 
     /** 토큰 두 벌을 발급하고 리프레시 토큰을 보관한다. 같은 키에 덮어쓰는 것이 곧 회전이다. */
