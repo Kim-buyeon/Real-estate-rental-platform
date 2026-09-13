@@ -58,6 +58,9 @@ public class SecurityConfig {
      */
     private static final String[] OPTIONAL_AUTH_GET_PATHS = {"/api/properties", "/api/properties/**"};
 
+    /** 인증 「관리자」 경로(API 명세서 관리자 1장). 토큰의 role 이 ADMIN 이어야 한다. 아니면 필터 단계에서 403. */
+    private static final String[] ADMIN_PATHS = {"/api/admin/**"};
+
     private final JwtTokenProvider jwtTokenProvider;
     private final JsonMapper jsonMapper;
 
@@ -75,6 +78,7 @@ public class SecurityConfig {
                         .requestMatchers(TOKEN_REQUIRED_AUTH_PATHS).authenticated()
                         .requestMatchers(PUBLIC_PATHS).permitAll()
                         .requestMatchers(HttpMethod.GET, OPTIONAL_AUTH_GET_PATHS).permitAll()
+                        .requestMatchers(ADMIN_PATHS).hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(new JwtAuthenticationEntryPoint(jsonMapper))
