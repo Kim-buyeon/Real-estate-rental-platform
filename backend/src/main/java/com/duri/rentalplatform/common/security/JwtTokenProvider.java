@@ -199,7 +199,7 @@ public class JwtTokenProvider {
         if (!(role instanceof String roleName) || roleName.isBlank()) {
             throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL);
         }
-        return new TokenClaims(toUserId(claims), roleName);
+        return new TokenClaims(toUserId(claims), roleName, claims.getExpirationTime().toInstant());
     }
 
     private Long toUserId(JWTClaimsSet claims) {
@@ -220,5 +220,5 @@ public class JwtTokenProvider {
      * <p>사용자 식별자와 권한만 담는다. 컨트롤러가 {@code @AuthenticationPrincipal Long userId}로 받으므로
      * 요청마다 사용자를 조회하지 않는다.
      */
-    public record TokenClaims(Long userId, String role) {}
+    public record TokenClaims(Long userId, String role, Instant expiresAt) {}
 }

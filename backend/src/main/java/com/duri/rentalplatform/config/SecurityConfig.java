@@ -4,6 +4,7 @@ import com.duri.rentalplatform.common.security.JwtAccessDeniedHandler;
 import com.duri.rentalplatform.common.security.JwtAuthenticationEntryPoint;
 import com.duri.rentalplatform.common.security.JwtAuthenticationFilter;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -73,6 +74,10 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // 비동기 디스패치는 이미 인가를 통과한 요청의 뒷마무리다(실시간 수신 스트림의 완료 · 타임아웃 · 오류).
+                        // 무상태라 인증이 저장되지 않아 이 디스패치에는 인증이 비어 있고, 막으면 이미 커밋된 이벤트 스트림에
+                        // 401 을 쓰려 한다. 첫 요청(REQUEST 디스패치)은 아래 규칙을 그대로 따른다.
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         // 순서를 바꾸지 않는다. 아래 PUBLIC_PATHS의 /api/auth/**가 로그아웃에도 일치하므로,
                         // 그것이 먼저 오면 이 규칙은 평가되지 않고 로그아웃이 조용히 열린다.
                         .requestMatchers(TOKEN_REQUIRED_AUTH_PATHS).authenticated()
