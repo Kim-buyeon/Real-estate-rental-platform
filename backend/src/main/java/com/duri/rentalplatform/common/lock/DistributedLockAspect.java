@@ -36,7 +36,9 @@ import org.springframework.util.StringUtils;
  * 끝난 쪽이 남의 락을 지우면 안 된다. 비교와 삭제 사이에 끼어들 틈이 없도록 Lua 스크립트 하나로 실행한다. 해제 실패(Redis
  * 장애)는 기록만 하고 올리지 않는다 — 락은 만료로 풀리고, 주 로직의 결과나 예외를 해제 실패가 덮으면 안 된다.
  *
- * <p><b>순서</b> — 가장 바깥에서 돈다. 트랜잭션 프록시보다 안쪽이면 커밋 전에 락이 풀려, 다음 요청이 반영 전 값을 읽는다.
+ * <p><b>순서</b> — 트랜잭션 프록시(가장 낮은 우선순위)보다 바깥에서 돈다. 안쪽이면 커밋 전에 락이 풀려, 다음 요청이 반영 전 값을
+ * 읽는다. 다만 {@code HIGHEST_PRECEDENCE} 는 쓰지 않는다 — 스프링이 체인 맨 앞에 두는 {@code ExposeInvocationInterceptor}
+ * ({@code HIGHEST_PRECEDENCE + 1}) 보다 앞서면 애노테이션 인자 바인딩이 호출마다 {@code IllegalStateException} 이 된다.
  *
  * <p>문자열 템플릿을 쓰는 이유는 {@code RefreshTokenStore} 와 같다 — 기본 타이핑 직렬화기는 토큰 문자열에 타입 힌트를 붙여
  * 비교가 어긋난다.
@@ -44,7 +46,7 @@ import org.springframework.util.StringUtils;
 @Slf4j
 @Aspect
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class DistributedLockAspect {
 
     private static final RedisScript<Long> RELEASE_SCRIPT = new DefaultRedisScript<>(
