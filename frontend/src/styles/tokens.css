@@ -1,0 +1,60 @@
+/*
+ * 임시본 · 다방 사이트 인상 토대의 추정값(미계측) · 디자인 토큰 정의서 export로 통째 교체
+ *
+ * 디자인 토큰 정의서가 없는 동안 손으로 쓴 파일이다. 정의서가 생기면 export 출력으로 파일 전체를 대체하고
+ * 여기 값을 남기지 않는다. hex는 이 파일에만 있다.
+ * 대비는 WCAG 2 상대 휘도 기준. 위험 등급 색 · 주색은 흰 글자(--color-on-*)와 4.5:1 이상.
+ */
+
+:root {
+  /* ── 색 · 주색 ─────────────────────────────────────────── */
+  --color-primary: #326cf9; /* 흰 글자 대비 4.52 */
+  --color-primary-hover: #2a5fe0; /* 흰 글자 대비 5.51 */
+  --color-primary-surface: #eef3ff;
+  --color-on-primary: #ffffff;
+
+  /* ── 색 · 바탕 ─────────────────────────────────────────── */
+  --color-background: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f5f6f8;
+
+  /* ── 색 · 글자 (흰 바탕 대비) ────────────────────────────── */
+  --color-text: #222222; /* 15.91 */
+  --color-text-secondary: #555555; /* 7.46 */
+  --color-text-tertiary: #767676; /* 4.54 */
+  --color-text-disabled: #999999; /* 비활성 — 대비 요건 제외 */
+
+  /* ── 색 · 보더 ─────────────────────────────────────────── */
+  --color-border: #dddddd;
+  --color-border-subtle: #e5e8eb;
+  --color-focus: #326cf9;
+
+  /* ── 색 · 상태 ─────────────────────────────────────────── */
+  --color-error: #c92a2a; /* 흰 바탕 대비 5.46 */
+  --color-error-surface: #fdecec;
+  --color-on-error: #ffffff;
+
+  /* ── 색 · 위험 등급 ──────────────────────────────────────── */
+  --color-risk-safe: #1b7f45; /* 흰 글자 대비 5.04 */
+  --color-risk-caution: #b35600; /* 흰 글자 대비 4.94 */
+  --color-risk-danger: #c92a2a; /* 흰 글자 대비 5.46 */
+  --color-risk-unanalyzed: #6b7280; /* 흰 글자 대비 4.83 */
+  --color-on-risk: #ffffff;
+
+  /* ── 간격 ──────────────────────────────────────────────── */
+  --spacing-3xs: 2px;
+  --spacing-2xs: 4px;
+  --spacing-xs: 8px;
+  --spacing-sm: 12px;
+  --spacing-md: 16px;
+  --spacing-lg: 20px;
+  --spacing-xl: 24px;
+  --spacing-2xl: 32px;
+  --spacing-3xl: 48px;
+
+  /* ── 반경 ──────────────────────────────────────────────── */
+  --rounded-sm: 4px;
+  --rounded-md: 8px;
+  --rounded-lg: 12px;
+  --rounded-pill: 9999px;
+}

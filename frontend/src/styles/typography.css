@@ -1,0 +1,46 @@
+/*
+ * 타이포그래피 역할 클래스. 글꼴 · 글자 크기 · 행간 · 굵기는 여기로만 쓴다.
+ * 임시본 · 다방 사이트 인상 토대의 추정값(미계측) · 디자인 토큰 정의서 typography 값으로 통째 교체
+ */
+
+.type-heading-1 {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 700;
+}
+
+.type-heading-2 {
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 700;
+}
+
+.type-heading-3 {
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.type-body {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 400;
+}
+
+.type-body-strong {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.type-label {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.type-caption {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+}
