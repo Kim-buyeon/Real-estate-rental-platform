@@ -1,5 +1,6 @@
 package com.duri.rentalplatform.common;
 
+import java.time.OffsetDateTime;
 import lombok.Getter;
 
 /**
@@ -11,14 +12,26 @@ public class BusinessException extends RuntimeException {
 
     private final ErrorCode errorCode;
     private final String field;
+    /** 다음 요청 가능 시각. 요청 간격 제한(429)에서만 채운다. */
+    private final OffsetDateTime retryAfter;
 
     public BusinessException(ErrorCode errorCode) {
-        this(errorCode, null);
+        this(errorCode, (String) null);
     }
 
     public BusinessException(ErrorCode errorCode, String field) {
+        this(errorCode, field, null);
+    }
+
+    /** 요청 간격 제한 — 응답 error.retryAfter 에 다음 요청 가능 시각을 담는다. */
+    public BusinessException(ErrorCode errorCode, OffsetDateTime retryAfter) {
+        this(errorCode, null, retryAfter);
+    }
+
+    private BusinessException(ErrorCode errorCode, String field, OffsetDateTime retryAfter) {
         super(errorCode.getMessage());
         this.errorCode = errorCode;
         this.field = field;
+        this.retryAfter = retryAfter;
     }
 }

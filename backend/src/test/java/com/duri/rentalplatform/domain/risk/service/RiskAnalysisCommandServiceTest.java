@@ -34,6 +34,7 @@ import com.duri.rentalplatform.domain.risk.entity.SgiCriteria;
 import com.duri.rentalplatform.domain.risk.enums.GradeReason;
 import com.duri.rentalplatform.domain.risk.enums.GuaranteeProvider;
 import com.duri.rentalplatform.domain.risk.enums.OwnershipRightType;
+import com.duri.rentalplatform.domain.risk.event.RiskGradeChangedEvent;
 import com.duri.rentalplatform.domain.risk.repository.BuildingRegistryRepository;
 import com.duri.rentalplatform.domain.risk.repository.GuaranteeCriteriaRepository;
 import com.duri.rentalplatform.domain.risk.repository.GuaranteePremiumRateRepository;
@@ -56,6 +57,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -91,6 +93,7 @@ class RiskAnalysisCommandServiceTest {
     private InsuranceProductRepository insuranceProductRepository;
     private RiskCriteriaRepository riskCriteriaRepository;
     private RiskAnalysisRepository riskAnalysisRepository;
+    private ApplicationEventPublisher eventPublisher;
     private RiskAnalysisCommandService service;
 
     @BeforeEach
@@ -109,11 +112,12 @@ class RiskAnalysisCommandServiceTest {
         insuranceProductRepository = mock(InsuranceProductRepository.class);
         riskCriteriaRepository = mock(RiskCriteriaRepository.class);
         riskAnalysisRepository = mock(RiskAnalysisRepository.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         service = new RiskAnalysisCommandService(registryCommandService, ledgerCommandService, propertyRepository,
                 buildingRegistryRepository, ownershipHistoryRepository, mortgageHistoryRepository,
                 buildingLedgerRepository, guaranteeCriteriaRepository, hfCriteriaRepository, sgiCriteriaRepository,
                 premiumRateRepository, insuranceProductRepository, riskCriteriaRepository, riskAnalysisRepository,
-                mock(PlatformTransactionManager.class));
+                eventPublisher, mock(PlatformTransactionManager.class));
     }
 
     @Test
@@ -224,6 +228,49 @@ class RiskAnalysisCommandServiceTest {
         assertThat(saved.getRiskGrade()).isEqualTo(RiskGrade.SAFE);
         assertThat(saved.isLatest()).isTrue();
         assertThat(response.analyzedAt()).isEqualTo(OffsetDateTime.of(NOW, ZoneOffset.ofHours(9)));
+    }
+
+    @Test
+    @DisplayName("첫 분석은 이전 등급이 없어 등급 변경 이벤트를 발행하지 않는다")
+    void firstAnalysisPublishesNoEvent() {
+        givenSafeProperty();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        service.analyze(PROPERTY_ID);
+
+        verify(riskAnalysisRepository).save(any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    @DisplayName("새 행을 남겨도 등급이 같으면 등급 변경 이벤트를 발행하지 않는다")
+    void sameGradeNewRowPublishesNoEvent() {
+        givenSafeProperty();
+        RiskAnalysis latest = analysis(RiskGrade.SAFE, true, "49.99");
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.of(latest));
+        givenSaveStampsCreatedAt();
+
+        service.analyze(PROPERTY_ID);
+
+        verify(riskAnalysisRepository).save(any());
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    @DisplayName("등급이 바뀌면 이전 등급 · 새 등급 · 새 행 시각을 담아 이벤트를 저장 뒤에 발행한다")
+    void gradeChangePublishesEvent() {
+        givenSafeProperty();
+        RiskAnalysis latest = analysis(RiskGrade.CAUTION, true, "50.00");
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.of(latest));
+        givenSaveStampsCreatedAt();
+
+        service.analyze(PROPERTY_ID);
+
+        InOrder order = inOrder(riskAnalysisRepository, eventPublisher);
+        order.verify(riskAnalysisRepository).save(any());
+        order.verify(eventPublisher).publishEvent(
+                new RiskGradeChangedEvent(PROPERTY_ID, RiskGrade.CAUTION, RiskGrade.SAFE, NOW));
     }
 
     @Test

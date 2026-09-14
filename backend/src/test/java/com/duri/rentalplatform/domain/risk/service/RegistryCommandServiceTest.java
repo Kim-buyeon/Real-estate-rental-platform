@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -23,6 +24,8 @@ import com.duri.rentalplatform.domain.risk.entity.OwnershipHistory;
 import com.duri.rentalplatform.domain.risk.enums.MortgageRightType;
 import com.duri.rentalplatform.domain.risk.enums.OwnershipRightType;
 import com.duri.rentalplatform.domain.risk.enums.RegistryDataSource;
+import com.duri.rentalplatform.domain.risk.enums.RegistryRefreshOutcome;
+import com.duri.rentalplatform.domain.risk.event.RegistryChangedEvent;
 import com.duri.rentalplatform.domain.risk.repository.BuildingRegistryRepository;
 import com.duri.rentalplatform.domain.risk.repository.MortgageHistoryRepository;
 import com.duri.rentalplatform.domain.risk.repository.OwnershipHistoryRepository;
@@ -33,6 +36,7 @@ import com.duri.rentalplatform.external.registry.RegistryDocument.OwnershipEntry
 import com.duri.rentalplatform.external.registry.RegistryLookup;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +44,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.auditing.AuditingHandler;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
@@ -59,6 +66,8 @@ class RegistryCommandServiceTest {
     private OwnershipHistoryRepository ownershipHistoryRepository;
     private MortgageHistoryRepository mortgageHistoryRepository;
     private PlatformTransactionManager transactionManager;
+    private AuditingHandler auditingHandler;
+    private ApplicationEventPublisher eventPublisher;
     private RegistryCommandService service;
 
     @BeforeEach
@@ -69,8 +78,11 @@ class RegistryCommandServiceTest {
         ownershipHistoryRepository = mock(OwnershipHistoryRepository.class);
         mortgageHistoryRepository = mock(MortgageHistoryRepository.class);
         transactionManager = mock(PlatformTransactionManager.class);
+        auditingHandler = mock(AuditingHandler.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         service = new RegistryCommandService(registryClient, propertyRepository, buildingRegistryRepository,
-                ownershipHistoryRepository, mortgageHistoryRepository, transactionManager);
+                ownershipHistoryRepository, mortgageHistoryRepository, auditingHandler, eventPublisher,
+                transactionManager);
     }
 
     @Test
@@ -196,7 +208,129 @@ class RegistryCommandServiceTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    // ---------- 다시 떼기 ----------
+
+    @Test
+    @DisplayName("다시 뗀 갑구 · 을구가 저장된 것과 같으면(순서만 달라도) 아무것도 쓰지 않고 이벤트도 없다")
+    void refreshUnchanged() {
+        givenProperty();
+        when(registryClient.fetch(any())).thenReturn(document());
+        BuildingRegistry registry = storedRegistry();
+        List<OwnershipHistory> ownerships = List.of(storedOwnerships(registry).get(1), storedOwnerships(registry).get(0));
+        List<MortgageHistory> mortgages = storedMortgages(registry);
+        when(ownershipHistoryRepository.findByRegistry(registry)).thenReturn(ownerships);
+        when(mortgageHistoryRepository.findByRegistry(registry)).thenReturn(mortgages);
+
+        RegistryRefreshOutcome outcome = service.refresh(PROPERTY_ID);
+
+        assertThat(outcome).isEqualTo(RegistryRefreshOutcome.UNCHANGED);
+        assertThat(outcome.isModified()).isFalse();
+        verify(ownershipHistoryRepository, never()).deleteAllInBatch(anyList());
+        verify(mortgageHistoryRepository, never()).deleteAllInBatch(anyList());
+        verify(ownershipHistoryRepository, never()).saveAll(anyList());
+        verifyNoInteractions(auditingHandler, eventPublisher);
+    }
+
+    @Test
+    @DisplayName("을구 한 건의 말소 여부만 달라도 이력을 교체하고 수집 시각을 갱신한 뒤 변동 이벤트를 발행한다")
+    void refreshChangedReplacesHistories() {
+        givenProperty();
+        when(registryClient.fetch(any())).thenReturn(document());
+        BuildingRegistry registry = storedRegistry();
+        List<OwnershipHistory> ownerships = storedOwnerships(registry);
+        List<MortgageHistory> mortgages = List.of(MortgageHistory.record(registry, 1, MortgageRightType.MORTGAGE,
+                "○○은행", "김임대", LocalDate.of(2019, 3, 11), "설정계약", 100_000_000L, 120_000_000L, 0L, true));
+        when(ownershipHistoryRepository.findByRegistry(registry)).thenReturn(ownerships);
+        when(mortgageHistoryRepository.findByRegistry(registry)).thenReturn(mortgages);
+        LocalDateTime refreshedAt = LocalDateTime.of(2026, 9, 14, 3, 0);
+        when(auditingHandler.markModified(registry)).thenAnswer(inv -> {
+            ReflectionTestUtils.setField(registry, "updatedAt", refreshedAt);
+            return registry;
+        });
+
+        RegistryRefreshOutcome outcome = service.refresh(PROPERTY_ID);
+
+        assertThat(outcome).isEqualTo(RegistryRefreshOutcome.CHANGED);
+        InOrder order = inOrder(transactionManager, registryClient, ownershipHistoryRepository,
+                mortgageHistoryRepository, auditingHandler, buildingRegistryRepository, eventPublisher);
+        order.verify(transactionManager).commit(any());
+        order.verify(registryClient).fetch(any());
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(ownershipHistoryRepository).deleteAllInBatch(ownerships);
+        order.verify(mortgageHistoryRepository).deleteAllInBatch(mortgages);
+        order.verify(ownershipHistoryRepository).saveAll(anyList());
+        order.verify(mortgageHistoryRepository).saveAll(anyList());
+        order.verify(auditingHandler).markModified(registry);
+        order.verify(buildingRegistryRepository).flush();
+        order.verify(eventPublisher).publishEvent(new RegistryChangedEvent(PROPERTY_ID, refreshedAt));
+        order.verify(transactionManager).commit(any());
+
+        List<MortgageHistory> saved = captureList(mortgageHistoryRepository);
+        assertThat(saved).singleElement().satisfies(mortgage -> {
+            assertThat(mortgage.getRegistry()).isSameAs(registry);
+            assertThat(mortgage.isActive()).isFalse();
+        });
+        assertThat(captureList(ownershipHistoryRepository)).hasSize(2);
+        verify(buildingRegistryRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("저장된 등기가 없으면 새로 저장하고 COLLECTED 이며 변동 이벤트는 없다")
+    void refreshCollectsWhenAbsent() {
+        givenProperty();
+        when(registryClient.fetch(any())).thenReturn(document());
+        when(buildingRegistryRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.empty());
+        when(buildingRegistryRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        RegistryRefreshOutcome outcome = service.refresh(PROPERTY_ID);
+
+        assertThat(outcome).isEqualTo(RegistryRefreshOutcome.COLLECTED);
+        assertThat(outcome.isModified()).isTrue();
+        verify(buildingRegistryRepository).saveAndFlush(any());
+        assertThat(captureList(ownershipHistoryRepository)).hasSize(2);
+        assertThat(captureList(mortgageHistoryRepository)).hasSize(1);
+        verifyNoInteractions(auditingHandler, eventPublisher);
+    }
+
+    @Test
+    @DisplayName("외부 조회가 실패하면 그대로 올리고 쓰기 트랜잭션을 열지 않는다")
+    void refreshPropagatesExternalFailure() {
+        givenProperty();
+        when(registryClient.fetch(any())).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
+
+        assertThatThrownBy(() -> service.refresh(PROPERTY_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.EXTERNAL_API_UNAVAILABLE);
+        verify(transactionManager).getTransaction(any());
+        verify(buildingRegistryRepository, never()).findByPropertyId(any());
+        verify(ownershipHistoryRepository, never()).deleteAllInBatch(anyList());
+        verifyNoInteractions(auditingHandler, eventPublisher);
+    }
+
     // ---------- 픽스처 ----------
+
+    private BuildingRegistry storedRegistry() {
+        BuildingRegistry registry = BuildingRegistry.collect(PROPERTY_ID, "업무시설", "철근콘크리트구조",
+                "서울특별시 시험구 시험로 1", new BigDecimal("42.50"), RegistryDataSource.MOCK);
+        when(buildingRegistryRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.of(registry));
+        return registry;
+    }
+
+    /** {@link #document()} 의 갑구와 같은 내용의 저장 행. */
+    private static List<OwnershipHistory> storedOwnerships(BuildingRegistry registry) {
+        return List.of(
+                OwnershipHistory.record(registry, 1, OwnershipRightType.OWNERSHIP_TRANSFER, "김임대",
+                        LocalDate.of(2019, 3, 11), "매매", true),
+                OwnershipHistory.record(registry, 2, OwnershipRightType.SEIZURE, "○○세무서",
+                        LocalDate.of(2021, 5, 3), "압류", true));
+    }
+
+    /** {@link #document()} 의 을구와 같은 내용의 저장 행. */
+    private static List<MortgageHistory> storedMortgages(BuildingRegistry registry) {
+        return List.of(MortgageHistory.record(registry, 1, MortgageRightType.MORTGAGE, "○○은행", "김임대",
+                LocalDate.of(2019, 3, 11), "설정계약", 100_000_000L, 120_000_000L, 0L, false));
+    }
 
     private void givenProperty() {
         Property property = mock(Property.class);

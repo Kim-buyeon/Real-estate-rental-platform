@@ -22,12 +22,12 @@ import tools.jackson.core.JacksonException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /** 업무 규칙 위반. 상태와 코드는 ErrorCode를 따른다. */
+    /** 업무 규칙 위반. 상태와 코드는 ErrorCode를 따른다. 다음 요청 가능 시각이 있으면 함께 담는다. */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException e) {
         ErrorCode errorCode = e.getErrorCode();
         return ResponseEntity.status(errorCode.getStatus())
-                .body(ApiResponse.fail(errorCode, e.getField()));
+                .body(ApiResponse.fail(errorCode, e.getField(), e.getRetryAfter()));
     }
 
     /** 요청 본문 검증 실패. 첫 위반 필드를 함께 담아 400으로 변환한다. */
