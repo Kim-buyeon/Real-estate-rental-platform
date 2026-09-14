@@ -3,6 +3,7 @@ package com.duri.rentalplatform.domain.admin.mapper;
 import com.duri.rentalplatform.domain.admin.dto.condition.CriteriaHistoryCondition;
 import com.duri.rentalplatform.domain.admin.dto.response.CriteriaHistoryResponse;
 import com.duri.rentalplatform.domain.admin.dto.response.GuaranteeCriteriaResponse;
+import com.duri.rentalplatform.domain.admin.dto.response.LoanRegulationsResponse;
 import com.duri.rentalplatform.domain.admin.dto.response.PremiumRatesResponse;
 import com.duri.rentalplatform.domain.admin.dto.response.RiskThresholdResponse;
 import java.util.List;
@@ -15,6 +16,9 @@ public interface CriteriaMapper {
 
     /** 보증료율 전 구간. 기관 · 주택 유형 · 보증금 하한 · 부채비율 하한 순. */
     List<PremiumRatesResponse.Item> selectPremiumRates();
+
+    /** 대출 규제 전 행. 시행일 내림차순, 같으면 식별자 내림차순. */
+    List<LoanRegulationsResponse.Item> selectLoanRegulations();
 
     /** 위험 등급 기준(단일 행). 없으면 null. */
     RiskThresholdResponse selectRiskThreshold();

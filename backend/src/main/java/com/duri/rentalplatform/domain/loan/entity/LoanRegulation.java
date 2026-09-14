@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * 대출 규제 기준 — 데이터베이스 설계서 17절, 비즈니스 로직 정의서 6장. 시각 컬럼이 없어 감사 상위 클래스를 상속하지 않는다.
- * 시드 전용이라 정적 팩토리를 두지 않는다(수정 API 는 ADMIN-01 대출 규제 작업의 범위).
+ * 행은 시드가 넣고 애플리케이션은 수치만 고친다(ADMIN-01 대출 규제 수정). 행을 만들지 않으므로 정적 팩토리를 두지 않는다.
  */
 @Entity
 @Getter
@@ -58,4 +58,15 @@ public class LoanRegulation {
     /** 보증기관 상한 — 주택 보유(원). */
     @Column(nullable = false)
     private Long guaranteeCapOneHouse;
+
+    /** 관리자 수정 — 수치 여섯만 바꾼다. 적용 대상(주택 · 지역 유형, 시행일)은 그대로 둔다. */
+    public void changeLimits(BigDecimal depositRatioLimit, Long guaranteeCapNoHouse, Long guaranteeCapOneHouse,
+            BigDecimal dsrLimit, BigDecimal stressDsrRate, BigDecimal dtiLimit) {
+        this.depositRatioLimit = depositRatioLimit;
+        this.guaranteeCapNoHouse = guaranteeCapNoHouse;
+        this.guaranteeCapOneHouse = guaranteeCapOneHouse;
+        this.dsrLimit = dsrLimit;
+        this.stressDsrRate = stressDsrRate;
+        this.dtiLimit = dtiLimit;
+    }
 }

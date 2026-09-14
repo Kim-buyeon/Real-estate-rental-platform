@@ -3,11 +3,14 @@ package com.duri.rentalplatform.domain.admin.service;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.domain.admin.dto.request.GuaranteeCriteriaUpdateRequest;
+import com.duri.rentalplatform.domain.admin.dto.request.LoanRegulationUpdateRequest;
 import com.duri.rentalplatform.domain.admin.dto.request.PremiumRateUpdateRequest;
 import com.duri.rentalplatform.domain.admin.dto.request.RiskThresholdUpdateRequest;
 import com.duri.rentalplatform.domain.admin.entity.CriteriaChangeHistory;
 import com.duri.rentalplatform.domain.admin.enums.CriteriaTarget;
 import com.duri.rentalplatform.domain.admin.repository.CriteriaChangeHistoryRepository;
+import com.duri.rentalplatform.domain.loan.entity.LoanRegulation;
+import com.duri.rentalplatform.domain.loan.repository.LoanRegulationRepository;
 import com.duri.rentalplatform.domain.risk.entity.GuaranteeCriteria;
 import com.duri.rentalplatform.domain.risk.entity.GuaranteePremiumRate;
 import com.duri.rentalplatform.domain.risk.entity.HfCriteria;
@@ -53,6 +56,7 @@ public class CriteriaCommandService {
     private final HfCriteriaRepository hfCriteriaRepository;
     private final GuaranteePremiumRateRepository premiumRateRepository;
     private final RiskCriteriaRepository riskCriteriaRepository;
+    private final LoanRegulationRepository loanRegulationRepository;
     private final CriteriaChangeHistoryRepository historyRepository;
 
     /** 기관별 기준 수정. {@code requiresLoanLink} 는 HF 만 저장한다. */
@@ -124,6 +128,50 @@ public class CriteriaCommandService {
         changes.save();
     }
 
+    /** 대출 규제 수치 여섯만 수정한다. 없는 식별자 · 중복 식별자는 400. */
+    @Transactional
+    public void updateLoanRegulations(Long adminId, LoanRegulationUpdateRequest request) {
+        Set<Long> ids = new HashSet<>();
+        for (LoanRegulationUpdateRequest.Regulation regulation : request.regulations()) {
+            if (!ids.add(regulation.regulationId())) {
+                throw new BusinessException(ErrorCode.INVALID_REQUEST, "regulations");
+            }
+        }
+        Map<Long, LoanRegulation> regulations = loanRegulationRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(LoanRegulation::getRegulationId, Function.identity()));
+        if (regulations.size() != ids.size()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "regulations");
+        }
+
+        Changes changes = new Changes(adminId, request.changeReason());
+        for (LoanRegulationUpdateRequest.Regulation requested : request.regulations()) {
+            LoanRegulation regulation = regulations.get(requested.regulationId());
+            BigDecimal depositRatioLimit = requested.depositRatioLimit().setScale(RATIO_SCALE);
+            BigDecimal dsrLimit = requested.dsrLimit().setScale(RATIO_SCALE);
+            BigDecimal stressDsrRate = requested.stressDsrRate().setScale(RATIO_SCALE);
+            BigDecimal dtiLimit = requested.dtiLimit().setScale(RATIO_SCALE);
+
+            Long id = regulation.getRegulationId();
+            String key = loanRegulationKey(regulation);
+            CriteriaTarget target = CriteriaTarget.LOAN_REGULATION;
+            boolean changed = changes.decimal(target, id, key, "depositRatioLimit",
+                    regulation.getDepositRatioLimit(), depositRatioLimit);
+            changed |= changes.amount(target, id, key, "guaranteeCapNoHouse",
+                    regulation.getGuaranteeCapNoHouse(), requested.guaranteeCapNoHouse());
+            changed |= changes.amount(target, id, key, "guaranteeCapOneHouse",
+                    regulation.getGuaranteeCapOneHouse(), requested.guaranteeCapOneHouse());
+            changed |= changes.decimal(target, id, key, "dsrLimit", regulation.getDsrLimit(), dsrLimit);
+            changed |= changes.decimal(target, id, key, "stressDsrRate",
+                    regulation.getStressDsrRate(), stressDsrRate);
+            changed |= changes.decimal(target, id, key, "dtiLimit", regulation.getDtiLimit(), dtiLimit);
+            if (changed) {
+                regulation.changeLimits(depositRatioLimit, requested.guaranteeCapNoHouse(),
+                        requested.guaranteeCapOneHouse(), dsrLimit, stressDsrRate, dtiLimit);
+            }
+        }
+        changes.save();
+    }
+
     /** 위험 등급 기준 수정. 세 선 단조를 검증한다. */
     @Transactional
     public void updateRiskThreshold(Long adminId, RiskThresholdUpdateRequest request) {
@@ -162,6 +210,11 @@ public class CriteriaCommandService {
         return provider + "/" + rate.getHouseType() + "/"
                 + rate.getDepositMin() + "-" + (rate.getDepositMax() == null ? "" : rate.getDepositMax()) + "/"
                 + rate.getDebtRatioMin().toPlainString() + "-" + rate.getDebtRatioMax().toPlainString();
+    }
+
+    /** 데이터베이스 설계서 31절의 사람이 읽는 대상 식별 — 지역 유형/주택 유형. */
+    static String loanRegulationKey(LoanRegulation regulation) {
+        return regulation.getRegionType() + "/" + regulation.getHouseType();
     }
 
     /** 한 요청에서 바뀐 필드를 모아 같은 그룹 식별자로 저장한다. */

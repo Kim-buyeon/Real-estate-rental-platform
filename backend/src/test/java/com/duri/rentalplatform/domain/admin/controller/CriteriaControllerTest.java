@@ -16,11 +16,13 @@ import com.duri.rentalplatform.common.GlobalExceptionHandler;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.config.SecurityConfig;
 import com.duri.rentalplatform.domain.admin.dto.response.GuaranteeCriteriaResponse;
+import com.duri.rentalplatform.domain.admin.dto.response.LoanRegulationsResponse;
 import com.duri.rentalplatform.domain.admin.service.CriteriaCommandService;
 import com.duri.rentalplatform.domain.admin.service.CriteriaQueryService;
 import com.duri.rentalplatform.domain.risk.enums.GuaranteeProvider;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -56,6 +58,25 @@ class CriteriaControllerTest {
               "maxDeposit": 500000000,
               "requiresLoanLink": false,
               "changeReason": "보증금 한도 예시 — 비수도권 5억 적용"
+            }
+            """;
+
+    private static final String LOAN_REGULATIONS = "/api/admin/criteria/loan-regulations";
+
+    private static final String LOAN_PUT = """
+            {
+              "regulations": [
+                {
+                  "regulationId": 1,
+                  "depositRatioLimit": 80.00,
+                  "guaranteeCapNoHouse": 400000000,
+                  "guaranteeCapOneHouse": 180000000,
+                  "dsrLimit": 40.00,
+                  "stressDsrRate": 3.00,
+                  "dtiLimit": 40.00
+                }
+              ],
+              "changeReason": "대출 규제 개정 반영"
             }
             """;
 
@@ -140,6 +161,78 @@ class CriteriaControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(queryService);
+    }
+
+    @Test
+    @DisplayName("대출 규제 GET 은 명세 1.1 예시 형태(updatedAt 없음, 시행일은 날짜 문자열)로 200")
+    void adminGetsLoanRegulations() throws Exception {
+        when(queryService.getLoanRegulations()).thenReturn(loanRegulationExample());
+
+        mockMvc.perform(get(LOAN_REGULATIONS).header(HttpHeaders.AUTHORIZATION, bearer("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].regulationId").value(1))
+                .andExpect(jsonPath("$.data.items[0].houseType").value("ALL"))
+                .andExpect(jsonPath("$.data.items[0].regionType").value("SEOUL_REGULATED"))
+                .andExpect(jsonPath("$.data.items[0].depositRatioLimit").value(80.0))
+                .andExpect(jsonPath("$.data.items[0].guaranteeCapNoHouse").value(400_000_000))
+                .andExpect(jsonPath("$.data.items[0].guaranteeCapOneHouse").value(180_000_000))
+                .andExpect(jsonPath("$.data.items[0].dsrLimit").value(40.0))
+                .andExpect(jsonPath("$.data.items[0].stressDsrRate").value(3.0))
+                .andExpect(jsonPath("$.data.items[0].dtiLimit").value(40.0))
+                .andExpect(jsonPath("$.data.items[0].effectiveDate").value("2025-10-29"))
+                .andExpect(jsonPath("$.data.items[0]", aMapWithSize(10)));
+    }
+
+    @Test
+    @DisplayName("대출 규제 PUT 은 토큰의 사용자로 수정하고 조회 결과를 돌려준다")
+    void adminPutsLoanRegulations() throws Exception {
+        when(queryService.getLoanRegulations()).thenReturn(loanRegulationExample());
+
+        mockMvc.perform(put(LOAN_REGULATIONS).header(HttpHeaders.AUTHORIZATION, bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON).content(LOAN_PUT))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].regulationId").value(1));
+        verify(commandService).updateLoanRegulations(eq(ADMIN_ID), any());
+    }
+
+    @Test
+    @DisplayName("대출 규제 비율이 100 이상이면 400 INVALID_REQUEST")
+    void loanRegulationRatioOverMax() throws Exception {
+        mockMvc.perform(put(LOAN_REGULATIONS).header(HttpHeaders.AUTHORIZATION, bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(LOAN_PUT.replace("\"dsrLimit\": 40.00", "\"dsrLimit\": 100.00")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+        verify(commandService, never()).updateLoanRegulations(any(), any());
+    }
+
+    @Test
+    @DisplayName("대출 규제 상한이 음수면 400 INVALID_REQUEST")
+    void loanRegulationNegativeCap() throws Exception {
+        mockMvc.perform(put(LOAN_REGULATIONS).header(HttpHeaders.AUTHORIZATION, bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(LOAN_PUT.replace("\"guaranteeCapOneHouse\": 180000000",
+                                "\"guaranteeCapOneHouse\": -1")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+        verify(commandService, never()).updateLoanRegulations(any(), any());
+    }
+
+    @Test
+    @DisplayName("대출 규제 목록이 비면 400 INVALID_REQUEST")
+    void loanRegulationEmpty() throws Exception {
+        mockMvc.perform(put(LOAN_REGULATIONS).header(HttpHeaders.AUTHORIZATION, bearer("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"regulations\": [], \"changeReason\": \"사유\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+        verify(commandService, never()).updateLoanRegulations(any(), any());
+    }
+
+    private static LoanRegulationsResponse loanRegulationExample() {
+        return new LoanRegulationsResponse(List.of(new LoanRegulationsResponse.Item(1L, "ALL", "SEOUL_REGULATED",
+                new BigDecimal("80.00"), 400_000_000L, 180_000_000L, new BigDecimal("40.00"),
+                new BigDecimal("3.00"), new BigDecimal("40.00"), LocalDate.of(2025, 10, 29))));
     }
 
     private static String bearer(String role) {

@@ -515,7 +515,7 @@ API 명세서(관리자) 1.2가 요구하는 필드 단위 이력이다. 한 번
 | Change Group ID | change_group_id |  | ● | UUID | — | — | — | 같은 수정 요청(PUT 1건)의 행을 묶는 ID |
 | Target Table | target_table |  | ● | VARCHAR | 30 | — | — | 대상 테이블 (GUARANTEE_CRITERIA/HUG_CRITERIA/HF_CRITERIA/SGI_CRITERIA/GUARANTEE_PREMIUM_RATE/LOAN_REGULATION/RISK_CRITERIA) |
 | Target ID | target_id |  | ● | BIGINT | — | — | — | 대상 행 PK (FK 아님 — 다형 참조) |
-| Target Key | target_key |  | ● | VARCHAR | 80 | — | — | 사람이 읽는 대상 식별 (HUG · HUG/APARTMENT/0-200000000/0.00-80.00 · RISK_CRITERIA 등. 형식은 API 명세서(관리자) 1.2) |
+| Target Key | target_key |  | ● | VARCHAR | 80 | — | — | 사람이 읽는 대상 식별 (HUG · HUG/APARTMENT/0-200000000/0.00-80.00 · SEOUL_REGULATED/ALL · RISK_CRITERIA 등. 형식은 API 명세서(관리자) 1.2) |
 | Field Name | field_name |  | ● | VARCHAR | 50 | — | — | 변경 필드 (API 필드명) |
 | Before Value | before_value |  |  | VARCHAR | 100 | — | — | 변경 전 값 (문자열) |
 | After Value | after_value |  | ● | VARCHAR | 100 | — | — | 변경 후 값 (문자열) |

@@ -10,11 +10,14 @@ import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.domain.admin.dto.request.GuaranteeCriteriaUpdateRequest;
+import com.duri.rentalplatform.domain.admin.dto.request.LoanRegulationUpdateRequest;
 import com.duri.rentalplatform.domain.admin.dto.request.PremiumRateUpdateRequest;
 import com.duri.rentalplatform.domain.admin.dto.request.RiskThresholdUpdateRequest;
 import com.duri.rentalplatform.domain.admin.entity.CriteriaChangeHistory;
 import com.duri.rentalplatform.domain.admin.enums.CriteriaTarget;
 import com.duri.rentalplatform.domain.admin.repository.CriteriaChangeHistoryRepository;
+import com.duri.rentalplatform.domain.loan.entity.LoanRegulation;
+import com.duri.rentalplatform.domain.loan.repository.LoanRegulationRepository;
 import com.duri.rentalplatform.domain.risk.entity.GuaranteeCriteria;
 import com.duri.rentalplatform.domain.risk.entity.GuaranteePremiumRate;
 import com.duri.rentalplatform.domain.risk.entity.HfCriteria;
@@ -26,6 +29,7 @@ import com.duri.rentalplatform.domain.risk.repository.GuaranteePremiumRateReposi
 import com.duri.rentalplatform.domain.risk.repository.HfCriteriaRepository;
 import com.duri.rentalplatform.domain.risk.repository.RiskCriteriaRepository;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -50,6 +54,7 @@ class CriteriaCommandServiceTest {
     private HfCriteriaRepository hfRepository;
     private GuaranteePremiumRateRepository premiumRateRepository;
     private RiskCriteriaRepository riskRepository;
+    private LoanRegulationRepository loanRegulationRepository;
     private CriteriaChangeHistoryRepository historyRepository;
     private CriteriaCommandService service;
 
@@ -64,9 +69,10 @@ class CriteriaCommandServiceTest {
         hfRepository = mock(HfCriteriaRepository.class);
         premiumRateRepository = mock(GuaranteePremiumRateRepository.class);
         riskRepository = mock(RiskCriteriaRepository.class);
+        loanRegulationRepository = mock(LoanRegulationRepository.class);
         historyRepository = mock(CriteriaChangeHistoryRepository.class);
         service = new CriteriaCommandService(guaranteeRepository, hfRepository, premiumRateRepository,
-                riskRepository, historyRepository);
+                riskRepository, loanRegulationRepository, historyRepository);
 
         hug = guarantee(1L, GuaranteeProvider.HUG, "90.00", 700_000_000L, "60.00");
         hf = guarantee(2L, GuaranteeProvider.HF, "90.00", 700_000_000L, null);
@@ -211,6 +217,62 @@ class CriteriaCommandServiceTest {
                         new PremiumRateUpdateRequest.Rate(5L, BigDecimal.TEN)), REASON)), "rates");
     }
 
+    @Test
+    @DisplayName("대출 규제: 바뀐 필드(보증금 비율 · 무주택 상한)만 이력, 대상 키는 지역/주택 유형, 같은 값 40.0 은 이력 없음")
+    void loanRegulationRecordsOnlyChangedFields() {
+        LoanRegulation regulation = loanRegulation(1L);
+        when(loanRegulationRepository.findAllById(Set.of(1L))).thenReturn(List.of(regulation));
+
+        service.updateLoanRegulations(ADMIN_ID, new LoanRegulationUpdateRequest(List.of(
+                new LoanRegulationUpdateRequest.Regulation(1L, new BigDecimal("70.5"), 300_000_000L, 180_000_000L,
+                        new BigDecimal("40.0"), new BigDecimal("3"), new BigDecimal("40.00"))), REASON));
+
+        List<CriteriaChangeHistory> rows = savedRows();
+        assertThat(rows).extracting(CriteriaChangeHistory::getFieldName, CriteriaChangeHistory::getBeforeValue,
+                        CriteriaChangeHistory::getAfterValue)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("depositRatioLimit", "80.00", "70.50"),
+                        org.assertj.core.groups.Tuple.tuple("guaranteeCapNoHouse", "400000000", "300000000"));
+        assertThat(rows).allSatisfy(row -> {
+            assertThat(row.getTarget()).isEqualTo(CriteriaTarget.LOAN_REGULATION);
+            assertThat(row.getTargetId()).isEqualTo(1L);
+            assertThat(row.getTargetKey()).isEqualTo("SEOUL_REGULATED/ALL");
+            assertThat(row.getChangeGroupId()).isEqualTo(rows.get(0).getChangeGroupId());
+        });
+        assertThat(regulation.getDepositRatioLimit()).isEqualByComparingTo("70.50");
+        assertThat(regulation.getGuaranteeCapNoHouse()).isEqualTo(300_000_000L);
+        assertThat(regulation.getEffectiveDate()).isEqualTo(LocalDate.of(2025, 10, 29));
+    }
+
+    @Test
+    @DisplayName("대출 규제: 바뀐 필드가 없으면 이력을 저장하지 않는다")
+    void loanRegulationNoChangeNoHistory() {
+        when(loanRegulationRepository.findAllById(Set.of(1L))).thenReturn(List.of(loanRegulation(1L)));
+
+        service.updateLoanRegulations(ADMIN_ID, new LoanRegulationUpdateRequest(List.of(
+                new LoanRegulationUpdateRequest.Regulation(1L, new BigDecimal("80"), 400_000_000L, 180_000_000L,
+                        new BigDecimal("40"), new BigDecimal("3.0"), new BigDecimal("40"))), REASON));
+
+        verify(historyRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("대출 규제: 없는 식별자면 400 regulations")
+    void unknownLoanRegulation() {
+        when(loanRegulationRepository.findAllById(Set.of(99L))).thenReturn(List.of());
+
+        assertInvalid(() -> service.updateLoanRegulations(ADMIN_ID, new LoanRegulationUpdateRequest(
+                List.of(sameLimits(99L)), REASON)), "regulations");
+    }
+
+    @Test
+    @DisplayName("대출 규제: 같은 식별자가 두 번 오면 400 regulations")
+    void duplicatedLoanRegulation() {
+        assertInvalid(() -> service.updateLoanRegulations(ADMIN_ID, new LoanRegulationUpdateRequest(
+                List.of(sameLimits(1L), sameLimits(1L)), REASON)), "regulations");
+        verify(loanRegulationRepository, never()).findAllById(any());
+    }
+
     @SuppressWarnings("unchecked")
     private List<CriteriaChangeHistory> savedRows() {
         ArgumentCaptor<List<CriteriaChangeHistory>> captor = ArgumentCaptor.forClass(List.class);
@@ -249,6 +311,26 @@ class CriteriaCommandServiceTest {
         ReflectionTestUtils.setField(rate, "debtRatioMax", new BigDecimal("80.00"));
         ReflectionTestUtils.setField(rate, "premiumRate", new BigDecimal(premium));
         return rate;
+    }
+
+    private static LoanRegulation loanRegulation(long id) {
+        LoanRegulation regulation = entity(LoanRegulation.class);
+        ReflectionTestUtils.setField(regulation, "regulationId", id);
+        ReflectionTestUtils.setField(regulation, "houseType", "ALL");
+        ReflectionTestUtils.setField(regulation, "regionType", "SEOUL_REGULATED");
+        ReflectionTestUtils.setField(regulation, "depositRatioLimit", new BigDecimal("80.00"));
+        ReflectionTestUtils.setField(regulation, "guaranteeCapNoHouse", 400_000_000L);
+        ReflectionTestUtils.setField(regulation, "guaranteeCapOneHouse", 180_000_000L);
+        ReflectionTestUtils.setField(regulation, "dsrLimit", new BigDecimal("40.00"));
+        ReflectionTestUtils.setField(regulation, "stressDsrRate", new BigDecimal("3.00"));
+        ReflectionTestUtils.setField(regulation, "dtiLimit", new BigDecimal("40.00"));
+        ReflectionTestUtils.setField(regulation, "effectiveDate", LocalDate.of(2025, 10, 29));
+        return regulation;
+    }
+
+    private static LoanRegulationUpdateRequest.Regulation sameLimits(long id) {
+        return new LoanRegulationUpdateRequest.Regulation(id, new BigDecimal("80"), 400_000_000L, 180_000_000L,
+                new BigDecimal("40"), new BigDecimal("3"), new BigDecimal("40"));
     }
 
     private static <T> T entity(Class<T> type) {
