@@ -5,6 +5,7 @@ import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.domain.property.entity.Property;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
+import com.duri.rentalplatform.domain.risk.calculator.RegistrySummaryCalculator;
 import com.duri.rentalplatform.domain.risk.entity.BuildingRegistry;
 import com.duri.rentalplatform.domain.risk.entity.MortgageHistory;
 import com.duri.rentalplatform.domain.risk.entity.OwnershipHistory;
@@ -172,11 +173,16 @@ public class RegistryCommandService {
         BuildingRegistry registry = stored.get();
         List<OwnershipHistory> ownerships = ownershipHistoryRepository.findByRegistry(registry);
         List<MortgageHistory> mortgages = mortgageHistoryRepository.findByRegistry(registry);
-        if (sameEntries(ownerships.stream().map(RegistryCommandService::toEntry).toList(), document.ownerships())
-                && sameEntries(mortgages.stream().map(RegistryCommandService::toEntry).toList(),
-                        document.mortgages())) {
+        List<OwnershipEntry> storedOwnerships = ownerships.stream().map(RegistryCommandService::toEntry).toList();
+        List<MortgageEntry> storedMortgages = mortgages.stream().map(RegistryCommandService::toEntry).toList();
+        if (sameEntries(storedOwnerships, document.ownerships())
+                && sameEntries(storedMortgages, document.mortgages())) {
             return RegistryRefreshOutcome.UNCHANGED;
         }
+
+        // 교체 전에 요약을 떠 둔다. 지운 뒤에는 저장돼 있던 내용을 읽을 수 없다.
+        String beforeSummary = RegistrySummaryCalculator.summarize(storedOwnerships, storedMortgages);
+        String afterSummary = RegistrySummaryCalculator.summarize(document.ownerships(), document.mortgages());
 
         // 일괄 삭제는 즉시 실행된다. 영속성 컨텍스트의 remove 는 flush 때 INSERT 뒤로 밀린다.
         ownershipHistoryRepository.deleteAllInBatch(ownerships);
@@ -186,7 +192,8 @@ public class RegistryCommandService {
         auditingHandler.markModified(registry);
         // 반영한 수정일시를 이벤트에 담는다. flush 때 감사 리스너가 한 번 더 채우므로 그 뒤의 값을 읽는다.
         buildingRegistryRepository.flush();
-        eventPublisher.publishEvent(new RegistryChangedEvent(propertyId, registry.getUpdatedAt()));
+        eventPublisher.publishEvent(
+                new RegistryChangedEvent(propertyId, beforeSummary, afterSummary, registry.getUpdatedAt()));
         return RegistryRefreshOutcome.CHANGED;
     }
 
