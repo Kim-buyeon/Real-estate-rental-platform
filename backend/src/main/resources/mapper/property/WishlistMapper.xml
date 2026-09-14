@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  관심 매물 목록. API 명세서(매물) 1.9.
+
+  정렬은 wish_id 내림차순(최근 등록 먼저). 식별자가 등록 순서이고 유일해 동률이 없다. 등급은 최신 분석
+  (is_latest — 매물당 하나, V9)과 LEFT JOIN 해 분석 전 매물도 목록에 남긴다. 사용자 조건은 유일 제약
+  (user_id, property_id) 인덱스(V11)를 탄다. 평면 record 는 자동 생성자 매핑이다.
+-->
+<mapper namespace="com.duri.rentalplatform.domain.property.mapper.WishlistMapper">
+
+    <select id="selectWishlist" resultType="com.duri.rentalplatform.domain.property.vo.WishlistRow">
+        SELECT w.wish_id,
+               p.property_id,
+               p.district,
+               p.deposit,
+               ra.risk_grade,
+               ra.previous_grade,
+               w.created_at AT TIME ZONE 'Asia/Seoul' AS added_at
+        FROM wishlist w
+        JOIN property p ON p.property_id = w.property_id
+        LEFT JOIN risk_analysis ra ON ra.property_id = w.property_id AND ra.is_latest
+        WHERE w.user_id = #{userId}
+        <if test="lastWishId != null">
+          AND w.wish_id &lt; #{lastWishId}
+        </if>
+        ORDER BY w.wish_id DESC
+        LIMIT #{limit}
+    </select>
+</mapper>
