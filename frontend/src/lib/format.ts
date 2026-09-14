@@ -23,11 +23,6 @@ export function formatPercent(ratio: number): string {
   return `${percentFormatter.format(ratio)}%`;
 }
 
-function toDate(isoDateTime: string): Date | null {
-  const date = new Date(isoDateTime);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 /** ISO 8601 → 서울 시각 `2026. 7. 29. 오후 12:10`. 해석할 수 없으면 받은 문자열 그대로 */
 export function formatDateTime(isoDateTime: string): string {
   const date = toDate(isoDateTime);
@@ -38,4 +33,9 @@ export function formatDateTime(isoDateTime: string): string {
 export function formatDate(isoDateTime: string): string {
   const date = toDate(isoDateTime);
   return date ? dateFormatter.format(date) : isoDateTime;
+}
+
+function toDate(isoDateTime: string): Date | null {
+  const date = new Date(isoDateTime);
+  return Number.isNaN(date.getTime()) ? null : date;
 }

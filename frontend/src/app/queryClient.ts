@@ -6,13 +6,6 @@ import { ApiError } from '../api/client';
 const STALE_TIME_MS = 30_000;
 const MAX_RETRY = 1;
 
-/** 4xx는 다시 보내도 결과가 같다 — 재분석 429를 거듭 치지 않는다. 그 외(5xx · NETWORK_ERROR)는 한 번 */
-function shouldRetry(failureCount: number, error: unknown): boolean {
-  const isClientError =
-    error instanceof ApiError && error.status !== null && error.status >= 400 && error.status < 500;
-  return !isClientError && failureCount < MAX_RETRY;
-}
-
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -22,3 +15,10 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+/** 4xx는 다시 보내도 결과가 같다 — 재분석 429를 거듭 치지 않는다. 그 외(5xx · NETWORK_ERROR)는 한 번 */
+function shouldRetry(failureCount: number, error: unknown): boolean {
+  const isClientError =
+    error instanceof ApiError && error.status !== null && error.status >= 400 && error.status < 500;
+  return !isClientError && failureCount < MAX_RETRY;
+}
