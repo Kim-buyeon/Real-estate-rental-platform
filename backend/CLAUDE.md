@@ -16,6 +16,8 @@ com.duri.rentalplatform
 │   ├── calculator/             빈이 아닌 순수 함수 클래스 — 판정 · 계산 · 생성
 │   ├── vo/                     값 객체 · 집계 객체
 │   ├── loader/                 적재 실행 진입점 (@Component)
+│   ├── scheduler/              반복 실행 배치 진입점 (@Component + @Scheduled)
+│   ├── batch/                  Spring Batch 구성 — Job 조립 · ItemReader · ItemProcessor · ItemWriter
 │   ├── store/                  외부 저장소 보관소 (@Component)
 │   ├── event/                  도메인 이벤트 record
 │   └── dto/
@@ -34,7 +36,7 @@ MyBatis XML은 `resources/mapper/<도메인>/`에, Flyway 마이그레이션은 
 
 **`service/`는 `@Service`가 붙는 것만 담는다.** 비즈니스 로직을 수행하는 빈의 자리다. 같은 방식으로 `entity/`는 `@Entity`만, `repository/`는 JPA 인터페이스만, `controller/`는 `@RestController`만 담는다.
 
-**넣을 자리가 없으면 기존 계층에 밀어 넣지 말고 새 패키지를 만든다.** 순수 함수 클래스를 `service/`에, 값 객체를 `entity/`에 두면 그 패키지를 열었을 때 무엇이 들어 있는지 이름으로 알 수 없게 된다. `calculator/` · `vo/` · `loader/` · `store/`가 그래서 생겼다.
+**넣을 자리가 없으면 기존 계층에 밀어 넣지 말고 새 패키지를 만든다.** 순수 함수 클래스를 `service/`에, 값 객체를 `entity/`에 두면 그 패키지를 열었을 때 무엇이 들어 있는지 이름으로 알 수 없게 된다. `calculator/` · `vo/` · `loader/` · `store/` · `batch/`가 그래서 생겼다.
 
 **모든 도메인이 같은 패키지를 갖지 않는다.** `loader/`는 외부에서 데이터를 가져와 적재하는 도메인에만, `store/`는 JPA 밖의 저장소를 쓰는 도메인에만 둔다. 쓰지 않는 패키지를 미리 만들지 않는다.
 
@@ -44,6 +46,8 @@ MyBatis XML은 `resources/mapper/<도메인>/`에, Flyway 마이그레이션은 
 | `calculator/` | 빈이 아닌 순수 함수 클래스 | `MarketPriceCalculator` · `RiskGradeCalculator` · `ContractTypeClassifier` |
 | `vo/` | 값 객체 · 집계 객체 | `PropertyNaturalKey` · `PropertyLoadReport` |
 | `loader/` | 적재 실행 진입점 | `PropertyLoadRunner` |
+| `scheduler/` | 반복 실행 배치 진입점. 한 번만 실행되는 것은 분산 락이 보장한다 | `RegistryRefreshScheduler` |
+| `batch/` | Spring Batch 구성 요소 — Job 조립 · 실행(`@Component`)과 스텝의 읽기 · 처리 · 쓰기 단계. `service/` 는 `batch/` 를 참조하지 않는다(한 방향). 락 · 트랜잭션이 필요한 매물 단위 일은 `service/`의 빈에 맡긴다 | `RegistryRefreshJobFactory` · `WishlistedPropertyIdReader` |
 | `store/` | JPA 밖의 저장소 보관소 | `RefreshTokenStore` |
 | `event/` | 도메인 이벤트 record | `RiskGradeChangedEvent` |
 
