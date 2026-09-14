@@ -135,6 +135,19 @@ export function reissue(): Promise<boolean> {
   return pendingReissue;
 }
 
+/**
+ * 로그인 응답의 토큰으로 세션을 시작한다. 토큰을 쓰는 곳은 api/client 하나다 —
+ * queries가 session을 import하지 않게 여기서 위임한다 (이슈 #83).
+ */
+export function startSession(tokens: AuthTokens): void {
+  setTokens({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken });
+}
+
+/** 세션을 비운다 — 로그아웃. 서버 호출 성공 여부와 무관하게 부른다 (이슈 #83 계획) */
+export function endSession(): void {
+  clearSession();
+}
+
 // ── 인터셉터 ────────────────────────────────────────────────────────────
 
 instance.interceptors.request.use((config) => {
