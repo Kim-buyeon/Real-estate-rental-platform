@@ -457,6 +457,8 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 
 알림 유형(notif_type)은 API 명세서(알림)의 type 값과 같다. 1단계는 RISK_CHANGE/REGISTRY_CHANGE다.
 
+인덱스 — (user_id, notif_id DESC): 사용자별 알림 목록의 커서 조회 · 정렬. / (user_id) WHERE is_read = FALSE: 목록마다 함께 내는 읽지 않은 수와 전체 읽음 처리. 읽은 알림은 쌓이기만 하므로 읽지 않은 행만 담는다.
+
 ### 26. PROPERTY_NOTIFICATION — 매물 알림
 
 | 속성명 | 컬럼명 | 실질 식별자 | Not Null | 데이터타입 | 길이 | 소수점 | 기본값 | 설명 |
@@ -505,6 +507,8 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 변동 유형(change_type)은 RISK_GRADE/REGISTRY다. 변동 전 · 후 값은 위험 등급이면 등급 상수명(CAUTION → DANGER), 등기면 갑구 · 을구 유효 건수 요약(「갑구 2 · 을구 1」)이다.
 
 관심 매물 해제가 알림 이력을 지우거나 막지 않도록 wish_id 는 삭제 시 NULL 이 되고, 매물은 property_id 로 계속 가리킨다 — 알림 목록 조회가 완전한 확인 수단이다.
+
+인덱스 — (notif_id): 알림 목록이 공통 행 한 페이지에 상세 행을 붙이는 조인. FK 는 인덱스를 만들지 않는다.
 
 ### 30. REGION_STATS — 지역 시세 통계
 

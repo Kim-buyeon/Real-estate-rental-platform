@@ -198,6 +198,26 @@ class SchemaMigrationTest {
     }
 
     @Test
+    @DisplayName("V14: 알림 목록 인덱스는 (user_id, notif_id DESC), 읽지 않은 수는 부분 인덱스, 상세 조인은 notif_id 다")
+    void notificationListIndexes() {
+        Map<String, String> indexDefs = jdbcTemplate.queryForList(
+                        """
+                        SELECT indexname, indexdef FROM pg_indexes
+                        WHERE schemaname = 'public'
+                          AND indexname IN ('idx_notification_user_notif', 'idx_notification_user_unread',
+                                            'idx_wishlist_notification_notif')
+                        """)
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        r -> (String) r.get("indexname"), r -> (String) r.get("indexdef")));
+
+        assertThat(indexDefs).hasSize(3);
+        assertThat(indexDefs.get("idx_notification_user_notif")).contains("notification", "(user_id, notif_id DESC)");
+        assertThat(indexDefs.get("idx_notification_user_unread")).contains("(user_id)", "WHERE", "is_read = false");
+        assertThat(indexDefs.get("idx_wishlist_notification_notif")).contains("wishlist_notification", "(notif_id)");
+    }
+
+    @Test
     @DisplayName("V6: 위험 등급 기준은 CAUTION 경계가 깡통전세 선 이상이면 거부된다")
     void riskCriteriaRejectsNonMonotonicThresholds() {
         assertThatThrownBy(() -> jdbcTemplate.update(
