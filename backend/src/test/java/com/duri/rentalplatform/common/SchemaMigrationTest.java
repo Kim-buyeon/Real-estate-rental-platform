@@ -111,6 +111,25 @@ class SchemaMigrationTest {
     }
 
     @Test
+    @DisplayName("V11: 관심 매물 유일 제약 uq_wishlist_user_property 가 (user_id, property_id) 에 있다")
+    void wishlistUniqueConstraintExists() {
+        List<String> columns = jdbcTemplate.queryForList(
+                """
+                SELECT kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                  ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema
+                WHERE tc.table_schema = 'public'
+                  AND tc.table_name = 'wishlist'
+                  AND tc.constraint_type = 'UNIQUE'
+                  AND tc.constraint_name = 'uq_wishlist_user_property'
+                ORDER BY kcu.ordinal_position
+                """,
+                String.class);
+        assertThat(columns).containsExactly("user_id", "property_id");
+    }
+
+    @Test
     @DisplayName("V6: 위험 등급 기준은 CAUTION 경계가 깡통전세 선 이상이면 거부된다")
     void riskCriteriaRejectsNonMonotonicThresholds() {
         assertThatThrownBy(() -> jdbcTemplate.update(
