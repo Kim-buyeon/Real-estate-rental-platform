@@ -8,6 +8,7 @@ import com.duri.rentalplatform.domain.admin.dto.condition.CriteriaHistoryConditi
 import com.duri.rentalplatform.domain.admin.dto.request.CriteriaHistoryRequest;
 import com.duri.rentalplatform.domain.admin.dto.response.CriteriaHistoryResponse;
 import com.duri.rentalplatform.domain.admin.dto.response.GuaranteeCriteriaResponse;
+import com.duri.rentalplatform.domain.admin.dto.response.LoanRegulationsResponse;
 import com.duri.rentalplatform.domain.admin.dto.response.PremiumRatesResponse;
 import com.duri.rentalplatform.domain.admin.dto.response.RiskThresholdResponse;
 import com.duri.rentalplatform.domain.admin.mapper.CriteriaMapper;
@@ -35,6 +36,10 @@ public class CriteriaQueryService {
 
     public PremiumRatesResponse getPremiumRates() {
         return new PremiumRatesResponse(criteriaMapper.selectPremiumRates());
+    }
+
+    public LoanRegulationsResponse getLoanRegulations() {
+        return new LoanRegulationsResponse(criteriaMapper.selectLoanRegulations());
     }
 
     /** 단일 행은 시드(V7)가 넣는다. 없으면 배포 결함이라 500 으로 드러낸다. */

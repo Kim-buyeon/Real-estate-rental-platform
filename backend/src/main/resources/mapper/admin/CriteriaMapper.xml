@@ -42,6 +42,23 @@
         ORDER BY gc.guarantee_id, r.house_type, r.deposit_min, r.debt_ratio_min, r.premium_rate_id
     </select>
 
+    <!-- 수정일시 컬럼이 없다. 시행일은 DATE 그대로 넘긴다. 정렬은 한도 계산이 고르는 행(시행일 최신)이 먼저. -->
+    <select id="selectLoanRegulations"
+            resultType="com.duri.rentalplatform.domain.admin.dto.response.LoanRegulationsResponse$Item">
+        SELECT lr.regulation_id,
+               lr.house_type,
+               lr.region_type,
+               lr.deposit_ratio_limit,
+               lr.guarantee_cap_no_house,
+               lr.guarantee_cap_one_house,
+               lr.dsr_limit,
+               lr.stress_dsr_rate,
+               lr.dti_limit,
+               lr.effective_date
+        FROM loan_regulation lr
+        ORDER BY lr.effective_date DESC, lr.regulation_id DESC
+    </select>
+
     <select id="selectRiskThreshold"
             resultType="com.duri.rentalplatform.domain.admin.dto.response.RiskThresholdResponse">
         SELECT rc.negative_equity_ratio,

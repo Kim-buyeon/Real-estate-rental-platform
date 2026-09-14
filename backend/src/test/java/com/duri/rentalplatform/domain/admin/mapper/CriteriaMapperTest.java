@@ -6,11 +6,14 @@ import com.duri.rentalplatform.TestcontainersConfiguration;
 import com.duri.rentalplatform.domain.admin.dto.condition.CriteriaHistoryCondition;
 import com.duri.rentalplatform.domain.admin.dto.response.CriteriaHistoryResponse;
 import com.duri.rentalplatform.domain.admin.dto.response.GuaranteeCriteriaResponse;
+import com.duri.rentalplatform.domain.admin.dto.response.LoanRegulationsResponse;
 import com.duri.rentalplatform.domain.admin.dto.response.PremiumRatesResponse;
 import com.duri.rentalplatform.domain.admin.dto.response.RiskThresholdResponse;
 import com.duri.rentalplatform.domain.admin.enums.CriteriaTarget;
 import com.duri.rentalplatform.domain.risk.enums.GuaranteeProvider;
 import com.duri.rentalplatform.domain.risk.enums.HouseType;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -113,6 +116,23 @@ class CriteriaMapperTest {
     }
 
     @Test
+    @DisplayName("대출 규제: 모든 필드가 채워지고 시행일 내림차순, 같은 시행일은 식별자 내림차순")
+    void selectLoanRegulations() {
+        jdbc.update("DELETE FROM loan_regulation");
+        long older = insertLoanRegulation("2025-10-29");
+        long newerFirst = insertLoanRegulation("2026-01-01");
+        long newerSecond = insertLoanRegulation("2026-01-01");
+
+        List<LoanRegulationsResponse.Item> rows = mapper.selectLoanRegulations();
+
+        assertThat(rows).extracting(LoanRegulationsResponse.Item::regulationId)
+                .containsExactly(newerSecond, newerFirst, older);
+        assertThat(rows.get(2)).isEqualTo(new LoanRegulationsResponse.Item(older, "ALL", "SEOUL_REGULATED",
+                new BigDecimal("80.00"), 400_000_000L, 180_000_000L, new BigDecimal("40.00"),
+                new BigDecimal("3.00"), new BigDecimal("45.00"), LocalDate.of(2025, 10, 29)));
+    }
+
+    @Test
     @DisplayName("위험 기준: 단일 행의 두 값과 수정일시")
     void selectRiskThreshold() {
         jdbc.update("UPDATE risk_criteria SET negative_equity_ratio = 80.00, caution_lease_ratio = 70.00, "
@@ -173,6 +193,16 @@ class CriteriaMapperTest {
                 VALUES (?, 700000000, 90.00, CAST(? AS NUMERIC), CAST(? AS TIMESTAMP))
                 RETURNING guarantee_id
                 """, Long.class, provider, seniorLimit, updatedAt);
+    }
+
+    private long insertLoanRegulation(String effectiveDate) {
+        return jdbc.queryForObject("""
+                INSERT INTO loan_regulation (house_type, region_type, dsr_limit, stress_dsr_rate, dti_limit,
+                                             effective_date, deposit_ratio_limit, guarantee_cap_no_house,
+                                             guarantee_cap_one_house)
+                VALUES ('ALL', 'SEOUL_REGULATED', 40.00, 3.00, 45.00, CAST(? AS DATE), 80.00, 400000000, 180000000)
+                RETURNING regulation_id
+                """, Long.class, effectiveDate);
     }
 
     private long insertHistory(long changedBy, String changedAt) {
