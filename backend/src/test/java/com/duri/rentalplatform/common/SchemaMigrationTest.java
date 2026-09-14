@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.duri.rentalplatform.TestcontainersConfiguration;
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -84,6 +86,28 @@ class SchemaMigrationTest {
 
         Integer riskCriteriaRows = jdbcTemplate.queryForObject("SELECT count(*) FROM risk_criteria", Integer.class);
         assertThat(riskCriteriaRows).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("V10 시드: 전세자금대출 규제 한 행과 대표 상품 한 행이 들어 있고 LTV 컬럼은 없다")
+    void jeonseLoanRegulationSeeded() {
+        Map<String, Object> regulation = jdbcTemplate.queryForMap(
+                "SELECT deposit_ratio_limit, guarantee_cap_no_house, guarantee_cap_one_house, dsr_limit,"
+                        + " stress_dsr_rate FROM loan_regulation");
+        assertThat(regulation.get("deposit_ratio_limit")).isEqualTo(new BigDecimal("80.00"));
+        assertThat(regulation.get("guarantee_cap_no_house")).isEqualTo(400_000_000L);
+        assertThat(regulation.get("guarantee_cap_one_house")).isEqualTo(180_000_000L);
+        assertThat(regulation.get("dsr_limit")).isEqualTo(new BigDecimal("40.00"));
+        assertThat(regulation.get("stress_dsr_rate")).isEqualTo(new BigDecimal("3.00"));
+
+        Integer productRows = jdbcTemplate.queryForObject("SELECT count(*) FROM loan_product", Integer.class);
+        assertThat(productRows).isEqualTo(1);
+
+        Integer removedColumns = jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM information_schema.columns WHERE table_name = 'loan_regulation'"
+                        + " AND column_name IN ('ltv_limit', 'stress_dsr_limit')",
+                Integer.class);
+        assertThat(removedColumns).isZero();
     }
 
     @Test

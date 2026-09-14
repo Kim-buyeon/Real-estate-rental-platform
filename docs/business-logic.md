@@ -23,7 +23,7 @@
 | 2 | 위험 등급 판정 | 전세 위험도 분석 (기능 4) | 가입여부+전세가율 → 등급 | 1단계 (RISK-01) |
 | 3 | 깡통전세 계산 | 위험도 분석 보조 지표 | 채권최고액+보증금+시세 → 위험 | 1단계 (RISK-02) |
 | 4 | 맞춤형 대출 추천 | 대출 상품 추천 (기능 2) | 사용자 자산 → 추천 목록 | **차기 (LOAN-03)** |
-| 5 | 대출 한도 계산 | 대출 계획 수립 (기능 3) | LTV·DSR·Stress DSR → 한도 | 1단계 (LOAN-01) |
+| 5 | 대출 한도 계산 | 대출 계획 수립 (기능 3) | 보증금 비율·보증기관 상한·DSR → 한도 | 1단계 (LOAN-01) |
 | 6 | 실시간 알림 트리거 | 실시간 알림 (기능 5) | 이벤트 감지 → 알림 발송 | 1단계 (NOTI-02) · 5종 중 2종 |
 
 ---
@@ -188,7 +188,7 @@ if 위험금액 > 기준금액:  깡통전세 위험 (DANGER)
 
 - 1단계 (매물 안전성): RISK_ANALYSIS.insurance_eligible_yn = TRUE 인 매물만 추천 대상
 - 2단계 (사용자 자격): LOAN_PRODUCT의 소득조건·주택보유조건을 사용자가 충족하는지 검사
-- 3단계 (한도 산정): LTV·DSR·Stress DSR 규제를 적용해 실제 대출 가능액 계산
+- 3단계 (한도 산정): 6장의 전세자금대출 한도를 적용해 실제 대출 가능액 계산
 - 4단계 (정렬): 금리 낮은 순 또는 한도 높은 순으로 정렬하여 LOAN_PLAN 생성
 
 ### 추천 의사코드
@@ -216,40 +216,60 @@ function recommendLoans(user, property, risk):
 
 ---
 
-## 6. 대출 한도 계산 로직 (LTV · DSR · Stress DSR)
+## 6. 전세자금대출 한도 계산 로직 (보증금 비율 · 보증기관 상한 · DSR)
 
-대출 한도는 세 가지 규제를 모두 적용한 뒤, **가장 낮은 값**으로 결정된다. 각 규제 기준값은 LOAN_REGULATION 테이블에 저장되며, 계산 결과는 LOAN_PLAN에 기록된다.
+본 플랫폼의 대출은 **임차인의 전세자금대출**이다. 주택담보대출 규제인 LTV 는 전세자금대출에 적용되지 않으므로(금융위원회 「주택시장 안정화를 위한 대출수요 관리 방안」 2025-10-15 · FAQ 2025-10-17) 한도 산식에서 뺀다. 한도는 아래 항목 중 **가장 낮은 값**이며, 기준값은 LOAN_REGULATION, 금리 · 상품 한도는 LOAN_PRODUCT 에서 읽는다. 계산 결과의 저장(LOAN_PLAN)은 LOAN-05 범위다.
 
-### 세 규제의 의미
+### 한도 항목
 
-| 규제 | 기준 | 계산 |
-|---|---|---|
-| LTV | 주택가격 대비 대출 비율 | 대출가능액 = 주택가격 × LTV한도 |
-| DSR | 연소득 대비 원리금상환 비율 | 연원리금 ÷ 연소득 ≤ DSR한도(40%) |
-| Stress DSR | 미래 금리상승 가정한 DSR | 금리에 스트레스 가산율 더해 DSR 재계산 |
+| 항목 | 기준 | 계산 | 출처 |
+|---|---|---|---|
+| 보증금 기준 한도 | 임차보증금 × `deposit_ratio_limit`(80%) | 원 단위 버림 | 한국주택금융공사 일반전세자금보증 — 소요자금 |
+| 보증기관 상한 | 무주택 `guarantee_cap_no_house`(4억) · 주택 보유 `guarantee_cap_one_house`(1.8억) | 선택 | 같음 — 보증과목별 한도. 1주택자 수도권 · 규제지역 1.8억 |
+| DSR 한도 | **주택 보유자만.** 연 이자 여력 = 연소득 × `dsr_limit`(40) ÷ 100 − 기존 대출 연 상환액(음수면 0). 한도 = 여력 ÷ (금리 ÷ 100) | 원 단위 버림 | 금융위원회 2025-10-15 — 1주택자 수도권 · 규제지역 전세대출 이자상환분 DSR 반영(2025-10-29 시행). 은행권 40%는 스트레스 DSR 3단계 보도자료 2025-05-20 |
+| 스트레스 DSR 한도 | 주택 보유자만. 여력 ÷ ((금리 + `stress_dsr_rate`) ÷ 100) | 원 단위 버림 | **참고 병기 — 최종 한도에 넣지 않는다.** 스트레스 금리 하한 3.0%p 는 주담대 기준이며 전세대출 이자분 적용 문장을 1차 출처에서 찾지 못했다 |
+| 상품 한도 | LOAN_PRODUCT.max_limit | — | 상품 |
+
+무주택자는 DSR 을 적용하지 않으므로 연소득이 없어도 계산한다. 주택 보유자는 연소득이 0 이면 계산하지 않고 자격 정보 부족으로 응답한다.
 
 ### 계산 의사코드
 
 ```
-function calcLoanLimit(user, property, loan):
-    reg = LOAN_REGULATION[property.region_type]
+function calcJeonseLoanLimit(user, property, risk, loan, reg):
+    // 자격 정보를 먼저 본다 — 위험도 분석(외부 수집) 없이 거를 수 있다
+    if user.has_house and user.annual_income == 0:
+        reject(PROFILE_INCOMPLETE, field = annualIncome)
+    if risk.insurance_eligible_yn == false:
+        reject(LOAN_PROPERTY_NOT_ELIGIBLE)       // 안전 판정 매물에만 한도를 제시한다
 
-    // LTV 한도
-    ltvLimit = property.market_price × reg.ltv_limit
+    depositLimit      = floor(property.deposit × reg.deposit_ratio_limit ÷ 100)
+    guaranteeCapLimit = user.has_house ? reg.guarantee_cap_one_house : reg.guarantee_cap_no_house
 
-    // DSR 한도 (연소득 기준 역산)
-    maxAnnualPayment = user.annual_income × reg.dsr_limit
-    dsrLimit = 역산(maxAnnualPayment, loan.interest_rate)
+    dsrLimit = stressDsrLimit = null
+    if user.has_house:
+        capacity       = max(0, user.annual_income × reg.dsr_limit ÷ 100 − user.existing_loan_annual_payment)
+        dsrLimit       = floor(capacity ÷ (loan.interest_rate ÷ 100))
+        stressDsrLimit = floor(capacity ÷ ((loan.interest_rate + reg.stress_dsr_rate) ÷ 100))   // 참고
 
-    // Stress DSR (금리 + 가산율로 더 보수적)
-    stressRate = loan.interest_rate + reg.stress_dsr_rate
-    stressLimit = 역산(maxAnnualPayment, stressRate)
+    // 최솟값. 같으면 앞 순서가 결정 항목이다
+    candidates = [DEPOSIT_RATIO: depositLimit, GUARANTEE_CAP: guaranteeCapLimit,
+                  DSR: dsrLimit (주택 보유자만), PRODUCT_LIMIT: loan.max_limit]
+    finalLimit, appliedRegulation = min(candidates)
 
-    // 최종: 세 한도 중 최솟값
-    return min(ltvLimit, dsrLimit, stressLimit)
+    // DTI 참고 — 한도 판정에 쓰지 않는다. 소득 0 이면 null, % 소수 첫째 자리 HALF_UP
+    dtiReference = (user.existing_loan_annual_payment + finalLimit × loan.interest_rate ÷ 100) ÷ user.annual_income × 100
 ```
 
-DTI는 참고용 지표로만 활용하며 실제 한도 결정에는 사용하지 않는다. 현행 규제가 DSR·Stress DSR 중심으로 운영되기 때문이다.
+### 정한 것과 미확정
+
+| 지점 | 처리 |
+|---|---|
+| 주택 보유 | `has_house` = TRUE 를 1주택자로 본다. 자격 정보에 주택 수가 없다. 다주택자의 전세대출 보증 제한은 1단계 범위 밖으로 안내한다 |
+| 금리 | LOAN_PRODUCT 대표 1행의 금리를 쓴다. 시드는 예시값(HF 전세대출금리 공시 2026-08 국민은행 4.20%) |
+| 수도권 8/9 인정 규칙 | **미확정.** 어느 한도에 거는지 1차 출처로 확인하지 못해 적용하지 않는다. 출처 확인 시 확정한다 |
+| 스트레스 DSR 반영 | **미확정.** 전세대출 이자분 적용 1차 출처가 확인되면 최종 한도에 넣는다 |
+
+DTI는 참고용 지표로만 활용하며 실제 한도 결정에는 사용하지 않는다.
 
 ---
 
@@ -274,10 +294,10 @@ DSR = (보유대출 연상환액 + 신규대출 Annual Repayment) / 연소득
 | 상환방식 (repayment_type) | 연간 상환액 계산 |
 |---|---|
 | 원금균등 (EQUAL_PRINCIPAL) | Σ (amount/period) + (amount − 누적상환원금) × rate — 원금 일정, 이자 체감 |
-| 만기일시 (BULLET) | Σ (amount/period) × rate — 매월 이자만, 원금은 만기 일시상환 |
+| 만기일시 (BULLET) | amount × rate — 매월 이자만, 원금은 만기 일시상환. 연 이자는 기간과 무관하다 |
 | 원리금균등 (EQUAL_PI) | 매월 동일액 상환 (하나은행 전월세대출·버팀목은 미적용) |
 
-**1단계는 한도 계산 대상 상품의 상환방식 하나만 구현한다.** 3종 전체 구현은 차기 범위(LOAN-04 상환 시뮬레이션)다. DSR 분자 산출 자체는 LOAN-01에 필요하므로 본 절의 기본식과 데이터 매핑은 1단계에 포함된다.
+**1단계는 만기일시(BULLET) 하나만 구현한다.** 전세자금대출 DSR 은 이자상환분만 반영하므로(6장) 6장의 역산이 이 식의 역이다. 3종 전체 구현은 차기 범위(LOAN-04 상환 시뮬레이션)다.
 
 ### 계산에 필요한 데이터 매핑
 
