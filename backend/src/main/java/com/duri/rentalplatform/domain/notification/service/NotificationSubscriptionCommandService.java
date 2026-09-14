@@ -9,6 +9,7 @@ import com.duri.rentalplatform.domain.notification.repository.NotificationSubscr
 import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.SeoulDistrict;
 import com.duri.rentalplatform.domain.property.repository.WishlistRepository;
+import com.duri.rentalplatform.domain.user.repository.UserRepository;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -23,7 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
  * 알림 구독 설정 수정 — API 명세서(알림) 1.2.
  *
  * <p>한 요청이 한 트랜잭션이다. 사용자 행을 전부 지우고 요청대로 넣는다 — 명세가 전체를 전달하고 행 수가 사용자당 최대
- * 28 이라 차이 계산을 두지 않는다. 관심 매물 모니터링 수신 여부는 사용자의 관심 매물 {@code monitoring_yn} 에 일괄로
+ * 28 이라 차이 계산을 두지 않는다. 지우기 전에 사용자 행을 쓰기 잠금으로 읽어 같은 사용자의 동시 수정을 한 줄로 세운다 —
+ * 행이 없을 때 막을 대상이 없는 구독 행 대신, 늘 있는 사용자 행을 잠근다. 관심 매물 모니터링 수신 여부는 사용자의 관심 매물 {@code monitoring_yn} 에 일괄로
  * 반영한다 — 기능 정의서 NOTI-01 「켜면 등록된 관심 매물 전체가 대상」.
  *
  * <p>{@code enabled} 가 false 여도 온 조건은 비활성 행으로 남긴다. 버리면 다시 켤 때 화면이 조건을 잃는다.
@@ -41,6 +43,7 @@ public class NotificationSubscriptionCommandService {
 
     private final NotificationSubscriptionRepository subscriptionRepository;
     private final WishlistRepository wishlistRepository;
+    private final UserRepository userRepository;
 
     /**
      * @throws BusinessException {@link ErrorCode#INVALID_REQUEST} — 신규 매물을 켰는데 조건 · 자치구가 없음, 서울 자치구가
@@ -56,6 +59,9 @@ public class NotificationSubscriptionCommandService {
         rows.add(NotificationSubscription.toggle(userId, SubscriptionType.CONSULT_SCHEDULE,
                 request.consultSchedule().enabled()));
 
+        // 같은 사용자의 동시 PUT 을 직렬화한다. 없으면 둘 다 지운 뒤 둘 다 넣어 유일 인덱스 위반(500)이 난다.
+        // 사용자는 토큰에서 온 식별자라 있다 — 결과는 쓰지 않는다.
+        userRepository.findByIdForUpdate(userId);
         subscriptionRepository.deleteAllByUserIdInBulk(userId);
         subscriptionRepository.saveAll(rows);
         wishlistRepository.updateMonitoringByUserId(userId, monitoring);
