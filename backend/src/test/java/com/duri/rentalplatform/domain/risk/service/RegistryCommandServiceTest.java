@@ -232,7 +232,7 @@ class RegistryCommandServiceTest {
     }
 
     @Test
-    @DisplayName("을구 한 건의 말소 여부만 달라도 이력을 교체하고 수집 시각을 갱신한 뒤 변동 이벤트를 발행한다")
+    @DisplayName("을구 한 건의 말소 여부만 달라도 이력을 교체하고 수집 시각을 갱신한 뒤 변동 전 · 후 요약을 담은 이벤트를 발행한다")
     void refreshChangedReplacesHistories() {
         givenProperty();
         when(registryClient.fetch(any())).thenReturn(document());
@@ -262,8 +262,14 @@ class RegistryCommandServiceTest {
         order.verify(mortgageHistoryRepository).saveAll(anyList());
         order.verify(auditingHandler).markModified(registry);
         order.verify(buildingRegistryRepository).flush();
-        order.verify(eventPublisher).publishEvent(new RegistryChangedEvent(PROPERTY_ID, refreshedAt));
+        ArgumentCaptor<RegistryChangedEvent> event = ArgumentCaptor.forClass(RegistryChangedEvent.class);
+        order.verify(eventPublisher).publishEvent(event.capture());
         order.verify(transactionManager).commit(any());
+        // 저장돼 있던 을구 한 건은 유효, 새로 뗀 것은 말소 — 갑구 유효 2건은 그대로다.
+        assertThat(event.getValue().propertyId()).isEqualTo(PROPERTY_ID);
+        assertThat(event.getValue().beforeSummary()).matches("갑구 2 · 을구 1 · [0-9a-f]{8}");
+        assertThat(event.getValue().afterSummary()).matches("갑구 2 · 을구 0 · [0-9a-f]{8}");
+        assertThat(event.getValue().detectedAt()).isEqualTo(refreshedAt);
 
         List<MortgageHistory> saved = captureList(mortgageHistoryRepository);
         assertThat(saved).singleElement().satisfies(mortgage -> {
@@ -272,6 +278,36 @@ class RegistryCommandServiceTest {
         });
         assertThat(captureList(ownershipHistoryRepository)).hasSize(2);
         verify(buildingRegistryRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("소유권 이전으로 유효 건수가 같아도 변동 전 · 후 요약이 다르다")
+    void refreshOwnershipTransferSummariesDiffer() {
+        givenProperty();
+        BuildingRegistry registry = storedRegistry();
+        when(ownershipHistoryRepository.findByRegistry(registry)).thenReturn(storedOwnerships(registry));
+        when(mortgageHistoryRepository.findByRegistry(registry)).thenReturn(storedMortgages(registry));
+        // 김임대 → 박새주인 이전. 이전 소유 등기는 현재 소유자가 아니게 되고, 갑구 유효 건수는 2건 그대로다.
+        RegistryDocument transferred = new RegistryDocument("업무시설", "철근콘크리트구조", "서울특별시 시험구 시험로 1",
+                new BigDecimal("42.50"), RegistryDataSource.MOCK,
+                List.of(
+                        new OwnershipEntry(1, OwnershipRightType.OWNERSHIP_TRANSFER, "김임대",
+                                LocalDate.of(2019, 3, 11), "매매", false),
+                        new OwnershipEntry(2, OwnershipRightType.SEIZURE, "○○세무서",
+                                LocalDate.of(2021, 5, 3), "압류", true),
+                        new OwnershipEntry(3, OwnershipRightType.OWNERSHIP_TRANSFER, "박새주인",
+                                LocalDate.of(2026, 9, 1), "매매", true)),
+                document().mortgages());
+        when(registryClient.fetch(any())).thenReturn(transferred);
+
+        service.refresh(PROPERTY_ID);
+
+        ArgumentCaptor<RegistryChangedEvent> event = ArgumentCaptor.forClass(RegistryChangedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().beforeSummary()).startsWith("갑구 2 · 을구 0 · ");
+        assertThat(event.getValue().afterSummary()).startsWith("갑구 2 · 을구 0 · ");
+        assertThat(event.getValue().afterSummary()).isNotEqualTo(event.getValue().beforeSummary());
+        assertThat(event.getValue().afterSummary()).hasSizeLessThanOrEqualTo(100);
     }
 
     @Test

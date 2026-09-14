@@ -22,7 +22,7 @@
 
 ## 2. 엔티티 관계 요약
 
-전체 41개 관계의 카디널리티·필수 여부·식별 유형을 정의한다. DA# 관계 편집 시 '필수' 체크박스 입력에 대조하여 사용한다.
+전체 42개 관계의 카디널리티·필수 여부·식별 유형을 정의한다. DA# 관계 편집 시 '필수' 체크박스 입력에 대조하여 사용한다.
 
 필수: ● 필수(자식이 부모 없이 존재 불가) / ○ 선택(FK NULL 허용).  식별: 식별(부모 PK가 자식 PK 일부) / 비식별(일반 FK).  1:0..1은 배타적 서브타입.
 
@@ -44,6 +44,7 @@
 | PROPERTY | LOAN_PLAN | 1:N | ● 필수 | 비식별 | 대출 대상 매물 |
 | PROPERTY | CONSULTATION | 1:N | ○ 선택 | 비식별 | 상담 대상 매물 (NULL 허용) |
 | PROPERTY | PROPERTY_NOTIFICATION | 1:N | ● 필수 | 비식별 | 신규 매물 알림 |
+| PROPERTY | WISHLIST_NOTIFICATION | 1:N | ● 필수 | 비식별 | 모니터링 알림 대상 매물 (관심 해제 뒤에도 유지) |
 | BUILDING_REGISTRY | OWNERSHIP_HISTORY | 1:N | ● 필수 | 식별 | 갑구 소유권 이력 |
 | BUILDING_REGISTRY | MORTGAGE_HISTORY | 1:N | ● 필수 | 식별 | 을구 채무 이력 |
 | BUILDING_REGISTRY | RISK_ANALYSIS | 1:N | ● 필수 | 비식별 | 등기 분석 근거 |
@@ -61,9 +62,9 @@
 | CONSULTATION | CONSULT_MESSAGE | 1:N | ● 필수 | 식별 | 채팅 메시지 |
 | CONSULTATION | CONSULT_NOTIFICATION | 1:N | ● 필수 | 비식별 | 상담 알림 |
 | INTEREST_RATE_HISTORY | RATE_NOTIFICATION | 1:N | ● 필수 | 비식별 | 금리 변동 트리거 |
-| WISHLIST | WISHLIST_NOTIFICATION | 1:N | ● 필수 | 비식별 | 모니터링 알림 |
-| NOTIFICATION_SUBSCRIPTION | PROPERTY_NOTIFICATION | 1:N | ● 필수 | 비식별 | 구독 발동 |
-| NOTIFICATION_SUBSCRIPTION | RATE_NOTIFICATION | 1:N | ● 필수 | 비식별 | 구독 발동 |
+| WISHLIST | WISHLIST_NOTIFICATION | 1:N | ○ 선택 | 비식별 | 모니터링 알림 (관심 해제 시 NULL) |
+| NOTIFICATION_SUBSCRIPTION | PROPERTY_NOTIFICATION | 1:N | ○ 선택 | 비식별 | 구독 발동 (구독 행 삭제 시 NULL) |
+| NOTIFICATION_SUBSCRIPTION | RATE_NOTIFICATION | 1:N | ○ 선택 | 비식별 | 구독 발동 (구독 행 삭제 시 NULL) |
 | NOTIFICATION | PROPERTY_NOTIFICATION | 1:0..1 | ● 필수 | 식별 | 매물 알림 상세 |
 | NOTIFICATION | RATE_NOTIFICATION | 1:0..1 | ● 필수 | 식별 | 금리 알림 상세 |
 | NOTIFICATION | CONSULT_NOTIFICATION | 1:0..1 | ● 필수 | 식별 | 상담 알림 상세 |
@@ -424,6 +425,8 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 
 인덱스 — (user_id, property_id) UNIQUE: 한 사용자는 한 매물을 한 번만 등록한다. 두 인스턴스의 동시 등록을 DB 가 막고, 사용자별 목록 조회 · 해제의 인덱스를 겸한다.
 
+인덱스 — (property_id): 관심 매물 모니터링 알림의 대상(매물의 관심 등록자)을 고른다. 위 UNIQUE 는 선행 컬럼이 user_id 라 매물 기준 조회에 쓰이지 않는다.
+
 ### 24. NOTIFICATION_SUBSCRIPTION — 알림 구독 설정
 
 | 속성명 | 컬럼명 | 실질 식별자 | Not Null | 데이터타입 | 길이 | 소수점 | 기본값 | 설명 |
@@ -452,6 +455,8 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 | Is Read | is_read |  | ● | BOOLEAN | 1 | — | FALSE | 읽음 여부 |
 | Created At | created_at |  | ● | TIMESTAMP | — | — | now() | 알림 발송일시 |
 
+알림 유형(notif_type)은 API 명세서(알림)의 type 값과 같다. 1단계는 RISK_CHANGE/REGISTRY_CHANGE다.
+
 ### 26. PROPERTY_NOTIFICATION — 매물 알림
 
 | 속성명 | 컬럼명 | 실질 식별자 | Not Null | 데이터타입 | 길이 | 소수점 | 기본값 | 설명 |
@@ -459,7 +464,9 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 | Property Notif ID | prop_notif_id | ● | ● | BIGINT | — | — | IDENTITY | 매물 알림 고유 ID |
 | Notif ID | notif_id (FK) |  | ● | BIGINT | — | — | — | 알림 공통 ID |
 | Property ID | property_id (FK) |  | ● | BIGINT | — | — | — | 새로 등록된 매물 ID |
-| Subscription ID | subscription_id (FK) |  | ● | BIGINT | — | — | — | 발동된 구독 조건 ID |
+| Subscription ID | subscription_id (FK) |  |  | BIGINT | — | — | — | 발동된 구독 조건 ID. 구독 행이 삭제되면 NULL (ON DELETE SET NULL) |
+
+구독 설정 수정은 사용자 행을 지우고 다시 넣는다. 과거 알림이 구독 행 삭제를 막지 않도록 FK 는 삭제 시 NULL 로 둔다.
 
 ### 27. RATE_NOTIFICATION — 금리 변동 알림
 
@@ -468,7 +475,7 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 | Rate Notif ID | rate_notif_id | ● | ● | BIGINT | — | — | IDENTITY | 금리 알림 고유 ID |
 | Notif ID | notif_id (FK) |  | ● | BIGINT | — | — | — | 알림 공통 ID |
 | Rate ID | rate_id (FK) |  | ● | BIGINT | — | — | — | 금리 변동 이력 ID |
-| Subscription ID | subscription_id (FK) |  | ● | BIGINT | — | — | — | 발동된 구독 조건 ID |
+| Subscription ID | subscription_id (FK) |  |  | BIGINT | — | — | — | 발동된 구독 조건 ID. 구독 행이 삭제되면 NULL (ON DELETE SET NULL) — 26절과 같은 사유 |
 | Previous Rate | previous_rate |  | ● | NUMERIC | 5 | 3 | — | 변동 전 금리 (%) |
 | Current Rate | current_rate |  | ● | NUMERIC | 5 | 3 | — | 변동 후 금리 (%) |
 
@@ -488,11 +495,16 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 |---|---|---|---|---|---|---|---|---|
 | Wish Notif ID | wish_notif_id | ● | ● | BIGINT | — | — | IDENTITY | 관심 매물 알림 고유 ID |
 | Notif ID | notif_id (FK) |  | ● | BIGINT | — | — | — | 알림 공통 ID |
-| Wish ID | wish_id (FK) |  | ● | BIGINT | — | — | — | 관심 매물 ID |
+| Property ID | property_id (FK) |  | ● | BIGINT | — | — | — | 매물 ID. 관심을 해제해도 알림이 가리키는 매물 |
+| Wish ID | wish_id (FK) |  |  | BIGINT | — | — | — | 관심 매물 ID. 관심 해제로 행이 삭제되면 NULL (ON DELETE SET NULL) |
 | Change Type | change_type |  | ● | VARCHAR | 20 | — | — | 변동 유형 |
 | Before Value | before_value |  | ● | VARCHAR | 100 | — | — | 변동 전 값 |
 | After Value | after_value |  | ● | VARCHAR | 100 | — | — | 변동 후 값 |
 | Detected At | detected_at |  | ● | TIMESTAMP | — | — | now() | 변동 감지 일시 |
+
+변동 유형(change_type)은 RISK_GRADE/REGISTRY다. 변동 전 · 후 값은 위험 등급이면 등급 상수명(CAUTION → DANGER), 등기면 갑구 · 을구 유효 건수 요약(「갑구 2 · 을구 1」)이다.
+
+관심 매물 해제가 알림 이력을 지우거나 막지 않도록 wish_id 는 삭제 시 NULL 이 되고, 매물은 property_id 로 계속 가리킨다 — 알림 목록 조회가 완전한 확인 수단이다.
 
 ### 30. REGION_STATS — 지역 시세 통계
 

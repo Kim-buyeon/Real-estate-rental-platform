@@ -156,6 +156,48 @@ class SchemaMigrationTest {
     }
 
     @Test
+    @DisplayName("V13: 관심 매물 알림은 property_id NOT NULL · wish_id NULL 허용이고, 원천 행 삭제 시 SET NULL 이다")
+    void notificationHistoryRetainedOnSourceDeletion() {
+        List<Map<String, Object>> columns = jdbcTemplate.queryForList(
+                """
+                SELECT table_name, column_name, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND ((table_name = 'wishlist_notification' AND column_name IN ('property_id', 'wish_id'))
+                    OR (table_name IN ('property_notification', 'rate_notification')
+                        AND column_name = 'subscription_id'))
+                ORDER BY table_name, column_name
+                """);
+        assertThat(columns).extracting(c -> c.get("table_name"), c -> c.get("column_name"), c -> c.get("is_nullable"))
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("property_notification", "subscription_id", "YES"),
+                        org.assertj.core.groups.Tuple.tuple("rate_notification", "subscription_id", "YES"),
+                        org.assertj.core.groups.Tuple.tuple("wishlist_notification", "property_id", "NO"),
+                        org.assertj.core.groups.Tuple.tuple("wishlist_notification", "wish_id", "YES"));
+
+        List<Map<String, Object>> deleteRules = jdbcTemplate.queryForList(
+                """
+                SELECT constraint_name, delete_rule
+                FROM information_schema.referential_constraints
+                WHERE constraint_schema = 'public'
+                  AND constraint_name IN ('wishlist_notification_wish_id_fkey',
+                                          'property_notification_subscription_id_fkey',
+                                          'rate_notification_subscription_id_fkey')
+                ORDER BY constraint_name
+                """);
+        assertThat(deleteRules).extracting(r -> r.get("constraint_name"), r -> r.get("delete_rule"))
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("property_notification_subscription_id_fkey", "SET NULL"),
+                        org.assertj.core.groups.Tuple.tuple("rate_notification_subscription_id_fkey", "SET NULL"),
+                        org.assertj.core.groups.Tuple.tuple("wishlist_notification_wish_id_fkey", "SET NULL"));
+
+        String indexDef = jdbcTemplate.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'idx_wishlist_property'",
+                String.class);
+        assertThat(indexDef).contains("wishlist", "(property_id)");
+    }
+
+    @Test
     @DisplayName("V6: 위험 등급 기준은 CAUTION 경계가 깡통전세 선 이상이면 거부된다")
     void riskCriteriaRejectsNonMonotonicThresholds() {
         assertThatThrownBy(() -> jdbcTemplate.update(

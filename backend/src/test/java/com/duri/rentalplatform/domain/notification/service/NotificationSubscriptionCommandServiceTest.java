@@ -3,6 +3,7 @@ package com.duri.rentalplatform.domain.notification.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.groups.Tuple.tuple;
+import static org.mockito.ArgumentMatchers.anyIterable;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -18,6 +19,7 @@ import com.duri.rentalplatform.domain.notification.enums.SubscriptionType;
 import com.duri.rentalplatform.domain.notification.repository.NotificationSubscriptionRepository;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.repository.WishlistRepository;
+import com.duri.rentalplatform.domain.user.repository.UserRepository;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,20 +28,23 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 
-/** {@link NotificationSubscriptionCommandService} — 삭제 후 삽입, 저장 값, 검증 400, 모니터링 일괄 반영. */
+/** {@link NotificationSubscriptionCommandService} — 사용자 잠금 후 삭제 · 삽입, 저장 값, 검증 400, 모니터링 일괄 반영. */
 class NotificationSubscriptionCommandServiceTest {
 
     private static final long USER_ID = 42L;
 
     private NotificationSubscriptionRepository subscriptionRepository;
     private WishlistRepository wishlistRepository;
+    private UserRepository userRepository;
     private NotificationSubscriptionCommandService service;
 
     @BeforeEach
     void setUp() {
         subscriptionRepository = mock(NotificationSubscriptionRepository.class);
         wishlistRepository = mock(WishlistRepository.class);
-        service = new NotificationSubscriptionCommandService(subscriptionRepository, wishlistRepository);
+        userRepository = mock(UserRepository.class);
+        service = new NotificationSubscriptionCommandService(subscriptionRepository, wishlistRepository,
+                userRepository);
     }
 
     @Test
@@ -66,6 +71,18 @@ class NotificationSubscriptionCommandServiceTest {
                         tuple(SubscriptionType.WISHLIST_MONITORING, null, null, null, false),
                         tuple(SubscriptionType.CONSULT_SCHEDULE, null, null, null, true));
         assertThat(saved).extracting(NotificationSubscription::getDepositMin).containsOnly(0L);
+    }
+
+    @Test
+    @DisplayName("같은 사용자의 동시 수정을 직렬화하도록 사용자 행을 쓰기 잠금으로 읽은 뒤에 지우고 넣는다")
+    void locksUserRowBeforeDeleteAndInsert() {
+        service.replace(USER_ID, request(new NewProperty(false, null), false, true, false));
+
+        InOrder order = inOrder(userRepository, subscriptionRepository, wishlistRepository);
+        order.verify(userRepository).findByIdForUpdate(USER_ID);
+        order.verify(subscriptionRepository).deleteAllByUserIdInBulk(USER_ID);
+        order.verify(subscriptionRepository).saveAll(anyIterable());
+        order.verify(wishlistRepository).updateMonitoringByUserId(USER_ID, true);
     }
 
     @Test
@@ -160,7 +177,7 @@ class NotificationSubscriptionCommandServiceTest {
                     assertThat(e.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
                     assertThat(e.getField()).isEqualTo(field);
                 });
-        verifyNoInteractions(subscriptionRepository, wishlistRepository);
+        verifyNoInteractions(subscriptionRepository, wishlistRepository, userRepository);
     }
 
     @SuppressWarnings("unchecked")
