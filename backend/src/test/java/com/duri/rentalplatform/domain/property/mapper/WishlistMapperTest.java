@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.duri.rentalplatform.TestcontainersConfiguration;
 import com.duri.rentalplatform.domain.property.dto.condition.WishlistCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.WishlistedPropertyCondition;
 import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import com.duri.rentalplatform.domain.property.vo.WishlistRow;
 import java.math.BigDecimal;
@@ -99,6 +100,60 @@ class WishlistMapperTest {
         assertThat(ids(mapper.selectWishlist(new WishlistCondition(userId, null, 2)))).containsExactly(c, b);
         assertThat(ids(mapper.selectWishlist(new WishlistCondition(userId, b, 2)))).containsExactly(a);
         assertThat(mapper.selectWishlist(new WishlistCondition(userId, a, 2))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("배치 대상: 여러 사용자가 등록한 같은 매물은 한 번만, 매물 식별자 오름차순으로 나온다")
+    void wishlistedPropertyIdsAreDistinctAscending() {
+        long other = insertUser();
+        long p1 = insertProperty(1L);
+        long p2 = insertProperty(2L);
+        insertWish(userId, p2, T0);
+        insertWish(other, p2, T0);
+        insertWish(other, p1, T0);
+
+        // 다른 테스트 클래스가 커밋한 관심 매물이 앞에 많아도 잘리지 않도록 이번에 넣은 첫 매물 바로 앞에서 시작한다.
+        assertThat(wishlistedAfter(p1 - 1, 100)).containsExactly(p1, p2);
+    }
+
+    @Test
+    @DisplayName("배치 대상: 커서가 없으면 처음부터 읽는다")
+    void wishlistedPropertyIdsWithoutCursor() {
+        long p1 = insertProperty(1L);
+        insertWish(userId, p1, T0);
+
+        assertThat(wishlistedAfter(null, Integer.MAX_VALUE)).contains(p1);
+    }
+
+    @Test
+    @DisplayName("배치 대상 커서: 첫 · 중간 · 마지막 페이지가 겹치지 않고 이어진다")
+    void wishlistedPropertyIdsCursorPages() {
+        long p1 = insertProperty(1L);
+        long p2 = insertProperty(2L);
+        long p3 = insertProperty(3L);
+        insertWish(userId, p1, T0);
+        insertWish(userId, p2, T0);
+        insertWish(userId, p3, T0);
+        // 다른 테스트 클래스가 커밋한 관심 매물이 있어도 영향이 없도록 이번에 넣은 첫 매물 바로 앞에서 시작한다.
+        long before = p1 - 1;
+
+        assertThat(wishlistedAfter(before, 2)).containsExactly(p1, p2);
+        assertThat(wishlistedAfter(p2, 2)).containsExactly(p3);
+        assertThat(wishlistedAfter(p3, 2)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("배치 대상: 관심 매물로 등록되지 않은 매물은 나오지 않는다")
+    void notWishlistedPropertyExcluded() {
+        long wished = insertProperty(1L);
+        long notWished = insertProperty(2L);
+        insertWish(userId, wished, T0);
+
+        assertThat(wishlistedAfter(wished - 1, 100)).contains(wished).doesNotContain(notWished);
+    }
+
+    private List<Long> wishlistedAfter(Long lastPropertyId, int limit) {
+        return mapper.selectWishlistedPropertyIds(new WishlistedPropertyCondition(lastPropertyId, limit));
     }
 
     private static List<Long> ids(List<WishlistRow> rows) {

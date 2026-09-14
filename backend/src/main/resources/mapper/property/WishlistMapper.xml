@@ -27,4 +27,20 @@
         ORDER BY w.wish_id DESC
         LIMIT #{limit}
     </select>
+
+    <!--
+      등기 재조회 배치(RISK-08)의 대상. 여러 사용자가 같은 매물을 등록해도 한 번만 나온다. 매물 식별자 오름차순이라
+      식별자 자체가 커서이고 동률이 없다. property_id 단독 인덱스는 없다 — 실행 계획은 미검증(T7 에서 확인).
+    -->
+    <select id="selectWishlistedPropertyIds" resultType="java.lang.Long">
+        SELECT DISTINCT w.property_id
+        FROM wishlist w
+        <where>
+            <if test="lastPropertyId != null">
+                w.property_id &gt; #{lastPropertyId}
+            </if>
+        </where>
+        ORDER BY w.property_id
+        LIMIT #{limit}
+    </select>
 </mapper>
