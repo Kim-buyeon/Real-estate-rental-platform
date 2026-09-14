@@ -4,8 +4,10 @@ import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -16,6 +18,7 @@ import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.config.SecurityConfig;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.RiskGrade;
+import com.duri.rentalplatform.domain.risk.dto.response.RiskReanalyzeResponse;
 import com.duri.rentalplatform.domain.risk.dto.response.RiskResponse;
 import com.duri.rentalplatform.domain.risk.enums.GradeReason;
 import com.duri.rentalplatform.domain.risk.enums.GuaranteeFailedCondition;
@@ -23,6 +26,7 @@ import com.duri.rentalplatform.domain.risk.enums.GuaranteeProvider;
 import com.duri.rentalplatform.domain.risk.enums.OwnershipRightType;
 import com.duri.rentalplatform.domain.risk.enums.PersonalCondition;
 import com.duri.rentalplatform.domain.risk.service.RiskAnalysisCommandService;
+import com.duri.rentalplatform.domain.risk.service.RiskReanalysisCommandService;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -36,14 +40,15 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * {@link RiskController} 의 인가 · 응답 형태 · 오류 경로. 서비스는 목킹한다.
  *
- * <p>응답 형태는 API 명세서(위험도 분석) 1.1 예시와 필드 이름 · 중첩 · 형식을 대조한다. {@link SecurityConfig} 를 실제로
- * 올려 인증 「선택」 경로가 토큰 없이 열리는지 본다.
+ * <p>응답 형태는 API 명세서(위험도 분석) 1.1 · 1.4 예시와 필드 이름 · 중첩 · 형식을 대조한다. {@link SecurityConfig} 를
+ * 실제로 올려 조회(인증 「선택」)가 토큰 없이 열리고 재분석(인증 「필수」)이 토큰 없이 막히는지 본다.
  */
 @WebMvcTest(controllers = RiskController.class)
 @Import({
@@ -58,8 +63,14 @@ class RiskControllerTest {
     @Autowired
     MockMvc mockMvc;
 
+    @Autowired
+    JwtTokenProvider jwtTokenProvider;
+
     @MockitoBean
     RiskAnalysisCommandService commandService;
+
+    @MockitoBean
+    RiskReanalysisCommandService reanalysisCommandService;
 
     @Test
     @DisplayName("토큰 없이 조회하면 명세 1.1 예시와 같은 형태로 응답한다")
@@ -129,6 +140,51 @@ class RiskControllerTest {
         mockMvc.perform(get("/api/properties/abc/risk"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    @DisplayName("재분석 — 토큰이 있으면 명세 1.4 예시와 같은 형태로 응답한다")
+    void reanalyzeMatchesSpecExample() throws Exception {
+        when(reanalysisCommandService.reanalyze(1024L)).thenReturn(new RiskReanalyzeResponse(1024L,
+                RiskGrade.CAUTION, RiskGrade.DANGER, true,
+                OffsetDateTime.of(2026, 7, 29, 10, 12, 0, 0, ZoneOffset.ofHours(9))));
+
+        mockMvc.perform(post("/api/properties/1024/risk/reanalyze").header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.propertyId").value(1024))
+                .andExpect(jsonPath("$.data.previousGrade").value("CAUTION"))
+                .andExpect(jsonPath("$.data.riskGrade").value("DANGER"))
+                .andExpect(jsonPath("$.data.gradeChanged").value(true))
+                .andExpect(jsonPath("$.data.analyzedAt").value("2026-07-29T10:12:00+09:00"))
+                .andExpect(jsonPath("$.data", aMapWithSize(5)));
+    }
+
+    @Test
+    @DisplayName("재분석 — 토큰이 없으면 401 이고 서비스를 부르지 않는다")
+    void reanalyzeRequiresToken() throws Exception {
+        mockMvc.perform(post("/api/properties/1024/risk/reanalyze"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false));
+        verifyNoInteractions(reanalysisCommandService);
+    }
+
+    @Test
+    @DisplayName("재분석 — 간격 안이면 429 RISK_REANALYZE_TOO_SOON 과 error.retryAfter")
+    void reanalyzeTooSoon() throws Exception {
+        when(reanalysisCommandService.reanalyze(1024L)).thenThrow(new BusinessException(
+                ErrorCode.RISK_REANALYZE_TOO_SOON, OffsetDateTime.of(2026, 7, 29, 11, 0, 0, 0, ZoneOffset.ofHours(9))));
+
+        mockMvc.perform(post("/api/properties/1024/risk/reanalyze").header(HttpHeaders.AUTHORIZATION, bearer()))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("RISK_REANALYZE_TOO_SOON"))
+                .andExpect(jsonPath("$.error.message").value("재분석은 잠시 후 다시 요청할 수 있습니다."))
+                .andExpect(jsonPath("$.error.retryAfter").value("2026-07-29T11:00:00+09:00"));
+    }
+
+    private String bearer() {
+        return "Bearer " + jwtTokenProvider.createAccessToken(1L, "USER");
     }
 
     private static RiskResponse specExample() {
