@@ -36,7 +36,7 @@ public class Wishlist extends CreatedAtEntity {
     @Column(nullable = false)
     private Long propertyId;
 
-    /** 모니터링 알림 대상 여부. 관심 매물은 알림 발송 범위다 — 수신 여부는 알림 구독(NOTI-01)이 일괄로 끈다. */
+    /** 모니터링 알림 대상 여부. 관심 매물은 알림 발송 범위다 — 수신 여부는 알림 구독(NOTI-01)이 일괄로 켜고 끈다. */
     @Column(name = "monitoring_yn", nullable = false)
     private boolean monitoring;
 
@@ -44,12 +44,17 @@ public class Wishlist extends CreatedAtEntity {
     @Column(nullable = false, length = 50)
     private WishlistAlertCondition alertCondition;
 
-    /** 등록. 모니터링을 켜고 1단계 트리거 둘(위험도 변경 · 등기 변동)을 조건으로 둔다. */
-    public static Wishlist register(Long userId, Long propertyId) {
+    /**
+     * 등록. 1단계 트리거 둘(위험도 변경 · 등기 변동)을 조건으로 둔다.
+     *
+     * @param monitoring 사용자의 관심 매물 모니터링 수신 설정(NOTI-01). 설정을 끈 사용자가 새로 등록한 매물만 켜진 채로
+     *                   남지 않게 한다
+     */
+    public static Wishlist register(Long userId, Long propertyId, boolean monitoring) {
         Wishlist wishlist = new Wishlist();
         wishlist.userId = userId;
         wishlist.propertyId = propertyId;
-        wishlist.monitoring = true;
+        wishlist.monitoring = monitoring;
         wishlist.alertCondition = WishlistAlertCondition.RISK_AND_REGISTRY;
         return wishlist;
     }

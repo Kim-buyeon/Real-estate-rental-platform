@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.domain.notification.service.NotificationSubscriptionQueryService;
 import com.duri.rentalplatform.domain.property.entity.Wishlist;
 import com.duri.rentalplatform.domain.property.enums.WishlistAlertCondition;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
@@ -21,7 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
 
-/** {@link WishlistCommandService} — 없는 매물, 중복의 두 경로, 멱등 해제, 저장 값. */
+/** {@link WishlistCommandService} — 없는 매물, 중복의 두 경로, 멱등 해제, 저장 값과 모니터링 설정 반영. */
 class WishlistCommandServiceTest {
 
     private static final long USER_ID = 42L;
@@ -29,13 +30,15 @@ class WishlistCommandServiceTest {
 
     private PropertyRepository propertyRepository;
     private WishlistRepository wishlistRepository;
+    private NotificationSubscriptionQueryService subscriptionQueryService;
     private WishlistCommandService service;
 
     @BeforeEach
     void setUp() {
         propertyRepository = mock(PropertyRepository.class);
         wishlistRepository = mock(WishlistRepository.class);
-        service = new WishlistCommandService(propertyRepository, wishlistRepository);
+        subscriptionQueryService = mock(NotificationSubscriptionQueryService.class);
+        service = new WishlistCommandService(propertyRepository, wishlistRepository, subscriptionQueryService);
     }
 
     @Test
@@ -76,19 +79,35 @@ class WishlistCommandServiceTest {
     }
 
     @Test
-    @DisplayName("등록은 토큰의 사용자 · 요청 매물로 모니터링 켬 · 위험도와 등기 조건을 저장한다")
+    @DisplayName("등록은 토큰의 사용자 · 요청 매물 · 사용자의 모니터링 설정(켬) · 위험도와 등기 조건을 저장한다")
     void savesValues() {
         when(propertyRepository.existsById(PROPERTY_ID)).thenReturn(true);
+        when(subscriptionQueryService.isWishlistMonitoringEnabled(USER_ID)).thenReturn(true);
 
         service.add(USER_ID, PROPERTY_ID);
 
-        ArgumentCaptor<Wishlist> captor = ArgumentCaptor.forClass(Wishlist.class);
-        verify(wishlistRepository).saveAndFlush(captor.capture());
-        Wishlist saved = captor.getValue();
+        Wishlist saved = captureSaved();
         assertThat(saved.getUserId()).isEqualTo(USER_ID);
         assertThat(saved.getPropertyId()).isEqualTo(PROPERTY_ID);
         assertThat(saved.isMonitoring()).isTrue();
         assertThat(saved.getAlertCondition()).isEqualTo(WishlistAlertCondition.RISK_AND_REGISTRY);
+    }
+
+    @Test
+    @DisplayName("사용자가 관심 매물 모니터링을 껐으면 새 관심 매물도 모니터링 끔으로 저장한다")
+    void followsMonitoringSettingOff() {
+        when(propertyRepository.existsById(PROPERTY_ID)).thenReturn(true);
+        when(subscriptionQueryService.isWishlistMonitoringEnabled(USER_ID)).thenReturn(false);
+
+        service.add(USER_ID, PROPERTY_ID);
+
+        assertThat(captureSaved().isMonitoring()).isFalse();
+    }
+
+    private Wishlist captureSaved() {
+        ArgumentCaptor<Wishlist> captor = ArgumentCaptor.forClass(Wishlist.class);
+        verify(wishlistRepository).saveAndFlush(captor.capture());
+        return captor.getValue();
     }
 
     @Test
