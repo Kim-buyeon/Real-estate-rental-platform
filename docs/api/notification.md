@@ -98,7 +98,7 @@ GET · PUT /api/me/notification-subscriptions — 공통 구조
 | type | string | `RISK_CHANGE`(관심 매물 위험 등급 변경) · `REGISTRY_CHANGE`(관심 매물 등기 갑구 · 을구 변동) |
 | title | string | 유형별 고정 문구. `RISK_CHANGE` 「관심 매물의 위험 등급이 변경되었습니다」, `REGISTRY_CHANGE` 「관심 매물의 등기에 변동이 생겼습니다」 |
 | propertyId | number | 알림이 가리키는 매물. 관심 매물을 해제한 뒤에도 남는다 |
-| beforeValue · afterValue | string | 변동 전 · 후 값. `RISK_CHANGE`는 위험 등급 상수명(`CAUTION` → `DANGER`), `REGISTRY_CHANGE`는 갑구 · 을구 유효 건수 요약(「갑구 2 · 을구 1」) |
+| beforeValue · afterValue | string | 변동 전 · 후 값. `RISK_CHANGE`는 위험 등급 상수명(`CAUTION` → `DANGER`), `REGISTRY_CHANGE`는 갑구 · 을구 유효 건수와 내용 지문 요약(「갑구 2 · 을구 1 · a1b2c3d4」 — 건수가 같아도 내용이 바뀌면 지문이 다르다) |
 | isRead | boolean | 읽음 여부 |
 | createdAt | string | 알림 생성 시각 |
 | unreadCount | number | 페이지와 무관한 이 사용자의 읽지 않은 알림 전체 수. 목록의 전체 건수가 아니다 — 공통 규약 1.4 |
