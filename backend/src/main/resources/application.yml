@@ -84,6 +84,26 @@ risk:
       # 풀려야 하므로 하루보다 짧게 둔다. 미확정 — 잠정 23시간으로 둔다. 5주차 T7 에서 확정한다.
       lock-lease-time: PT23H
 
+# @Async 실행기(알림 생성 · 발송). 설정 클래스 AsyncConfig.
+async:
+  # 앱 종료 때 실행 중인 작업을 기다리는 상한. 넘으면 남은 작업은 끊긴다.
+  # 미확정 — 잠정 30초. 5주차 부하 시험에서 확정한다.
+  termination-timeout: PT30S
+
+# 관심 매물 모니터링 알림 생성(NOTI-02) — 아키텍처 설계서(알림 전달) 1.1.
+notification:
+  # 중복 방지 키(noti:dedup:{userId}:{type}:{propertyId}:{afterValue}) 만료. 같은 변동이 재분석 · 일 1회 점검 배치에서 겹쳐
+  # 들어오는 것을 막는 창이라 배치 주기와 같게 둔다. 미확정 — 근거 문서가 없어 잠정 24시간이다. 5주차 부하 시험에서 확정한다.
+  dedup-ttl: PT24H
+  create:
+    # 같은 매물의 알림 생성 락(noti:create:{propertyId}) 대기 상한. 위험 등급 변경과 등기 변동이 한 재분석에서 함께 나오면
+    # 뒤 이벤트가 앞 생성을 기다린다 — 건너뛰면 한쪽 알림이 빠진다. 넘으면 생성 실패로 기록만 한다.
+    # 미확정 — 잠정 10초. 5주차 부하 시험(T7 배치 동시)에서 확정한다.
+    lock-wait-timeout: PT10S
+    lock-poll-interval: PT0.1S
+    # 락 만료. 대상 사용자 전원의 저장이 끝나기에 충분해야 한다. 미확정 — 잠정 10초. 5주차 부하 시험에서 확정한다.
+    lock-lease-time: PT10S
+
 # 토큰 만료 시간은 비밀도 환경 차이도 아니므로 환경 변수로 두지 않는다(.env.example 말미).
 # access-token-validity 는 로그인 응답의 expiresIn 과 같은 값이다 — API 명세서(회원·인증) 1.2.
 jwt:
