@@ -422,6 +422,8 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 | Alert Condition | alert_condition |  | ● | VARCHAR | 50 | — | — | 알림 조건 |
 | Created At | created_at |  | ● | TIMESTAMP | — | — | now() | 등록일시 |
 
+인덱스 — (user_id, property_id) UNIQUE: 한 사용자는 한 매물을 한 번만 등록한다. 두 인스턴스의 동시 등록을 DB 가 막고, 사용자별 목록 조회 · 해제의 인덱스를 겸한다.
+
 ### 24. NOTIFICATION_SUBSCRIPTION — 알림 구독 설정
 
 | 속성명 | 컬럼명 | 실질 식별자 | Not Null | 데이터타입 | 길이 | 소수점 | 기본값 | 설명 |

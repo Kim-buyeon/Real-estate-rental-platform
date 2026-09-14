@@ -233,6 +233,13 @@ GET /api/properties/1024
 
 ### 1.9 관심 매물
 
+- 등록 — 없는 매물이면 404 `PROPERTY_NOT_FOUND`, 이미 등록한 매물이면 409 `WISHLIST_DUPLICATED`. 성공은 201
+- 해제 — 등록되지 않은 매물이어도 204. DELETE 는 멱등이다
+- 목록 파라미터 — `cursor` · `size`(공통 규약 1.4)
+- 정렬은 등록 역순(최근 등록 먼저)
+- `riskGrade` — 최신 분석의 등급. 아직 분석되지 않은 매물은 `null`
+- `previousGrade` — 최신 분석의 직전 등급. 분석 전이거나 첫 분석이면 `null`
+
 POST /api/me/wishlist — 요청
 
 ```json
