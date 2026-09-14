@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  알림 목록 · 읽지 않은 수. API 명세서(알림) 1.3.
+
+  정렬은 notif_id 내림차순(최신 먼저). 식별자가 생성 순서이고 유일해 동률이 없다. 사용자 조건과 정렬은
+  (user_id, notif_id DESC) 인덱스(V14)를, 읽지 않은 수는 is_read = FALSE 부분 인덱스(V14)를 탄다.
+  1단계 알림은 모두 관심 매물 알림이라 상세를 wishlist_notification 에서 붙인다(V14 notif_id 인덱스).
+  하위 행이 없는 유형이 생기면 LEFT JOIN 이라 목록에서 빠지지 않는다. 평면 record 는 자동 생성자 매핑이다.
+-->
+<mapper namespace="com.duri.rentalplatform.domain.notification.mapper.NotificationMapper">
+
+    <select id="selectNotifications" resultType="com.duri.rentalplatform.domain.notification.vo.NotificationRow">
+        SELECT n.notif_id AS notification_id,
+               n.notif_type AS type,
+               wn.property_id,
+               wn.before_value,
+               wn.after_value,
+               n.is_read AS read,
+               n.created_at AT TIME ZONE 'Asia/Seoul' AS created_at
+        FROM notification n
+        LEFT JOIN wishlist_notification wn ON wn.notif_id = n.notif_id
+        WHERE n.user_id = #{userId}
+        <if test="lastNotificationId != null">
+          AND n.notif_id &lt; #{lastNotificationId}
+        </if>
+        ORDER BY n.notif_id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countUnread" resultType="long">
+        SELECT count(*)
+        FROM notification
+        WHERE user_id = #{userId}
+          AND is_read = FALSE
+    </select>
+</mapper>

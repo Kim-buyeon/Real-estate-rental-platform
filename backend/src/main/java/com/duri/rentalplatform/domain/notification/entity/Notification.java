@@ -47,4 +47,9 @@ public class Notification extends CreatedAtEntity {
         notification.read = false;
         return notification;
     }
+
+    /** 사용자가 확인했다. 이미 읽었으면 그대로다. */
+    public void markRead() {
+        this.read = true;
+    }
 }

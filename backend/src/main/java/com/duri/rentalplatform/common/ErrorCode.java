@@ -36,6 +36,9 @@ public enum ErrorCode {
     // 대출
     LOAN_PROPERTY_NOT_ELIGIBLE(422, "보증보험 가입이 불가한 매물입니다."),
 
+    // 알림
+    NOTIFICATION_NOT_FOUND(404, "존재하지 않는 알림입니다."),
+
     // 외부 연동
     EXTERNAL_API_UNAVAILABLE(503, "일시적으로 조회할 수 없습니다.");
 
