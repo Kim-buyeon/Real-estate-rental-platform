@@ -1,16 +1,13 @@
 package com.duri.rentalplatform.domain.notification.listener;
 
-import com.duri.rentalplatform.domain.notification.dto.response.NotificationEventResponse;
 import com.duri.rentalplatform.domain.notification.sender.SseNotificationSender;
-import com.duri.rentalplatform.domain.notification.store.SseEmitterStore;
+import com.duri.rentalplatform.domain.notification.service.NotificationStreamService;
 import com.duri.rentalplatform.domain.notification.vo.NotificationDelivery;
 import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -27,11 +24,11 @@ import tools.jackson.databind.json.JsonMapper;
 @Component
 public class NotificationEventSubscriber implements MessageListener {
 
-    private final SseEmitterStore sseEmitterStore;
+    private final NotificationStreamService streamService;
     private final JsonMapper jsonMapper;
 
-    public NotificationEventSubscriber(SseEmitterStore sseEmitterStore, JsonMapper jsonMapper) {
-        this.sseEmitterStore = sseEmitterStore;
+    public NotificationEventSubscriber(NotificationStreamService streamService, JsonMapper jsonMapper) {
+        this.streamService = streamService;
         this.jsonMapper = jsonMapper;
     }
 
@@ -45,10 +42,7 @@ public class NotificationEventSubscriber implements MessageListener {
             log.warn("받을 사용자나 유형이 없는 알림 이벤트를 버린다. notificationId={}", delivery.notificationId());
             return;
         }
-        NotificationEventResponse body = NotificationEventResponse.from(delivery);
-        sseEmitterStore.send(delivery.userId(), () -> SseEmitter.event()
-                .name(delivery.type().name())
-                .data(body, MediaType.APPLICATION_JSON));
+        streamService.deliver(delivery);
     }
 
     /** 해석하지 못하면 기록하고 null. */

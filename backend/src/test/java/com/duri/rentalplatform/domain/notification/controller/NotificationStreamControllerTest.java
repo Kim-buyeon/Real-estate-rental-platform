@@ -1,5 +1,8 @@
 package com.duri.rentalplatform.domain.notification.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.notNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -11,7 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.duri.rentalplatform.common.GlobalExceptionHandler;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.config.SecurityConfig;
-import com.duri.rentalplatform.domain.notification.store.SseEmitterStore;
+import com.duri.rentalplatform.domain.notification.service.NotificationStreamService;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,7 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * {@link NotificationStreamController} 의 인증 「필수」 — 헤더 토큰 · 쿼리 파라미터 토큰 · 헤더 우선 — 과 스트림 시작. 보관소는
+ * {@link NotificationStreamController} 의 인증 「필수」 — 헤더 토큰 · 쿼리 파라미터 토큰 · 헤더 우선 — 과 스트림 시작. 서비스는
  * 목킹하고 {@link SecurityConfig} 를 실제로 올린다.
  */
 @WebMvcTest(controllers = NotificationStreamController.class)
@@ -43,30 +46,30 @@ class NotificationStreamControllerTest {
     MockMvc mockMvc;
 
     @MockitoBean
-    SseEmitterStore sseEmitterStore;
+    NotificationStreamService streamService;
 
     @Test
     @DisplayName("헤더 토큰이면 토큰의 사용자로 연결을 열고 비동기 스트림을 시작한다")
     void headerTokenStartsStream() throws Exception {
-        when(sseEmitterStore.connect(USER_ID)).thenReturn(new SseEmitter());
+        when(streamService.connect(eq(USER_ID), any())).thenReturn(new SseEmitter());
 
         mockMvc.perform(get(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(request().asyncStarted());
 
-        verify(sseEmitterStore).connect(USER_ID);
+        verify(streamService).connect(eq(USER_ID), notNull());
     }
 
     @Test
     @DisplayName("헤더가 없으면 쿼리 파라미터 accessToken 으로 인증해 스트림을 시작한다")
     void queryTokenStartsStream() throws Exception {
-        when(sseEmitterStore.connect(USER_ID)).thenReturn(new SseEmitter());
+        when(streamService.connect(eq(USER_ID), any())).thenReturn(new SseEmitter());
 
         mockMvc.perform(get(PATH).queryParam("accessToken", accessToken()))
                 .andExpect(status().isOk())
                 .andExpect(request().asyncStarted());
 
-        verify(sseEmitterStore).connect(USER_ID);
+        verify(streamService).connect(eq(USER_ID), notNull());
     }
 
     @Test
@@ -79,7 +82,7 @@ class NotificationStreamControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("AUTH_INVALID_CREDENTIAL"));
 
-        verifyNoInteractions(sseEmitterStore);
+        verifyNoInteractions(streamService);
     }
 
     @Test
@@ -89,7 +92,7 @@ class NotificationStreamControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("AUTH_INVALID_CREDENTIAL"));
 
-        verifyNoInteractions(sseEmitterStore);
+        verifyNoInteractions(streamService);
     }
 
     private static String accessToken() {

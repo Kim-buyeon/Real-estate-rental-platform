@@ -11,7 +11,6 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter.SseEventBuilder;
@@ -40,17 +39,11 @@ public class SseEmitterStore implements MeterBinder {
     private static final String HEARTBEAT_COMMENT = "heartbeat";
 
     private final ConcurrentMap<Long, List<SseEmitter>> emittersByUser = new ConcurrentHashMap<>();
-    private final Duration timeout;
-
-    public SseEmitterStore(@Value("${notification.sse.timeout}") Duration timeout) {
-        this.timeout = timeout;
-    }
-
     /**
      * 사용자의 새 연결을 만들어 보관하고, 연결 직후 주석 이벤트를 보낸다. 주석은 클라이언트에 이벤트로 전달되지 않지만 응답 헤더와 첫
-     * 바이트를 바로 흘려 프록시 · 브라우저가 연결이 성립했음을 알게 한다.
+     * 바이트를 바로 흘려 프록시 · 브라우저가 연결이 성립했음을 알게 한다. 수명은 부르는 쪽(토큰 남은 시간)이 정한다.
      */
-    public SseEmitter connect(Long userId) {
+    public SseEmitter connect(Long userId, Duration timeout) {
         return open(userId, new SseEmitter(timeout.toMillis()));
     }
 

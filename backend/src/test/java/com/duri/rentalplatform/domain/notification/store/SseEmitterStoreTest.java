@@ -15,12 +15,12 @@ class SseEmitterStoreTest {
     private static final long USER_ID = 7L;
     private static final long OTHER_USER_ID = 8L;
 
-    private final SseEmitterStore store = new SseEmitterStore(Duration.ofMinutes(30));
+    private final SseEmitterStore store = new SseEmitterStore();
 
     @Test
-    @DisplayName("연결을 만들면 보관하고 타임아웃을 설정값으로 둔다")
+    @DisplayName("연결을 만들면 보관하고 타임아웃을 인자로 받은 수명으로 둔다")
     void connectRegistersEmitterWithConfiguredTimeout() {
-        SseEmitter emitter = store.connect(USER_ID);
+        SseEmitter emitter = store.connect(USER_ID, Duration.ofMinutes(30));
 
         assertThat(emitter.getTimeout()).isEqualTo(Duration.ofMinutes(30).toMillis());
         assertThat(store.connectionCount()).isEqualTo(1);

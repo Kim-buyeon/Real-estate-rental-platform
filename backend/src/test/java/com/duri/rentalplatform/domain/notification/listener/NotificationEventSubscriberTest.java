@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.duri.rentalplatform.domain.notification.dto.response.NotificationEventResponse;
 import com.duri.rentalplatform.domain.notification.enums.NotificationType;
 import com.duri.rentalplatform.domain.notification.sender.SseNotificationSender;
+import com.duri.rentalplatform.domain.notification.service.NotificationStreamService;
 import com.duri.rentalplatform.domain.notification.store.CapturingSseEmitter;
 import com.duri.rentalplatform.domain.notification.store.SseEmitterStore;
 import com.duri.rentalplatform.domain.notification.vo.NotificationDelivery;
@@ -28,8 +29,9 @@ class NotificationEventSubscriberTest {
     private static final long USER_ID = 7L;
     private static final JsonMapper JSON = new JsonMapper();
 
-    private final SseEmitterStore store = new SseEmitterStore(Duration.ofMinutes(30));
-    private final NotificationEventSubscriber subscriber = new NotificationEventSubscriber(store, JSON);
+    private final SseEmitterStore store = new SseEmitterStore();
+    private final NotificationEventSubscriber subscriber =
+            new NotificationEventSubscriber(new NotificationStreamService(store, Duration.ofMinutes(30)), JSON);
 
     private static Message messageOf(String body) {
         return new DefaultMessage(SseNotificationSender.CHANNEL.getBytes(StandardCharsets.UTF_8),

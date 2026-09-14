@@ -34,6 +34,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     public static final String AUTHENTICATION_ERROR_ATTRIBUTE =
             JwtAuthenticationFilter.class.getName() + ".errorCode";
 
+    /** 인증에 쓴 액세스 토큰의 만료 시각을 담는 요청 속성 이름. 값은 {@link java.time.Instant}다. 실시간 수신 연결 수명에 쓴다. */
+    public static final String ACCESS_TOKEN_EXPIRES_AT_ATTRIBUTE =
+            "com.duri.rentalplatform.common.security.JwtAuthenticationFilter.accessTokenExpiresAt";
+
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ROLE_PREFIX = "ROLE_";
@@ -96,6 +100,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             TokenClaims claims = jwtTokenProvider.parseAccessToken(token);
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(toAuthentication(claims));
+            request.setAttribute(ACCESS_TOKEN_EXPIRES_AT_ATTRIBUTE, claims.expiresAt());
             SecurityContextHolder.setContext(context);
         } catch (BusinessException e) {
             SecurityContextHolder.clearContext();
