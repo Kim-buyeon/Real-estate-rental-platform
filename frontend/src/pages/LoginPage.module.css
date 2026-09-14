@@ -1,0 +1,22 @@
+.page {
+  display: flex;
+  justify-content: center;
+  padding: var(--spacing-3xl) var(--spacing-md);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  width: 100%;
+  /* 레이아웃 1회성 값 — 폼 컨테이너 폭 */
+  max-width: 400px;
+}
+
+.footer {
+  color: var(--color-text-secondary);
+}
+
+.footer a {
+  color: var(--color-primary);
+}
