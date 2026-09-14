@@ -20,6 +20,8 @@ com.duri.rentalplatform
 │   ├── batch/                  Spring Batch 구성 — Job 조립 · ItemReader · ItemProcessor · ItemWriter
 │   ├── store/                  외부 저장소 보관소 (@Component)
 │   ├── event/                  도메인 이벤트 record
+│   ├── listener/               도메인 이벤트 수신자 (@Component)
+│   ├── sender/                 알림 전달 수단 계약과 구현 (@Component)
 │   └── dto/
 │       ├── request/
 │       ├── response/
@@ -36,7 +38,7 @@ MyBatis XML은 `resources/mapper/<도메인>/`에, Flyway 마이그레이션은 
 
 **`service/`는 `@Service`가 붙는 것만 담는다.** 비즈니스 로직을 수행하는 빈의 자리다. 같은 방식으로 `entity/`는 `@Entity`만, `repository/`는 JPA 인터페이스만, `controller/`는 `@RestController`만 담는다.
 
-**넣을 자리가 없으면 기존 계층에 밀어 넣지 말고 새 패키지를 만든다.** 순수 함수 클래스를 `service/`에, 값 객체를 `entity/`에 두면 그 패키지를 열었을 때 무엇이 들어 있는지 이름으로 알 수 없게 된다. `calculator/` · `vo/` · `loader/` · `store/` · `batch/`가 그래서 생겼다.
+**넣을 자리가 없으면 기존 계층에 밀어 넣지 말고 새 패키지를 만든다.** 순수 함수 클래스를 `service/`에, 값 객체를 `entity/`에 두면 그 패키지를 열었을 때 무엇이 들어 있는지 이름으로 알 수 없게 된다. `calculator/` · `vo/` · `loader/` · `store/` · `batch/` · `listener/` · `sender/`가 그래서 생겼다.
 
 **모든 도메인이 같은 패키지를 갖지 않는다.** `loader/`는 외부에서 데이터를 가져와 적재하는 도메인에만, `store/`는 JPA 밖의 저장소를 쓰는 도메인에만 둔다. 쓰지 않는 패키지를 미리 만들지 않는다.
 
@@ -50,6 +52,8 @@ MyBatis XML은 `resources/mapper/<도메인>/`에, Flyway 마이그레이션은 
 | `batch/` | Spring Batch 구성 요소 — Job 조립 · 실행(`@Component`)과 스텝의 읽기 · 처리 · 쓰기 단계. `service/` 는 `batch/` 를 참조하지 않는다(한 방향). 락 · 트랜잭션이 필요한 매물 단위 일은 `service/`의 빈에 맡긴다 | `RegistryRefreshJobFactory` · `WishlistedPropertyIdReader` |
 | `store/` | JPA 밖의 저장소 보관소 | `RefreshTokenStore` |
 | `event/` | 도메인 이벤트 record | `RiskGradeChangedEvent` |
+| `listener/` | 다른 도메인의 이벤트를 받아 서비스로 잇는 수신자 | `RiskEventListener` |
+| `sender/` | 전달 수단 인터페이스 · 구현과 그 분배자 | `NotificationSender` · `NotificationDispatcher` |
 
 ---
 
