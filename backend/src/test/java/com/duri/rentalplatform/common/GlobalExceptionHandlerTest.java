@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +57,23 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().is(422))
                 .andExpect(jsonPath("$.error.code").value("PROFILE_INCOMPLETE"))
                 .andExpect(jsonPath("$.error.field").value("annualIncome"));
+    }
+
+    @Test
+    @DisplayName("업무 예외의 retryAfter는 서울 오프셋 ISO 8601로 error.retryAfter에 담긴다")
+    void businessExceptionWithRetryAfter() throws Exception {
+        mockMvc.perform(get("/test/business-retry-after"))
+                .andExpect(status().is(429))
+                .andExpect(jsonPath("$.error.code").value("RISK_REANALYZE_TOO_SOON"))
+                .andExpect(jsonPath("$.error.retryAfter").value("2026-07-29T03:10:00+09:00"))
+                .andExpect(jsonPath("$.error.field").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("retryAfter가 없으면 응답에서 생략한다")
+    void retryAfterOmittedWhenAbsent() throws Exception {
+        mockMvc.perform(get("/test/business-field"))
+                .andExpect(jsonPath("$.error.retryAfter").doesNotExist());
     }
 
     @Test
@@ -107,6 +126,12 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/business-field")
         void businessField() {
             throw new BusinessException(ErrorCode.PROFILE_INCOMPLETE, "annualIncome");
+        }
+
+        @GetMapping("/test/business-retry-after")
+        void businessRetryAfter() {
+            throw new BusinessException(ErrorCode.RISK_REANALYZE_TOO_SOON,
+                    OffsetDateTime.of(2026, 7, 29, 3, 10, 0, 0, ZoneOffset.ofHours(9)));
         }
 
         @PostMapping("/test/validate")

@@ -1,6 +1,7 @@
 package com.duri.rentalplatform.common;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import java.time.OffsetDateTime;
 
 /**
  * 모든 API의 공통 응답 봉투. API 명세서 §1.2를 따른다.
@@ -18,6 +19,10 @@ public record ApiResponse<T>(boolean success, T data, ErrorResponse error) {
     }
 
     public static ApiResponse<Void> fail(ErrorCode errorCode, String field) {
-        return new ApiResponse<>(false, null, ErrorResponse.of(errorCode, field));
+        return fail(errorCode, field, null);
+    }
+
+    public static ApiResponse<Void> fail(ErrorCode errorCode, String field, OffsetDateTime retryAfter) {
+        return new ApiResponse<>(false, null, ErrorResponse.of(errorCode, field, retryAfter));
     }
 }
