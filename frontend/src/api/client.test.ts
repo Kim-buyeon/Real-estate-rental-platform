@@ -3,7 +3,7 @@
 // 도메인 API 함수(api/<도메인>.ts)가 아직 없으므로 request<T>()를 직접 호출한다.
 
 import { http, HttpResponse } from 'msw';
-import { afterEach, describe, expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { getAccessToken, getRefreshToken, setTokens } from '../session/store';
 import { server } from '../test/msw/server';
 import { ApiError, request } from './client';
@@ -23,6 +23,14 @@ describe('request — 성공 봉투', () => {
     server.use(http.delete('/api/test-204', () => new HttpResponse(null, { status: 204 })));
 
     const result = await request<null>({ method: 'DELETE', url: '/test-204' });
+
+    expect(result).toBeNull();
+  });
+
+  test('200 + 빈 본문은 null을 반환한다', async () => {
+    server.use(http.get('/api/test-empty-200', () => new HttpResponse('', { status: 200 })));
+
+    const result = await request<null>({ url: '/test-empty-200' });
 
     expect(result).toBeNull();
   });
@@ -94,14 +102,23 @@ describe('request — 오류 봉투', () => {
       code: 'NETWORK_ERROR',
     });
   });
+
+  test('봉투가 아닌 응답(502 + text/html)은 상태를 유지한 채 NETWORK_ERROR를 던진다', async () => {
+    server.use(
+      http.get(
+        '/api/test-bad-gateway',
+        () => new HttpResponse('<html><body>Bad Gateway</body></html>', { status: 502, headers: { 'Content-Type': 'text/html' } }),
+      ),
+    );
+
+    await expect(request({ url: '/test-bad-gateway' })).rejects.toMatchObject({
+      status: 502,
+      code: 'NETWORK_ERROR',
+    });
+  });
 });
 
 describe('request — 재발급', () => {
-  afterEach(() => {
-    // 각 테스트가 세션을 스스로 준비하므로 잔여물을 지운다 (setup.ts의 afterEach와 별개로 명시)
-    setTokens({ accessToken: '', refreshToken: '' });
-  });
-
   test('동시에 401이 난 두 요청은 재발급 호출 1회를 공유하고 새 토큰으로 재시도해 성공한다', async () => {
     setTokens({ accessToken: 'old-access', refreshToken: 'old-refresh' });
     let reissueCallCount = 0;
@@ -133,6 +150,57 @@ describe('request — 재발급', () => {
     expect(reissueCallCount).toBe(1);
     expect(getAccessToken()).toBe('new-access');
     expect(getRefreshToken()).toBe('new-refresh');
+  });
+
+  test('재발급이 이미 끝난 뒤 옛 액세스 토큰으로 나간 요청은 재발급 없이 새 토큰으로 재시도해 성공한다', async () => {
+    setTokens({ accessToken: 'old-access', refreshToken: 'old-refresh' });
+    let reissueCallCount = 0;
+    const capturedBAuthorizations: (string | null)[] = [];
+    // B의 401 응답을 A의 재발급이 끝날 때까지 지연시켜 순서를 결정적으로 만든다
+    let releaseB: () => void = () => {};
+    const bDelay = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+
+    server.use(
+      http.get('/api/test-sequential-a', ({ request: req }) => {
+        const authorization = req.headers.get('Authorization');
+        if (authorization === 'Bearer new-access') {
+          return HttpResponse.json({ success: true, data: { ok: true } });
+        }
+        return HttpResponse.json({ success: false, error: { code: 'AUTH_TOKEN_EXPIRED', message: '토큰이 만료되었습니다.' } }, { status: 401 });
+      }),
+      http.get('/api/test-sequential-b', async ({ request: req }) => {
+        const authorization = req.headers.get('Authorization');
+        capturedBAuthorizations.push(authorization);
+        if (authorization === 'Bearer new-access') {
+          return HttpResponse.json({ success: true, data: { ok: true } });
+        }
+        await bDelay;
+        return HttpResponse.json({ success: false, error: { code: 'AUTH_TOKEN_EXPIRED', message: '토큰이 만료되었습니다.' } }, { status: 401 });
+      }),
+      http.post('/api/auth/reissue', () => {
+        reissueCallCount += 1;
+        return HttpResponse.json({
+          success: true,
+          data: { accessToken: 'new-access', refreshToken: 'new-refresh', tokenType: 'Bearer', expiresIn: 3600, isNewUser: false },
+        });
+      }),
+    );
+
+    // B를 먼저 보내 옛 토큰이 헤더에 실리게 하되, 응답은 A의 재발급이 끝날 때까지 서버에서 붙잡아 둔다
+    const bPromise = request<{ ok: boolean }>({ url: '/test-sequential-b' });
+
+    const aResult = await request<{ ok: boolean }>({ url: '/test-sequential-a' });
+    expect(aResult).toEqual({ ok: true });
+    expect(reissueCallCount).toBe(1);
+
+    releaseB();
+    const bResult = await bPromise;
+
+    expect(bResult).toEqual({ ok: true });
+    expect(reissueCallCount).toBe(1);
+    expect(capturedBAuthorizations).toEqual(['Bearer old-access', 'Bearer new-access']);
   });
 
   test('재발급 실패는 세션을 비우고 원 401 ApiError를 던진다', async () => {
