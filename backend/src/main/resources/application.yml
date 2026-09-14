@@ -26,6 +26,11 @@ spring:
           time_zone: Asia/Seoul
   flyway:
     enabled: true
+  batch:
+    job:
+      # 기동할 때 Job 을 자동으로 돌리지 않는다. 등기 재조회 배치는 스케줄이 날짜 락 안에서만 시작한다 — 기동마다 돌면 두 인스턴스가
+      # 락 없이 각자 관심 매물 등기를 뗀다. Boot 기본값은 true 다(spring-boot-batch 4.1.1 메타데이터).
+      enabled: false
 
 # 조회 전용 매퍼 설정. 쓰기는 JPA 가 담당한다 — 아키텍처 설계서(영속성 구조) 1.1.
 # 키 이름은 mybatis-spring-boot-autoconfigure 4.1.0 의 spring-configuration-metadata.json 에서 확인했다.
@@ -66,6 +71,18 @@ risk:
     # 끝나기에 충분해야 한다 — 짧으면 실행 중에 풀려 등기를 두 번 뗀다. 미확정 — 잠정 30초로 둔다.
     # 5주차 부하 시험(T7 배치 동시)에서 확정한다.
     lock-lease-time: PT30S
+  # 관심 매물 등기 재조회 배치(RISK-08). 매물 락은 위 lock-lease-time 을 함께 쓰고 기다리지 않는다(경합이면 건너뜀).
+  batch:
+    registry-refresh:
+      # 스케줄 빈을 띄울지. 테스트 실행에서는 build.gradle 이 false 로 덮는다.
+      enabled: true
+      # 실행 시각(서울). 미확정 — 저부하 시간대로 잠정 03:00 으로 둔다. 5주차 T7(배치 동시 부하)에서 확정한다.
+      cron: "0 0 3 * * *"
+      # 대상 매물 식별자를 한 번에 읽는 건수이자 배치 스텝의 청크 크기. 미확정 — 잠정 500건으로 둔다. 5주차 T7 에서 확정한다.
+      page-size: 500
+      # 날짜 락(risk:batch:registry-refresh:{yyyy-MM-dd}) 만료. 잡은 인스턴스가 죽었을 때만 쓰인다. 다음 날 같은 시각 전에
+      # 풀려야 하므로 하루보다 짧게 둔다. 미확정 — 잠정 23시간으로 둔다. 5주차 T7 에서 확정한다.
+      lock-lease-time: PT23H
 
 # 토큰 만료 시간은 비밀도 환경 차이도 아니므로 환경 변수로 두지 않는다(.env.example 말미).
 # access-token-validity 는 로그인 응답의 expiresIn 과 같은 값이다 — API 명세서(회원·인증) 1.2.
