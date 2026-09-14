@@ -50,7 +50,20 @@ GET · PUT /api/me/notification-subscriptions — 공통 구조
 }
 ```
 
-- 수정 요청은 조회 응답과 동일한 구조로 전체를 전달한다.
+- 수정 요청은 조회 응답과 동일한 구조로 전체를 전달한다. 네 항목과 각 `enabled`는 필수다. 수정 응답은 조회 응답과 같다.
+- 조건은 신규 매물만 갖는다. 금리 변동 · 관심 매물 모니터링 · 상담 일정은 수신 여부만 갖는다.
+
+| 필드 | 타입 | 필수 | 설명 |
+| --- | --- | --- | --- |
+| newProperty.conditions | object | `enabled`가 true면 필수 | |
+| newProperty.conditions.districts | string[] | `enabled`가 true면 1개 이상 | 서울 자치구명(「강서구」). 중복 없음, 최대 25개. `enabled`가 false여도 온 값은 같은 규칙으로 검증한다 |
+| newProperty.conditions.contractType | string | 선택 | `DEPOSIT_ONLY` · `MONTHLY_RENT` · `SEMI_DEPOSIT`. 생략하면 계약 유형 전체 |
+| newProperty.conditions.depositMax | number | 선택 | 원. 생략하면 상한 없음 |
+
+- 위 규칙 위반과 열거에 없는 값은 400 `INVALID_REQUEST`이고 `field`에 위치를 담는다(예: `newProperty.conditions.districts`).
+- `enabled`가 false인데 조건이 오면 조건을 보존한다. 조회는 활성 여부와 무관하게 저장된 조건을 돌려준다 — 다시 켤 때 화면이 조건을 잃지 않는다.
+- 설정한 적 없는 항목의 조회 값은 `wishlistMonitoring`만 true, 나머지는 false다. 조건이 없으면 `districts`는 빈 배열, `contractType` · `depositMax`는 null이다.
+- `wishlistMonitoring.enabled`는 등록된 관심 매물 전체의 모니터링 여부에 일괄 반영되고, 이후 등록하는 관심 매물도 이 값을 따른다.
 
 ### 1.3 알림 목록 응답
 

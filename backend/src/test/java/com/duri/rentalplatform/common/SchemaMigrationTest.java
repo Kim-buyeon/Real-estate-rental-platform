@@ -130,6 +130,32 @@ class SchemaMigrationTest {
     }
 
     @Test
+    @DisplayName("V12: 알림 구독 조건 세 컬럼은 NULL 허용, contract_type 은 20자, 유일 인덱스는 NULLS NOT DISTINCT 다")
+    void notificationSubscriptionConditionsRelaxed() {
+        List<Map<String, Object>> columns = jdbcTemplate.queryForList(
+                """
+                SELECT column_name, is_nullable, character_maximum_length
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'notification_subscription'
+                  AND column_name IN ('target_district', 'contract_type', 'deposit_max')
+                ORDER BY column_name
+                """);
+        assertThat(columns).extracting(c -> c.get("column_name"), c -> c.get("is_nullable"))
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("contract_type", "YES"),
+                        org.assertj.core.groups.Tuple.tuple("deposit_max", "YES"),
+                        org.assertj.core.groups.Tuple.tuple("target_district", "YES"));
+        assertThat(columns.getFirst().get("character_maximum_length")).isEqualTo(20);
+
+        String indexDef = jdbcTemplate.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public'"
+                        + " AND indexname = 'uq_notification_subscription_user_type_district'",
+                String.class);
+        assertThat(indexDef).contains("UNIQUE", "(user_id, subscription_type, target_district)", "NULLS NOT DISTINCT");
+    }
+
+    @Test
     @DisplayName("V6: 위험 등급 기준은 CAUTION 경계가 깡통전세 선 이상이면 거부된다")
     void riskCriteriaRejectsNonMonotonicThresholds() {
         assertThatThrownBy(() -> jdbcTemplate.update(

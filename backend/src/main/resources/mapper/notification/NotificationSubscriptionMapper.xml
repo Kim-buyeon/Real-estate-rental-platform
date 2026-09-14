@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  알림 구독 설정. API 명세서(알림) 1.2.
+
+  사용자 행 전체를 평면으로 받고 유형별 묶음은 서비스가 한다. 사용자 조건은 유일 인덱스
+  (user_id, subscription_type, target_district)(V12)의 선행 컬럼을 탄다. 식별자 오름차순이라 신규 매물 자치구가
+  요청에 담긴 순서로 돌아온다. 평면 record 는 자동 생성자 매핑이다.
+-->
+<mapper namespace="com.duri.rentalplatform.domain.notification.mapper.NotificationSubscriptionMapper">
+
+    <select id="selectByUser" resultType="com.duri.rentalplatform.domain.notification.vo.NotificationSubscriptionRow">
+        SELECT subscription_type,
+               target_district,
+               contract_type,
+               deposit_max,
+               is_active AS active
+        FROM notification_subscription
+        WHERE user_id = #{userId}
+        ORDER BY subscription_id
+    </select>
+</mapper>

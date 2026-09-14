@@ -431,12 +431,16 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 | Subscription ID | subscription_id | ● | ● | BIGINT | — | — | IDENTITY | 구독 고유 ID |
 | User ID | user_id (FK) |  | ● | BIGINT | — | — | — | 사용자 ID |
 | Subscription Type | subscription_type |  | ● | VARCHAR | 20 | — | — | 구독 유형 |
-| Target District | target_district |  | ● | VARCHAR | 30 | — | — | 관심 자치구 |
-| Contract Type | contract_type |  | ● | VARCHAR | 10 | — | — | 관심 계약 유형 (LEASE/MONTHLY) |
+| Target District | target_district |  |  | VARCHAR | 30 | — | — | 관심 자치구명. 신규 매물 외 유형은 NULL |
+| Contract Type | contract_type |  |  | VARCHAR | 20 | — | — | 관심 계약 유형 (ContractType — DEPOSIT_ONLY/MONTHLY_RENT/SEMI_DEPOSIT). NULL이면 전체 |
 | Deposit Min | deposit_min |  | ● | BIGINT | 15 | — | 0 | 희망 보증금 하한 |
-| Deposit Max | deposit_max |  | ● | BIGINT | 15 | — | — | 희망 보증금 상한 |
+| Deposit Max | deposit_max |  |  | BIGINT | 15 | — | — | 희망 보증금 상한. NULL이면 상한 없음 |
 | Is Active | is_active |  | ● | BOOLEAN | 1 | — | TRUE | 구독 활성화 여부 |
 | Created At | created_at |  | ● | TIMESTAMP | — | — | now() | 구독 등록일시 |
+
+구독 유형(subscription_type)은 NEW_PROPERTY/RATE_CHANGE/WISHLIST_MONITORING/CONSULT_SCHEDULE이다. 신규 매물은 자치구마다 한 행이고, 나머지 유형은 조건 컬럼이 NULL인 사용자당 한 행이다.
+
+인덱스 — (user_id, subscription_type, target_district) UNIQUE NULLS NOT DISTINCT: 조건 없는 유형의 NULL끼리도 같은 값으로 보아 사용자당 한 행을 지킨다. 사용자별 조회 · 일괄 삭제의 인덱스를 겸한다.
 
 ### 25. NOTIFICATION — 알림 공통 상위 테이블
 

@@ -1,7 +1,10 @@
 package com.duri.rentalplatform.common;
 
+import java.util.Objects;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -9,6 +12,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import tools.jackson.core.JacksonException;
 
 /**
  * 전역 예외 처리. 모든 오류를 공통 응답 봉투(§1.2)로 변환한다.
@@ -40,6 +44,27 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
         return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getStatus())
                 .body(ApiResponse.fail(ErrorCode.INVALID_REQUEST, e.getName()));
+    }
+
+    /**
+     * 본문을 읽을 수 없음 — 깨진 JSON, 열거에 없는 값(예: {@code contractType}), 숫자 자리에 문자. 명세 1.3 「형식 오류」.
+     * 처리하지 않으면 500 이 된다. 역직렬화가 위치를 알면 속성 이름을 점으로 이어 {@code field} 에 담는다.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleNotReadable(HttpMessageNotReadableException e) {
+        return ResponseEntity.status(ErrorCode.INVALID_REQUEST.getStatus())
+                .body(ApiResponse.fail(ErrorCode.INVALID_REQUEST, unreadableField(e)));
+    }
+
+    private static String unreadableField(HttpMessageNotReadableException e) {
+        if (!(e.getCause() instanceof JacksonException jackson)) {
+            return null;
+        }
+        String field = jackson.getPath().stream()
+                .map(JacksonException.Reference::getPropertyName)
+                .filter(Objects::nonNull)
+                .collect(Collectors.joining("."));
+        return field.isEmpty() ? null : field;
     }
 
     /** 필수 요청 파라미터 누락(명세 1.3 「필수 파라미터 누락」). 처리하지 않으면 500 이 된다. */
