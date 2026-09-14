@@ -17,11 +17,13 @@ com.duri.rentalplatform
 │   ├── vo/                     값 객체 · 집계 객체
 │   ├── loader/                 적재 실행 진입점 (@Component)
 │   ├── store/                  외부 저장소 보관소 (@Component)
+│   ├── event/                  도메인 이벤트 record
 │   └── dto/
 │       ├── request/
 │       ├── response/
 │       └── condition/
 ├── common/                    ApiResponse · CursorPage · ErrorCode · BusinessException · BaseEntity
+│   └── lock/                   분산 락 애노테이션과 그 관점(@Aspect)
 ├── config/
 └── external/<연동 대상>/       인터페이스 + Mock · Real · Fault 구현
 ```
@@ -43,6 +45,7 @@ MyBatis XML은 `resources/mapper/<도메인>/`에, Flyway 마이그레이션은 
 | `vo/` | 값 객체 · 집계 객체 | `PropertyNaturalKey` · `PropertyLoadReport` |
 | `loader/` | 적재 실행 진입점 | `PropertyLoadRunner` |
 | `store/` | JPA 밖의 저장소 보관소 | `RefreshTokenStore` |
+| `event/` | 도메인 이벤트 record | `RiskGradeChangedEvent` |
 
 ---
 
@@ -351,7 +354,7 @@ public record ApiResponse<T>(boolean success, T data, ErrorResponse error) {
 
 public record CursorPage<T>(List<T> items, String nextCursor, boolean hasNext) { }
 
-public record ErrorResponse(String code, String message, String field) { }
+public record ErrorResponse(String code, String message, String field, OffsetDateTime retryAfter) { }
 ```
 
 - 성공 시 `success: true`, `data`에 결과.
@@ -410,6 +413,7 @@ public enum ErrorCode {
 public class BusinessException extends RuntimeException {
     private final ErrorCode errorCode;
     private final String field;
+    private final OffsetDateTime retryAfter;   // 요청 간격 제한(429)에서만 채운다
 }
 ```
 
