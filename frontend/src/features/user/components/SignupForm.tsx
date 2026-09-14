@@ -1,17 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import type { SignupForm as SignupFormValues } from '../../../api/user';
 import { Alert, Button, Field, Input } from '../../../components/ui';
+import { EMAIL_MAX_LENGTH, NAME_MAX_LENGTH, PHONE_MAX_LENGTH } from '../../../domain/user';
 import { useSignup } from '../../../queries/user';
 import styles from './SignupForm.module.css';
 
 type FieldName = keyof SignupFormValues;
 
 const FIELD_NAMES: readonly string[] = ['email', 'password', 'name', 'phone'] satisfies FieldName[];
-
-/** 백엔드 SignupRequest 검증 길이 */
-const EMAIL_MAX_LENGTH = 100;
-const NAME_MAX_LENGTH = 50;
-const PHONE_MAX_LENGTH = 20;
 
 interface SignupFormProps {
   /** 가입 성공 — 이동은 페이지가 정한다 */

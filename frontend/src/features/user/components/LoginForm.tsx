@@ -1,15 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import type { LoginForm as LoginFormValues } from '../../../api/user';
 import { Alert, Button, Field, Input } from '../../../components/ui';
+import { EMAIL_MAX_LENGTH } from '../../../domain/user';
 import { useLogin } from '../../../queries/user';
 import styles from './LoginForm.module.css';
 
 type FieldName = keyof LoginFormValues;
 
 const FIELD_NAMES: readonly string[] = ['email', 'password'] satisfies FieldName[];
-
-/** 이메일 · 백엔드 LoginRequest 검증 길이 */
-const EMAIL_MAX_LENGTH = 100;
 
 /**
  * 이메일 로그인 폼 (USER-02). 성공하면 세션이 시작되고, 이동은 페이지가 로그인 상태를 보고 한다.
