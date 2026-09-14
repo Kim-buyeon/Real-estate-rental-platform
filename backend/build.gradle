@@ -45,6 +45,10 @@ dependencies {
 	// JDBC 저장소는 spring-boot-starter-batch-jdbc 로 분리됐다. 재시작 메타데이터가 필요 없는 일 1회 재실행형 배치라
 	// 메타데이터 테이블 · 마이그레이션을 두지 않는다. 버전은 Boot BOM 이 관리한다.
 	implementation 'org.springframework.boot:spring-boot-starter-batch'
+	// 커스텀 지표(SSE 활성 연결 수) 등록 API. 지금은 배치 스타터가 전이로 끌어오지만, 배치를 걷어내도 지표 코드가 남도록 직접 적는다.
+	// 노출(Actuator · Prometheus 레지스트리)은 이 좌표가 하지 않는다 — 레지스트리 빈이 생기면 MeterBinder 가 그때 묶인다.
+	// 버전은 Boot BOM 이 관리한다.
+	implementation 'io.micrometer:micrometer-core'
 	implementation 'org.springframework.boot:spring-boot-flyway'
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-database-postgresql'
