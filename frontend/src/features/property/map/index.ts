@@ -9,6 +9,7 @@ export {
   addClickListener,
   addIdleListener,
   createMap,
+  fitBoundingBox,
   fitSeoul,
   isMapSdkReady,
   lockSeoulView,
@@ -19,6 +20,9 @@ export {
   searchDistrictPoint,
 } from './map';
 export type { MapPoint, RawBoundingBox } from './map';
+
+export { CLUSTER_THRESHOLD, GRID_DIVISIONS, groupMarkers } from './cluster';
+export type { GroupedMarkers, MarkerCluster } from './cluster';
 
 export { createOverlayLayer } from './overlay';
 export type { OverlayItem, OverlayLayer } from './overlay';
