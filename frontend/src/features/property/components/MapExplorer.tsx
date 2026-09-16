@@ -24,8 +24,19 @@ import { MarkerPreviewCard } from './MarkerPreviewCard';
 import { PropertyMarkerContent } from './PropertyMarkerContent';
 import styles from './MapExplorer.module.css';
 
-/** bbox가 아직 없을 때 쿼리 정의에 넘기는 자리값. enabled가 false라 요청되지 않는다 */
+/** 아직 이번 단계의 표시 영역을 읽지 못했을 때 쿼리 정의에 넘기는 자리값. enabled가 false라 요청되지 않는다 */
 const PENDING_BBOX: BoundingBox = { minLat: 0, maxLat: 0, minLng: 0, maxLng: 0 };
+
+const stageKeyOf = (stage: MapStage) => (stage.type === 'seoul' ? 'seoul' : `district:${stage.district}`);
+
+/**
+ * 읽은 표시 영역과 그때의 단계. 단계를 함께 들고 있어야 자치구로 막 옮긴 순간에
+ * 이전 단계(서울 전체)의 넓은 영역으로 마커를 조회하지 않는다.
+ */
+interface MapView {
+  stageKey: string;
+  bbox: BoundingBox;
+}
 
 interface OverlayItem {
   key: string;
@@ -54,8 +65,15 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
   // SDK는 index.html의 정적 <script>로 먼저 실행된다. 첫 렌더에 판정하면 효과에서 상태를 바꾸지 않아도 된다
   const [isSdkMissing] = useState(() => !isMapSdkReady());
   const [districtError, setDistrictError] = useState<string | null>(null);
-  const [bbox, setBbox] = useState<BoundingBox | null>(null);
+  const [view, setView] = useState<MapView | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
+
+  const stageKey = stageKeyOf(stage);
+  // idle 핸들러는 지도와 함께 한 번만 등록하므로 현재 단계를 ref로 읽는다
+  const stageKeyRef = useRef(stageKey);
+  useEffect(() => {
+    stageKeyRef.current = stageKey;
+  }, [stageKey]);
 
   // 지도 생성 · idle 구독. 표시 영역은 idle에서만 갱신한다 (kakao-map 4장)
   useEffect(() => {
@@ -65,9 +83,11 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     const map = createMap(container);
     mapRef.current = map;
     layerRef.current = createOverlayLayer(map);
-    setBbox(readBoundingBox(map));
+    setView({ stageKey: stageKeyRef.current, bbox: readBoundingBox(map) });
 
-    const removeIdle = addIdleListener(map, () => setBbox(readBoundingBox(map)));
+    const removeIdle = addIdleListener(map, () =>
+      setView({ stageKey: stageKeyRef.current, bbox: readBoundingBox(map) }),
+    );
     const removeClick = addClickListener(map, () => setPreviewId(null));
 
     return () => {
@@ -91,7 +111,7 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
 
     if (stage.type === 'seoul') {
       fitSeoul(map);
-      setBbox(readBoundingBox(map));
+      setView({ stageKey: stageKeyOf(stage), bbox: readBoundingBox(map) });
       return;
     }
 
@@ -101,7 +121,7 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
         const current = mapRef.current;
         if (cancelled || !current) return;
         moveToPoint(current, point.lat, point.lng);
-        setBbox(readBoundingBox(current));
+        setView({ stageKey: stageKeyOf(stage), bbox: readBoundingBox(current) });
       })
       .catch(() => {
         if (!cancelled) setDistrictError('자치구 위치를 찾지 못했습니다. 지도를 움직여 조회해 주세요.');
@@ -119,9 +139,11 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     () => (stage.type === 'district' ? { ...filter, district: stage.district } : filter),
     [filter, stage],
   );
+  // 이번 단계에서 읽은 표시 영역이 있을 때만 조회한다 — 단계가 바뀐 직후의 한 번을 막는다
+  const stageBbox = view?.stageKey === stageKey ? view.bbox : null;
   const markersQuery = useQuery({
-    ...propertyQueries.markers(markerFilter, bbox ?? PENDING_BBOX),
-    enabled: !isSeoul && bbox !== null,
+    ...propertyQueries.markers(markerFilter, stageBbox ?? PENDING_BBOX),
+    enabled: !isSeoul && stageBbox !== null,
   });
 
   const districtNames = useMemo(
