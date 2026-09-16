@@ -50,6 +50,8 @@ interface OverlayItem {
   lat: number;
   lng: number;
   node: ReactNode;
+  /** 겹칠 때 앞으로 올릴 것 */
+  zIndex?: number;
 }
 
 interface MapExplorerProps {
@@ -74,6 +76,8 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
   const [districtError, setDistrictError] = useState<string | null>(null);
   const [view, setView] = useState<MapView | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
+  // 서울 전체에서 자치구 말풍선이 서로 가린다. 가리킨 것을 앞으로 올린다
+  const [frontDistrict, setFrontDistrict] = useState<string | null>(null);
 
   const stageKey = stageKeyOf(stage);
   // idle 핸들러는 지도와 함께 한 번만 등록하므로 현재 단계를 ref로 읽는다
@@ -127,6 +131,7 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     if (!map) return;
 
     setPreviewId(null);
+    setFrontDistrict(null);
     setDistrictError(null);
 
     if (stage.type === 'seoul') {
@@ -175,6 +180,7 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
   const handleHoverMarker = useCallback((propertyId: number) => setPreviewId(propertyId), []);
   const handleSelectMarker = useCallback((propertyId: number) => setPreviewId(propertyId), []);
   const handleClosePreview = useCallback(() => setPreviewId(null), []);
+  const handleHoverDistrict = useCallback((name: string) => setFrontDistrict(name), []);
   const handleSelectCluster = useCallback((cluster: MarkerCluster) => {
     const map = mapRef.current;
     if (!map) return;
@@ -198,7 +204,15 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
             key: `district:${district.name}`,
             lat: point.lat,
             lng: point.lng,
-            node: <DistrictOverlayContent district={district} onSelect={onSelectDistrict} />,
+            // 가리킨 말풍선만 앞으로. 나머지는 건수가 많은 쪽이 위에 온다
+            zIndex: district.name === frontDistrict ? 1000 : Math.min(district.count, 900),
+            node: (
+              <DistrictOverlayContent
+                district={district}
+                onSelect={onSelectDistrict}
+                onHover={handleHoverDistrict}
+              />
+            ),
           };
         })
         .filter((item): item is OverlayItem => item !== null);
@@ -248,7 +262,9 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
   }, [
     districtCountsQuery.data,
     districtPoints,
+    frontDistrict,
     handleClosePreview,
+    handleHoverDistrict,
     handleHoverMarker,
     handleSelectCluster,
     handleSelectMarker,
@@ -276,7 +292,13 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     if (!layer) return;
 
     layer.sync(
-      overlayItems.map((item) => ({ key: item.key, lat: item.lat, lng: item.lng, element: elementFor(item.key) })),
+      overlayItems.map((item) => ({
+        key: item.key,
+        lat: item.lat,
+        lng: item.lng,
+        zIndex: item.zIndex,
+        element: elementFor(item.key),
+      })),
     );
 
     const alive = new Set(overlayItems.map((item) => item.key));
