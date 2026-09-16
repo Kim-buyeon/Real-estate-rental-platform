@@ -13,6 +13,7 @@ import {
   isMapSdkReady,
   moveToPoint,
   readBoundingBox,
+  relayoutMap,
   searchDistrictPoint,
   type KakaoMap,
   type OverlayLayer,
@@ -90,7 +91,12 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     );
     const removeClick = addClickListener(map, () => setPreviewId(null));
 
+    // 컨테이너 크기가 바뀌면 타일이 어긋난다 (kakao-map 5장)
+    const handleResize = () => relayoutMap(map);
+    window.addEventListener('resize', handleResize);
+
     return () => {
+      window.removeEventListener('resize', handleResize);
       removeIdle();
       removeClick();
       layerRef.current?.clear();
