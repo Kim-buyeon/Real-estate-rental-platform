@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import type { BoundingBox, PropertyFilter, PropertyMarker } from '../../../api/property';
+import type { BoundingBox, PropertyFilter } from '../../../api/property';
 import { Alert } from '../../../components/ui';
 import { propertyQueries } from '../../../queries/property';
 import {
@@ -9,19 +9,24 @@ import {
   addIdleListener,
   createMap,
   createOverlayLayer,
+  fitBoundingBox,
   fitSeoul,
+  groupMarkers,
   isMapSdkReady,
   lockSeoulView,
   moveToPoint,
   readBoundingBox,
   relayoutMap,
   searchDistrictPoint,
+  type GroupedMarkers,
   type KakaoMap,
+  type MarkerCluster,
   type OverlayLayer,
 } from '../map';
 import { useDistrictPoints } from '../hooks/useDistrictPoints';
 import type { MapStage } from '../hooks/useMapStage';
 import { DistrictOverlayContent } from './DistrictOverlayContent';
+import { MarkerClusterContent } from './MarkerClusterContent';
 import { MarkerPreviewCard } from './MarkerPreviewCard';
 import { PropertyMarkerContent } from './PropertyMarkerContent';
 import styles from './MapExplorer.module.css';
@@ -170,6 +175,12 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
   const handleHoverMarker = useCallback((propertyId: number) => setPreviewId(propertyId), []);
   const handleSelectMarker = useCallback((propertyId: number) => setPreviewId(propertyId), []);
   const handleClosePreview = useCallback(() => setPreviewId(null), []);
+  const handleSelectCluster = useCallback((cluster: MarkerCluster) => {
+    const map = mapRef.current;
+    if (!map) return;
+    setPreviewId(null);
+    fitBoundingBox(map, cluster.bbox);
+  }, []);
 
   const markers = markersQuery.data?.items;
   const previewMarker = useMemo(
@@ -193,19 +204,32 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
         .filter((item): item is OverlayItem => item !== null);
     }
 
-    const items: OverlayItem[] = (markers ?? []).map((marker: PropertyMarker) => ({
-      key: `marker:${marker.propertyId}`,
-      lat: marker.latitude,
-      lng: marker.longitude,
-      node: (
-        <PropertyMarkerContent
-          marker={marker}
-          isSelected={marker.propertyId === previewId}
-          onSelect={handleSelectMarker}
-          onHover={handleHoverMarker}
-        />
-      ),
+    const grouped: GroupedMarkers = stageBbox
+      ? groupMarkers(markers ?? [], stageBbox)
+      : { clusters: [], singles: markers ?? [] };
+
+    const items: OverlayItem[] = grouped.clusters.map((cluster) => ({
+      key: cluster.key,
+      lat: cluster.lat,
+      lng: cluster.lng,
+      node: <MarkerClusterContent cluster={cluster} onSelect={handleSelectCluster} />,
     }));
+
+    for (const marker of grouped.singles) {
+      items.push({
+        key: `marker:${marker.propertyId}`,
+        lat: marker.latitude,
+        lng: marker.longitude,
+        node: (
+          <PropertyMarkerContent
+            marker={marker}
+            isSelected={marker.propertyId === previewId}
+            onSelect={handleSelectMarker}
+            onHover={handleHoverMarker}
+          />
+        ),
+      });
+    }
 
     if (previewMarker) {
       items.push({
@@ -226,12 +250,14 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     districtPoints,
     handleClosePreview,
     handleHoverMarker,
+    handleSelectCluster,
     handleSelectMarker,
     isSeoul,
     markers,
     onSelectDistrict,
     previewId,
     previewMarker,
+    stageBbox,
   ]);
 
   const elementFor = useCallback(
