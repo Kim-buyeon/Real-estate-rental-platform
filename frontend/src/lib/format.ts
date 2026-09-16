@@ -37,6 +37,11 @@ export function formatDepositShort(won: number): string {
   return `${eokFormatter.format(won / EOK)}억`;
 }
 
+/** 건수 → `1,024`. 컴포넌트에서 toLocaleString을 직접 쓰지 않는다 */
+export function formatCount(count: number): string {
+  return wonFormatter.format(count);
+}
+
 /** 백분율 수치(명세의 비율은 68.0 꼴) → `68%` · `116.7%` */
 export function formatPercent(ratio: number): string {
   return `${percentFormatter.format(ratio)}%`;

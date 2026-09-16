@@ -33,14 +33,14 @@
   gap: var(--spacing-2xs);
 }
 
-.safe {
+.riskSafe {
   color: var(--color-risk-safe);
 }
 
-.caution {
+.riskCaution {
   color: var(--color-risk-caution);
 }
 
-.danger {
+.riskDanger {
   color: var(--color-risk-danger);
 }

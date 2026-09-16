@@ -1,6 +1,15 @@
 import { memo } from 'react';
 import type { DistrictCount } from '../../../api/property';
+import { RISK_GRADES, RISK_GRADE_LABEL, riskGradeToken } from '../../../domain/risk';
+import { formatCount } from '../../../lib/format';
 import styles from './DistrictOverlayContent.module.css';
+
+/** 토큰 이름 → 이 컴포넌트의 CSS 클래스. 등급 → 토큰은 domain/risk.ts가 갖는다 */
+const CLASS_BY_TOKEN: Record<string, string | undefined> = {
+  'risk-safe': styles.riskSafe,
+  'risk-caution': styles.riskCaution,
+  'risk-danger': styles.riskDanger,
+};
 
 interface DistrictOverlayContentProps {
   district: DistrictCount;
@@ -12,21 +21,29 @@ export const DistrictOverlayContent = memo(function DistrictOverlayContent({
   district,
   onSelect,
 }: DistrictOverlayContentProps) {
-  const { SAFE = 0, CAUTION = 0, DANGER = 0 } = district.gradeCounts;
+  const distribution = RISK_GRADES.map((grade) => ({
+    grade,
+    count: district.gradeCounts[grade] ?? 0,
+    className: CLASS_BY_TOKEN[riskGradeToken(grade)],
+  }));
 
   return (
     <button
       type="button"
       className={styles.overlay}
       onClick={() => onSelect(district.name)}
-      aria-label={`${district.name} 매물 ${district.count}건`}
+      aria-label={`${district.name} 매물 ${formatCount(district.count)}건 — ${distribution
+        .map(({ grade, count }) => `${RISK_GRADE_LABEL[grade]} ${formatCount(count)}건`)
+        .join(' · ')}`}
     >
       <span className={`${styles.name} type-label`}>{district.name}</span>
-      <span className={`${styles.count} type-heading-3`}>{district.count.toLocaleString('ko-KR')}</span>
+      <span className={`${styles.count} type-heading-3`}>{formatCount(district.count)}</span>
       <span className={styles.grades} aria-hidden="true">
-        <span className={styles.safe}>{SAFE}</span>
-        <span className={styles.caution}>{CAUTION}</span>
-        <span className={styles.danger}>{DANGER}</span>
+        {distribution.map(({ grade, count, className }) => (
+          <span key={grade} className={className}>
+            {formatCount(count)}
+          </span>
+        ))}
       </span>
     </button>
   );

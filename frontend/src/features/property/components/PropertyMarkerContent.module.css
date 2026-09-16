@@ -15,18 +15,18 @@
   border-color: var(--color-text);
 }
 
-.safe {
+.riskSafe {
   background: var(--color-risk-safe);
 }
 
-.caution {
+.riskCaution {
   background: var(--color-risk-caution);
 }
 
-.danger {
+.riskDanger {
   background: var(--color-risk-danger);
 }
 
-.unanalyzed {
+.riskUnanalyzed {
   background: var(--color-risk-unanalyzed);
 }
