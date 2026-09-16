@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { PropertyFilter } from '../api/property';
 import { Button } from '../components/ui';
-import { MapExplorer, PropertyFilterBar, useMapStage } from '../features/property';
+import { DistrictPicker, MapExplorer, PropertyFilterBar, useMapStage } from '../features/property';
 import styles from './HomePage.module.css';
 
 const INITIAL_FILTER: PropertyFilter = {};
@@ -19,16 +19,17 @@ export default function HomePage() {
       <PropertyFilterBar filter={filter} onChange={handleChangeFilter} />
 
       <div className={styles.stageBar}>
-        {stage.type === 'seoul' ? (
-          <p className="type-label">자치구를 선택하면 매물 마커를 표시합니다.</p>
-        ) : (
-          <>
-            <Button type="button" size="sm" variant="ghost" onClick={backToSeoul}>
-              ← 서울 전체
-            </Button>
-            <p className="type-label">{stage.district}</p>
-          </>
+        {stage.type === 'district' && (
+          <Button type="button" size="sm" variant="ghost" onClick={backToSeoul}>
+            ← 서울 전체
+          </Button>
         )}
+        <DistrictPicker district={stage.type === 'district' ? stage.district : null} onSelect={selectDistrict} />
+        <p className="type-caption">
+          {stage.type === 'seoul'
+            ? '지도의 자치구를 누르거나 위에서 골라 매물을 봅니다'
+            : '지도를 움직이면 보이는 영역의 매물을 다시 조회합니다'}
+        </p>
       </div>
 
       <MapExplorer filter={filter} stage={stage} onSelectDistrict={selectDistrict} />
