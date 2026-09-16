@@ -5,3 +5,4 @@ export { buttonClassName, type ButtonSize, type ButtonVariant } from './buttonCl
 export { Card } from './Card';
 export { Field, type FieldControlProps } from './Field';
 export { Input } from './Input';
+export { Select } from './Select';

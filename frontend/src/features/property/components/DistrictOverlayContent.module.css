@@ -1,0 +1,46 @@
+.overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-3xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.overlay:hover {
+  border-color: var(--color-primary);
+}
+
+.overlay:focus-visible {
+  outline: var(--spacing-3xs) solid var(--color-focus);
+  outline-offset: var(--spacing-3xs);
+}
+
+.name {
+  color: var(--color-text-secondary);
+}
+
+.count {
+  color: var(--color-primary);
+}
+
+.grades {
+  display: flex;
+  gap: var(--spacing-2xs);
+}
+
+.riskSafe {
+  color: var(--color-risk-safe);
+}
+
+.riskCaution {
+  color: var(--color-risk-caution);
+}
+
+.riskDanger {
+  color: var(--color-risk-danger);
+}
