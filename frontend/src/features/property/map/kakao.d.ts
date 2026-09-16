@@ -44,6 +44,7 @@ export interface KakaoCustomOverlayOptions {
 export interface KakaoCustomOverlay {
   setMap(map: KakaoMap | null): void;
   setPosition(position: KakaoLatLng): void;
+  setZIndex(zIndex: number): void;
   getContent(): HTMLElement;
 }
 

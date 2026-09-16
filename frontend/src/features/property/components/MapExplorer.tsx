@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import type { BoundingBox, PropertyFilter, PropertyMarker } from '../../../api/property';
+import type { BoundingBox, PropertyFilter } from '../../../api/property';
 import { Alert } from '../../../components/ui';
 import { propertyQueries } from '../../../queries/property';
 import {
@@ -9,19 +9,25 @@ import {
   addIdleListener,
   createMap,
   createOverlayLayer,
+  fitBoundingBox,
   fitSeoul,
+  groupMarkers,
   isMapSdkReady,
   lockSeoulView,
   moveToPoint,
+  OVERLAY_Z_FRONT,
   readBoundingBox,
   relayoutMap,
   searchDistrictPoint,
+  type GroupedMarkers,
   type KakaoMap,
+  type MarkerCluster,
   type OverlayLayer,
 } from '../map';
 import { useDistrictPoints } from '../hooks/useDistrictPoints';
 import type { MapStage } from '../hooks/useMapStage';
 import { DistrictOverlayContent } from './DistrictOverlayContent';
+import { MarkerClusterContent } from './MarkerClusterContent';
 import { MarkerPreviewCard } from './MarkerPreviewCard';
 import { PropertyMarkerContent } from './PropertyMarkerContent';
 import styles from './MapExplorer.module.css';
@@ -45,6 +51,8 @@ interface OverlayItem {
   lat: number;
   lng: number;
   node: ReactNode;
+  /** 겹칠 때 앞으로 올릴 것 */
+  zIndex?: number;
 }
 
 interface MapExplorerProps {
@@ -69,6 +77,8 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
   const [districtError, setDistrictError] = useState<string | null>(null);
   const [view, setView] = useState<MapView | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
+  // 서울 전체에서 자치구 말풍선이 서로 가린다. 가리킨 것을 앞으로 올린다
+  const [frontDistrict, setFrontDistrict] = useState<string | null>(null);
 
   const stageKey = stageKeyOf(stage);
   // idle 핸들러는 지도와 함께 한 번만 등록하므로 현재 단계를 ref로 읽는다
@@ -122,6 +132,7 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     if (!map) return;
 
     setPreviewId(null);
+    setFrontDistrict(null);
     setDistrictError(null);
 
     if (stage.type === 'seoul') {
@@ -161,6 +172,12 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     enabled: !isSeoul && stageBbox !== null,
   });
 
+  /** 건수 순위. 겹칠 때 어느 말풍선이 위로 갈지 정한다 — 건수를 그대로 쓰면 상한에 걸려 평평해진다 */
+  const districtRank = useMemo(() => {
+    const byCount = [...(districtCountsQuery.data?.districts ?? [])].sort((a, b) => a.count - b.count);
+    return new Map(byCount.map((district, index) => [district.name, index]));
+  }, [districtCountsQuery.data]);
+
   const districtNames = useMemo(
     () => (districtCountsQuery.data?.districts ?? []).map((district) => district.name),
     [districtCountsQuery.data],
@@ -170,12 +187,25 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
   const handleHoverMarker = useCallback((propertyId: number) => setPreviewId(propertyId), []);
   const handleSelectMarker = useCallback((propertyId: number) => setPreviewId(propertyId), []);
   const handleClosePreview = useCallback(() => setPreviewId(null), []);
+  const handleHoverDistrict = useCallback((name: string) => setFrontDistrict(name), []);
+  const handleSelectCluster = useCallback((cluster: MarkerCluster) => {
+    const map = mapRef.current;
+    if (!map) return;
+    setPreviewId(null);
+    fitBoundingBox(map, cluster.bbox);
+  }, []);
 
   const markers = markersQuery.data?.items;
   const previewMarker = useMemo(
     () => (previewId === null ? null : (markers?.find((marker) => marker.propertyId === previewId) ?? null)),
     [markers, previewId],
   );
+
+  /** 묶음은 마커와 표시 영역에만 달려 있다. 미리보기 상태가 바뀔 때마다 다시 묶지 않는다 */
+  const grouped = useMemo<GroupedMarkers>(() => {
+    if (isSeoul || !stageBbox) return { clusters: [], singles: markers ?? [] };
+    return groupMarkers(markers ?? [], stageBbox);
+  }, [isSeoul, markers, stageBbox]);
 
   const overlayItems = useMemo<OverlayItem[]>(() => {
     if (isSeoul) {
@@ -187,25 +217,42 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
             key: `district:${district.name}`,
             lat: point.lat,
             lng: point.lng,
-            node: <DistrictOverlayContent district={district} onSelect={onSelectDistrict} />,
+            // 가리킨 말풍선만 앞으로. 나머지는 건수가 많은 쪽이 위에 온다
+            zIndex: district.name === frontDistrict ? OVERLAY_Z_FRONT : (districtRank.get(district.name) ?? 0),
+            node: (
+              <DistrictOverlayContent
+                district={district}
+                onSelect={onSelectDistrict}
+                onHover={handleHoverDistrict}
+              />
+            ),
           };
         })
         .filter((item): item is OverlayItem => item !== null);
     }
 
-    const items: OverlayItem[] = (markers ?? []).map((marker: PropertyMarker) => ({
-      key: `marker:${marker.propertyId}`,
-      lat: marker.latitude,
-      lng: marker.longitude,
-      node: (
-        <PropertyMarkerContent
-          marker={marker}
-          isSelected={marker.propertyId === previewId}
-          onSelect={handleSelectMarker}
-          onHover={handleHoverMarker}
-        />
-      ),
+    const items: OverlayItem[] = grouped.clusters.map((cluster) => ({
+      key: cluster.key,
+      lat: cluster.lat,
+      lng: cluster.lng,
+      node: <MarkerClusterContent cluster={cluster} onSelect={handleSelectCluster} />,
     }));
+
+    for (const marker of grouped.singles) {
+      items.push({
+        key: `marker:${marker.propertyId}`,
+        lat: marker.latitude,
+        lng: marker.longitude,
+        node: (
+          <PropertyMarkerContent
+            marker={marker}
+            isSelected={marker.propertyId === previewId}
+            onSelect={handleSelectMarker}
+            onHover={handleHoverMarker}
+          />
+        ),
+      });
+    }
 
     if (previewMarker) {
       items.push({
@@ -224,11 +271,15 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
   }, [
     districtCountsQuery.data,
     districtPoints,
+    districtRank,
+    grouped,
+    frontDistrict,
     handleClosePreview,
+    handleHoverDistrict,
     handleHoverMarker,
+    handleSelectCluster,
     handleSelectMarker,
     isSeoul,
-    markers,
     onSelectDistrict,
     previewId,
     previewMarker,
@@ -250,7 +301,13 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     if (!layer) return;
 
     layer.sync(
-      overlayItems.map((item) => ({ key: item.key, lat: item.lat, lng: item.lng, element: elementFor(item.key) })),
+      overlayItems.map((item) => ({
+        key: item.key,
+        lat: item.lat,
+        lng: item.lng,
+        zIndex: item.zIndex,
+        element: elementFor(item.key),
+      })),
     );
 
     const alive = new Set(overlayItems.map((item) => item.key));

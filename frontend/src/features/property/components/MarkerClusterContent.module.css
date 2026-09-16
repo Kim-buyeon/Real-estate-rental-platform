@@ -1,41 +1,37 @@
-.overlay {
+.cluster {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: var(--spacing-2xs);
-  padding: var(--spacing-3xs) var(--spacing-xs);
+  gap: var(--spacing-3xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
   border: 1px solid var(--color-border);
   border-radius: var(--rounded-pill);
   background: var(--color-surface);
   color: var(--color-text);
-  white-space: nowrap;
   cursor: pointer;
 }
 
-.overlay:hover {
+.cluster:hover {
   border-color: var(--color-primary);
 }
 
-.overlay:focus-visible {
+.cluster:focus-visible {
   outline: var(--spacing-3xs) solid var(--color-focus);
   outline-offset: var(--spacing-3xs);
-}
-
-.name {
-  color: var(--color-text-secondary);
 }
 
 .count {
   color: var(--color-primary);
 }
 
-.grades {
+.distribution {
   display: flex;
   gap: var(--spacing-3xs);
 }
 
 .dot {
-  width: var(--spacing-2xs);
-  height: var(--spacing-2xs);
+  width: var(--spacing-xs);
+  height: var(--spacing-xs);
   border-radius: var(--rounded-pill);
 }
 
@@ -49,4 +45,8 @@
 
 .riskDanger {
   background: var(--color-risk-danger);
+}
+
+.riskUnanalyzed {
+  background: var(--color-risk-unanalyzed);
 }

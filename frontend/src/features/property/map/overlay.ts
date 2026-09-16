@@ -12,6 +12,8 @@ export interface OverlayItem {
   lat: number;
   lng: number;
   element: HTMLElement;
+  /** 겹칠 때 앞으로 올릴 것. 생략하면 0 */
+  zIndex?: number;
 }
 
 export interface OverlayLayer {
@@ -25,6 +27,7 @@ interface Placed {
   overlay: KakaoCustomOverlay;
   lat: number;
   lng: number;
+  zIndex: number;
 }
 
 export function createOverlayLayer(map: KakaoMap): OverlayLayer {
@@ -32,22 +35,28 @@ export function createOverlayLayer(map: KakaoMap): OverlayLayer {
 
   function place(item: OverlayItem): Placed {
     const maps = requireMaps();
+    const zIndex = item.zIndex ?? 0;
     const overlay = new maps.CustomOverlay({
       position: new maps.LatLng(item.lat, item.lng),
       content: item.element,
       clickable: true,
+      zIndex,
     });
     overlay.setMap(map);
-    return { overlay, lat: item.lat, lng: item.lng };
+    return { overlay, lat: item.lat, lng: item.lng, zIndex };
   }
 
   function move(current: Placed, item: OverlayItem): Placed {
+    const zIndex = item.zIndex ?? 0;
+    if (current.zIndex !== zIndex) {
+      current.overlay.setZIndex(zIndex);
+    }
     if (current.lat === item.lat && current.lng === item.lng) {
-      return current;
+      return { ...current, zIndex };
     }
     const maps = requireMaps();
     current.overlay.setPosition(new maps.LatLng(item.lat, item.lng));
-    return { overlay: current.overlay, lat: item.lat, lng: item.lng };
+    return { overlay: current.overlay, lat: item.lat, lng: item.lng, zIndex };
   }
 
   return {

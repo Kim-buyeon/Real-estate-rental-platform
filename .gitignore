@@ -5,3 +5,6 @@
 # 루트에서 npm 을 실행할 일은 없으나, 실수로 실행해도 추적되지 않게 둔다.
 node_modules
 dist
+
+# 에이전트 작업 트리 — 로컬 전용
+.claude/worktrees/

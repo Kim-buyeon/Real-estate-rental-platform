@@ -85,6 +85,14 @@ export function lockSeoulView(map: KakaoMap): void {
   map.setMaxLevel(map.getLevel());
 }
 
+/** 특정 영역으로 확대해 들어간다 — 클러스터를 눌렀을 때 그 셀로 */
+export function fitBoundingBox(map: KakaoMap, bbox: BoundingBox): void {
+  const maps = requireMaps();
+  map.setBounds(
+    new maps.LatLngBounds(new maps.LatLng(bbox.minLat, bbox.minLng), new maps.LatLng(bbox.maxLat, bbox.maxLng)),
+  );
+}
+
 /** 자치구 단계 진입 — 자치구 경계를 얻을 수단이 없어 중심 좌표와 레벨로 이동한다 */
 export function moveToPoint(map: KakaoMap, lat: number, lng: number, level: number = DISTRICT_LEVEL): void {
   const maps = requireMaps();
