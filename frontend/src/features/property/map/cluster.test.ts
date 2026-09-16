@@ -93,6 +93,39 @@ describe('groupMarkers', () => {
     });
   });
 
+  it('셀 경계에 놓인 마커도 자기 셀 경계 안에 담긴다', () => {
+    const cellLat = (BBOX.maxLat - BBOX.minLat) / GRID_DIVISIONS;
+    const cellLng = (BBOX.maxLng - BBOX.minLng) / GRID_DIVISIONS;
+    // 경계에 정확히 놓인 좌표가 위·아래 어느 셀로 가는지는 부동소수 오차로 정해지지 않는다.
+    // 보장해야 하는 것은 「어느 쪽으로 가든 그 셀의 경계가 자기 마커를 포함한다」이다.
+    const onBoundary = BBOX.minLat + cellLat;
+    const markers = [
+      ...stacked(CLUSTER_THRESHOLD, onBoundary, BBOX.minLng + cellLng),
+      ...stacked(2, onBoundary + cellLat / 2, BBOX.minLng + cellLng / 2),
+    ];
+
+    const { clusters } = groupMarkers(markers, BBOX);
+
+    expect(clusters.length).toBeGreaterThan(0);
+    for (const cluster of clusters) {
+      expect(cluster.lat).toBeGreaterThanOrEqual(cluster.bbox.minLat - 1e-9);
+      expect(cluster.lat).toBeLessThanOrEqual(cluster.bbox.maxLat + 1e-9);
+      expect(cluster.lng).toBeGreaterThanOrEqual(cluster.bbox.minLng - 1e-9);
+      expect(cluster.lng).toBeLessThanOrEqual(cluster.bbox.maxLng + 1e-9);
+    }
+  });
+
+  it('표시 영역의 최대 좌표는 마지막 셀에 담긴다', () => {
+    const markers = stacked(CLUSTER_THRESHOLD + 1, BBOX.maxLat, BBOX.maxLng);
+    const cellLat = (BBOX.maxLat - BBOX.minLat) / GRID_DIVISIONS;
+
+    const cluster = groupMarkers(markers, BBOX).clusters[0];
+
+    // 나누면 GRID_DIVISIONS 번째 셀이 되지만 마지막 셀로 clamp 한다
+    expect(cluster?.bbox.maxLat).toBeCloseTo(BBOX.maxLat, 6);
+    expect(cluster?.bbox.minLat).toBeCloseTo(BBOX.maxLat - cellLat, 6);
+  });
+
   it('표시 영역이 비어 있으면 묶지 않는다', () => {
     const markers = stacked(CLUSTER_THRESHOLD + 1, 37.5, 126.8);
 
