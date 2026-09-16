@@ -29,7 +29,7 @@ description: 카카오맵 Web SDK로 지도 탐색 화면을 만들 때 따른�
 | --- | --- | --- |
 | `services` | `Geocoder` — 주소 → 좌표, 좌표 → 행정구역 | 자치구 중심 좌표를 이 방식으로 뽑기로 정하면 넣는다 (3장 미확정 ①) |
 | — | SDK를 직접 쓰는 것을 전제로 썼다 | **래퍼 도입 여부는 미확정** (3장 미확정 ⑤). 래퍼로 정해지면 이 장과 5장을 고친다 |
-| `clusterer` | `MarkerClusterer` | **미확정.** 7장이 정해지기 전에는 넣지 않는다 |
+| `clusterer` | `MarkerClusterer` | **넣지 않는다.** 묶음은 클라이언트에서 직접 한다 — 7장 (가) |
 | `drawing` | 그리기 도구 | 넣지 않는다 |
 
 | 규칙 | 이유 |
@@ -101,7 +101,7 @@ idle ──▶ map.getBounds() ──▶ sw = getSouthWest() · ne = getNorthEas
 | --- | --- | --- |
 | `autoload=false` + `kakao.maps.load(콜백)` 동적 로드 | 확인 코드에서 동적 삽입 뒤 `kakao.maps.services`가 정의되는지 본다 | 2장의 정적 `<script>` 로드를 유지한다 |
 | `setBounds` 뒤 `idle`이 반드시 오는가 | 이미 그 영역을 보고 있어 중심 · 레벨이 바뀌지 않을 때 `idle`이 오는지 본다 | 오지 않으면 2단계 진입 시 `getBounds()`를 한 번 직접 읽어 첫 호출을 한다 |
-| `MarkerClusterer`에 `CustomOverlay`를 넣기 | `addMarkers`에 넣어 클러스터가 그려지는지 본다. 레퍼런스와 샘플은 `Marker`만 전제한다 | 클러스터 레벨은 `Marker`, 확대 뒤는 `CustomOverlay`로 이중 구현하거나 클러스터를 두지 않는다 — 7장 결정에 따른다 |
+| ~~`MarkerClusterer`에 `CustomOverlay`를 넣기~~ | **확인하지 않는다.** 7장 (가)에서 클러스터러를 쓰지 않기로 정해 이 미검증 동작에 기대지 않는다 | — |
 | 서울 전체 `level` · 서울 경계 · 자치구 경계 | 데스크톱 · 모바일 폭에서 25개 구가 모두 보이는 가장 확대된 레벨과 그때의 `getBounds()`. 자치구 경계도 같은 방법으로 (3장 ②) | — |
 
 **첫 번째 작업으로 확인 코드를 만든다.** 확인 전에 그 위에 화면을 쌓지 않는다.
