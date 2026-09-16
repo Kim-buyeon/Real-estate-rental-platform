@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { searchDistrictPoint, type MapPoint } from '../map';
+import { isMapSdkReady, searchDistrictPoint, type MapPoint } from '../map';
 
 /**
  * 자치구 이름 → 중심 좌표. 좌표 상수를 저장소에 두지 않고 Geocoder가 돌려주는 값을 쓴다 (계획 ①).
@@ -10,7 +10,8 @@ export function useDistrictPoints(districts: string[]): Record<string, MapPoint>
   const key = districts.join(',');
 
   useEffect(() => {
-    if (!key) return;
+    // SDK가 없으면 조회하지 않는다 — 지도가 없으면 좌표를 쓸 곳도 없다
+    if (!key || !isMapSdkReady()) return;
     let cancelled = false;
 
     const names = key.split(',');

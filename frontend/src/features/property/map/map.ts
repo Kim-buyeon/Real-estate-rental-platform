@@ -124,9 +124,10 @@ export function relayoutMap(map: KakaoMap): void {
 const districtPointCache = new Map<string, Promise<MapPoint>>();
 
 function requestDistrictPoint(district: string): Promise<MapPoint> {
-  const maps = requireMaps();
-  const geocoder = new maps.services.Geocoder();
+  // SDK 확인과 Geocoder 생성을 실행자 안에서 한다 — 밖에서 던지면 호출자의 catch가 받지 못한다
   return new Promise<MapPoint>((resolve, reject) => {
+    const maps = requireMaps();
+    const geocoder = new maps.services.Geocoder();
     geocoder.addressSearch(`서울특별시 ${district}`, (result, status) => {
       const first = result[0];
       if (status !== maps.services.Status.OK || !first) {
