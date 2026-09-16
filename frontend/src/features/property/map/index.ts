@@ -3,7 +3,7 @@
  * window.kakao를 읽는 코드는 이 폴더 밖에 없다 — frontend/CLAUDE.md 「지도」
  */
 
-export { BBOX_PRECISION, DISTRICT_LEVEL, SEOUL_BOUNDS } from './constants';
+export { BBOX_PRECISION, DISTRICT_LEVEL, SEOUL_BOUNDS, SEOUL_INITIAL_LEVEL } from './constants';
 
 export {
   addClickListener,
@@ -11,6 +11,7 @@ export {
   createMap,
   fitSeoul,
   isMapSdkReady,
+  lockSeoulView,
   moveToPoint,
   readBoundingBox,
   relayoutMap,

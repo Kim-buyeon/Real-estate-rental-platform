@@ -11,6 +11,7 @@ import {
   createOverlayLayer,
   fitSeoul,
   isMapSdkReady,
+  lockSeoulView,
   moveToPoint,
   readBoundingBox,
   relayoutMap,
@@ -95,9 +96,10 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     const handleResize = () => relayoutMap(map);
     window.addEventListener('resize', handleResize);
 
-    // 컨테이너 크기가 잡히기 전에 만들어졌으면 타일이 그려지지 않는다. 다음 프레임에 한 번 맞춘다
+    // 컨테이너 크기가 잡히기 전에 만들어졌으면 타일이 안 그려지고 확대 수준도 엉뚱하다.
+    // 크기가 확정된 다음 프레임에 서울 전체로 다시 맞춘다
     const relayoutFrame = requestAnimationFrame(() => {
-      relayoutMap(map);
+      lockSeoulView(map);
       setView({ stageKey: stageKeyRef.current, bbox: readBoundingBox(map) });
     });
 

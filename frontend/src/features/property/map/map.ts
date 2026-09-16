@@ -1,5 +1,5 @@
 import type { BoundingBox } from '../../../api/property';
-import { BBOX_PRECISION, DISTRICT_LEVEL, SEOUL_BOUNDS } from './constants';
+import { BBOX_PRECISION, DISTRICT_LEVEL, SEOUL_BOUNDS, SEOUL_INITIAL_LEVEL } from './constants';
 import type { KakaoMap, KakaoMaps } from './kakao';
 
 /** 지도에서 읽은, 반올림하기 전의 표시 영역 좌표 */
@@ -60,21 +60,29 @@ export function fitSeoul(map: KakaoMap): void {
   );
 }
 
-/**
- * 지도를 만들고 서울 전체 화면에 맞춘다.
- * 그때의 레벨을 최대 레벨로 걸어 서울 전체보다 축소되지 않게 한다 —
- * 실측 전이므로 레벨 값을 상수로 찍지 않고 화면 폭이 정한 값을 쓴다.
- */
+/** 지도를 만들고 서울 전체 화면에 맞춘다. 최대 레벨은 크기가 확정된 뒤 lockSeoulView가 건다 */
 export function createMap(container: HTMLElement): KakaoMap {
   const maps = requireMaps();
   const center = new maps.LatLng(
     (SEOUL_BOUNDS.minLat + SEOUL_BOUNDS.maxLat) / 2,
     (SEOUL_BOUNDS.minLng + SEOUL_BOUNDS.maxLng) / 2,
   );
-  const map = new maps.Map(container, { center, level: DISTRICT_LEVEL });
+  const map = new maps.Map(container, { center, level: SEOUL_INITIAL_LEVEL });
+  fitSeoul(map);
+  return map;
+}
+
+/**
+ * 컨테이너 크기가 확정된 뒤 서울 전체에 다시 맞추고, 그때의 레벨을 최대 레벨로 건다.
+ *
+ * 크기가 0인 상태에서 setBounds 하면 엉뚱하게 축소된 레벨이 나오고, 그 값을 최대 레벨로 걸면
+ * 전국이 보이는 화면에서 더 확대되지 않는다. 실측 전이므로 레벨 값을 상수로 찍지 않고
+ * 화면 폭이 정한 값을 쓴다 (kakao-map 3장 1단계).
+ */
+export function lockSeoulView(map: KakaoMap): void {
+  map.relayout();
   fitSeoul(map);
   map.setMaxLevel(map.getLevel());
-  return map;
 }
 
 /** 자치구 단계 진입 — 자치구 경계를 얻을 수단이 없어 중심 좌표와 레벨로 이동한다 */

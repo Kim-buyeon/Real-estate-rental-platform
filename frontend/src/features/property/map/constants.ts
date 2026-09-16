@@ -15,6 +15,12 @@ export const SEOUL_BOUNDS = {
 };
 
 /**
+ * 지도를 만들 때의 초기 확대 수준. 바로 setBounds(서울 경계)가 덮으므로 화면에 남지 않는다.
+ * 크기가 잡힌 뒤 lockSeoulView가 다시 맞춘다.
+ */
+export const SEOUL_INITIAL_LEVEL = 9;
+
+/**
  * 자치구 하나가 화면에 들어가는 확대 수준.
  *
  * 실측 전 잠정값. 자치구 경계를 얻을 수단이 없어 setBounds 대신
