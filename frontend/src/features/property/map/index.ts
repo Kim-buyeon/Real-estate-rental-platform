@@ -3,7 +3,15 @@
  * window.kakao를 읽는 코드는 이 폴더 밖에 없다 — frontend/CLAUDE.md 「지도」
  */
 
-export { BBOX_PRECISION, DISTRICT_LEVEL, OVERLAY_Z_FRONT, SEOUL_BOUNDS, SEOUL_INITIAL_LEVEL } from './constants';
+export {
+  BBOX_PRECISION,
+  CLUSTER_THRESHOLD,
+  DISTRICT_LEVEL,
+  GRID_DIVISIONS,
+  OVERLAY_Z_FRONT,
+  SEOUL_BOUNDS,
+  SEOUL_INITIAL_LEVEL,
+} from './constants';
 
 export {
   addClickListener,
@@ -21,7 +29,7 @@ export {
 } from './map';
 export type { MapPoint, RawBoundingBox } from './map';
 
-export { CLUSTER_THRESHOLD, GRID_DIVISIONS, groupMarkers } from './cluster';
+export { groupMarkers } from './cluster';
 export type { GroupedMarkers, MarkerCluster } from './cluster';
 
 export { createOverlayLayer } from './overlay';

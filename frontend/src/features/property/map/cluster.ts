@@ -1,14 +1,6 @@
 import type { BoundingBox, PropertyMarker } from '../../../api/property';
 import type { RiskGrade } from '../../../domain/risk';
-
-/**
- * 표시 영역을 나누는 격자의 한 변 칸 수. 확대할수록 셀이 작아져 묶음이 저절로 풀린다 —
- * 지도 레벨에 의존하지 않는다(레벨 값이 실측 전 잠정이다).
- */
-export const GRID_DIVISIONS = 12;
-
-/** 이 수 이하면 묶지 않고 전부 개별로 그린다 */
-export const CLUSTER_THRESHOLD = 40;
+import { CLUSTER_THRESHOLD, GRID_DIVISIONS } from './constants';
 
 export interface MarkerCluster {
   key: string;

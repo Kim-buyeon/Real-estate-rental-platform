@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoundingBox, PropertyMarker } from '../../../api/property';
-import { CLUSTER_THRESHOLD, GRID_DIVISIONS, groupMarkers } from './cluster';
+import { groupMarkers } from './cluster';
+import { CLUSTER_THRESHOLD, GRID_DIVISIONS } from './constants';
 
 const BBOX: BoundingBox = { minLat: 37.5, maxLat: 37.6, minLng: 126.8, maxLng: 126.9 };
 
