@@ -1,12 +1,14 @@
 .wrapper {
   position: relative;
   flex: 1;
-  min-height: 0;
+  /* 부모 높이가 내용 기반이면 flex:1 만으로는 0 이 된다. 지도는 그릴 영역이 없으면 아무것도 그리지 않는다 */
+  min-height: 420px;
 }
 
+/* 퍼센트 높이는 부모 높이가 확정되어야 풀린다. 절대 배치로 래퍼를 그대로 채운다 */
 .map {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
 }
 
 /* 미리보기 카드를 마커 위쪽에 띄운다. 런타임 좌표는 오버레이가 잡으므로 여기는 정렬만 한다 */
