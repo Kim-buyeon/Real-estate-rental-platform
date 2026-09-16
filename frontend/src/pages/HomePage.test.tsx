@@ -26,6 +26,7 @@ describe('HomePage', () => {
     await waitFor(() =>
       expect(screen.getByText('지도를 불러오지 못했습니다. 새로고침해 주세요.')).toBeInTheDocument(),
     );
-    expect(screen.queryByText('강서구')).not.toBeInTheDocument();
+    // 자치구 선택기의 option이 아니라 지도 오버레이만 본다 — 오버레이는 건수를 읽는 버튼이다
+    expect(screen.queryByRole('button', { name: /강서구 매물/ })).not.toBeInTheDocument();
   });
 });
