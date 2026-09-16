@@ -15,6 +15,7 @@ import {
   isMapSdkReady,
   lockSeoulView,
   moveToPoint,
+  OVERLAY_Z_FRONT,
   readBoundingBox,
   relayoutMap,
   searchDistrictPoint,
@@ -171,6 +172,12 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     enabled: !isSeoul && stageBbox !== null,
   });
 
+  /** 건수 순위. 겹칠 때 어느 말풍선이 위로 갈지 정한다 — 건수를 그대로 쓰면 상한에 걸려 평평해진다 */
+  const districtRank = useMemo(() => {
+    const byCount = [...(districtCountsQuery.data?.districts ?? [])].sort((a, b) => a.count - b.count);
+    return new Map(byCount.map((district, index) => [district.name, index]));
+  }, [districtCountsQuery.data]);
+
   const districtNames = useMemo(
     () => (districtCountsQuery.data?.districts ?? []).map((district) => district.name),
     [districtCountsQuery.data],
@@ -194,6 +201,12 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     [markers, previewId],
   );
 
+  /** 묶음은 마커와 표시 영역에만 달려 있다. 미리보기 상태가 바뀔 때마다 다시 묶지 않는다 */
+  const grouped = useMemo<GroupedMarkers>(() => {
+    if (isSeoul || !stageBbox) return { clusters: [], singles: markers ?? [] };
+    return groupMarkers(markers ?? [], stageBbox);
+  }, [isSeoul, markers, stageBbox]);
+
   const overlayItems = useMemo<OverlayItem[]>(() => {
     if (isSeoul) {
       return (districtCountsQuery.data?.districts ?? [])
@@ -205,7 +218,7 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
             lat: point.lat,
             lng: point.lng,
             // 가리킨 말풍선만 앞으로. 나머지는 건수가 많은 쪽이 위에 온다
-            zIndex: district.name === frontDistrict ? 1000 : Math.min(district.count, 900),
+            zIndex: district.name === frontDistrict ? OVERLAY_Z_FRONT : (districtRank.get(district.name) ?? 0),
             node: (
               <DistrictOverlayContent
                 district={district}
@@ -217,10 +230,6 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
         })
         .filter((item): item is OverlayItem => item !== null);
     }
-
-    const grouped: GroupedMarkers = stageBbox
-      ? groupMarkers(markers ?? [], stageBbox)
-      : { clusters: [], singles: markers ?? [] };
 
     const items: OverlayItem[] = grouped.clusters.map((cluster) => ({
       key: cluster.key,
@@ -262,6 +271,8 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
   }, [
     districtCountsQuery.data,
     districtPoints,
+    districtRank,
+    grouped,
     frontDistrict,
     handleClosePreview,
     handleHoverDistrict,
@@ -269,11 +280,9 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     handleSelectCluster,
     handleSelectMarker,
     isSeoul,
-    markers,
     onSelectDistrict,
     previewId,
     previewMarker,
-    stageBbox,
   ]);
 
   const elementFor = useCallback(

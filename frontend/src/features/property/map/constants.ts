@@ -35,3 +35,9 @@ export const DISTRICT_LEVEL = 7;
  * 자릿수를 늘리면 미세한 이동마다 키가 바뀌어 캐시가 무의미해진다.
  */
 export const BBOX_PRECISION = 4;
+
+/**
+ * 겹친 오버레이의 앞뒤. 가리킨 것이 맨 앞이고, 나머지는 건수 순위(0부터)를 그대로 쓴다.
+ * 건수를 그대로 계층으로 쓰면 자치구 대부분이 상한을 넘겨 전부 같은 계층이 된다.
+ */
+export const OVERLAY_Z_FRONT = 10_000;
