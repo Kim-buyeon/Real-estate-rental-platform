@@ -1,0 +1,32 @@
+.marker {
+  padding: var(--spacing-3xs) var(--spacing-xs);
+  border: 1px solid transparent;
+  border-radius: var(--rounded-pill);
+  color: var(--color-on-risk);
+  cursor: pointer;
+}
+
+.marker:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.selected {
+  border-color: var(--color-text);
+}
+
+.safe {
+  background: var(--color-risk-safe);
+}
+
+.caution {
+  background: var(--color-risk-caution);
+}
+
+.danger {
+  background: var(--color-risk-danger);
+}
+
+.unanalyzed {
+  background: var(--color-risk-unanalyzed);
+}
