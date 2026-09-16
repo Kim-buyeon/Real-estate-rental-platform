@@ -1,12 +1,11 @@
 import { memo, useCallback } from 'react';
 import type { PropertyFilter } from '../../../api/property';
-import { Button, Field } from '../../../components/ui';
-import { CONTRACT_TYPE_LABEL, DEPOSIT_MAX_OPTIONS, type ContractType } from '../../../domain/property';
+import { Button, Field, Select } from '../../../components/ui';
+import { CONTRACT_TYPES, CONTRACT_TYPE_LABEL, DEPOSIT_MAX_OPTIONS, type ContractType } from '../../../domain/property';
 import { RISK_GRADES, RISK_GRADE_LABEL, type RiskGrade } from '../../../domain/risk';
 import { formatDepositShort } from '../../../lib/format';
 import styles from './PropertyFilterBar.module.css';
 
-const CONTRACT_TYPES = Object.keys(CONTRACT_TYPE_LABEL) as ContractType[];
 
 interface PropertyFilterBarProps {
   filter: PropertyFilter;
@@ -31,9 +30,8 @@ export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onCha
     <div className={styles.bar}>
       <Field label="계약유형">
         {(control) => (
-          <select
+          <Select
             {...control}
-            className={`${styles.select} type-body`}
             value={filter.contractType ?? ''}
             onChange={(event) =>
               onChange({ ...filter, contractType: (event.target.value || undefined) as ContractType | undefined })
@@ -45,15 +43,14 @@ export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onCha
                 {CONTRACT_TYPE_LABEL[type]}
               </option>
             ))}
-          </select>
+          </Select>
         )}
       </Field>
 
       <Field label="보증금 상한">
         {(control) => (
-          <select
+          <Select
             {...control}
-            className={`${styles.select} type-body`}
             value={filter.depositMax ?? ''}
             onChange={(event) =>
               onChange({ ...filter, depositMax: event.target.value ? Number(event.target.value) : undefined })
@@ -65,7 +62,7 @@ export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onCha
                 {formatDepositShort(amount)} 이하
               </option>
             ))}
-          </select>
+          </Select>
         )}
       </Field>
 

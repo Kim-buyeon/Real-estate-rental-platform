@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import type { PropertyMarker } from '../../../api/property';
-import { Badge, Card } from '../../../components/ui';
+import { Badge, Button, Card } from '../../../components/ui';
 import { CONTRACT_TYPE_LABEL } from '../../../domain/property';
 import { UNANALYZED_LABEL, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
 import { formatPercent, formatWon } from '../../../lib/format';
@@ -20,9 +20,9 @@ export const MarkerPreviewCard = memo(function MarkerPreviewCard({ marker, onClo
     <Card className={styles.card}>
       <div className={styles.header}>
         <Badge variant={riskGradeToken(marker.riskGrade)}>{riskGradeLabel(marker.riskGrade)}</Badge>
-        <button type="button" className={styles.close} onClick={onClose} aria-label="미리보기 닫기">
+        <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="미리보기 닫기">
           ✕
-        </button>
+        </Button>
       </div>
 
       <p className={`${styles.deposit} type-heading-3`}>{formatWon(marker.deposit)}</p>

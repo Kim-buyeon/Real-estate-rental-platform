@@ -10,18 +10,6 @@
   gap: var(--spacing-xs);
 }
 
-.close {
-  border: none;
-  background: none;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-}
-
-.close:focus-visible {
-  outline: var(--spacing-3xs) solid var(--color-focus);
-  outline-offset: var(--spacing-3xs);
-}
-
 .deposit {
   margin: var(--spacing-xs) 0;
   color: var(--color-text);
