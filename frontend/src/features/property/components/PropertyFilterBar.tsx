@@ -6,7 +6,6 @@ import { RISK_GRADES, RISK_GRADE_LABEL, type RiskGrade } from '../../../domain/r
 import { formatDepositShort } from '../../../lib/format';
 import styles from './PropertyFilterBar.module.css';
 
-
 interface PropertyFilterBarProps {
   filter: PropertyFilter;
   onChange: (filter: PropertyFilter) => void;

@@ -5,10 +5,12 @@ import { formatCount } from '../../../lib/format';
 import styles from './DistrictOverlayContent.module.css';
 
 /** 토큰 이름 → 이 컴포넌트의 CSS 클래스. 등급 → 토큰은 domain/risk.ts가 갖는다 */
-const CLASS_BY_TOKEN: Record<string, string | undefined> = {
+const CLASS_BY_TOKEN: Record<ReturnType<typeof riskGradeToken>, string | undefined> = {
   'risk-safe': styles.riskSafe,
   'risk-caution': styles.riskCaution,
   'risk-danger': styles.riskDanger,
+  // 미분석은 등급 분포에 오지 않는다 — 명세 1.5의 gradeCounts는 등급 세 개다
+  'risk-unanalyzed': undefined,
 };
 
 interface DistrictOverlayContentProps {

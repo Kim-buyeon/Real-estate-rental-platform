@@ -5,7 +5,7 @@ import { formatDepositShort } from '../../../lib/format';
 import styles from './PropertyMarkerContent.module.css';
 
 /** 토큰 이름 → 이 컴포넌트의 CSS 클래스. 등급 → 토큰은 domain/risk.ts가 갖는다 (components/ui/Badge.tsx와 같은 방식) */
-const CLASS_BY_TOKEN: Record<string, string | undefined> = {
+const CLASS_BY_TOKEN: Record<ReturnType<typeof riskGradeToken>, string | undefined> = {
   'risk-safe': styles.riskSafe,
   'risk-caution': styles.riskCaution,
   'risk-danger': styles.riskDanger,
