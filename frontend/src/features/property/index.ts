@@ -3,6 +3,7 @@ export { DistrictPicker } from './components/DistrictPicker';
 export { MapExplorer } from './components/MapExplorer';
 export { PropertyDetailPanel } from './components/PropertyDetailPanel';
 export { PropertyFilterBar } from './components/PropertyFilterBar';
+export { PropertyList } from './components/PropertyList';
 export { WishlistButton } from './components/WishlistButton';
 export { WishlistList } from './components/WishlistList';
 export { useMapStage, type MapStage } from './hooks/useMapStage';

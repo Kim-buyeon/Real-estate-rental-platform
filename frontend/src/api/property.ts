@@ -1,6 +1,7 @@
-// 매물 API 명세 — 명세 표의 행 하나 = 함수 하나. 지금은 자치구 집계(PROP-08) · 지도 마커(PROP-02) ·
-// 상세(PROP-03) · 건축물대장(PROP-04) · 관심 매물 3행(PROP-05)이다.
-import type { ContractType, PropertyType } from '../domain/property';
+// 매물 API 명세 — 명세 표의 행 하나 = 함수 하나. 지금은 자치구 집계(PROP-08) · 매물 조회(PROP-01 목록 ·
+// PROP-02 지도 마커) · 상세(PROP-03) · 건축물대장(PROP-04) · 관심 매물 3행(PROP-05)이다.
+// 매물 조회만 한 행에 함수가 둘이다 — 좌표 조건의 유무로 응답 형태가 갈려 타입이 다르다 (명세 1.3).
+import type { ContractType, PropertySort, PropertyType } from '../domain/property';
 import type { PriceType, RiskGrade } from '../domain/risk';
 import { request } from './client';
 import type { CursorPage } from './types';
@@ -77,6 +78,41 @@ export const fetchDistrictCounts = (filter: PropertyFilter) =>
 /** PROP-02 · GET /api/properties (좌표 조건 있음 → 마커 형태) — 자치구 단계 */
 export const fetchPropertyMarkers = (filter: PropertyFilter, bbox: BoundingBox) =>
   request<PropertyMarkerList>({ url: '/properties', params: { ...filter, ...bbox } });
+
+/**
+ * 목록 조회 응답 항목 — 명세 1.6. 좌표 조건 없이 조회했을 때의 형태이며 마커 응답(1.4)과 필드가 다르다.
+ * riskGrade · debtRatio는 분석 이력이 없으면 null이다 — 두 응답이 같은 최신 분석 결과를 쓴다 (명세 1.4 마지막 줄).
+ */
+export interface PropertyListItem {
+  propertyId: number;
+  district: string;
+  address: string;
+  propertyType: PropertyType;
+  contractType: ContractType;
+  /** 보증금 (원) */
+  deposit: number;
+  /** 월세 (원). 전세는 0 */
+  monthlyRent: number;
+  /** 전용면적 (㎡) */
+  areaSqm: number;
+  floor: number;
+  riskGrade: RiskGrade | null;
+  /** 전세가율 (%) */
+  debtRatio: number | null;
+  /** 등록 일시 (ISO 8601) */
+  registeredAt: string;
+}
+
+/**
+ * PROP-01 · GET /api/properties (좌표 조건 없음 → 목록 형태) — 지도 옆 패널의 목록 탭.
+ *
+ * 마커 조회와 같은 경로다. 좌표를 보내면 마커 형태로 응답하므로(명세 1.3) 여기서는 보내지 않는다 —
+ * PropertyFilter에 좌표가 없는 것이 그 보장이고, BoundingBox는 마커 함수만 받는다.
+ * 정렬을 지정하지 않으면 서버가 등록일 내림차순을 적용한다(명세 1.3) — 화면이 기본값을 박지 않는다.
+ * size도 보내지 않는다 — 공통 규약 1.4의 기본값 20을 쓴다 (fetchWishlist와 같은 판단).
+ */
+export const fetchPropertyList = (filter: PropertyFilter, sort?: PropertySort, cursor?: string) =>
+  request<CursorPage<PropertyListItem>>({ url: '/properties', params: { ...filter, sort, cursor } });
 
 /**
  * 매물 상세의 최신 위험도 요약 — 명세 1.7 riskSummary.

@@ -31,3 +31,18 @@
   min-height: 0;
   background: var(--color-border-subtle);
 }
+
+/*
+ * 지도 옆 패널 자리. 목록과 상세가 탭으로 이 자리를 나눠 쓴다 — 화면을 옮기지 않아 지도 위치 ·
+ * 확대 수준 · 필터가 유지된다 (매물 API 명세 1.4, PROP-02 계획 승인).
+ *
+ * flex-basis 는 상세 패널이 혼자 있을 때 쓰던 값(PropertyDetailPanel .panel)을 그대로 이어받는다 —
+ * 줄바꿈 기준은 여전히 지도의 min-width: 50% 이고 미디어 쿼리를 쓰지 않는다.
+ */
+.panel {
+  display: flex;
+  flex: 1 1 340px;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-surface);
+}

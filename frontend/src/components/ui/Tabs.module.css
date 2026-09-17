@@ -1,0 +1,53 @@
+/*
+ * 부모가 flex 컬럼이면 남은 높이를 채우고, 아니면 내용 높이에 머문다.
+ * 패널 안쪽의 스크롤은 여기서 정하지 않는다 — 무엇이 넘치는지는 넣는 쪽이 안다.
+ */
+.tabs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.list {
+  display: flex;
+  gap: var(--spacing-2xs);
+  padding: 0 var(--spacing-xs);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.tab {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 0;
+  /* 선택 표시는 아래쪽 선이다. 선택 여부와 무관하게 자리를 잡아 두어 글자가 움직이지 않게 한다 */
+  border-bottom: var(--spacing-3xs) solid transparent;
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.tab:hover:not(:disabled) {
+  color: var(--color-text);
+}
+
+.tab:disabled {
+  color: var(--color-text-disabled);
+  cursor: default;
+}
+
+.tab:focus-visible {
+  outline: var(--spacing-3xs) solid var(--color-focus);
+  outline-offset: calc(var(--spacing-3xs) * -1);
+}
+
+.selected {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}

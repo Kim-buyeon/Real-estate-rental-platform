@@ -74,6 +74,37 @@ export const applicabilityLabel = (isApplicable: boolean) =>
   isApplicable ? APPLICABILITY_LABEL.applicable : APPLICABILITY_LABEL.notApplicable;
 
 /**
+ * 목록 정렬 기준 — 명세 1.3이 보증금 · 전세가율 · 등록일 셋으로 정한다. 값의 형태는 명세 1.6 예시의
+ * `deposit,asc` 꼴(정렬 필드 + 방향)이고, 필드명은 목록 응답(명세 1.6)의 필드 그대로다.
+ *
+ * 등록일 내림차순이 여기 없는 이유: 정렬을 지정하지 않을 때 서버가 적용하는 값이다(명세 1.3).
+ * 같은 순서를 만드는 선택지를 하나 더 두면 기본값이 두 곳에 생긴다 — 화면은 기본을 「보내지 않음」으로 고른다.
+ */
+export const PROPERTY_SORTS = [
+  'deposit,asc',
+  'deposit,desc',
+  'debtRatio,asc',
+  'debtRatio,desc',
+  'registeredAt,asc',
+] as const;
+
+export type PropertySort = (typeof PROPERTY_SORTS)[number];
+
+export const PROPERTY_SORT_LABEL: Record<PropertySort, string> = {
+  'deposit,asc': '보증금 낮은 순',
+  'deposit,desc': '보증금 높은 순',
+  'debtRatio,asc': '전세가율 낮은 순',
+  'debtRatio,desc': '전세가율 높은 순',
+  'registeredAt,asc': '등록일 오래된 순',
+};
+
+/**
+ * 정렬을 고르지 않았을 때 목록이 놓이는 순서의 문구. 그 순서를 만드는 것은 서버이고
+ * 화면은 값을 보내지 않는다 — 명세 1.3 「정렬 기준을 지정하지 않으면 등록일 내림차순」.
+ */
+export const PROPERTY_SORT_DEFAULT_LABEL = '등록일 최신순';
+
+/**
  * 필터의 보증금 상한 선택지 (원). 명세 1.1의 depositMax에 그대로 들어가는 값이며 목록 자체는
  * 명세가 정하지 않는다 — 화면이 고르는 값이라 도메인 상수로 여기 한 곳에 둔다.
  */
