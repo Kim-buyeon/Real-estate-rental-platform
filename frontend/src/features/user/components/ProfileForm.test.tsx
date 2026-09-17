@@ -1,17 +1,43 @@
 // ProfileForm 검증 — 미입력 안내, 수정 불가 필드(이메일 · 권한 · 가입일시), 제출 형태(수정 가능
-// 필드 전부를 PUT으로), 빈 입력의 0 전송, 저장 성공 후 무효화 연쇄와 그 뒤 화면의 출처가 캐시로
-// 돌아오는지(입력 초안 비움 · 저장 안내 정리)를 확인한다 (이슈 #94 계획 7번 ·
-// 검증 표). loan 무효화는 LOAN-01이 아직 없어 보지 않는다.
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+// 필드 전부를 PUT으로), 빈 입력의 0 전송, 저장 성공 후 무효화 연쇄(user.profile · loan 전체)와 그 뒤
+// 화면의 출처가 캐시로 돌아오는지(입력 초안 비움 · 저장 안내 정리)를 확인한다 (이슈 #94 계획 7번 ·
+// 검증 표, loan 무효화는 #94가 남긴 자리를 이슈 #98이 닫는다).
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import type { Profile } from '../../../api/user';
 import { PROFILE_FIELD_LABEL, PROFILE_FIELDS, profileFieldLabel, roleLabel } from '../../../domain/user';
 import { formatDateTime } from '../../../lib/format';
+import { loanQueries } from '../../../queries/loan';
+import { loanHandlers } from '../../../test/msw/handlers/loan';
 import { PROFILE, PROFILE_INCOMPLETE, userHandlers } from '../../../test/msw/handlers/user';
 import { server } from '../../../test/msw/server';
 import { ProfileForm } from './ProfileForm';
+
+const LOAN_PROBE_PROPERTY_ID = 1024;
+
+/**
+ * loan 루트를 매물 상세 패널처럼 이미 관측 중인 상태로 두는 관측기 — PropertyDetailPanel.test.tsx의
+ * DistrictCountsProbe · WishlistProbe와 같은 방식이다. 프로필 수정 성공 뒤 이 쿼리도 다시 요청되는지를
+ * ProfileForm 밖에서 관측한다 — 무효화 연쇄 표 「프로필 수정 성공 → user.profile · loan 전체」.
+ */
+function LoanLimitProbe() {
+  useQuery(loanQueries.limit(LOAN_PROBE_PROPERTY_ID));
+  return null;
+}
+
+function renderFormWithLoanProbe() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <LoanLimitProbe />
+      <ProfileForm />
+    </QueryClientProvider>,
+  );
+}
 
 function renderForm() {
   const queryClient = new QueryClient({
@@ -206,6 +232,27 @@ describe('ProfileForm', () => {
     fireEvent.click(screen.getByRole('button', { name: '저장' }));
 
     await waitFor(() => expect(profileGetCount).toBe(2));
+
+    server.events.removeListener('request:start', onRequestStart);
+  });
+
+  it('저장 성공 후 loan 쿼리(패널 밖에서 관측 중인)도 무효화되어 다시 요청된다', async () => {
+    server.use(...userHandlers, ...loanHandlers);
+
+    let loanGetCount = 0;
+    const onRequestStart = ({ request }: { request: Request }) => {
+      if (request.method === 'GET' && request.url.includes('/loans/limit')) loanGetCount += 1;
+    };
+    server.events.on('request:start', onRequestStart);
+
+    renderFormWithLoanProbe();
+    await waitForLoaded(PROFILE.account.email);
+    await waitFor(() => expect(loanGetCount).toBe(1));
+
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    // 자격 정보가 한도 계산의 입력이라 프로필 수정 성공이 loan 전체를 무효화한다 (queries/user.ts)
+    await waitFor(() => expect(loanGetCount).toBe(2));
 
     server.events.removeListener('request:start', onRequestStart);
   });
