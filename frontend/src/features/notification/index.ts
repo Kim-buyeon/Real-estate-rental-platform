@@ -2,3 +2,4 @@
 // — 깊은 경로로 들어가지 않는다 (frontend/CLAUDE.md import 방향).
 
 export { NotificationList } from './components/NotificationList';
+export { SubscriptionForm } from './components/SubscriptionForm';

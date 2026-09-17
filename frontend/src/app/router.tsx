@@ -24,7 +24,10 @@ export const router = createBrowserRouter([
             path: '/notifications',
             lazy: async () => ({ Component: (await import('../pages/NotificationsPage')).default }),
           },
-          // /me/notification-subscriptions — NOTI-01 슬라이스가 추가한다
+          {
+            path: '/me/notification-subscriptions',
+            lazy: async () => ({ Component: (await import('../pages/SubscriptionsPage')).default }),
+          },
         ],
       },
     ],

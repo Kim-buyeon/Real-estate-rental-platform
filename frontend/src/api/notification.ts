@@ -1,8 +1,9 @@
-// 알림 API 명세 — 명세 표의 행 하나 = 함수 하나. 이 슬라이스가 만드는 것은 NOTI-05 세 행
-// (목록 · 개별 읽음 · 전체 읽음)이다. NOTI-01 구독 설정은 다음 슬라이스, NOTI-04 푸시 토큰은
-// 차기 · 조건부 범위라 함수를 만들지 않는다 (frontend/CLAUDE.md API 함수).
+// 알림 API 명세 — 명세 표의 행 하나 = 함수 하나. 여기 있는 것은 NOTI-05 세 행(목록 · 개별 읽음 ·
+// 전체 읽음)과 NOTI-01 두 행(구독 설정 조회 · 수정)이다. NOTI-04 푸시 토큰은 차기 · 조건부 범위라
+// 함수를 만들지 않는다 (frontend/CLAUDE.md API 함수).
 // NOTI-03 실시간 수신 행은 request<T>()가 아니라 EventSource이며 app/NotificationStream.tsx가 갖는다.
 import type { NotificationType } from '../domain/notification';
+import type { ContractType } from '../domain/property';
 import { request } from './client';
 import type { CursorPage } from './types';
 
@@ -55,3 +56,55 @@ export const markNotificationRead = (notificationId: number) =>
 /** NOTI-05 · PATCH /api/notifications/read-all — 바꿀 알림이 없어도 200이다 (명세 1.3) */
 export const markAllNotificationsRead = () =>
   request<null>({ method: 'PATCH', url: '/notifications/read-all' });
+
+/**
+ * 신규 매물 구독 조건 — 명세 1.2. **조건은 신규 매물만 갖는다.** 금리 변동 · 관심 매물 모니터링 ·
+ * 상담 일정은 수신 여부만 갖는다.
+ *
+ * contractType · depositMax는 선택이라 요청에서 생략할 수 있고, 조회 응답은 설정이 없으면 null을
+ * 준다(명세 1.2 「조건이 없으면 districts는 빈 배열, contractType · depositMax는 null」) —
+ * 그래서 선택 + null 허용 둘 다다.
+ */
+export interface NewPropertyConditions {
+  /** 서울 자치구명(「강서구」). 중복 없음, 최대 25개. enabled가 true면 1개 이상 — 검증은 서버가 한다 */
+  districts: string[];
+  /** 생략하면 계약 유형 전체 */
+  contractType?: ContractType | null;
+  /** 원. 생략하면 상한 없음 */
+  depositMax?: number | null;
+}
+
+/** 수신 여부만 갖는 항목 — 금리 변동 · 관심 매물 모니터링 · 상담 일정 */
+export interface NotificationSubscription {
+  enabled: boolean;
+}
+
+/**
+ * NOTI-01 구독 설정 — 명세 1.2 응답 예시 그대로의 네 항목. 조회와 수정이 같은 구조다.
+ * 설정한 적 없으면 wishlistMonitoring만 true이고 나머지는 false다 (명세 1.2).
+ */
+export interface NotificationSubscriptions {
+  newProperty: NotificationSubscription & { conditions: NewPropertyConditions };
+  rateChange: NotificationSubscription;
+  wishlistMonitoring: NotificationSubscription;
+  consultSchedule: NotificationSubscription;
+}
+
+/**
+ * NOTI-01 · GET /api/me/notification-subscriptions — 인증 필수.
+ * 활성 여부와 무관하게 저장된 조건을 돌려준다 — 다시 켤 때 화면이 조건을 잃지 않는다 (명세 1.2).
+ */
+export const fetchNotificationSubscriptions = () =>
+  request<NotificationSubscriptions>({ url: '/me/notification-subscriptions' });
+
+/**
+ * NOTI-01 · PUT /api/me/notification-subscriptions — **조회 응답과 동일한 구조로 전체를 전달한다.**
+ * 네 항목과 각 enabled는 필수다. 부분 전송이 아니라 전체 전송이라 인자도 조회 응답과 같은 타입이다.
+ * 규칙 위반은 400 INVALID_REQUEST이고 error.field에 위치가 담긴다(`newProperty.conditions.districts`).
+ */
+export const updateNotificationSubscriptions = (subscriptions: NotificationSubscriptions) =>
+  request<NotificationSubscriptions>({
+    method: 'PUT',
+    url: '/me/notification-subscriptions',
+    data: subscriptions,
+  });

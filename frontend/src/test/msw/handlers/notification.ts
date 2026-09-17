@@ -1,6 +1,6 @@
 // 알림 도메인 MSW 핸들러. 응답은 알림 API 명세 1.3의 예시 그대로다 (frontend/CLAUDE.md 폴더 구조).
 import { http, HttpResponse } from 'msw';
-import type { Notification, NotificationPage } from '../../../api/notification';
+import type { Notification, NotificationPage, NotificationSubscriptions } from '../../../api/notification';
 
 /** 명세 1.3 예시 그대로 — RISK_CHANGE의 beforeValue · afterValue는 위험 등급 상수명이다 */
 export const RISK_CHANGE_NOTIFICATION: Notification = {
@@ -91,4 +91,33 @@ export const notificationHandlers = [
   }),
   http.patch('/api/notifications/:notificationId/read', () => HttpResponse.json({ success: true, data: null })),
   http.patch('/api/notifications/read-all', () => HttpResponse.json({ success: true, data: null })),
+];
+
+/**
+ * NOTI-01 구독 설정 — 명세 1.2 예시 그대로. **newProperty.enabled는 false인데 conditions.districts에
+ * 값이 남아 있다** — 「enabled가 false여도 저장된 조건을 그대로 돌려준다」(명세 1.2)를 검증하려는
+ * SubscriptionForm.test.tsx의 핵심 케이스가 이 픽스처 하나로 선다. contractType · depositMax는 설정한
+ * 적 없어 null — 선택 필드가 응답에서 null로 오는 경우(명세 1.2)를 함께 나타낸다.
+ */
+export const SUBSCRIPTIONS_FIXTURE: NotificationSubscriptions = {
+  newProperty: {
+    enabled: false,
+    conditions: { districts: ['강남구', '서초구'], contractType: null, depositMax: null },
+  },
+  rateChange: { enabled: true },
+  wishlistMonitoring: { enabled: true },
+  consultSchedule: { enabled: false },
+};
+
+/**
+ * NOTI-01 핸들러 — 명세 1.2. PUT은 조회와 같은 구조를 그대로 돌려준다(서버가 값을 다듬지 않는
+ * 단순 반영 경로로 둔다) — 요청 본문 검증은 각 테스트가 PUT을 자체 오버라이드해 캡처한다.
+ */
+export const subscriptionHandlers = [
+  http.get('/api/me/notification-subscriptions', () =>
+    HttpResponse.json({ success: true, data: SUBSCRIPTIONS_FIXTURE }),
+  ),
+  http.put('/api/me/notification-subscriptions', () =>
+    HttpResponse.json({ success: true, data: SUBSCRIPTIONS_FIXTURE }),
+  ),
 ];

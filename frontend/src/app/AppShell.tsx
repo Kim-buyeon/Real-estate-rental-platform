@@ -38,6 +38,9 @@ export function AppShell() {
                   </Badge>
                 )}
               </Link>
+              <Link to="/me/notification-subscriptions" className={buttonClassName('ghost', 'sm')}>
+                알림 설정
+              </Link>
               <Link to="/me/wishlist" className={buttonClassName('ghost', 'sm')}>
                 관심 매물
               </Link>
