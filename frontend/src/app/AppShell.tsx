@@ -18,14 +18,19 @@ export function AppShell() {
         {/* 알림 진입은 NOTI-05 슬라이스가 채운다 */}
         <nav className={styles.actions} aria-label="계정">
           {isAuthenticated ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              isLoading={logoutMutation.isPending}
-              onClick={() => logoutMutation.mutate()}
-            >
-              로그아웃
-            </Button>
+            <>
+              <Link to="/me/profile" className={buttonClassName('ghost', 'sm')}>
+                계정 · 자격 정보
+              </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                isLoading={logoutMutation.isPending}
+                onClick={() => logoutMutation.mutate()}
+              >
+                로그아웃
+              </Button>
+            </>
           ) : (
             <>
               <Link to="/login" className={buttonClassName('ghost', 'sm')}>

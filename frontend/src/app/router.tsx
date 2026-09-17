@@ -18,7 +18,8 @@ export const router = createBrowserRouter([
       {
         element: <RequireAuth />,
         children: [
-          // /me/profile · /me/wishlist · /notifications · /me/notification-subscriptions — 각 슬라이스가 추가한다
+          { path: '/me/profile', lazy: async () => ({ Component: (await import('../pages/ProfilePage')).default }) },
+          // /me/wishlist · /notifications · /me/notification-subscriptions — 각 슬라이스가 추가한다
         ],
       },
     ],

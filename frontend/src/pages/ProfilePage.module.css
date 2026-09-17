@@ -1,0 +1,14 @@
+.page {
+  display: flex;
+  justify-content: center;
+  padding: var(--spacing-3xl) var(--spacing-md);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  width: 100%;
+  /* 레이아웃 1회성 값 — 폼 컨테이너 폭. 입력이 로그인 · 가입보다 많아 조금 넓다 */
+  max-width: 520px;
+}
