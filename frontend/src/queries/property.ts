@@ -14,12 +14,14 @@ import {
   fetchBuildingLedger,
   fetchDistrictCounts,
   fetchPropertyDetail,
+  fetchPropertyList,
   fetchPropertyMarkers,
   fetchWishlist,
   removeWishlist,
   type BoundingBox,
   type PropertyFilter,
 } from '../api/property';
+import type { PropertySort } from '../domain/property';
 
 export const propertyQueries = {
   /** 도메인 루트. 무효화 연쇄(재분석 · SSE 위험도 변경)가 이 키로 걸린다 */
@@ -35,6 +37,22 @@ export const propertyQueries = {
       queryFn: () => fetchDistrictCounts(filter),
       // 필터를 바꾸는 동안 이전 집계를 유지한다 — 지도가 비지 않는다
       placeholderData: keepPreviousData,
+    }),
+
+  /**
+   * PROP-01 매물 목록 — 지도 옆 패널의 목록 탭. 커서 목록이라 infiniteQueryOptions다
+   * (공통 규약 1.4 — 응답의 nextCursor를 그대로 다음 요청에 넣는다).
+   *
+   * 필터와 정렬이 요청을 바꾸므로 둘 다 키에 들어간다. 없으면 다른 조건의 결과가 캐시에서 나오고,
+   * 정렬을 바꿔도 앞의 순서가 그대로 보인다. 커서는 pageParam으로 TanStack Query가 관리한다.
+   * 좌표는 들어가지 않는다 — 목록 조회는 좌표를 보내지 않는다 (명세 1.3, api/property.ts).
+   */
+  list: (filter: PropertyFilter, sort?: PropertySort) =>
+    infiniteQueryOptions({
+      queryKey: [...propertyQueries.all(), 'list', filter, sort] as const,
+      queryFn: ({ pageParam }) => fetchPropertyList(filter, sort, pageParam),
+      initialPageParam: undefined as string | undefined, // v5는 필수
+      getNextPageParam: (lastPage) => (lastPage.hasNext ? lastPage.nextCursor : undefined),
     }),
 
   /** PROP-02 지도 마커. 표시 영역 좌표도 요청을 바꾸므로 키에 들어간다 (kakao-map 4장) */

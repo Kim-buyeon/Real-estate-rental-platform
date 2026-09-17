@@ -7,3 +7,4 @@ export { Disclosure } from './Disclosure';
 export { Field, type FieldControlProps } from './Field';
 export { Input } from './Input';
 export { Select } from './Select';
+export { Tabs, type TabItem } from './Tabs';
