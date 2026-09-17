@@ -1,0 +1,55 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin: 0 0 var(--spacing-lg);
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  color: var(--color-text);
+}
+
+.added {
+  color: var(--color-text-tertiary);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs) var(--spacing-lg);
+  margin: 0;
+}
+
+/* 이름과 값을 한 쌍으로 붙여 둔다 — 항목마다 값의 길이가 달라 열을 맞추지 않는다 */
+.fact {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+}
+
+.fact dt {
+  color: var(--color-text-tertiary);
+}
+
+.fact dd {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}

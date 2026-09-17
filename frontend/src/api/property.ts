@@ -1,8 +1,9 @@
 // 매물 API 명세 — 명세 표의 행 하나 = 함수 하나. 지금은 자치구 집계(PROP-08) · 지도 마커(PROP-02) ·
-// 상세(PROP-03) · 건축물대장(PROP-04) 넷이다. 관심 매물 함수는 그 슬라이스가 이 파일에 추가한다.
+// 상세(PROP-03) · 건축물대장(PROP-04) · 관심 매물 3행(PROP-05)이다.
 import type { ContractType, PropertyType } from '../domain/property';
 import type { PriceType, RiskGrade } from '../domain/risk';
 import { request } from './client';
+import type { CursorPage } from './types';
 
 /**
  * 공통 검색 필터 — 명세 1.1. 자치구 집계와 매물 조회가 같은 파라미터를 쓰므로 한 번만 정의한다.
@@ -150,3 +151,34 @@ export interface BuildingLedger {
  */
 export const fetchBuildingLedger = (propertyId: number) =>
   request<BuildingLedger>({ url: `/properties/${propertyId}/ledger` });
+
+/**
+ * 관심 매물 목록 한 건 — 명세 1.9. 정렬은 등록 역순이며 서버가 그렇게 준다 (화면에서 다시 정렬하지 않는다).
+ * riskGrade는 최신 분석의 등급, previousGrade는 그 직전 등급이다. 아직 분석되지 않았으면 riskGrade가,
+ * 분석 전이거나 첫 분석이면 previousGrade가 null이다 — 미분석 문구는 domain/risk.ts가 갖는다.
+ */
+export interface WishlistItem {
+  propertyId: number;
+  district: string;
+  /** 보증금 (원) */
+  deposit: number;
+  riskGrade: RiskGrade | null;
+  previousGrade: RiskGrade | null;
+  /** 관심 매물 등록 일시 (ISO 8601) */
+  addedAt: string;
+}
+
+/**
+ * PROP-05 · GET /api/me/wishlist — 인증 필수. 커서 목록이다 (공통 규약 1.4).
+ * size는 보내지 않는다 — 공통 규약 1.4의 기본값 20을 서버가 쓴다. 화면이 쪽 크기를 정할 이유가 없다.
+ */
+export const fetchWishlist = (cursor?: string) =>
+  request<CursorPage<WishlistItem>>({ url: '/me/wishlist', params: { cursor } });
+
+/** PROP-05 · POST /api/me/wishlist — 성공은 201, 이미 등록한 매물은 409 WISHLIST_DUPLICATED (명세 1.9) */
+export const addWishlist = (propertyId: number) =>
+  request<null>({ method: 'POST', url: '/me/wishlist', data: { propertyId } });
+
+/** PROP-05 · DELETE /api/me/wishlist/{propertyId} — 멱등이다. 등록되지 않은 매물이어도 204 (명세 1.9) */
+export const removeWishlist = (propertyId: number) =>
+  request<null>({ method: 'DELETE', url: `/me/wishlist/${propertyId}` });

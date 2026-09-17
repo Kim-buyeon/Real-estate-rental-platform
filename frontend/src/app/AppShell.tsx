@@ -19,6 +19,9 @@ export function AppShell() {
         <nav className={styles.actions} aria-label="계정">
           {isAuthenticated ? (
             <>
+              <Link to="/me/wishlist" className={buttonClassName('ghost', 'sm')}>
+                관심 매물
+              </Link>
               <Link to="/me/profile" className={buttonClassName('ghost', 'sm')}>
                 계정 · 자격 정보
               </Link>
