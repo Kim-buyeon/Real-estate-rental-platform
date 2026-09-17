@@ -171,7 +171,7 @@ instance.interceptors.response.use(undefined, async (error: AxiosError<ApiRespon
 | --- | --- | --- |
 | GET | `fetch<자원>` | `fetchProfile()` · `fetchPropertyDetail(propertyId)` · `fetchDistrictCounts(filter)` · `fetchRiskAnalysis(propertyId)` · `fetchLoanLimit(propertyId)` · `fetchNotifications(cursor)` |
 | POST 생성 | `add<자원>` | `addWishlist(propertyId)` |
-| POST 처리 (동사형 명사 하위 경로 · 인증 · 발급) | 그 동사 | `login(form)` · `signup(form)` · `logout()` · `reanalyzeRisk(propertyId)` · `issueStreamTicket()` — 재발급은 `client.ts`의 `reissue()` |
+| POST 처리 (동사형 명사 하위 경로 · 인증 · 발급) | 그 동사 | `login(form)` · `signup(form)` · `logout()` · `reanalyzeRisk(propertyId)` — 재발급은 `client.ts`의 `reissue()` |
 | PUT | `update<자원>` | `updateProfile(profile)` · `updateNotificationSubscriptions(settings)` |
 | PATCH 읽음 | `mark<자원>Read` | `markNotificationRead(notificationId)` · `markAllNotificationsRead()` |
 | DELETE | `remove<자원>` | `removeWishlist(propertyId)` |
@@ -257,8 +257,8 @@ export function useAddWishlist() {
 | 알림 읽음 처리 성공 | `notification.list` |
 | 알림 구독 설정 수정 성공 | `notification.subscriptions` |
 | SSE 이벤트 수신 (모든 유형) | `notification.list` — 본문은 목록 조회로 가져온다 (알림 전달 문서 1.2) |
-| SSE 위험도 변경 (`RISK_CHANGE`, `propertyId` 포함) | 위에 더해 `risk.analysis(propertyId)` · `property` 전체 · `wishlist` 전체 — 등급이 바뀐 경우에만 오는 알림이므로 재분석 성공의 `gradeChanged` 경우와 같다. 마커 색 · 자치구 `gradeCounts` · `previousGrade`가 바뀐다 |
-| SSE 등기 변동 | 위에 더해 `risk.registry(propertyId)` · `risk.analysis(propertyId)` · `property.detail(propertyId)`. 유형 문자열은 알림 API 명세가 확정하면 채운다 |
+| SSE 위험도 변경 (`RISK_CHANGE`, `propertyId` 포함) | **모든 유형 행에 더해** `risk.analysis(propertyId)` · `property` 전체 · `wishlist` 전체 — 등급이 바뀐 경우에만 오는 알림이므로 재분석 성공의 `gradeChanged` 경우와 같다. 마커 색 · 자치구 `gradeCounts` · `previousGrade`가 바뀐다 |
+| SSE 등기 변동 (`REGISTRY_CHANGE`, `propertyId` 포함) | **모든 유형 행에 더해** `risk.registry(propertyId)` · `risk.analysis(propertyId)` · `property.detail(propertyId)`. 위 `RISK_CHANGE` 행에 누적하지 않는다 — 두 유형은 한 이벤트에 함께 오지 않고, 누적이라면 `risk.analysis`를 다시 적을 이유가 없다 |
 | SSE 재연결 성공 | `notification.list` — 끊긴 사이의 알림 (알림 전달 문서 1.2) |
 | 로그인 · 로그아웃 | `queryClient.clear()` — 개인화 결과가 다음 사용자에게 남지 않는다 |
 
@@ -295,12 +295,12 @@ export function useAddWishlist() {
 
 `EventSource`를 여는 곳은 여기 하나다. 로그인 상태에서만 마운트되고 로그아웃 · 언마운트에서 닫는다. 규칙은 알림 전달 문서 1.2가 정하고, 여기는 그것을 코드 자리로 옮긴 것이다.
 
-- **연결은 두 단계다** — `issueStreamTicket()`(`api/notification.ts`, 인증 필수 POST)로 일회용 티켓을 받고, `new EventSource('/api/notifications/stream?ticket=…')`로 연다. `EventSource`는 헤더를 붙일 수 없어 스트림 인증이 티켓이다 — 알림 API 명세 1.1. 티켓 발급이 `request<T>()`를 지나므로 액세스 토큰 만료 · 재발급은 일반 요청과 같은 경로로 처리된다.
+- **연결은 액세스 토큰을 쿼리 파라미터로 붙여 연다** — `new EventSource('/api/notifications/stream?accessToken=…')`. `EventSource`는 헤더를 붙일 수 없어 이 경로에 한해 명세가 쿼리 파라미터를 허용한다 — 알림 API 명세 1.1, 백엔드 `JwtAuthenticationFilter`가 그 파라미터를 읽는다. **이 방식은 RFC 9700이 금지하는 것이고 티켓 발급으로 바꾸는 것이 옳다 — 그 전환은 백엔드 엔드포인트와 명세를 함께 고치는 별도 작업이다.** 그때까지 이 문서는 실제로 동작하는 것을 적는다.
 - **`EventSource`는 연결 시점에 `globalThis.EventSource`로 읽는다.** 모듈 최상위에서 참조를 잡아 두지 않는다. jsdom에는 없어 테스트가 전역에 주입하는데(테스트 전략 문서 1.2), 미리 잡아 두면 주입한 것이 쓰이지 않는다.
 - 이벤트 이름은 알림 유형과 같다 — 알림 API 명세 1.4. 유형마다 `addEventListener(type)`를 건다. 목록은 `domain/notification.ts`의 유형 상수다. 이름 없는 `onmessage`에 기대지 않는다.
 - **수신하면 무효화만 한다** — 위 표. 이벤트 본문을 화면 상태에 넣지 않는다. 토스트는 유형의 문구만 보여준다. 본문은 목록 조회가 가져온다.
-- 브라우저의 자동 재연결에 기대지 않는다. 티켓은 일회용이라 자동 재연결은 401로 끝나고 연결이 `CLOSED`가 된다 — 200이 아닌 응답에서는 브라우저가 다시 붙지 않는다. `error`에서 `readyState`가 `CLOSED`면 백오프 뒤 **새 티켓으로** 새 연결을 만든다. `open`마다 `notification.list`를 무효화한다 — 끊긴 사이의 알림.
-- 연결 URL을 만드는 함수는 하나다. 티켓 외의 것을 URL에 넣지 않는다.
+- **브라우저의 자동 재연결에 기대지 않는다.** 연결 수명이 액세스 토큰 유효 시간과 같아(명세 1.1, 30분) 서버가 닫은 뒤의 자동 재연결은 만료된 토큰을 그대로 다시 보낸다. `error`에서 `readyState`가 `CLOSED`면 백오프 뒤 **그 시점의 액세스 토큰으로** 새 연결을 만든다 — 재발급이 일어났으면 새 토큰이다. `open`마다 `notification.list`를 무효화한다 — 끊긴 사이의 알림.
+- 연결 URL을 만드는 함수는 하나다. **액세스 토큰 외의 것을 URL에 넣지 않는다.**
 
 ---
 
@@ -440,7 +440,7 @@ SDK를 어떻게 부르고 무엇을 그리는지는 `kakao-map` 스킬이 정�
 | `dangerouslySetInnerHTML`을 쓰지 않는다. 오버레이 `content`는 문자열이 아니라 엘리먼트 | 서버 값(`district`)이 HTML로 해석된다 (`kakao-map` 5장) |
 | 등록한 리스너는 정리 함수에서 해제한다 — 지도 이벤트 · 오버레이 DOM 리스너 · `EventSource` | 화면을 오갈 때 누적된다 |
 | 클라이언트 검증은 보조다. 정본은 서버 `error.field`이며 폼은 그 필드에 표시한다 | 보안 경계는 서버다 |
-| 토큰을 콘솔 · 로그 · 오류 보고 · URL에 남기지 않는다. URL에 들어가는 인증 정보는 일회용 스트림 티켓 하나다 — 토큰이 아니고 60초 뒤 소멸한다 | 프록시 접근 로그 · 개발자 도구에 남는다 |
+| 토큰을 콘솔 · 로그 · 오류 보고에 남기지 않는다. **URL에 들어가는 것은 SSE 연결의 액세스 토큰 하나이고, 이것은 지켜지지 않는 예외다** — RFC 9700이 금지하는 방식이며 티켓 발급으로 바꾸는 별도 작업이 남아 있다 (`app/NotificationStream.tsx` 절) | 프록시 접근 로그 · 브라우저 이력 · 리퍼러에 남는다 |
 | `.env`를 커밋하지 않는다. 키 값을 코드에 적지 않는다 | `.gitignore` · `.env.example` |
 
 ---
@@ -473,7 +473,6 @@ SDK를 어떻게 부르고 무엇을 그리는지는 `kakao-map` 스킬이 정�
 
 | 항목 | 정하는 곳 | 때 |
 | --- | --- | --- |
-| 알림 유형 열거값 목록 (`RISK_CHANGE` 외) | 알림 API 명세 | 알림 작업 착수 전 |
 | 서울 경계 · 자치구 단계 `level` — 상수 파일의 잠정값 | 위 지도 상수 표 — 브라우저 실측 (`kakao-map` 6장) | 실측할 수 있을 때 |
 | `setBounds` 뒤 `idle`이 반드시 오는가 (`kakao-map` 6장) | 브라우저 확인 | 같이. 지금은 이동 직후 `getBounds()`를 한 번 더 읽어 둔다 |
 | 운영에서 프론트를 서빙하는 위치 · 오리진 | 시스템 구성서 | 다른 오리진이면 API 기본 경로를 환경 변수로 |
