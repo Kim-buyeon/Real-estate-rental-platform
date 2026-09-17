@@ -7,6 +7,7 @@ import { debtRatioLabel, priceTypeLabel, riskGradeLabel, riskGradeToken } from '
 import { formatDate, formatWon } from '../../../lib/format';
 import { propertyQueries } from '../../../queries/property';
 import { riskQueries } from '../../../queries/risk';
+import { LoanLimitSection } from '../../loan';
 import {
   ConsistencyCheck,
   InsuranceProviders,
@@ -171,7 +172,9 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
             {/* 등록 여부는 상세 응답의 wishlisted다 — 관심 매물 목록을 따로 받아 계산하지 않는다 */}
             <WishlistButton propertyId={propertyId} isWishlisted={detail.wishlisted} />
 
-            {/* 대출 한도(LOAN-01)는 다음 슬라이스가 여기에 붙인다 */}
+            {/* 대출 한도(LOAN-01). 위험도 분석 여부와 무관하게 마운트한다 — 가입 불가 매물은
+                422 LOAN_PROPERTY_NOT_ELIGIBLE 안내가 그 안에서 나온다 */}
+            <LoanLimitSection propertyId={propertyId} />
           </>
         )}
       </div>

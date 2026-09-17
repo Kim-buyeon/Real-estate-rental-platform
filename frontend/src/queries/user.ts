@@ -12,6 +12,7 @@ import {
   type ProfileForm,
   type SignupForm,
 } from '../api/user';
+import { loanQueries } from './loan';
 
 export const userQueries = {
   /** 도메인 루트. 무효화 연쇄(프로필 수정)가 이 아래의 키로 걸린다 */
@@ -72,8 +73,9 @@ export function useUpdateProfile() {
       Promise.all([
         queryClient.invalidateQueries({ queryKey: userQueries.profile().queryKey }),
         // 무효화 연쇄 표는 여기에 loan 전체도 정한다 — 자격 정보가 대출 한도 계산의 입력이라
-        // 소득 · 신용점수 · 기존 대출이 바뀌면 이전 한도가 낡는다.
-        // loanQueries가 아직 없어(LOAN-01) 그 슬라이스가 이 자리에 한 줄을 더한다.
+        // 소득 · 신용점수 · 기존 대출이 바뀌면 이전 한도가 낡는다. 매물마다 따로 잡힌 키를
+        // 한꺼번에 비워야 하므로 limit(propertyId) 하나가 아니라 루트다
+        queryClient.invalidateQueries({ queryKey: loanQueries.all() }),
       ]),
   });
 }

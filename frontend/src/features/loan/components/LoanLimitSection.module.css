@@ -1,0 +1,105 @@
+/*
+ * 값은 전부 토큰 변수다 — hex · 간격 px · font-size를 여기에 적지 않는다 (frontend/CLAUDE.md 스타일).
+ * 브레이크포인트가 미확정이라 미디어 쿼리를 쓰지 않는다 — 패널 폭이 줄면 줄 단위로 접힌다.
+ */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+}
+
+.title {
+  margin: 0;
+  color: var(--color-text);
+}
+
+/* 안내 + 이동 링크. 링크가 줄 전체로 늘어나지 않게 왼쪽에 붙인다 */
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
+}
+
+/* 최종 한도 — 이 화면이 답하는 값이라 항목 줄보다 먼저, 크게 둔다 */
+.final {
+  padding: var(--spacing-sm);
+  border-radius: var(--rounded-md);
+  background: var(--color-primary-surface);
+}
+
+.finalLabel {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.finalAmount {
+  margin: var(--spacing-3xs) 0 0;
+  color: var(--color-text);
+}
+
+.finalReason {
+  margin: var(--spacing-2xs) 0 0;
+  color: var(--color-text-secondary);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-2xs) var(--spacing-xs);
+  border-radius: var(--rounded-sm);
+}
+
+/* 결정 항목 — 어느 항목이 한도를 잡았는지가 이 화면의 핵심 정보다 */
+.applied {
+  background: var(--color-primary-surface);
+}
+
+.rowLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  color: var(--color-text-tertiary);
+}
+
+.applied .rowLabel {
+  color: var(--color-text);
+}
+
+.rowValue {
+  margin: 0;
+  text-align: right;
+  color: var(--color-text);
+}
+
+.note {
+  margin: 0;
+  color: var(--color-text-tertiary);
+}
+
+/*
+ * 참고 수치 — 한도 항목과 시각적으로 가른다. 나란히 두면 최종 한도에 반영된 것으로 읽힌다
+ * (비즈니스 로직 6장 「참고 병기 — 최종 한도에 넣지 않는다」).
+ */
+.reference {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.referenceTitle {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
