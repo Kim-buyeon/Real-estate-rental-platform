@@ -139,6 +139,14 @@ export const OWNERSHIP_RIGHT_TYPE_LABEL: Record<OwnershipRightType, string> = {
 };
 
 /**
+ * 등기 수집 경로 — 명세 1.3 dataSource. 유료 중계 연동 전까지 Mock 어댑터 하나다.
+ * 화면에 표시하지 않는 필드라 표시 문구 매핑을 두지 않는다 — 쓰는 곳이 없다.
+ * 값이 늘면 백엔드와 함께 여기에 추가한다.
+ */
+export const REGISTRY_DATA_SOURCES = ['MOCK'] as const;
+export type RegistryDataSource = (typeof REGISTRY_DATA_SOURCES)[number];
+
+/**
  * 시세 산출 근거 — 명세 1.1 · 매물 명세 1.7 priceType. 두 응답이 같은 값을 쓰므로 한 곳에만 둔다.
  * 지금 적재 경로가 만들어 내는 값은 실거래가 하나다(백엔드 PriceType). 값이 늘면 함께 추가한다.
  */
@@ -148,6 +156,13 @@ export type PriceType = (typeof PRICE_TYPES)[number];
 export const PRICE_TYPE_LABEL: Record<PriceType, string> = {
   ACTUAL_TRANSACTION: '실거래가',
 };
+
+/**
+ * 재분석 간격 제한 — 위험도 명세 1.2 · 1.4. 이 코드일 때만 오류가 아니라 「잠시 뒤 가능」 안내로
+ * 가른다. 문구는 서버 error.message를, 다음 요청 가능 시각은 error.retryAfter를 그대로 쓴다 —
+ * 간격 값(risk.reanalyze.min-interval)은 서버 설정이고 미확정이라 화면이 알지 못한다.
+ */
+export const RISK_REANALYZE_TOO_SOON = 'RISK_REANALYZE_TOO_SOON';
 
 // ── 표시 문구 헬퍼 ────────────────────────────────────────────────────────
 // 서버가 우리가 모르는 코드를 보내도 화면이 빈칸이 되지 않게 코드 문자열을 그대로 보여준다.

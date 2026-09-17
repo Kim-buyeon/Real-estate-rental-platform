@@ -1,0 +1,24 @@
+.card {
+  padding: var(--spacing-md);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.title {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.note {
+  margin: var(--spacing-2xs) 0 0;
+  color: var(--color-text-tertiary);
+}
+
+.result {
+  margin-top: var(--spacing-sm);
+}

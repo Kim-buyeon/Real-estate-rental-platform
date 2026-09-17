@@ -4,5 +4,7 @@
 export { ConsistencyCheck, type ConsistencyCheckProps } from './components/ConsistencyCheck';
 export { InsuranceProviders, type InsuranceProvidersProps } from './components/InsuranceProviders';
 export { PersonalConditions, type PersonalConditionsProps } from './components/PersonalConditions';
+export { ReanalysisButton } from './components/ReanalysisButton';
+export { RegistryTimeline } from './components/RegistryTimeline';
 export { RiskFindings, type RiskFindingsProps } from './components/RiskFindings';
 export { RiskVerdict, type RiskVerdictProps } from './components/RiskVerdict';
