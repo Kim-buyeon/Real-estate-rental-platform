@@ -1,0 +1,16 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  align-items: stretch;
+  width: 100%;
+  /* 레이아웃 1회성 값 — 목록 컨테이너 폭. 관심 매물 화면과 같은 폭으로 둔다 */
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--spacing-2xl) var(--spacing-md);
+}
+
+.note {
+  margin: 0 0 var(--spacing-md);
+  color: var(--color-text-tertiary);
+}

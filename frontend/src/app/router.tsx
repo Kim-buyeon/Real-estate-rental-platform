@@ -20,7 +20,11 @@ export const router = createBrowserRouter([
         children: [
           { path: '/me/profile', lazy: async () => ({ Component: (await import('../pages/ProfilePage')).default }) },
           { path: '/me/wishlist', lazy: async () => ({ Component: (await import('../pages/WishlistPage')).default }) },
-          // /notifications · /me/notification-subscriptions — 각 슬라이스가 추가한다
+          {
+            path: '/notifications',
+            lazy: async () => ({ Component: (await import('../pages/NotificationsPage')).default }),
+          },
+          // /me/notification-subscriptions — NOTI-01 슬라이스가 추가한다
         ],
       },
     ],
