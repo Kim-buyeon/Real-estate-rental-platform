@@ -1,5 +1,5 @@
-// 매물 API 명세 — 명세 표의 행 하나 = 함수 하나. 지금은 자치구 집계(PROP-08) · 지도 마커(PROP-02) · 상세(PROP-03) 셋이다.
-// 건축물대장 · 관심 매물 함수는 그 슬라이스가 이 파일에 추가한다.
+// 매물 API 명세 — 명세 표의 행 하나 = 함수 하나. 지금은 자치구 집계(PROP-08) · 지도 마커(PROP-02) ·
+// 상세(PROP-03) · 건축물대장(PROP-04) 넷이다. 관심 매물 함수는 그 슬라이스가 이 파일에 추가한다.
 import type { ContractType, PropertyType } from '../domain/property';
 import type { PriceType, RiskGrade } from '../domain/risk';
 import { request } from './client';
@@ -121,3 +121,32 @@ export interface PropertyDetail {
 /** PROP-03 · GET /api/properties/{propertyId} — 상세 패널 */
 export const fetchPropertyDetail = (propertyId: number) =>
   request<PropertyDetail>({ url: `/properties/${propertyId}` });
+
+/**
+ * 건축물대장 — 명세 1.8. 국토부 수집 데이터이며 명의 · 문서 정합 확인(RISK-04)의 입력이기도 하다.
+ * 위험도 응답의 consistency가 그 대조 「결과」라면 이쪽은 대조에 쓰인 원본이다.
+ */
+export interface BuildingLedger {
+  propertyId: number;
+  /** 건축물대장의 주용도. 공통 코드가 아니라 대장이 준 문자열 그대로다 */
+  mainPurpose: string;
+  isResidential: boolean;
+  /** 참일 때가 문제다 — 보증보험 집 단위 조건에 걸린다 (RISK-05) */
+  violationBuilding: boolean;
+  /** 연면적 (㎡) */
+  totalFloorArea: number;
+  /** 전용면적 (㎡) */
+  exclusiveArea: number;
+  /** 사용승인일 (YYYY-MM-DD) */
+  approvalDate: string;
+  /** 대장 수집 시각 (ISO 8601) */
+  collectedAt: string;
+}
+
+/**
+ * PROP-04 · GET /api/properties/{propertyId}/ledger — 인증 선택.
+ * 상세 진입 시 호출하지 않는다 — 명세 1.4 「탐색 동작과 호출 시점」 표가 그때의 호출을
+ * 매물 상세와 위험도 둘로 정한다. 패널에서 펼칠 때 부른다.
+ */
+export const fetchBuildingLedger = (propertyId: number) =>
+  request<BuildingLedger>({ url: `/properties/${propertyId}/ledger` });

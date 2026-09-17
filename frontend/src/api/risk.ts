@@ -1,5 +1,5 @@
-// 위험도 분석 API 명세 — 명세 표의 행 하나 = 함수 하나. 이번 범위는 위험도 조회(RISK-01 · RISK-05) 하나다.
-// 등기 이력(RISK-07) · 재분석(RISK-08) 함수는 그 슬라이스가 이 파일에 추가한다.
+// 위험도 분석 API 명세 — 명세 표의 행 하나 = 함수 하나. 위험도 조회(RISK-01 · RISK-05) ·
+// 등기 이력(RISK-07) · 재분석(RISK-08) 셋이다. 보증 신청기한 계산(RISK-06)은 부가 기능이라 아직 없다.
 import type {
   GradeReason,
   GuaranteeFailedCondition,
@@ -7,6 +7,7 @@ import type {
   OwnershipRightType,
   PersonalCondition,
   PriceType,
+  RegistryDataSource,
   RiskGrade,
 } from '../domain/risk';
 import { request } from './client';
@@ -71,3 +72,79 @@ export interface RiskAnalysis {
  */
 export const fetchRiskAnalysis = (propertyId: number) =>
   request<RiskAnalysis>({ url: `/properties/${propertyId}/risk` });
+
+// ── 등기 이력 (RISK-07) ──────────────────────────────────────────────────
+// 판정 근거가 아니라 원본 자료다. 위험도 응답에는 판정에 쓰인 결론(선순위채권 합계 · 권리 침해 ·
+// 경고)만 담기고 건별 상세는 이쪽에 있다 — 명세 1장.
+
+/** 갑구 소유권 변동 — 명세 1.3 ownerships[] */
+export interface OwnershipRecord {
+  /** 갑구 순위번호 */
+  rankNo: number;
+  rightType: OwnershipRightType;
+  holderName: string;
+  /** 접수일 (YYYY-MM-DD). 이 날짜가 우선변제 순서를 정한다 */
+  receivedDate: string;
+  cause: string;
+  /** 말소되지 않은 등기 여부 */
+  isActive: boolean;
+}
+
+/** 을구 근저당 — 명세 1.3 mortgages[] */
+export interface MortgageRecord {
+  /** 을구 순위번호 */
+  rankNo: number;
+  creditor: string;
+  /** 채권최고액 (원) */
+  maxClaimAmount: number;
+  receivedDate: string;
+  isActive: boolean;
+}
+
+/**
+ * 등기 갑구 · 을구 이력 — 명세 1.3. 두 배열 모두 접수일 오름차순, 같으면 순위번호 순으로 온다.
+ * 화면에서 다시 정렬하지 않는다.
+ */
+export interface Registry {
+  propertyId: number;
+  ownerships: OwnershipRecord[];
+  mortgages: MortgageRecord[];
+  /** 등기 수집 시각 (ISO 8601) */
+  collectedAt: string;
+  /** 유료 중계 연동 전까지 MOCK 하나다 */
+  dataSource: RegistryDataSource;
+}
+
+/**
+ * RISK-07 · GET /api/properties/{propertyId}/registry — 인증 선택.
+ * 「매물마다 건수 편차가 크므로 별도 엔드포인트로 분리한다」(명세 1장) — 상세 진입 시 부르지 않고
+ * 패널에서 펼칠 때 부른다.
+ */
+export const fetchRegistry = (propertyId: number) =>
+  request<Registry>({ url: `/properties/${propertyId}/registry` });
+
+// ── 재분석 (RISK-08) ─────────────────────────────────────────────────────
+
+/**
+ * 재분석 결과 — 명세 1.4. previousGrade는 요청 시점의 최신 분석 등급이고 분석된 적이 없으면 null,
+ * gradeChanged는 previousGrade가 있고 riskGrade와 다를 때만 참이다(첫 분석이면 거짓) — 명세 1.2.
+ */
+export interface RiskReanalyzeResult {
+  propertyId: number;
+  previousGrade: RiskGrade | null;
+  riskGrade: RiskGrade;
+  gradeChanged: boolean;
+  /** 분석 기준 시각 (ISO 8601) */
+  analyzedAt: string;
+}
+
+/**
+ * RISK-08 · POST /api/properties/{propertyId}/risk/reanalyze — 인증 **필수**.
+ *
+ * 같은 매물에 최소 간격이 걸린다. 간격 안의 재요청은 429 RISK_REANALYZE_TOO_SOON이고 다음 요청
+ * 가능 시각이 오류 봉투의 retryAfter로 온다 — 명세 1.2 · 공통 규약 1.2. 간격은 매물 단위이므로
+ * 요청한 사용자와 무관하고, 간격 값 자체는 서버 설정이며 미확정이다(5주차 확정). 화면은 그 값을
+ * 알지 못하고 서버가 준 시각만 표시한다.
+ */
+export const reanalyzeRisk = (propertyId: number) =>
+  request<RiskReanalyzeResult>({ method: 'POST', url: `/properties/${propertyId}/risk/reanalyze` });

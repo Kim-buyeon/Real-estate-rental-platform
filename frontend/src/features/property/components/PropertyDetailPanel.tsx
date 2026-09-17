@@ -1,12 +1,22 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import type { ApiError } from '../../../api/client';
-import { Alert, Badge, Button, Card } from '../../../components/ui';
+import { Alert, Badge, Button, Card, Disclosure } from '../../../components/ui';
 import { CONTRACT_TYPE_LABEL, PROPERTY_TYPE_LABEL } from '../../../domain/property';
 import { debtRatioLabel, priceTypeLabel, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
 import { formatDate, formatWon } from '../../../lib/format';
 import { propertyQueries } from '../../../queries/property';
 import { riskQueries } from '../../../queries/risk';
-import { ConsistencyCheck, InsuranceProviders, PersonalConditions, RiskFindings, RiskVerdict } from '../../risk';
+import {
+  ConsistencyCheck,
+  InsuranceProviders,
+  PersonalConditions,
+  ReanalysisButton,
+  RegistryTimeline,
+  RiskFindings,
+  RiskVerdict,
+} from '../../risk';
+import { BuildingLedgerSection } from './BuildingLedgerSection';
 import styles from './PropertyDetailPanel.module.css';
 
 /** 분석 이력이 없는 매물은 404로 온다 — 오류가 아니라 정상 상태다 (매물 API 명세 1.4) */
@@ -24,6 +34,15 @@ interface PropertyDetailPanelProps {
 export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanelProps) {
   const detailQuery = useQuery(propertyQueries.detail(propertyId));
   const riskQuery = useQuery(riskQueries.analysis(propertyId));
+  // 건축물대장(PROP-04)과 등기 이력(RISK-07)은 펼칠 때 조회한다 — 상세 진입 시 호출은 매물 상세와
+  // 위험도 둘이다 (명세 1.4 「탐색 동작과 호출 시점」). 열림 여부를 여기가 갖고 자식을 그때 마운트한다
+  //
+  // 둘은 각자 열고 닫는다. 하나를 열 때 다른 하나를 닫지 않는 이유: 명의 · 문서 정합(RISK-04)이
+  // 대조하는 것이 대장 면적과 등기 표제부 면적인데 패널의 ConsistencyCheck는 그 대조 「결과」만
+  // 보여준다. 결과를 의심하는 사용자가 볼 것은 두 원본이므로 나란히 두고 볼 수 있어야 한다.
+  // 패널 .body에 overflow-y: auto가 있어 패널이 길어지는 것은 문제가 되지 않는다.
+  const [isLedgerOpen, setIsLedgerOpen] = useState(false);
+  const [isRegistryOpen, setIsRegistryOpen] = useState(false);
 
   const detail = detailQuery.data;
   const riskError = riskQuery.error as ApiError | null;
@@ -128,7 +147,27 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
               </>
             )}
 
-            {/* 건축물대장(PROP-04) · 대출 한도(LOAN-01) · 재분석(RISK-08) · 관심 등록(PROP-05)은 다음 슬라이스가 여기에 붙인다 */}
+            {/* 원본 자료와 재분석은 위험도 분석 여부와 무관하다 — 미분석 매물에서도 보이고,
+                재분석은 그 매물의 첫 분석이 된다. 위 판정 근거 블록 밖에 두는 이유다 */}
+            <Disclosure
+              title="건축물대장"
+              isOpen={isLedgerOpen}
+              onToggle={() => setIsLedgerOpen((isOpen) => !isOpen)}
+            >
+              <BuildingLedgerSection propertyId={propertyId} />
+            </Disclosure>
+
+            <Disclosure
+              title="등기 이력"
+              isOpen={isRegistryOpen}
+              onToggle={() => setIsRegistryOpen((isOpen) => !isOpen)}
+            >
+              <RegistryTimeline propertyId={propertyId} />
+            </Disclosure>
+
+            <ReanalysisButton propertyId={propertyId} />
+
+            {/* 대출 한도(LOAN-01) · 관심 등록(PROP-05)은 다음 슬라이스가 여기에 붙인다 */}
           </>
         )}
       </div>

@@ -59,6 +59,21 @@ export const SEOUL_DISTRICTS = [
 export type SeoulDistrict = (typeof SEOUL_DISTRICTS)[number];
 
 /**
+ * 건축물대장의 해당 여부 표기 — 주거용(isResidential) · 위반건축물(violationBuilding), 명세 1.8.
+ * 문구를 컴포넌트에서 삼항으로 다시 만들지 않는다 (frontend/CLAUDE.md 재사용 원칙).
+ *
+ * 참이 좋은 항목인지(주거용) 나쁜 항목인지(위반건축물)는 표기의 문제가 아니라 강조의 문제이므로
+ * 여기 두지 않는다 — 어느 쪽을 강조할지는 그 화면이 정한다.
+ */
+const APPLICABILITY_LABEL: Record<'applicable' | 'notApplicable', string> = {
+  applicable: '해당',
+  notApplicable: '해당 없음',
+};
+
+export const applicabilityLabel = (isApplicable: boolean) =>
+  isApplicable ? APPLICABILITY_LABEL.applicable : APPLICABILITY_LABEL.notApplicable;
+
+/**
  * 필터의 보증금 상한 선택지 (원). 명세 1.1의 depositMax에 그대로 들어가는 값이며 목록 자체는
  * 명세가 정하지 않는다 — 화면이 고르는 값이라 도메인 상수로 여기 한 곳에 둔다.
  */

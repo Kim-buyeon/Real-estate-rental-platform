@@ -1,7 +1,8 @@
 // 매물 쿼리 정의. 쿼리 키가 만들어지는 유일한 곳이다 — frontend/CLAUDE.md 쿼리.
-// 건축물대장 · 관심 매물 정의는 그 슬라이스가 여기에 추가한다.
+// 관심 매물 정의는 그 슬라이스가 여기에 추가한다.
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import {
+  fetchBuildingLedger,
   fetchDistrictCounts,
   fetchPropertyDetail,
   fetchPropertyMarkers,
@@ -42,5 +43,18 @@ export const propertyQueries = {
     queryOptions({
       queryKey: [...propertyQueries.all(), 'detail', propertyId] as const,
       queryFn: () => fetchPropertyDetail(propertyId),
+    }),
+
+  /**
+   * PROP-04 건축물대장. 상세 진입 시 부르지 않고 패널에서 펼칠 때 부른다 — 화면이 닫혀 있는 동안
+   * 이 컴포넌트를 마운트하지 않는 것으로 그 시점을 정하고, 여기서는 키와 함수만 둔다
+   * (명세 1.4 「탐색 동작과 호출 시점」).
+   * 수집 데이터라 재분석으로 바뀌지 않는다 — 개별 항목으로는 무효화 연쇄에 없고, 등급이 바뀐 재분석
+   * (gradeChanged)의 property 전체 쓸기에만 이 키도 함께 들어간다 (queries/risk.ts useReanalyzeRisk).
+   */
+  ledger: (propertyId: number) =>
+    queryOptions({
+      queryKey: [...propertyQueries.all(), 'ledger', propertyId] as const,
+      queryFn: () => fetchBuildingLedger(propertyId),
     }),
 };
