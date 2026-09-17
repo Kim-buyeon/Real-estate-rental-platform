@@ -36,3 +36,34 @@ export const notificationTypeLabel = (type: string) => labelOf(NOTIFICATION_TYPE
 
 const isRiskGrade = (value: string): value is RiskGrade =>
   (RISK_GRADES as readonly string[]).includes(value);
+
+// ── 구독 설정 (NOTI-01) ──────────────────────────────────────────────────
+// 위의 알림 유형(NOTIFICATION_TYPES)과 다른 열거다. 유형은 「받은 알림이 무엇인가」이고
+// 이것은 「무엇을 받을 것인가」다 — 값도 명세 1.2의 응답 키(newProperty · rateChange ·
+// wishlistMonitoring · consultSchedule) 그대로이며 둘을 합치지 않는다.
+
+export const SUBSCRIPTION_ITEMS = ['newProperty', 'rateChange', 'wishlistMonitoring', 'consultSchedule'] as const;
+export type SubscriptionItem = (typeof SUBSCRIPTION_ITEMS)[number];
+
+/** 항목 문구. 명세 1.2의 「신규 매물 · 금리 변동 · 관심 매물 모니터링 · 상담 일정」을 따른다 */
+export const SUBSCRIPTION_ITEM_LABEL: Record<SubscriptionItem, string> = {
+  newProperty: '신규 매물',
+  rateChange: '금리 변동',
+  wishlistMonitoring: '관심 매물 모니터링',
+  consultSchedule: '상담 일정',
+};
+
+/**
+ * 항목 안내. 명세가 동작을 정해 둔 것만 적는다 — 없는 항목은 문구를 지어내지 않는다.
+ * 관심 매물 모니터링은 켜고 끄는 범위가 이 화면 밖까지 미쳐(등록된 관심 매물 전체 + 앞으로 등록할 것)
+ * 모르면 예상 밖의 결과가 되므로 반드시 보여준다 (명세 1.2 마지막 줄).
+ */
+export const SUBSCRIPTION_ITEM_HINT: Partial<Record<SubscriptionItem, string>> = {
+  wishlistMonitoring: '등록된 관심 매물 전체에 일괄 반영되고, 이후 등록하는 관심 매물도 이 값을 따릅니다.',
+};
+
+/** 수신 여부 문구. Select의 두 선택지이며 켬 · 끔을 조건 분기로 적지 않는다 */
+export const SUBSCRIPTION_ENABLED_LABEL: Record<'true' | 'false', string> = {
+  true: '수신',
+  false: '수신 안 함',
+};

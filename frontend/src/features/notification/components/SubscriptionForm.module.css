@@ -1,0 +1,54 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+/* 신규 매물 · 수신 여부만 정하는 알림 두 묶음. fieldset 기본 테두리를 걷고 묶음 간격만 남긴다 */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.legend {
+  padding: 0;
+  color: var(--color-text-secondary);
+}
+
+/* 자치구 25개. 폭에 맞춰 칸 수가 접히도록 최소 트랙 폭만 준다 — 미디어 쿼리를 쓰지 않는다 */
+.districts {
+  display: grid;
+  /* 레이아웃 1회성 값 — 체크박스 + 자치구 이름이 줄바꿈 없이 들어가는 최소 트랙 폭 */
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: var(--spacing-2xs) var(--spacing-xs);
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-md);
+  background: var(--color-surface);
+}
+
+/* 서버가 이 묶음을 error.field로 지목했을 때 — aria-invalid는 Field가 건다 */
+.districts[aria-invalid='true'] {
+  border-color: var(--color-error);
+}
+
+.district {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  color: var(--color-text);
+}
+
+.district input {
+  accent-color: var(--color-primary);
+}
+
+.district:focus-within {
+  border-radius: var(--rounded-sm);
+  outline: var(--spacing-3xs) solid var(--color-focus);
+  outline-offset: var(--spacing-3xs);
+}
