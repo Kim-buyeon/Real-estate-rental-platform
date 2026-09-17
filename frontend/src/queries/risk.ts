@@ -2,7 +2,7 @@
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ApiError } from '../api/client';
 import { fetchRegistry, fetchRiskAnalysis, reanalyzeRisk, type RiskReanalyzeResult } from '../api/risk';
-import { propertyQueries } from './property';
+import { propertyQueries, wishlistQueries } from './property';
 
 export const riskQueries = {
   /** 도메인 루트. 무효화 연쇄(재분석 · SSE 위험도 변경)가 이 키로 걸린다 */
@@ -39,7 +39,8 @@ export const riskQueries = {
  * 이력도 낡는다 (frontend/CLAUDE.md 무효화 연쇄).
  *
  * 등급이 바뀐 경우(gradeChanged)에는 그 매물 밖까지 낡는다 — 지도 마커 색과 자치구 gradeCounts가
- * 이전 등급이라 패널만 새 등급을 그리면 한 화면에 두 등급이 보인다. 그래서 property 전체다.
+ * 이전 등급이라 패널만 새 등급을 그리면 한 화면에 두 등급이 보인다. 그래서 property 전체이고,
+ * 관심 매물 목록의 riskGrade · previousGrade도 같은 이유로 낡으므로 wishlist 전체다.
  *
  * 재시도는 여기서 끄지 않는다 — app/queryClient.ts의 기본값은 쿼리에만 걸리고 뮤테이션의 기본
  * 재시도는 0이다. 429를 거듭 치지 않는다.
@@ -55,8 +56,7 @@ export function useReanalyzeRisk(propertyId: number) {
 
       if (result.gradeChanged) {
         void queryClient.invalidateQueries({ queryKey: propertyQueries.all() });
-        // 무효화 연쇄 표는 여기에 wishlist 전체도 정한다 — 관심 매물 목록의 previousGrade가 바뀐다.
-        // wishlistQueries가 아직 없어(PROP-05) 그 슬라이스가 이 자리에 한 줄을 더한다.
+        void queryClient.invalidateQueries({ queryKey: wishlistQueries.all() });
       }
     },
   });

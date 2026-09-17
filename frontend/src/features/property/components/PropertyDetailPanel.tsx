@@ -18,6 +18,7 @@ import {
 } from '../../risk';
 import { BuildingLedgerSection } from './BuildingLedgerSection';
 import styles from './PropertyDetailPanel.module.css';
+import { WishlistButton } from './WishlistButton';
 
 /** 분석 이력이 없는 매물은 404로 온다 — 오류가 아니라 정상 상태다 (매물 API 명세 1.4) */
 const RISK_NOT_ANALYZED = 'RISK_NOT_ANALYZED';
@@ -167,7 +168,10 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
 
             <ReanalysisButton propertyId={propertyId} />
 
-            {/* 대출 한도(LOAN-01) · 관심 등록(PROP-05)은 다음 슬라이스가 여기에 붙인다 */}
+            {/* 등록 여부는 상세 응답의 wishlisted다 — 관심 매물 목록을 따로 받아 계산하지 않는다 */}
+            <WishlistButton propertyId={propertyId} isWishlisted={detail.wishlisted} />
+
+            {/* 대출 한도(LOAN-01)는 다음 슬라이스가 여기에 붙인다 */}
           </>
         )}
       </div>

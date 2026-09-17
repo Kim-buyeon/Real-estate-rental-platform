@@ -6,14 +6,19 @@
 // 없으면 마커 오버레이 자체를 그리지 않아 미리보기 카드에 닿을 수 없다. SDK를 모킹하는 새 방식을
 // 들이지 않는 한 그 경로는 이 슬라이스에서 검증할 수 없다 — HomePage.test.tsx에도 추가하지 않는다.
 // 패널이 열린 뒤의 동작(닫기 · 데이터 렌더)만 여기서 컴포넌트 단위로 검증한다.
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { gradeReasonLabel, ownershipRightTypeLabel, riskGradeLabel } from '../../../domain/risk';
-import { propertyQueries } from '../../../queries/property';
+import { propertyQueries, wishlistQueries } from '../../../queries/property';
 import { setTokens } from '../../../session/store';
-import { BUILDING_LEDGER, PROPERTY_DETAIL, propertyHandlers } from '../../../test/msw/handlers/property';
+import {
+  BUILDING_LEDGER,
+  PROPERTY_DETAIL,
+  propertyHandlers,
+  wishlistHandlers,
+} from '../../../test/msw/handlers/property';
 import {
   REANALYZE_RESULT,
   REANALYZE_RESULT_FIRST_ANALYSIS,
@@ -52,6 +57,26 @@ function renderPanelWithDistrictCountsProbe() {
   render(
     <QueryClientProvider client={queryClient}>
       <DistrictCountsProbe />
+      <PropertyDetailPanel propertyId={PROPERTY_DETAIL.propertyId} onClose={vi.fn()} />
+    </QueryClientProvider>,
+  );
+}
+
+/**
+ * wishlist 루트를 관심 매물 화면처럼 이미 관측 중인 상태로 두는 관측기 — DistrictCountsProbe와 같은
+ * 방식이다. gradeChanged가 참인 재분석 뒤 이 목록도 다시 요청되는지(#91이 자리만 남긴 숙제, 무효화
+ * 연쇄 표 「gradeChanged가 참이면 property 전체와 wishlist 전체도」)를 패널 밖에서 관측한다.
+ */
+function WishlistProbe() {
+  useInfiniteQuery(wishlistQueries.list());
+  return null;
+}
+
+function renderPanelWithWishlistProbe() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <WishlistProbe />
       <PropertyDetailPanel propertyId={PROPERTY_DETAIL.propertyId} onClose={vi.fn()} />
     </QueryClientProvider>,
   );
@@ -263,6 +288,65 @@ describe('PropertyDetailPanel', () => {
     // getByRole('status')로는 등기 검출 · 개인 자격 Alert과 겹쳐 여럿이 잡히므로 성공 문구로 특정한다
     await waitFor(() => expect(screen.getByText(/그대로입니다/)).toBeInTheDocument());
     expect(requestedUrls.filter((url) => url.includes('/district-counts')).length).toBe(requestsBefore);
+
+    server.events.removeListener('request:start', onRequestStart);
+  });
+
+  it('gradeChanged가 참이면 재분석 뒤 패널 밖의 wishlist 목록도 다시 요청된다', async () => {
+    setTokens({ accessToken: 'access-token', refreshToken: 'refresh-token' });
+    // riskHandlers의 재분석 핸들러는 REANALYZE_RESULT를 준다 — gradeChanged: true (기존 픽스처)
+    server.use(...propertyHandlers, ...riskHandlers, ...wishlistHandlers);
+
+    const requestedUrls: string[] = [];
+    const onRequestStart = ({ request }: { request: Request }) => requestedUrls.push(request.url);
+    server.events.on('request:start', onRequestStart);
+
+    renderPanelWithWishlistProbe();
+
+    // 패널의 상세 조회와, 관심 매물 화면을 흉내 낸 wishlist 목록 조회가 함께 끝난다
+    await waitFor(() => expect(screen.getByText(PROPERTY_DETAIL.address)).toBeInTheDocument());
+    const requestsBefore = requestedUrls.filter((url) => url.includes('/me/wishlist')).length;
+    expect(requestsBefore).toBe(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '재분석' }));
+
+    await waitFor(() => expect(screen.getByText(/바뀌었습니다/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(requestedUrls.filter((url) => url.includes('/me/wishlist')).length).toBe(requestsBefore + 1),
+    );
+
+    server.events.removeListener('request:start', onRequestStart);
+  });
+
+  it('gradeChanged가 거짓이면(첫 분석) 재분석 뒤에도 wishlist 목록이 다시 요청되지 않는다', async () => {
+    setTokens({ accessToken: 'access-token', refreshToken: 'refresh-token' });
+    // 재분석 응답만 첫 분석(gradeChanged: false)으로 바꾼다 — riskHandlers보다 앞에 둬야 이 경로가
+    // 이긴다. MSW는 같은 server.use() 호출 안에서 먼저 나온 핸들러가 매칭을 이긴다
+    server.use(
+      http.post('/api/properties/:propertyId/risk/reanalyze', () =>
+        HttpResponse.json({ success: true, data: REANALYZE_RESULT_FIRST_ANALYSIS }),
+      ),
+      ...propertyHandlers,
+      ...riskHandlers,
+      ...wishlistHandlers,
+    );
+
+    const requestedUrls: string[] = [];
+    const onRequestStart = ({ request }: { request: Request }) => requestedUrls.push(request.url);
+    server.events.on('request:start', onRequestStart);
+
+    renderPanelWithWishlistProbe();
+
+    await waitFor(() => expect(screen.getByText(PROPERTY_DETAIL.address)).toBeInTheDocument());
+    const requestsBefore = requestedUrls.filter((url) => url.includes('/me/wishlist')).length;
+    expect(requestsBefore).toBe(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '재분석' }));
+
+    // 재분석 결과 안내(「등급은 그대로입니다.」)가 뜬 뒤에도 wishlist는 다시 요청되지 않는다 —
+    // wishlist 전체 무효화는 gradeChanged가 참일 때만 실행되는 분기다 (queries/risk.ts).
+    await waitFor(() => expect(screen.getByText(/그대로입니다/)).toBeInTheDocument());
+    expect(requestedUrls.filter((url) => url.includes('/me/wishlist')).length).toBe(requestsBefore);
 
     server.events.removeListener('request:start', onRequestStart);
   });
