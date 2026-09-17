@@ -1,6 +1,6 @@
-// 매물 도메인 MSW 핸들러. 응답은 매물 API 명세 1.5의 예시 그대로다 (frontend/CLAUDE.md 폴더 구조).
+// 매물 도메인 MSW 핸들러. 응답은 매물 API 명세 1.5 · 1.7의 예시 그대로다 (frontend/CLAUDE.md 폴더 구조).
 import { http, HttpResponse } from 'msw';
-import type { DistrictCountList } from '../../../api/property';
+import type { DistrictCountList, PropertyDetail } from '../../../api/property';
 
 const DISTRICT_COUNTS: DistrictCountList = {
   districts: [
@@ -11,6 +11,31 @@ const DISTRICT_COUNTS: DistrictCountList = {
   aggregatedAt: '2026-07-29T10:05:00+09:00',
 };
 
+/** 매물 API 명세 1.7 응답 예시 그대로 — PropertyDetailPanel 테스트가 쓴다 */
+export const PROPERTY_DETAIL: PropertyDetail = {
+  propertyId: 1024,
+  district: '강서구',
+  address: '서울특별시 강서구 화곡로 123',
+  latitude: 37.5501234,
+  longitude: 126.8497561,
+  // 명세 1.7 예시는 MULTIPLEX(연립다세대)이나 프론트 PropertyType은 지금 APARTMENT · OFFICETEL만 지원한다
+  // (domain/property.ts) — 타입에 맞춰 APARTMENT로 둔다
+  propertyType: 'APARTMENT',
+  contractType: 'DEPOSIT_ONLY',
+  deposit: 230000000,
+  monthlyRent: 0,
+  areaSqm: 42.5,
+  floor: 3,
+  landlordName: '김임대',
+  marketPrice: 340000000,
+  priceType: 'ACTUAL_TRANSACTION',
+  priceDate: '2026-06-30',
+  riskSummary: { riskGrade: 'SAFE', debtRatio: 68.0, insuranceEligible: true },
+  wishlisted: false,
+  registeredAt: '2026-07-20T14:03:00+09:00',
+};
+
 export const propertyHandlers = [
   http.get('/api/properties/district-counts', () => HttpResponse.json({ success: true, data: DISTRICT_COUNTS })),
+  http.get('/api/properties/:propertyId', () => HttpResponse.json({ success: true, data: PROPERTY_DETAIL })),
 ];

@@ -1,0 +1,26 @@
+.card {
+  padding: var(--spacing-md);
+}
+
+.title {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.notice {
+  margin-top: var(--spacing-xs);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+  margin: var(--spacing-xs) 0 0;
+  padding-left: var(--spacing-md);
+  color: var(--color-text);
+}
+
+.empty {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--color-text-tertiary);
+}

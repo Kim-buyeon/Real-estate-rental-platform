@@ -1,7 +1,7 @@
-// 매물 API 명세 — 명세 표의 행 하나 = 함수 하나. 이번 범위는 자치구 집계(PROP-08)와 지도 마커(PROP-02) 둘이다.
-// 상세 · 건축물대장 · 관심 매물 함수는 그 슬라이스가 이 파일에 추가한다.
+// 매물 API 명세 — 명세 표의 행 하나 = 함수 하나. 지금은 자치구 집계(PROP-08) · 지도 마커(PROP-02) · 상세(PROP-03) 셋이다.
+// 건축물대장 · 관심 매물 함수는 그 슬라이스가 이 파일에 추가한다.
 import type { ContractType, PropertyType } from '../domain/property';
-import type { RiskGrade } from '../domain/risk';
+import type { PriceType, RiskGrade } from '../domain/risk';
 import { request } from './client';
 
 /**
@@ -76,3 +76,48 @@ export const fetchDistrictCounts = (filter: PropertyFilter) =>
 /** PROP-02 · GET /api/properties (좌표 조건 있음 → 마커 형태) — 자치구 단계 */
 export const fetchPropertyMarkers = (filter: PropertyFilter, bbox: BoundingBox) =>
   request<PropertyMarkerList>({ url: '/properties', params: { ...filter, ...bbox } });
+
+/**
+ * 매물 상세의 최신 위험도 요약 — 명세 1.7 riskSummary.
+ * 판정 근거 전체는 위험도 조회(위험도 명세 1.1)가 주며, 여기는 등급 · 전세가율 · 가입 가능 여부만이다.
+ */
+export interface PropertyRiskSummary {
+  riskGrade: RiskGrade;
+  /** 전세가율 (%) */
+  debtRatio: number;
+  insuranceEligible: boolean;
+}
+
+/** 매물 상세 응답 — 명세 1.7 */
+export interface PropertyDetail {
+  propertyId: number;
+  district: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  propertyType: PropertyType;
+  contractType: ContractType;
+  /** 보증금 (원) */
+  deposit: number;
+  /** 월세 (원). 전세는 0 */
+  monthlyRent: number;
+  /** 전용면적 (㎡) */
+  areaSqm: number;
+  floor: number;
+  landlordName: string;
+  /** 적용 시세 (원)와 산출 근거 · 기준일 (PROP-03) */
+  marketPrice: number;
+  priceType: PriceType;
+  /** 시세 기준일 (YYYY-MM-DD) */
+  priceDate: string;
+  /** 분석 이력이 없는 매물은 null — 미분석 (명세 1.4 마지막 줄, 백엔드 PropertyDetailResponse) */
+  riskSummary: PropertyRiskSummary | null;
+  /** 관심 매물 등록 여부. 인증 「선택」이므로 비로그인은 항상 false */
+  wishlisted: boolean;
+  /** 등록 일시 (ISO 8601) */
+  registeredAt: string;
+}
+
+/** PROP-03 · GET /api/properties/{propertyId} — 상세 패널 */
+export const fetchPropertyDetail = (propertyId: number) =>
+  request<PropertyDetail>({ url: `/properties/${propertyId}` });
