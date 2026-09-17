@@ -1,8 +1,9 @@
 // 매물 쿼리 정의. 쿼리 키가 만들어지는 유일한 곳이다 — frontend/CLAUDE.md 쿼리.
-// 상세(detail) 정의는 상세 패널 슬라이스가 여기에 추가한다.
+// 건축물대장 · 관심 매물 정의는 그 슬라이스가 여기에 추가한다.
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import {
   fetchDistrictCounts,
+  fetchPropertyDetail,
   fetchPropertyMarkers,
   type BoundingBox,
   type PropertyFilter,
@@ -31,5 +32,15 @@ export const propertyQueries = {
       queryFn: () => fetchPropertyMarkers(filter, bbox),
       // 지도를 움직이는 동안 이전 마커를 유지한다
       placeholderData: keepPreviousData,
+    }),
+
+  /**
+   * PROP-03 매물 상세 — 지도 옆 패널. 관심 매물 등록 · 해제와 재분석의 무효화가 이 키로 걸린다
+   * (wishlisted · riskSummary가 바뀐다 — frontend/CLAUDE.md 무효화 연쇄).
+   */
+  detail: (propertyId: number) =>
+    queryOptions({
+      queryKey: [...propertyQueries.all(), 'detail', propertyId] as const,
+      queryFn: () => fetchPropertyDetail(propertyId),
     }),
 };

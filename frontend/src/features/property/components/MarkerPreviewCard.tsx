@@ -2,20 +2,25 @@ import { memo } from 'react';
 import type { PropertyMarker } from '../../../api/property';
 import { Badge, Button, Card } from '../../../components/ui';
 import { CONTRACT_TYPE_LABEL } from '../../../domain/property';
-import { UNANALYZED_LABEL, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
-import { formatPercent, formatWon } from '../../../lib/format';
+import { debtRatioLabel, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
+import { formatWon } from '../../../lib/format';
 import styles from './MarkerPreviewCard.module.css';
 
 interface MarkerPreviewCardProps {
   marker: PropertyMarker;
   onClose: () => void;
+  onOpenDetail: (propertyId: number) => void;
 }
 
 /**
  * 마커 미리보기 — 마커 응답에 담긴 값만 쓴다. 추가 호출을 하지 않는다 (매물 API 명세 1.4).
- * 「상세 보기」는 지도 옆 상세 패널 슬라이스에서 이 카드에 붙는다.
+ * 상세는 별도 화면이 아니라 지도 옆 패널이다 — 지도 위치 · 확대 수준 · 필터를 유지한다.
  */
-export const MarkerPreviewCard = memo(function MarkerPreviewCard({ marker, onClose }: MarkerPreviewCardProps) {
+export const MarkerPreviewCard = memo(function MarkerPreviewCard({
+  marker,
+  onClose,
+  onOpenDetail,
+}: MarkerPreviewCardProps) {
   return (
     <Card className={styles.card}>
       <div className={styles.header}>
@@ -44,13 +49,17 @@ export const MarkerPreviewCard = memo(function MarkerPreviewCard({ marker, onClo
         </div>
         <div className={styles.fact}>
           <dt>전세가율</dt>
-          <dd>{marker.debtRatio === null ? UNANALYZED_LABEL : formatPercent(marker.debtRatio)}</dd>
+          <dd>{debtRatioLabel(marker.debtRatio)}</dd>
         </div>
         <div className={styles.fact}>
           <dt>선순위채권</dt>
           <dd>{marker.hasSeniorDebt ? '있음' : '없음'}</dd>
         </div>
       </dl>
+
+      <Button type="button" size="sm" className={styles.detail} onClick={() => onOpenDetail(marker.propertyId)}>
+        상세 보기
+      </Button>
     </Card>
   );
 });

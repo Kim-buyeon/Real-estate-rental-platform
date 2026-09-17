@@ -59,13 +59,14 @@ interface MapExplorerProps {
   filter: PropertyFilter;
   stage: MapStage;
   onSelectDistrict: (district: string) => void;
+  onOpenDetail: (propertyId: number) => void;
 }
 
 /**
  * 지도 드릴다운 1 · 2단계. 오버레이 내용은 React 컴포넌트를 포털로 그리고,
  * CustomOverlay의 생성 · 제거는 map 폴더가 맡는다 (kakao-map 5장).
  */
-export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProps) {
+export function MapExplorer({ filter, stage, onSelectDistrict, onOpenDetail }: MapExplorerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMap | null>(null);
   const layerRef = useRef<OverlayLayer | null>(null);
@@ -102,9 +103,12 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     );
     const removeClick = addClickListener(map, () => setPreviewId(null));
 
-    // 컨테이너 크기가 바뀌면 타일이 어긋난다 (kakao-map 5장)
+    // 컨테이너 크기가 바뀌면 타일이 어긋난다 (kakao-map 5장).
+    // 상세 패널이 열리고 닫힐 때도 지도 폭이 바뀌므로 창이 아니라 컨테이너를 본다
     const handleResize = () => relayoutMap(map);
     window.addEventListener('resize', handleResize);
+    const observer = new ResizeObserver(handleResize);
+    observer.observe(container);
 
     // 컨테이너 크기가 잡히기 전에 만들어졌으면 타일이 안 그려지고 확대 수준도 엉뚱하다.
     // 크기가 확정된 다음 프레임에 서울 전체로 다시 맞춘다
@@ -115,6 +119,7 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
 
     return () => {
       cancelAnimationFrame(relayoutFrame);
+      observer.disconnect();
       window.removeEventListener('resize', handleResize);
       removeIdle();
       removeClick();
@@ -261,7 +266,7 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
         lng: previewMarker.longitude,
         node: (
           <div className={styles.preview}>
-            <MarkerPreviewCard marker={previewMarker} onClose={handleClosePreview} />
+            <MarkerPreviewCard marker={previewMarker} onClose={handleClosePreview} onOpenDetail={onOpenDetail} />
           </div>
         ),
       });
@@ -280,6 +285,7 @@ export function MapExplorer({ filter, stage, onSelectDistrict }: MapExplorerProp
     handleSelectCluster,
     handleSelectMarker,
     isSeoul,
+    onOpenDetail,
     onSelectDistrict,
     previewId,
     previewMarker,

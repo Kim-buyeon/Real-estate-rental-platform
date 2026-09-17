@@ -1,0 +1,82 @@
+/*
+ * 지도 옆 패널. 브레이크포인트가 미확정이라 미디어 쿼리를 쓰지 않는다(global.css 머리말) —
+ * 좁아지면 부모(.explore)의 flex-wrap 으로 지도 아래에 내려간다.
+ *
+ * 줄바꿈을 만드는 것은 지도 쪽 min-width(50%)다 — 지도가 절반보다 좁아질 만큼 폭이 모자라면
+ * 이 패널이 다음 줄로 내려간다. 내려간 줄에는 이것 하나뿐이라 flex-grow: 1 이 줄을 채워 전체 폭이 된다.
+ * 그래서 max-width 를 두지 않는다. 옆에 있을 때의 폭은 flex-basis(340px)가 잡는다 —
+ * 남는 폭은 지도가 flex-grow: 999 로 가져가므로 넓은 화면에서도 이 값 근처에 머문다.
+ *
+ * 경계선은 이 요소의 border-left 가 아니라 부모의 1px gap 이 그린다 — 아래로 내려갔을 때
+ * 왼쪽에 세로선이 남지 않도록 방향에 기대지 않는 표현을 골랐다.
+ */
+.panel {
+  display: flex;
+  flex: 1 1 340px;
+  flex-direction: column;
+  background: var(--color-surface);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  overflow-y: auto;
+}
+
+.section {
+  padding: var(--spacing-md);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+  color: var(--color-text-tertiary);
+}
+
+.address {
+  margin: var(--spacing-xs) 0 var(--spacing-sm);
+  color: var(--color-text);
+}
+
+.facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+  margin: 0;
+}
+
+.fact {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+}
+
+.fact dt {
+  color: var(--color-text-tertiary);
+}
+
+.fact dd {
+  margin: 0;
+  text-align: right;
+  color: var(--color-text);
+}
+
+/* 시세 아래 줄의 산출 근거 · 기준일 */
+.source {
+  display: block;
+  color: var(--color-text-tertiary);
+}
