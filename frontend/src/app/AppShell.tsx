@@ -1,17 +1,22 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Link, Outlet } from 'react-router';
+import { Link, Outlet, useMatches } from 'react-router';
 import { Badge, Button, buttonClassName } from '../components/ui';
 import { formatCount } from '../lib/format';
 import { notificationQueries } from '../queries/notification';
 import { useLogout } from '../queries/user';
 import { useSession } from '../session/useSession';
+import { AppFooter } from './AppFooter';
 import { NotificationStream } from './NotificationStream';
+import { hidesFooter } from './routeHandle';
 import styles from './AppShell.module.css';
 
-/** 공통 레이아웃 — 헤더 + 본문. 레이아웃 맵이 생기면 그 섹션 순서 · 그리드를 따른다 */
+/** 공통 레이아웃 — 헤더 + 본문 + 푸터. 섹션 순서 · 여백은 레이아웃 맵을 따른다 */
 export function AppShell() {
   const { isAuthenticated } = useSession();
   const logoutMutation = useLogout();
+
+  // 푸터를 붙일지는 라우트 표의 handle이 정한다 — 경로 문자열 비교를 여기 두지 않는다
+  const isFooterHidden = useMatches().some((match) => hidesFooter(match.handle));
 
   // 헤더의 읽지 않은 수. 알림 목록과 같은 쿼리 정의를 써 요청과 캐시가 하나다 — 읽지 않은 수만 주는
   // 엔드포인트가 없고, 목록 응답의 unreadCount가 페이지와 무관한 전체 수다 (알림 명세 1.3).
@@ -71,6 +76,7 @@ export function AppShell() {
       <main className={styles.main}>
         <Outlet />
       </main>
+      {!isFooterHidden && <AppFooter />}
     </div>
   );
 }

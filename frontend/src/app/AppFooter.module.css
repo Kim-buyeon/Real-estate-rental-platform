@@ -1,0 +1,217 @@
+/*
+ * 공통 푸터. 구역 순서 · 여백 리듬 · 구분선 위치의 정본은 design/examples/home/layout.md 다.
+ *
+ * px 리터럴은 넷이다 —
+ *   1) 미디어 쿼리 조건 768 (global.css 머리말이 정본. 데스크톱은 태블릿과 같아 1024 조건을 두지 않았다)
+ *   2) 1px 보더 두께 — .linkBar 의 가로 구분선, 태블릿 .topCell 의 세로 구분선
+ *   3) spacing 격자에 없는 레이아웃 맵 계측값 — 28 · 5 · 40 · 73 은 아래 .footer 의 지역 변수에 모았고,
+ *      .topArrow 의 8 은 SVG 자체 크기라 그 자리에 둔다. 디자인 토큰 정의서 4절 「격자에 맞지 않는
+ *      관측값은 토큰으로 올리지 않았다 — 해당 layout.md 가 갖는다」에 따른 것이다
+ *   4) .footerButton 의 32 — {components.button-footer-primary} 가 지정한 높이이며, 그 클래스와 함께 사라진다
+ *
+ * 컨테이너 최대 폭 1200 · 터치 타겟 최소 44 는 정의서 9절이 정한 값이라 px 로 다시 적지 않는다 —
+ * global.css 의 --container-max · --touch-target-min 을 쓴다 (이슈 112 검토 D · F).
+ * 그 밖의 색 · 간격 · 반경은 전부 토큰 변수다.
+ */
+
+.footer {
+  /* 레이아웃 맵 구역 1 — 컬럼 제목 ↔ 첫 링크 */
+  --footer-title-gap: 28px;
+  /* 레이아웃 맵 구역 1 — 링크 줄 피치 31 = type-link 줄 높이 21 + 위아래 5 */
+  --footer-link-pad: 5px;
+  /* 레이아웃 맵 구역 3 — 구분선 ↔ 정보 첫 줄 */
+  --footer-divider-gap: 40px;
+  /* 레이아웃 맵 구역 2 — TOP 셀 폭 */
+  --footer-top-cell-width: 73px;
+}
+
+.footer a:focus-visible,
+.footer button:focus-visible {
+  outline: var(--spacing-3xs) solid var(--color-focus);
+  outline-offset: var(--spacing-3xs);
+}
+
+/* 네 구역이 같은 컨테이너를 쓴다. 배경은 컨테이너를 넘어 화면 전폭으로 깔린다 */
+.container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding-inline: var(--spacing-md);
+}
+
+/* ── 구역 1 — sitemap. 유일한 흰 면 ── */
+
+.sitemap {
+  background: var(--color-surface);
+}
+
+.sitemapColumns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-2xl);
+  padding-block: var(--spacing-4xl) var(--spacing-3xl);
+}
+
+.columnTitle {
+  /* 글자 사이가 28이 되도록 링크의 위 패딩을 뺀다 — 링크 패딩은 줄 피치와 터치 타겟이 갖는다 */
+  margin-bottom: calc(var(--footer-title-gap) - var(--spacing-sm));
+  color: var(--color-text);
+}
+
+.sitemapLink {
+  display: block;
+  /* 모바일 터치 타겟 — 줄 높이 21 + 위아래 12 = 45 ≥ 44 (정의서 9절) */
+  padding-block: var(--spacing-sm);
+  color: var(--color-text-secondary);
+}
+
+/*
+ * 정의서 7절 「상태 · 전환 · 레이어」의 -hover 포괄 규칙 — button-primary-hover 만 기존 구현값을
+ * 유지하고 나머지는 면을 {colors.surface-muted} 로 낮춘다. .sitemapLink 는 display: block 이라 면이 있다.
+ * Button.module.css 의 .secondary:hover · .ghost:hover 가 같은 규칙을 쓰는 선례다.
+ * 밑줄은 색이 아니므로 함께 둔다.
+ */
+.sitemapLink:hover {
+  background: var(--color-surface-muted);
+  text-decoration: underline;
+}
+
+/* ── 구역 2~4 — 어두운 면 ── */
+
+.dark {
+  background: var(--color-footer-surface);
+  color: var(--color-on-footer);
+}
+
+/* ── 구역 2 — link-bar ── */
+
+.linkBar {
+  display: flex;
+  /*
+   * 모바일은 면책과 TOP 을 2줄로 접고 세로 구분선을 지운다. 레이아웃 맵의 모바일 붕괴 제안은
+   * 「TOP 을 셀에서 빼내 화면 우하단 고정 원형 버튼(48)」이지만 따르지 않았다 — 고정 버튼은 콘텐츠를
+   * 가리고, 우리 푸터는 참고 사이트만큼 길지 않아 셀까지의 스크롤이 짧다 (이슈 112 검토 B).
+   */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+  padding-block: var(--spacing-xl);
+  /* 푸터의 유일한 가로 구분선. 화면 전폭이 아니라 컨테이너 폭이다 */
+  border-bottom: 1px solid var(--color-footer-divider);
+}
+
+.topCell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  align-self: flex-end;
+  border: 0;
+  /* 삼각형 8 + 갭 8 + 캡션 17 + 위아래 8 = 49 ≥ 44 (정의서 9절) */
+  padding: var(--spacing-xs);
+  background: none;
+  color: inherit;
+}
+
+/*
+ * 어두운 면 위의 hover 라 위 .sitemapLink 의 {colors.surface-muted} 규칙이 성립하지 않는다 —
+ * 정의서가 {components.button-footer} 의 면으로 쓰는 {colors.footer-surface-raised} 를 그대로 쓴다.
+ */
+.topCell:hover {
+  background: var(--color-footer-surface-raised);
+}
+
+.topArrow {
+  /* 레이아웃 맵 구역 2 — 위 방향 삼각형 8 */
+  width: 8px;
+  height: 8px;
+}
+
+/* ── 구역 3 · 4 — 프로젝트 정보 · 저장소 버튼 · 저작권 ── */
+
+.projectInfo {
+  display: flex;
+  flex-direction: column;
+  /* 문단 사이 · 문단 ↔ 버튼 줄 · 버튼 줄 ↔ 저작권이 모두 24다 */
+  gap: var(--spacing-xl);
+  padding-block: var(--footer-divider-gap) var(--spacing-xl);
+}
+
+.buttonRow {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+/*
+ * {components.button-footer-primary} — 소셜 버튼 4개를 대신하는 강조 버튼 하나.
+ *
+ * 임시. Button 을 정의서에 맞추는 작업(PR 111 의 N-1)에서 {components.button-footer-primary} 를
+ * variant 로 올리고 이 클래스를 지운다. 지금 Button.module.css 는 {rounded.md}(8)를 쓰는데 정의서는
+ * {rounded.sm}(4)이라, 먼저 맞추지 않고 variant 를 얹으면 어긋난 토대 위에 얹는 꼴이 된다.
+ */
+.footerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 모바일은 100% 폭 · 터치 타겟 44 (정의서 9절). 태블릿부터 정의서의 h32로 내린다 */
+  width: 100%;
+  min-height: var(--touch-target-min);
+  border-radius: var(--rounded-sm);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  transition: background-color 0.15s ease;
+}
+
+.footerButton:hover {
+  background: var(--color-primary-hover);
+}
+
+/* ── 태블릿 768~1023 ── */
+
+@media (min-width: 768px) {
+  .container {
+    padding-inline: var(--spacing-xl);
+  }
+
+  .sitemapColumns {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .columnTitle {
+    margin-bottom: calc(var(--footer-title-gap) - var(--footer-link-pad));
+  }
+
+  .sitemapLink {
+    padding-block: var(--footer-link-pad);
+  }
+
+  .linkBar {
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: var(--spacing-xl);
+    /* 상하 여백은 면책 줄이 갖는다 — TOP 셀과 세로 구분선이 구역 높이 전체를 채운다 */
+    padding-block: 0;
+  }
+
+  .disclaimer {
+    align-self: center;
+    padding-block: var(--spacing-2xl);
+  }
+
+  .topCell {
+    align-self: stretch;
+    width: var(--footer-top-cell-width);
+    border-left: 1px solid var(--color-footer-divider);
+  }
+
+  .footerButton {
+    width: auto;
+    /* {components.button-footer-primary} 가 지정한 h32. 위 주석의 Button 이관과 함께 사라지는 값이다 */
+    min-height: 32px;
+    padding-inline: var(--spacing-md);
+  }
+}
+
+/* ── 데스크톱 1024~ : 컨테이너 최대 폭 1200 중앙. 태블릿과 같은 3컬럼 · 한 줄 link-bar ── */

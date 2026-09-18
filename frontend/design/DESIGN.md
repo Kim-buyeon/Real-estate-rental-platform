@@ -706,7 +706,7 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | 토큰 | 매핑 | 쓰임 | seen on |
 | --- | --- | --- | --- |
 | `{components.top-nav}` | `{colors.surface}` / `{colors.text}` · `{typography.body}` · 하단 1px `{colors.border}` · h80 | 전 페이지 상단 내비. 활성 항목은 `{colors.primary}` 글자 + `{colors.primary-surface}` pill. 로그인 상태에서 우측이 아바타(36px) + 닉네임으로 바뀐다 | signup/01 · favorites/01-02 · my-info/01 · listing/02 |
-| `{components.site-footer}` | `{colors.footer-surface}` / `{colors.on-footer}` · `{typography.body-sm}` · 구분선 `{colors.footer-divider}` | 전 페이지 하단. 구역 1은 흰 면, 구역 2~4가 어두운 면이다. 내부 버튼은 `{components.button-footer}` · `{components.button-footer-primary}` · `{components.button-social}`. 구역 배치는 `examples/home/layout.md`가 갖는다 | home/03 · login/01 · signup/01 · favorites/01-03 · listing/06 |
+| `{components.site-footer}` | `{colors.footer-surface}` / `{colors.on-footer}` · `{typography.body-sm}` · 구분선 `{colors.footer-divider}` | **`map-search`를 제외한** 전 페이지 하단 — 그 아키타입은 뷰포트의 남은 높이를 전부 쓰는 유동 구조라 푸터를 붙이면 지도가 줄어든다(4절 Grid & Container의 예외와 같은 이유). 참고 사이트도 지도 화면 5컷 모두에 푸터가 없다. 구역 1은 흰 면, 구역 2~4가 어두운 면이다. 내부 버튼은 `{components.button-footer}` · `{components.button-footer-primary}` · `{components.button-social}`. 구역 배치는 `examples/home/layout.md`가 갖는다 | home/03 · login/01 · signup/01 · favorites/01-03 · listing/06 |
 | `{components.info-row}` | `{colors.surface}` / 라벨 `{typography.body-strong}` `{colors.text}` · 값 `{colors.text-secondary}` · 우측 끝 셰브런 16px · h76 · 1px `{colors.border}` | 설정·프로필의 「라벨 — 값 — >」 행. 누르면 편집으로 들어간다 | my-info/01 |
 | `{components.kv-row}` | `{colors.surface}` / `{colors.text-secondary}` · `{typography.body}` · 행마다 하단 1px `{colors.border}` · h66 · 라벨 열 150px | 상세 패널 판정 근거 · 등기·건축물대장 값 표시. 라벨은 `{typography.body-strong}` `{colors.text}`, 강조 수치는 `{colors.primary}` | map-search/02 · map-search/03 |
 | `{components.empty-state}` | `{colors.text}` · `{typography.body-lg}` · 줄 간격 29px | 관심 매물 · 알림의 빈 목록. 2줄 중앙 정렬 — 1줄은 `{colors.text}`, 2줄 보조 설명은 `{colors.text-secondary}`(계측 `ink-subtle`은 흰 면 위 2.68로 미채택 — K-04). 상단 여백 184px는 격자 밖이라 `examples/favorites/layout.md`가 갖는다 | favorites/01-03 |
@@ -778,6 +778,11 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 
 - 누를 수 있는 것의 최소 치수는 **44px**다 (프로젝트 정의). `{components.input}` 48 · `{components.button-primary}` 60은
   그대로 충족한다. 모바일에서 높이를 줄일 때도 44 아래로 내리지 않는다.
+- **44 하한은 터치 입력 구간(`~767px`)에 적용한다. 포인터 구간(`768px~`)에서는 컴포넌트가 지정한 높이를 따른다.**
+  `{components.button-footer}` · `{components.button-footer-primary}`의 `height: 32px`가 44와 부딪치는데, 둘 다
+  계측값이라 어느 쪽도 버릴 수 없다 — 입력 수단으로 가른다. 근거는 44가 WCAG 2.2 SC 2.5.5 Target Size (Enhanced)의
+  **AAA** 기준이고 AA 기준인 SC 2.5.8 Target Size (Minimum)은 **24×24**라는 것이다. 즉 32는 포인터 구간에서 AA를
+  넘고, 터치 구간에서는 우리가 AAA를 목표로 44까지 올린다. 충돌 자체는 K-26에 남긴다.
 
 ### Collapsing
 
@@ -827,12 +832,13 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | K-25 | **규격 밖 component 하위 토큰 — `broken-ref` 34건** | 규격이 인정하는 하위 토큰은 `backgroundColor` · `textColor` · `typography` · `rounded` · `padding` · `size` · `height` · `width` **8개뿐**이고, 여기에 **보더와 간격이 없다.** 내역: `borderColor` **28** · `gap` **3**(`field` · `tabs-underline` · `empty-state`) · `shadow` **1**(`input-focus`) · `minWidth` **1**(`select`) · `labelWidth` **1**(`kv-row`). **유지하기로 결정했다 — 이슈 #110 작업 판단(2026-09-18), 검수 권장 수용. 사용자 승인 사항이 아니다.** 사유 — **이 시스템은 그림자 대신 1px 실선으로 면을 나누므로 보더 색은 부가 정보가 아니라 핵심 표현 수단이고, 따라서 산문이 아니라 기계가 읽는 자리에 남긴다.** 어느 컴포넌트가 `{colors.border}`를 쓰고 어느 것이 `{colors.border-subtle}`를 쓰는지가 `components`에서 사라지면 CSS로 옮길 때 정보를 잃는다. **값은 전부 `{colors.*}` 참조라 실제로 깨진 참조가 아니며 severity도 warning이다**(error 0건). 대가로 린터 경고 34건을 안고 간다 |
 | K-01 | **비활성 버튼 대비 — `contrast-ratio` 1건** | 계측(`signup/01`)은 `{colors.disabled-surface}` + 흰 글자로 대비 ≈1.4:1이다. 우리는 글자를 `{colors.text-disabled}`(#999999)로 바꿔 **2.00:1**을 확보했다. 그래도 4.5:1 미만이라 경고가 난다. WCAG 2.2 SC 1.4.3은 **비활성 사용자 인터페이스 구성요소의 텍스트를 대비 요건에서 제외**하므로 위반은 아니다(SC 1.4.11도 같다). **검수에서 예외 적용을 승인했다.** **참고 사이트를 그대로 베끼지 않았다는 사실을 함께 기록한다** |
 | K-02 | **`{components.input-disabled}` 대비 — `contrast-ratio` 1건** | `{colors.surface-muted}` + `{colors.text-disabled}` = **2.61:1**. 같은 비활성 예외이고 **검수에서 승인됐다.** 기존 구현값 유지 |
-| K-15 | 컴포넌트가 참조하지 않는 색 토큰 2종 | `{colors.background}`(`global.css:43`이 `background: var(--color-background)`로 실제 사용 중 — 지우면 전역 배경이 깨진다) · `{colors.on-error}`(진한 오류 면 미사용. `tokens.css`가 정의하고 있고 K-19의 토스트·모달에서 쓰인다). **`orphaned-tokens` 경고는 나지 않는다** — 린터가 본문 산문의 참조까지 세는데 둘 다 2절 Surface · Semantic 표와 10절에서 참조되기 때문이다. 경고가 없더라도 **삭제 후보가 아니라는 사실**을 남긴다 |
+| K-15 | 컴포넌트가 참조하지 않는 색 토큰 2종 | `{colors.background}`(`global.css`이 `background: var(--color-background)`로 실제 사용 중 — 지우면 전역 배경이 깨진다) · `{colors.on-error}`(진한 오류 면 미사용. `tokens.css`가 정의하고 있고 K-19의 토스트·모달에서 쓰인다). **`orphaned-tokens` 경고는 나지 않는다** — 린터가 본문 산문의 참조까지 세는데 둘 다 2절 Surface · Semantic 표와 10절에서 참조되기 때문이다. 경고가 없더라도 **삭제 후보가 아니라는 사실**을 남긴다 |
 
 ### 값 충돌 — 승인 대상
 
 | # | 항목 | 내용 |
 | --- | --- | --- |
+| K-26 | **9절 터치 타겟 44 ↔ `{components.button-footer}` · `{components.button-footer-primary}`의 `height: 32px` 충돌** | 둘 다 버릴 수 없어 **입력 수단으로 갈랐다** — 터치 구간(`~767px`)은 44, 포인터 구간(`768px~`)은 컴포넌트 지정 높이. 규칙은 9절 Touch Targets에 있다. 근거는 44가 WCAG 2.2 SC 2.5.5(**AAA**)이고 AA 기준 SC 2.5.8은 **24×24**라는 것이다 — 32는 포인터 구간에서 AA를 넘는다. 이 충돌은 정의서 안에 원래 있었고 구현이 만든 것이 아니다 (이슈 #112 검토에서 드러남) |
 | K-03 | `{colors.primary}` 값 | 계측 추정은 `#3d6ff5`이고 이 값은 `{colors.on-primary}`와 **4.38:1**로 AA에 못 미친다. hex는 JPG 압축 기반 「추정」이므로 기존 구현값 `#326cf9`(4.52)를 유지했다. 계측값을 쓰려면 사용자 승인이 필요하다 |
 | K-04 | `{colors.text-tertiary}` 값 | 계측 `#9e9e9e`는 흰 바탕 대비 약 2.6:1로 본문 텍스트에 쓸 수 없다. 기존 `#767676`(4.54)을 유지했다. placeholder 계측값 `#aaaaaa`도 같은 이유로 미채택 |
 | K-10 | `{components.card}` 반경 | 기존 구현은 `{rounded.lg}`(12) + `{colors.border-subtle}`, 계측 `card-summary`는 `{rounded.md}`(8) + `{colors.border}`다. 덮어쓰지 않고 **두 항목으로 분리**했다. 하나로 합칠지는 승인 대상 |

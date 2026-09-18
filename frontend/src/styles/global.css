@@ -8,13 +8,20 @@
  *   태블릿    768px ~ 1023px   @media (min-width: 768px)
  *   데스크톱  1024px ~         @media (min-width: 1024px)
  *
- * 컨테이너 최대 폭 1200px · 터치 타겟 최소 44px 도 같은 절이 정한다.
+ * 컨테이너 최대 폭 1200px · 터치 타겟 최소 44px 도 같은 절이 정한다. 브레이크포인트와 같은 이유로
+ * 여기 한 번 적는다 — 정의서가 정했으나 css-vars export 가 내지 않는다. 아래 :root 의 두 변수다.
  * 셋 다 계측값이 아니라 프로젝트 정의다 — 참고 사이트의 모바일 컷이 없다 (정의서 K-16).
  */
 
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
 @import './tokens.css';
 @import './typography.css';
+
+:root {
+  /* 디자인 토큰 정의서 9절이 정한 값 중 css-vars export 가 내지 않는 것. 미디어 쿼리 조건과 같은 성질이다 */
+  --container-max: 1200px;
+  --touch-target-min: 44px;
+}
 
 *,
 *::before,
