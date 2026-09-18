@@ -1,22 +1,74 @@
+/*
+ * /login — 정본은 레이아웃 맵 design/examples/login/layout.md 다.
+ *
+ * 카드 면(540 · 패딩 · 보더 · 모바일 붕괴)은 공용 UI 의 CardForm 이 갖는다 — 정의서 7절
+ * {components.card-form}. 여기에는 이 화면 고유의 배치만 남긴다.
+ *
+ * px 리터럴은 셋이다 —
+ *   1) 미디어 쿼리 조건 768 (global.css 머리말이 정본. 맵이 「태블릿에서 붕괴 없음」이라 1024 조건이 없다)
+ *   2) 1px 보더 두께 — 제목 아래 구분선
+ *   3) spacing 격자에 없는 레이아웃 맵 계측값(40 · 34 · 62) — 아래 .page 의 지역 변수에 모았다.
+ *      격자 안에 있는 값은 지역 변수라도 px 로 적지 않는다 — 안내문 ↔ 첫 field 의 모바일 32 는
+ *      {spacing.2xl} 이다 (이슈 114)
+ *
+ * 맵과 다르게 간 곳 —
+ *   · 카드 제목은 모바일에서도 28(type-heading-1) 이다. 맵의 제안은 22 인데 그 크기의 타이포 역할이
+ *     없고 컴포넌트 CSS 에 font-size 를 적을 수 없다 (frontend/CLAUDE.md 스타일 규칙).
+ *   · 안내문은 맵이 body-lg(16) 700 이라 적었으나 그 조합의 역할 클래스가 없어 body-strong(15/700) 이다.
+ *   · 입력 ↔ 주 버튼은 맵의 34 가 아니라 48 이다 — signup 맵의 60 과 충돌해 정의서 K-14 가 48 로 확정했다.
+ */
+
 .page {
   display: flex;
   justify-content: center;
-  padding: var(--spacing-3xl) var(--spacing-md);
+  /* 레이아웃 맵 「반응형 붕괴」 제안(미관측) — nav 하단 ↔ 카드 상단 40, 좌우 패딩 16 */
+  --card-top-gap: 40px;
+  --card-bottom-gap: 40px;
+  /* 레이아웃 맵 계측 — 구분선 ↔ 안내문 · 주 버튼 ↔ 보조 링크 */
+  --card-rhythm: 34px;
+  /* 레이아웃 맵 — 안내문 ↔ 첫 field. 모바일 32 (제안) = {spacing.2xl} */
+  --lead-to-fields: var(--spacing-2xl);
+  padding: var(--card-top-gap) var(--spacing-md) var(--card-bottom-gap);
 }
 
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg);
-  width: 100%;
-  /* 레이아웃 1회성 값 — 폼 컨테이너 폭 */
-  max-width: 400px;
+.divider {
+  margin: var(--spacing-xl) 0 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
 }
 
-.footer {
+.alert {
+  margin-top: var(--card-rhythm);
+}
+
+.lead {
+  margin-top: var(--card-rhythm);
+  color: var(--color-text);
+}
+
+.formSlot {
+  margin-top: var(--lead-to-fields);
+}
+
+.links {
+  margin-top: var(--card-rhythm);
   color: var(--color-text-secondary);
+  text-align: center;
 }
 
-.footer a {
-  color: var(--color-primary);
+.links a {
+  color: var(--color-text-secondary);
+  text-decoration: underline;
+}
+
+@media (min-width: 768px) {
+  .page {
+    --card-top-gap: 131px;
+    --card-bottom-gap: 130px;
+    --lead-to-fields: 62px;
+  }
+
+  .divider {
+    margin-top: var(--spacing-3xl);
+  }
 }

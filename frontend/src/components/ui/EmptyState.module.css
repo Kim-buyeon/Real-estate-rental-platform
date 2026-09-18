@@ -1,0 +1,49 @@
+/*
+ * {components.empty-state} — 디자인 토큰 정의서 7절 「구조」.
+ *
+ * 2줄 중앙 정렬 · 1줄 {colors.text} · 2줄 {colors.text-secondary} · {typography.body-lg} ·
+ * 줄 간격 29.
+ *
+ * 줄 간격 29 는 body-lg 의 행간(16 x 1.6 = 25.6)에 {spacing.2xs}(4)를 더해 맞춘다 — 행간을
+ * 컴포넌트 CSS 에 적지 않기 위함이다 (frontend/CLAUDE.md 스타일).
+ *
+ * 관심 매물 · 알림 두 목록이 같은 위 여백을 쓰므로 여백은 화면이 아니라 이 컴포넌트가 갖는다
+ * (이슈 114 — 두 모듈에 같은 블록이 복사돼 있었다).
+ *
+ * px 리터럴은 둘이다 (frontend/CLAUDE.md 스타일 규칙) —
+ *   1) 미디어 쿼리 조건 768 · 1024 (global.css 머리말이 정본)
+ *   2) 레이아웃 맵 favorites 「탭 ↔ 빈 상태」의 태블릿 120 · 데스크톱 184. 격자 밖 계측값이고
+ *      한 컴포넌트에만 걸리므로 아래 지역 변수에 모았다 (모바일 80 은 {spacing.5xl} 과 같다)
+ */
+
+.emptyState {
+  --empty-state-block-padding: var(--spacing-5xl);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  margin: 0;
+  padding: var(--empty-state-block-padding) 0;
+  text-align: center;
+}
+
+.title {
+  color: var(--color-text);
+}
+
+.description {
+  color: var(--color-text-secondary);
+}
+
+@media (min-width: 768px) {
+  .emptyState {
+    --empty-state-block-padding: 120px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .emptyState {
+    --empty-state-block-padding: 184px;
+  }
+}

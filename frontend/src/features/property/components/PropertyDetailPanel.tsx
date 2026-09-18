@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { ApiError } from '../../../api/client';
-import { Alert, Badge, Button, Card, Disclosure } from '../../../components/ui';
+import { Alert, Badge, Button, Disclosure, KvRow, KvRowList } from '../../../components/ui';
 import { CONTRACT_TYPE_LABEL, PROPERTY_TYPE_LABEL } from '../../../domain/property';
 import { debtRatioLabel, priceTypeLabel, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
 import { formatDate, formatWon } from '../../../lib/format';
@@ -32,6 +32,10 @@ interface PropertyDetailPanelProps {
 /**
  * 지도 옆 상세 패널. 별도 화면으로 가지 않아 지도 위치 · 확대 수준 · 필터가 유지된다
  * (매물 API 명세 1.4). 데이터를 부르는 컴포넌트이고 표시는 표현 컴포넌트에 넘긴다.
+ *
+ * 배치는 레이아웃 맵 map-search 「detail-panel 내부」다 — 좌우 패딩 24, 섹션 사이를 회색 띠로
+ * 가르고, 하단에 {components.action-bar}가 스크롤과 무관하게 고정된다. 섹션 묶음은 여기가
+ * 감싸고(.section), 안쪽 내용만 각 기능 컴포넌트가 갖는다.
  */
 export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanelProps) {
   const detailQuery = useQuery(propertyQueries.detail(propertyId));
@@ -62,122 +66,130 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
       </div>
 
       <div className={styles.body}>
-        {detailQuery.isPending && <p className="type-body">불러오는 중입니다.</p>}
+        {detailQuery.isPending && (
+          <div className={styles.section}>
+            <p className="type-body">불러오는 중입니다.</p>
+          </div>
+        )}
 
-        {detailQuery.error && <Alert variant="error">{detailQuery.error.message}</Alert>}
+        {detailQuery.error && (
+          <div className={styles.section}>
+            <Alert variant="error">{detailQuery.error.message}</Alert>
+          </div>
+        )}
 
         {detail && (
           <>
-            <Card className={styles.section}>
+            <div className={styles.section}>
               <div className={styles.titleRow}>
                 <Badge variant={riskGradeToken(detail.riskSummary?.riskGrade ?? null)}>
                   {riskGradeLabel(detail.riskSummary?.riskGrade ?? null)}
                 </Badge>
-                <span className="type-caption">{PROPERTY_TYPE_LABEL[detail.propertyType] ?? detail.propertyType}</span>
+                <span className="type-body-sm">{PROPERTY_TYPE_LABEL[detail.propertyType] ?? detail.propertyType}</span>
               </div>
 
-              <p className={`${styles.address} type-body-strong`}>{detail.address}</p>
+              <p className={`${styles.deposit} type-heading-1`}>{formatWon(detail.deposit)}</p>
+              <p className={`${styles.address} type-body`}>{detail.address}</p>
 
-              <dl className={`${styles.facts} type-caption`}>
-                <div className={styles.fact}>
-                  <dt>계약유형</dt>
-                  <dd>{CONTRACT_TYPE_LABEL[detail.contractType]}</dd>
-                </div>
-                <div className={styles.fact}>
-                  <dt>보증금</dt>
-                  <dd>{formatWon(detail.deposit)}</dd>
-                </div>
-                {detail.monthlyRent > 0 && (
-                  <div className={styles.fact}>
-                    <dt>월세</dt>
-                    <dd>{formatWon(detail.monthlyRent)}</dd>
-                  </div>
-                )}
-                <div className={styles.fact}>
-                  <dt>전용면적</dt>
-                  <dd>{detail.areaSqm}㎡</dd>
-                </div>
-                <div className={styles.fact}>
-                  <dt>층</dt>
-                  <dd>{detail.floor}층</dd>
-                </div>
-                <div className={styles.fact}>
-                  <dt>임대인</dt>
-                  <dd>{detail.landlordName}</dd>
-                </div>
+              <KvRowList>
+                <KvRow label="계약유형">{CONTRACT_TYPE_LABEL[detail.contractType]}</KvRow>
+                {detail.monthlyRent > 0 && <KvRow label="월세">{formatWon(detail.monthlyRent)}</KvRow>}
+                <KvRow label="전용면적">{detail.areaSqm}㎡</KvRow>
+                <KvRow label="층">{detail.floor}층</KvRow>
+                <KvRow label="임대인">{detail.landlordName}</KvRow>
                 {/* 시세는 산출 근거와 기준일을 함께 적는다 (PROP-03 · 매물 명세 1.7). 미분석 매물은
                     위험도 응답이 없으므로 여기가 근거를 보여 주는 유일한 자리다 */}
-                <div className={styles.fact}>
-                  <dt>시세</dt>
-                  <dd>
-                    {formatWon(detail.marketPrice)}
-                    <span className={styles.source}>
-                      {priceTypeLabel(detail.priceType)} · {formatDate(detail.priceDate)} 기준
-                    </span>
-                  </dd>
-                </div>
-                <div className={styles.fact}>
-                  <dt>전세가율</dt>
-                  {/* 미분석이면 riskSummary 자체가 null이다 — 문구는 domain/risk.ts가 갖는다 */}
-                  <dd>{debtRatioLabel(detail.riskSummary?.debtRatio)}</dd>
-                </div>
-                <div className={styles.fact}>
-                  <dt>등록일</dt>
-                  <dd>{formatDate(detail.registeredAt)}</dd>
-                </div>
-              </dl>
-            </Card>
+                <KvRow label="시세">
+                  {formatWon(detail.marketPrice)}
+                  <span className={`${styles.source} type-body-sm`}>
+                    {priceTypeLabel(detail.priceType)} · {formatDate(detail.priceDate)} 기준
+                  </span>
+                </KvRow>
+                {/* 미분석이면 riskSummary 자체가 null이다 — 문구는 domain/risk.ts가 갖는다 */}
+                <KvRow label="전세가율">{debtRatioLabel(detail.riskSummary?.debtRatio)}</KvRow>
+                <KvRow label="등록일">{formatDate(detail.registeredAt)}</KvRow>
+              </KvRowList>
+            </div>
 
-            {riskQuery.isPending && <p className="type-body">위험도를 불러오는 중입니다.</p>}
-
-            {notAnalyzedMessage !== null && (
-              <Alert variant="info">{notAnalyzedMessage} 기본 정보만 표시합니다.</Alert>
+            {riskQuery.isPending && (
+              <div className={styles.section}>
+                <p className="type-body">위험도를 불러오는 중입니다.</p>
+              </div>
             )}
 
-            {riskError && notAnalyzedMessage === null && <Alert variant="error">{riskError.message}</Alert>}
+            {notAnalyzedMessage !== null && (
+              <div className={styles.section}>
+                <Alert variant="info">{notAnalyzedMessage} 기본 정보만 표시합니다.</Alert>
+              </div>
+            )}
+
+            {riskError && notAnalyzedMessage === null && (
+              <div className={styles.section}>
+                <Alert variant="error">{riskError.message}</Alert>
+              </div>
+            )}
 
             {riskQuery.data && (
               <>
-                <RiskVerdict analysis={riskQuery.data} />
-                <InsuranceProviders providers={riskQuery.data.providers} />
-                <RiskFindings
-                  rightViolations={riskQuery.data.rightViolations}
-                  warnings={riskQuery.data.warnings}
-                />
-                <ConsistencyCheck consistency={riskQuery.data.consistency} />
-                <PersonalConditions conditions={riskQuery.data.personalConditions} />
+                <div className={styles.section}>
+                  <RiskVerdict analysis={riskQuery.data} />
+                </div>
+                <div className={styles.section}>
+                  <InsuranceProviders providers={riskQuery.data.providers} />
+                </div>
+                <div className={styles.section}>
+                  <RiskFindings rightViolations={riskQuery.data.rightViolations} warnings={riskQuery.data.warnings} />
+                </div>
+                <div className={styles.section}>
+                  <ConsistencyCheck consistency={riskQuery.data.consistency} />
+                </div>
+                <div className={styles.section}>
+                  <PersonalConditions conditions={riskQuery.data.personalConditions} />
+                </div>
               </>
             )}
 
-            {/* 원본 자료와 재분석은 위험도 분석 여부와 무관하다 — 미분석 매물에서도 보이고,
-                재분석은 그 매물의 첫 분석이 된다. 위 판정 근거 블록 밖에 두는 이유다 */}
-            <Disclosure
-              title="건축물대장"
-              isOpen={isLedgerOpen}
-              onToggle={() => setIsLedgerOpen((isOpen) => !isOpen)}
-            >
-              <BuildingLedgerSection propertyId={propertyId} />
-            </Disclosure>
+            {/* 원본 자료는 위험도 분석 여부와 무관하다 — 미분석 매물에서도 보인다 */}
+            <div className={styles.section}>
+              <Disclosure
+                title="건축물대장"
+                isOpen={isLedgerOpen}
+                onToggle={() => setIsLedgerOpen((isOpen) => !isOpen)}
+              >
+                <BuildingLedgerSection propertyId={propertyId} />
+              </Disclosure>
+            </div>
 
-            <Disclosure
-              title="등기 이력"
-              isOpen={isRegistryOpen}
-              onToggle={() => setIsRegistryOpen((isOpen) => !isOpen)}
-            >
-              <RegistryTimeline propertyId={propertyId} />
-            </Disclosure>
-
-            <ReanalysisButton propertyId={propertyId} />
-
-            {/* 등록 여부는 상세 응답의 wishlisted다 — 관심 매물 목록을 따로 받아 계산하지 않는다 */}
-            <WishlistButton propertyId={propertyId} isWishlisted={detail.wishlisted} />
+            <div className={styles.section}>
+              <Disclosure
+                title="등기 이력"
+                isOpen={isRegistryOpen}
+                onToggle={() => setIsRegistryOpen((isOpen) => !isOpen)}
+              >
+                <RegistryTimeline propertyId={propertyId} />
+              </Disclosure>
+            </div>
 
             {/* 대출 한도(LOAN-01). 위험도 분석 여부와 무관하게 마운트한다 — 가입 불가 매물은
                 422 LOAN_PROPERTY_NOT_ELIGIBLE 안내가 그 안에서 나온다 */}
-            <LoanLimitSection propertyId={propertyId} />
+            <div className={styles.section}>
+              <LoanLimitSection propertyId={propertyId} />
+            </div>
           </>
         )}
       </div>
+
+      {/*
+        {components.action-bar} — 패널 스크롤과 무관하게 같은 자리에 있는 하단 고정 바 (레이아웃 맵
+        map-search 11번). 재분석(RISK-08)과 관심 등록 · 해제(PROP-05)가 이 패널의 두 동작이다.
+        등록 여부는 상세 응답의 wishlisted다 — 관심 매물 목록을 따로 받아 계산하지 않는다.
+      */}
+      {detail && (
+        <div className={styles.actionBar}>
+          <ReanalysisButton propertyId={propertyId} />
+          <WishlistButton propertyId={propertyId} isWishlisted={detail.wishlisted} />
+        </div>
+      )}
     </aside>
   );
 }

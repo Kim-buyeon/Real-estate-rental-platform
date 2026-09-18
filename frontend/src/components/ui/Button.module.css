@@ -1,10 +1,44 @@
+/*
+ * 디자인 토큰 정의서 7절 Actions 의 button-* 항목이다.
+ *
+ * 정의서는 변형마다 높이를 정하는데(button-primary 60 · button-secondary 48 · button-secondary-sm 36 ·
+ * button-footer-primary 32) 이 컴포넌트의 축은 variant × size 둘이라 아래처럼 배치했다.
+ *
+ *   variant \ size  │ sm                                  │ md
+ *   ────────────────┼─────────────────────────────────────┼──────────────────────────────────
+ *   primary         │ h36 — 정의서에 button-primary-sm 이  │ h60 — {components.button-primary}
+ *                   │ 없어 소형 버튼 높이 36을 따른다.     │
+ *                   │ 새 수치를 만들지 않았다              │
+ *   secondary       │ h36 — {components.button-secondary-sm} │ h48 — {components.button-secondary}
+ *   ghost           │ 높이 없음 — 정의서가 {components.button-ghost} 에 높이를 정하지 않았다. 패딩이 만든다
+ *   footer-primary  │ h32 — {components.button-footer-primary}. size 와 무관하게 같은 높이다
+ *
+ * 터치 타겟 — 정의서 9절은 44 하한을 터치 입력 구간(~767px)에만 적용하고 포인터 구간(768px~)에서는
+ * 컴포넌트가 지정한 높이를 따른다. 그래서 44 아래인 h36 · h32 만 모바일에서 --touch-target-min 으로
+ * 올린다. h48 · h60 은 그대로 충족한다.
+ *
+ * px 리터럴은 위 높이 넷뿐이고 .button 의 지역 변수에 모았다 — 정의서 7절이 지정한 값인데 css-vars
+ * export 는 색 · 간격 · 반경만 내므로 쓸 토큰이 없다. global.css 의 --container-max ·
+ * --touch-target-min 과 같은 성질이다 (frontend/CLAUDE.md 「스타일」). 그 밖의 색 · 간격 · 반경은
+ * 전부 토큰 변수이고, 미디어 쿼리 조건 768 의 정본은 global.css 머리말이다.
+ */
+
 .button {
+  /* {components.button-primary} */
+  --button-height-primary: 60px;
+  /* {components.button-secondary} */
+  --button-height-secondary: 48px;
+  /* {components.button-secondary-sm} */
+  --button-height-sm: 36px;
+  /* {components.button-footer-primary} */
+  --button-height-footer: 32px;
+
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-2xs);
   border: 0;
-  border-radius: var(--rounded-md);
+  border-radius: var(--rounded-sm);
   white-space: nowrap;
   transition: background-color 0.15s ease;
 }
@@ -18,6 +52,8 @@
   cursor: not-allowed;
 }
 
+/* ── 좌우 여백. 높이는 아래 variant × size 조합이 갖는다 ── */
+
 .sm {
   padding: var(--spacing-2xs) var(--spacing-sm);
 }
@@ -25,6 +61,8 @@
 .md {
   padding: var(--spacing-sm) var(--spacing-lg);
 }
+
+/* ── 면과 글자색 ── */
 
 .primary {
   background: var(--color-primary);
@@ -65,4 +103,41 @@
 
 .ghost:disabled {
   color: var(--color-text-disabled);
+}
+
+/* 어두운 푸터 면 위의 강조 버튼. 면은 {colors.primary} 로 primary 와 같고 높이만 다르다 */
+.footerPrimary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.footerPrimary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+/* ── 높이 — 모바일은 44 하한, 768~ 은 정의서가 지정한 높이 (머리말의 표) ── */
+
+.primary.md {
+  min-height: var(--button-height-primary);
+}
+
+.secondary.md {
+  min-height: var(--button-height-secondary);
+}
+
+.primary.sm,
+.secondary.sm,
+.footerPrimary {
+  min-height: var(--touch-target-min);
+}
+
+@media (min-width: 768px) {
+  .primary.sm,
+  .secondary.sm {
+    min-height: var(--button-height-sm);
+  }
+
+  .footerPrimary {
+    min-height: var(--button-height-footer);
+  }
 }

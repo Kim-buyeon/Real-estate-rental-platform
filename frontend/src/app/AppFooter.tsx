@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { buttonClassName } from '../components/ui';
 import styles from './AppFooter.module.css';
 
 /** 사이트맵 링크. 내부 이동은 라우터 `Link`(`to`), 외부는 새 탭 `<a>`(`href`) — 둘 중 하나만 갖는다 */
@@ -10,7 +11,7 @@ interface FooterColumn {
 }
 
 /**
- * 구역 1 sitemap 의 3컬럼. 참고 사이트는 6컬럼이지만 우리 라우트가 7개라 빈 컬럼이 생긴다 (#112 계획).
+ * 구역 1 sitemap 의 3컬럼. 참고 사이트는 6컬럼이지만 우리 라우트가 7개라 빈 컬럼이 생긴다 (이슈 112 계획).
  * 「내 정보」는 인증 필수 화면이라 비로그인에서 누르면 가드가 `/login` 으로 보낸다 — 숨기지 않는다.
  * 「데이터 출처」는 데이터 적재 방침 문서가 정한 출처다.
  */
@@ -62,7 +63,7 @@ const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
 /**
  * 전 페이지 공통 푸터. 구역 순서 · 여백 리듬 · 구분선 위치의 정본은 `design/examples/home/layout.md` 이고
- * 색 · 컴포넌트는 디자인 토큰 정의서의 `{components.site-footer}` 다. 내용은 우리 것으로 바꿨다 (#112 계획).
+ * 색 · 컴포넌트는 디자인 토큰 정의서의 `{components.site-footer}` 다. 내용은 우리 것으로 바꿨다 (이슈 112 계획).
  *
  * 지도 화면은 이 푸터를 렌더하지 않는다 — 판정은 라우트 표의 `handle` 을 읽는 `AppShell` 이 한다.
  */
@@ -126,11 +127,12 @@ export function AppFooter() {
               </div>
             ))}
             <div className={styles.buttonRow}>
+              {/* 버튼처럼 보이는 링크다 — 두 번째 버튼 컴포넌트를 만들지 않고 Button 의 클래스를 입힌다 */}
               <a
                 href={REPOSITORY_URL}
                 target="_blank"
                 rel="noreferrer"
-                className={`${styles.footerButton} type-button-sm`}
+                className={`${buttonClassName('footer-primary', 'sm')} ${styles.repositoryButton}`}
               >
                 GitHub 저장소
               </a>

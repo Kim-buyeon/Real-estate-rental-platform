@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { Alert, Badge, Button, Card } from '../../../components/ui';
+import { Alert, Badge, Button, Card, EmptyState } from '../../../components/ui';
 import { notificationTypeLabel, notificationValueLabel } from '../../../domain/notification';
 import { formatCount, formatDateTime } from '../../../lib/format';
 import {
@@ -46,8 +46,14 @@ export function NotificationList() {
     return <Alert variant="error">{notificationsQuery.error.message}</Alert>;
   }
 
+  // 빈 목록은 조회 실패가 아니다 - {components.empty-state} 2줄 중앙 정렬로 관심 매물과 같은 모양이다
   if (items.length === 0) {
-    return <Alert variant="info">받은 알림이 없습니다. 관심 매물을 등록하면 등급 변동과 등기 변동을 알려 드립니다.</Alert>;
+    return (
+      <EmptyState
+        title="받은 알림이 없습니다."
+        description="관심 매물을 등록하면 등급 변동과 등기 변동을 알려 드립니다."
+      />
+    );
   }
 
   return (

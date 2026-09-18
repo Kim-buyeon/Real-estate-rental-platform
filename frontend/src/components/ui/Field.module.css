@@ -1,10 +1,18 @@
+/*
+ * 디자인 토큰 정의서 7절 Forms — {components.field} 는 라벨 {typography.body-strong} {colors.text} ·
+ * 라벨↔입력 {spacing.sm} 이다. 라벨의 역할 클래스는 Field.tsx 가 붙인다.
+ * 힌트 · 오류는 {components.field-hint} · {components.field-error} — {typography.caption} 은 같고 색만 다르다.
+ */
 .field {
   display: flex;
   flex-direction: column;
+  /* 입력↔힌트 · 힌트↔오류. 라벨↔입력은 정의서가 12로 따로 정해 아래 .label 이 만든다 */
   gap: var(--spacing-2xs);
 }
 
 .label {
+  /* 라벨↔입력 {spacing.sm} = 이 여백 + .field 의 gap */
+  margin-bottom: calc(var(--spacing-sm) - var(--spacing-2xs));
   color: var(--color-text);
 }
 

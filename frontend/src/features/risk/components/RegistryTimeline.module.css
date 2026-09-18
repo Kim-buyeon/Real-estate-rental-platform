@@ -20,19 +20,21 @@
 .list {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* 아래 행 스타일(.row · .rank · .main · .sub · .date · .inactive)은 갑구 · 을구 두 행 컴포넌트
-   (OwnershipRow · MortgageRow)가 함께 읽는다. 두 표의 순위번호 열과 날짜 열이 같은 폭으로
-   맞아야 하므로 값을 한 곳에 둔다 */
+/*
+ * 등기 한 줄은 {components.kv-row} 행이다. 그런데 <ol> · <li> 목록이라 <dt> · <dd>를 쓸 수 없어
+ * KvRow 컴포넌트 대신 kvRowClassName 을 입힌다 (components/ui/KvRow.tsx). 격자 · 높이 · 하단
+ * 보더는 그쪽이 갖고, 여기는 이 목록만의 색과 두 줄 배치를 갖는다.
+ *
+ * 아래 행 스타일(.row · .label · .rank · .value · .date · .inactive)은 갑구 · 을구 두 행
+ * 컴포넌트(OwnershipRow · MortgageRow)가 함께 읽는다. 두 표의 열 폭이 같아야 하므로 한 곳에 둔다
+ */
 .row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--spacing-xs);
+  color: var(--color-text);
 }
 
 /* 말소된 등기는 흐리게 둔다. 지우지 않는다 — 이력이 이 화면의 내용이다 */
@@ -41,35 +43,31 @@
 }
 
 .inactive .rank,
-.inactive .main,
-.inactive .sub,
+.inactive .value,
 .inactive .date {
   color: inherit;
 }
 
-/* 순위번호. 자릿수가 달라도 본문이 어긋나지 않게 폭을 잡는다 */
-.rank {
-  flex: none;
-  min-width: var(--spacing-md);
-  color: var(--color-text-tertiary);
-  text-align: right;
-}
-
-.main {
+.label {
   display: flex;
-  flex: 1;
   flex-direction: column;
   min-width: 0;
-  color: var(--color-text);
 }
 
-.sub {
+/* 순위번호 — 권리 종류 아래에 작게 둔다. 구별로 매겨지므로 갑구 · 을구를 섞어 읽지 않는다 */
+.rank {
   color: var(--color-text-tertiary);
+}
+
+.value {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--color-text-secondary);
 }
 
 .date {
-  flex: none;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
 }
 
 .collectedAt {

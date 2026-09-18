@@ -19,6 +19,14 @@ const DETAIL_TAB = 'detail';
 type PanelTab = typeof LIST_TAB | typeof DETAIL_TAB;
 
 /**
+ * 좁은 화면에서 지도와 패널 중 무엇을 보이는가. 데스크톱 · 태블릿에서는 둘 다 보이므로
+ * 이 값이 배치를 바꾸지 않는다 — 미디어 쿼리 밖에서는 클래스가 아무것도 가리지 않는다.
+ */
+const MAP_VIEW = 'map';
+const PANEL_VIEW = 'panel';
+type NarrowView = typeof MAP_VIEW | typeof PANEL_VIEW;
+
+/**
  * `/` 지도 탐색. 필터 · 단계 · 고른 매물 · 패널 탭을 소유하고 기능 컴포넌트를 조합한다 —
  * 쿼리는 부르지 않는다.
  *
@@ -29,18 +37,28 @@ export default function HomePage() {
   const [filter, setFilter] = useState<PropertyFilter>(INITIAL_FILTER);
   const [detailPropertyId, setDetailPropertyId] = useState<number | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>(LIST_TAB);
+  const [narrowView, setNarrowView] = useState<NarrowView>(MAP_VIEW);
   const { stage, selectDistrict, backToSeoul } = useMapStage();
 
   // 필터는 단계 · 탭과 분리해 둔다. 되돌아가거나 탭을 오가도 조건이 그대로다 (매물 API 명세 1.2)
   const handleChangeFilter = useCallback((next: PropertyFilter) => setFilter(next), []);
 
+  const toggleNarrowView = useCallback(
+    () => setNarrowView((view) => (view === MAP_VIEW ? PANEL_VIEW : MAP_VIEW)),
+    [],
+  );
+
   /**
    * 매물을 고르는 경로는 둘이고 결과는 같다 — 마커 미리보기의 「상세 보기」와 목록 항목이다.
    * 고른 매물을 바꾸고 상세 탭으로 옮긴다. 탭을 옮기지 않으면 상세가 열린 줄 모른다.
+   *
+   * 좁은 화면에서는 지도 위에서 고른 것이므로 패널 쪽으로 함께 넘긴다 — 상세가 목록과 같은 자리를
+   * 전체 화면으로 덮는다. 넘기지 않으면 지도만 보이는 채로 상세가 열려 있는 줄 모른다.
    */
   const handleOpenDetail = useCallback((propertyId: number) => {
     setDetailPropertyId(propertyId);
     setPanelTab(DETAIL_TAB);
+    setNarrowView(PANEL_VIEW);
   }, []);
 
   // 닫으면 상세 탭이 다시 비활성이 되므로 목록으로 되돌린다
@@ -60,6 +78,8 @@ export default function HomePage() {
     [detailPropertyId],
   );
 
+  const isMapShown = narrowView === MAP_VIEW;
+
   return (
     <section className={styles.page}>
       <PropertyFilterBar filter={filter} onChange={handleChangeFilter} />
@@ -78,13 +98,16 @@ export default function HomePage() {
         </p>
       </div>
 
-      <div className={styles.explore}>
-        <MapExplorer
-          filter={filter}
-          stage={stage}
-          onSelectDistrict={selectDistrict}
-          onOpenDetail={handleOpenDetail}
-        />
+      <div className={`${styles.explore} ${isMapShown ? styles.mapShown : styles.panelShown}`}>
+        <div className={styles.mapArea}>
+          <MapExplorer
+            filter={filter}
+            stage={stage}
+            isShown={isMapShown}
+            onSelectDistrict={selectDistrict}
+            onOpenDetail={handleOpenDetail}
+          />
+        </div>
 
         <div className={styles.panel}>
           <Tabs label="매물 보기" items={tabs} selectedId={panelTab} onSelect={handleSelectTab}>
@@ -97,6 +120,11 @@ export default function HomePage() {
             )}
           </Tabs>
         </div>
+
+        {/* 좁은 화면에서만 보이는 지도 ↔ 목록 전환. 새 컴포넌트를 만들지 않고 Button 의 기존 변형이다 */}
+        <Button type="button" variant="secondary" className={styles.viewToggle} onClick={toggleNarrowView}>
+          {isMapShown ? '목록' : '지도'}
+        </Button>
       </div>
     </section>
   );

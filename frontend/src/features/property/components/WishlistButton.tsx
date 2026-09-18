@@ -1,4 +1,4 @@
-import { Alert, Button, Card } from '../../../components/ui';
+import { Alert, Button } from '../../../components/ui';
 import { useAddWishlist, useRemoveWishlist } from '../../../queries/property';
 import { useSession } from '../../../session/useSession';
 import styles from './WishlistButton.module.css';
@@ -11,6 +11,9 @@ interface WishlistButtonProps {
 
 /**
  * 관심 매물 등록 · 해제 (PROP-05). 인증 「필수」다 — 매물 API 명세 1장.
+ *
+ * 상세 패널 하단의 {components.action-bar} 안에 들어간다 — 카드가 아니라 버튼 하나와 그 결과
+ * 문구다. 설명 문구를 두지 않는 것은 바 높이(92)가 그것을 담을 자리가 아니기 때문이다.
  *
  * 비로그인이면 버튼을 숨기지 않고 비활성으로 둔다. 숨기면 왜 없는지 알 수 없고, 로그인 화면으로
  * 보내면 지도 위치 · 확대 수준 · 필터와 열린 패널이 날아간다 — RISK-08 재분석 버튼과 같은 판단이다
@@ -31,38 +34,25 @@ export function WishlistButton({ propertyId, isWishlisted }: WishlistButtonProps
   const mutation = isWishlisted ? removeMutation : addMutation;
 
   return (
-    <Card className={styles.card}>
-      <div className={styles.header}>
-        <div>
-          <h3 className={`${styles.title} type-body-strong`}>관심 매물</h3>
-          <p className={`${styles.note} type-caption`}>
-            등록해 두면 등급이 바뀔 때 알려 드립니다.
-          </p>
-        </div>
-
-        <Button
-          type="button"
-          size="sm"
-          variant={isWishlisted ? 'secondary' : 'primary'}
-          onClick={() => mutation.mutate(propertyId)}
-          isLoading={mutation.isPending}
-          disabled={!isAuthenticated}
-        >
-          {isWishlisted ? '관심 해제' : '관심 등록'}
-        </Button>
-      </div>
+    <div className={styles.action}>
+      <Button
+        type="button"
+        className={styles.button}
+        variant={isWishlisted ? 'secondary' : 'primary'}
+        onClick={() => mutation.mutate(propertyId)}
+        isLoading={mutation.isPending}
+        disabled={!isAuthenticated}
+      >
+        {isWishlisted ? '관심 해제' : '관심 등록'}
+      </Button>
 
       {!isAuthenticated && (
-        <p className={`${styles.note} type-caption`}>로그인하면 관심 매물로 등록할 수 있습니다.</p>
+        <p className={`${styles.note} type-body-sm`}>로그인하면 관심 매물로 등록할 수 있습니다.</p>
       )}
 
       {/* 문구는 서버 error.message 그대로다 — 409 WISHLIST_DUPLICATED도 코드별 문구를 여기에 다시
           적지 않는다. 뮤테이션 실패의 자리는 Toast지만 공용 UI에 아직 없어 재분석 버튼과 같이 Alert다 */}
-      {mutation.error && (
-        <Alert variant="error" className={styles.result}>
-          {mutation.error.message}
-        </Alert>
-      )}
-    </Card>
+      {mutation.error && <Alert variant="error">{mutation.error.message}</Alert>}
+    </div>
   );
 }

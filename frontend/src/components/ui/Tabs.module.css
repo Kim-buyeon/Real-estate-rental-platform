@@ -1,8 +1,21 @@
 /*
  * 부모가 flex 컬럼이면 남은 높이를 채우고, 아니면 내용 높이에 머문다.
  * 패널 안쪽의 스크롤은 여기서 정하지 않는다 — 무엇이 넘치는지는 넣는 쪽이 안다.
+ *
+ * 디자인 토큰 정의서 7절 Containment 의 {components.tabs-underline} 이다 — h58 · 간격 36 ·
+ * 선택은 {colors.primary} 글자 + 2px 인디케이터. 정의서의 다른 탭 변형(tabs-segmented · tabs-pill)은
+ * 형태가 달라 여기 섞지 않는다. 필요해지면 variant 로 올린다.
+ *
+ * px 리터럴은 높이 58 과 간격 36 둘이고 사유는 Button.module.css 머리말과 같다 — 정의서가 지정했으나
+ * css-vars export 가 내지 않는 값이라 아래 .tabs 의 지역 변수에 모았다. 58 은 정의서 9절의 터치 타겟
+ * 하한 44 를 넘고, 가로는 짧은 라벨에서도 44 아래로 내려가지 않게 --touch-target-min 을 하한으로 둔다.
  */
 .tabs {
+  /* {components.tabs-underline} — h58 */
+  --tabs-height: 58px;
+  /* {components.tabs-underline} — 탭 사이 간격 */
+  --tabs-gap: 36px;
+
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -11,13 +24,18 @@
 
 .list {
   display: flex;
-  gap: var(--spacing-2xs);
+  gap: var(--tabs-gap);
   padding: 0 var(--spacing-xs);
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .tab {
-  padding: var(--spacing-xs) var(--spacing-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min);
+  min-height: var(--tabs-height);
+  padding: 0;
   border: 0;
   /* 선택 표시는 아래쪽 선이다. 선택 여부와 무관하게 자리를 잡아 두어 글자가 움직이지 않게 한다 */
   border-bottom: var(--spacing-3xs) solid transparent;
@@ -26,7 +44,8 @@
   cursor: pointer;
 }
 
-.tab:hover:not(:disabled) {
+/* 선택된 탭은 hover 에서도 {colors.primary} 를 유지한다 — 선택 표시가 hover 에 덮이지 않게 */
+.tab:hover:not(:disabled):not(.selected) {
   color: var(--color-text);
 }
 
@@ -40,9 +59,10 @@
   outline-offset: calc(var(--spacing-3xs) * -1);
 }
 
+/* {components.tabs-underline-selected} — 글자와 인디케이터가 모두 {colors.primary} 다 */
 .selected {
   border-bottom-color: var(--color-primary);
-  color: var(--color-text);
+  color: var(--color-primary);
 }
 
 .panel {

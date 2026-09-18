@@ -1,16 +1,46 @@
+/*
+ * favorites 아키타입 — 레이아웃 맵 examples/favorites. 컨테이너 중앙 · 1열.
+ * 컨테이너 최대 폭은 정의서 9절이 정한 값이고 global.css 의 --container-max 하나를 참조한다.
+ * 좌우 패딩은 모바일 16 · 태블릿 이상 24 다.
+ */
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
   align-items: stretch;
   width: 100%;
-  /* 레이아웃 1회성 값 — 목록 컨테이너 폭. 한 줄이 너무 길어지지 않게 둔다 */
-  max-width: 720px;
+  max-width: var(--container-max);
   margin: 0 auto;
   padding: var(--spacing-2xl) var(--spacing-md);
 }
 
+/*
+ * 페이지 제목 — 레이아웃 맵 「page-title {typography.display} 중앙 정렬」.
+ * 맵의 상단 여백 107 · 하단 여백 85 는 근사 토큰(5xl 80 · 4xl 64)으로 옮긴다 — 격자 밖 값을
+ * 새로 만들지 않는다. 모바일 축소(40 → 24)는 반영하지 못했다: font-size 를 컴포넌트 CSS 에
+ * 적을 수 없고(frontend/CLAUDE.md 스타일), 반응형 역할 클래스는 styles/ 의 일이다.
+ */
+.title {
+  margin: var(--spacing-2xl) 0 0;
+  color: var(--color-text);
+  text-align: center;
+}
+
 .note {
-  margin: 0 0 var(--spacing-md);
-  color: var(--color-text-tertiary);
+  margin: var(--spacing-sm) 0 var(--spacing-2xl);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+@media (min-width: 768px) {
+  .page {
+    padding: var(--spacing-3xl) var(--spacing-xl);
+  }
+
+  .title {
+    margin-top: var(--spacing-5xl);
+  }
+
+  .note {
+    margin-bottom: var(--spacing-4xl);
+  }
 }

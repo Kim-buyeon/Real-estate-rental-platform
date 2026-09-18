@@ -29,35 +29,42 @@ export function LoginForm() {
 
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
-      {formError && <Alert variant="error">{formError.message}</Alert>}
-      <Field label="이메일" error={errorOf('email')}>
-        {(control) => (
-          <Input
-            {...control}
-            type="email"
-            name="email"
-            autoComplete="email"
-            required
-            maxLength={EMAIL_MAX_LENGTH}
-            value={values.email}
-            onChange={(event) => setValues((prev) => ({ ...prev, email: event.target.value }))}
-          />
-        )}
-      </Field>
-      <Field label="비밀번호" error={errorOf('password')}>
-        {(control) => (
-          <Input
-            {...control}
-            type="password"
-            name="password"
-            autoComplete="current-password"
-            required
-            value={values.password}
-            onChange={(event) => setValues((prev) => ({ ...prev, password: event.target.value }))}
-          />
-        )}
-      </Field>
-      <Button type="submit" isLoading={loginMutation.isPending}>
+      {formError && (
+        <Alert variant="error" className={styles.alert}>
+          {formError.message}
+        </Alert>
+      )}
+      {/* field ↔ field 는 이 묶음의 gap 하나가 갖는다 — 주 버튼만 간격이 다르다 (레이아웃 맵) */}
+      <div className={styles.fields}>
+        <Field label="이메일" error={errorOf('email')}>
+          {(control) => (
+            <Input
+              {...control}
+              type="email"
+              name="email"
+              autoComplete="email"
+              required
+              maxLength={EMAIL_MAX_LENGTH}
+              value={values.email}
+              onChange={(event) => setValues((prev) => ({ ...prev, email: event.target.value }))}
+            />
+          )}
+        </Field>
+        <Field label="비밀번호" error={errorOf('password')}>
+          {(control) => (
+            <Input
+              {...control}
+              type="password"
+              name="password"
+              autoComplete="current-password"
+              required
+              value={values.password}
+              onChange={(event) => setValues((prev) => ({ ...prev, password: event.target.value }))}
+            />
+          )}
+        </Field>
+      </div>
+      <Button type="submit" className={styles.submit} isLoading={loginMutation.isPending}>
         로그인
       </Button>
     </form>

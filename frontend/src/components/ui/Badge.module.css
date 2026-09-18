@@ -1,8 +1,21 @@
+/*
+ * 디자인 토큰 정의서 7절 Feedback 의 badge-* 항목이다. 등급 배지 넷(badge-risk-*)을 포함해 형태는
+ * 하나다 — {typography.caption} · {rounded.sm} · 좌우 {spacing.sm} · 상하 {spacing.2xs} · h30.
+ * 색만 변형마다 다르다.
+ *
+ * px 리터럴은 높이 30 하나이고 사유는 Button.module.css 머리말과 같다 — 정의서가 지정했으나
+ * css-vars export 가 내지 않는 값이라 지역 변수에 한 번 둔다. 배지는 누를 수 없으므로 정의서 9절의
+ * 터치 타겟 하한이 걸리지 않는다.
+ */
 .badge {
+  /* 정의서 7절 — 등급 배지 · 계측된 배지 변형의 높이 */
+  --badge-height: 30px;
+
   display: inline-flex;
   align-items: center;
-  padding: var(--spacing-3xs) var(--spacing-xs);
-  border-radius: var(--rounded-pill);
+  min-height: var(--badge-height);
+  padding: var(--spacing-2xs) var(--spacing-sm);
+  border-radius: var(--rounded-sm);
   white-space: nowrap;
 }
 

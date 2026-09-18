@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import type { ApiError } from '../../../api/client';
-import { Alert, Badge, buttonClassName, Card } from '../../../components/ui';
+import { Alert, Badge, buttonClassName } from '../../../components/ui';
 import {
   appliedRegulationLabel,
   APPLIED_REGULATION_LABEL,
@@ -52,8 +52,8 @@ export function LoanLimitSection({ propertyId }: LoanLimitSectionProps) {
   const limit = limitQuery.data;
 
   return (
-    <Card className={styles.card}>
-      <h3 className={`${styles.title} type-body-strong`}>대출 한도</h3>
+    <section className={styles.section} aria-label="대출 한도">
+      <h3 className={`${styles.title} type-heading-3`}>대출 한도</h3>
 
       {!isAuthenticated && (
         // 비활성 버튼이 아니라 안내다 — 자격 정보를 입력한 사용자에게만 계산되는 값이라
@@ -165,7 +165,7 @@ export function LoanLimitSection({ propertyId }: LoanLimitSectionProps) {
           )}
         </>
       )}
-    </Card>
+    </section>
   );
 }
 

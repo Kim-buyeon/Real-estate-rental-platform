@@ -21,7 +21,7 @@ export function isMapSdkReady(): boolean {
 }
 
 /**
- * window.kakao를 읽는 곳은 이 함수와 overlay.ts뿐이다.
+ * window.kakao 전역을 읽는 곳은 이 함수와 isMapSdkReady 둘뿐이다 — overlay.ts도 이 함수를 거친다.
  * 준비되지 않은 상태에서 부르는 것은 호출 순서 오류이므로 던진다.
  */
 export function requireMaps(): KakaoMaps {

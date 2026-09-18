@@ -1,5 +1,36 @@
+/*
+ * 가입 폼의 여백. 정본은 레이아웃 맵 design/examples/signup/layout.md 다 — login 과 같은 골격이다.
+ *
+ * px 리터럴은 둘이다 — 미디어 쿼리 조건 768(global.css 머리말) 과, spacing 격자에 없는 계측값
+ * field ↔ field 44 (아래 .form 의 지역 변수). 라벨 ↔ 입력 12 는 {components.field} 의 값이라
+ * components/ui 의 Field 가 갖는다.
+ */
+
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  /* 모바일은 24 (레이아웃 맵의 제안(미관측)) */
+  --field-gap: var(--spacing-xl);
+}
+
+.alert {
+  margin-bottom: var(--spacing-xl);
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--field-gap);
+}
+
+/* 입력 ↔ 주 버튼 48 — 맵의 34(login) 와 60(signup) 충돌을 정의서 K-14 가 48 로 확정했다 */
+.submit {
+  width: 100%;
+  margin-top: var(--spacing-3xl);
+}
+
+@media (min-width: 768px) {
+  .form {
+    --field-gap: 44px;
+  }
 }

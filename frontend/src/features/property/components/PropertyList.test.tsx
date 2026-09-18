@@ -2,7 +2,7 @@
 // 좌표를 보내지 않는지(①)와 기본 정렬을 화면이 만들어 보내지 않는지(②)가 가장 틀리기 쉬운 지점이다.
 // 정렬 전환 · 커서 「더 보기」 · 항목 선택 · 미분석 표기도 함께 본다.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { PROPERTY_SORT_LABEL, PROPERTY_SORTS } from '../../../domain/property';
 import { debtRatioLabel, riskGradeLabel } from '../../../domain/risk';
@@ -140,9 +140,16 @@ describe('PropertyList', () => {
 
     // 미분석 매물 항목의 상세 보기 버튼이 렌더된다 — 렌더가 깨지지 않았다는 증거
     expect(screen.getByRole('button', { name: `${LIST_ITEM_2.address} 상세 보기` })).toBeInTheDocument();
-    // riskGradeLabel(null) · debtRatioLabel(null)은 둘 다 같은 미분석 문구다(domain/risk.ts UNANALYZED_LABEL) —
-    // 등급 배지와 전세가율 값 두 곳에 나온다
-    expect(riskGradeLabel(null)).toBe(debtRatioLabel(null));
-    expect(screen.getAllByText(riskGradeLabel(null)).length).toBeGreaterThanOrEqual(2);
+
+    const item = screen.getByText(LIST_ITEM_2.address).closest('li');
+    expect(item).not.toBeNull();
+
+    // 등급 배지 — Badge 엘리먼트의 텍스트 전체가 리스크 문구 그대로다(레이아웃 맵 재구성 전과 같은 자리)
+    expect(within(item!).getByText(riskGradeLabel(LIST_ITEM_2.riskGrade))).toBeInTheDocument();
+    // 전세가율은 이번 재구성으로 한 문장(스펙 줄) 안에 합쳐졌다 — 그 문장 안에 미분석 문구가 있는지를
+    // 문장 단위로 확인한다. getAllByText 개수 세기 대신 자리마다 잡는 단언으로 바꿔 배지와 겹치지 않게 한다
+    expect(
+      within(item!).getByText((content) => content.includes(`전세가율 ${debtRatioLabel(LIST_ITEM_2.debtRatio)}`)),
+    ).toBeInTheDocument();
   });
 });

@@ -1,15 +1,12 @@
 /*
- * 지도는 남는 폭을 전부 가져간다(flex-grow: 999) — 옆의 상세 패널은 제 flex-basis 에 머문다.
- * min-width: 50% 는 줄바꿈 장치다. 패널이 들어갈 자리가 이만큼도 남지 않으면 부모(.explore)가
- * 패널을 다음 줄로 내린다 — 미디어 쿼리 없이(브레이크포인트 미확정, global.css 머리말) 비율로 적는다.
+ * 지도는 부모(HomePage .mapArea)가 잡아 준 자리를 그대로 채운다. 폭 배분 · 브레이크포인트별
+ * 패널 폭 · 좁은 화면의 지도 ↔ 목록 전환은 그 부모가 정한다 — 여기는 지도가 그릴 영역만 만든다.
  * background 는 부모의 gap 경계선 색이 지도 영역까지 비치지 않게 한다.
  */
 .wrapper {
   position: relative;
-  flex: 999 1 0;
-  min-width: 50%;
-  /* 부모 높이가 내용 기반이면 flex-basis 0 만으로는 높이가 0 이 된다. 지도는 그릴 영역이 없으면 아무것도 그리지 않는다 */
-  min-height: 420px;
+  flex: 1;
+  min-width: 0;
   background: var(--color-background);
 }
 

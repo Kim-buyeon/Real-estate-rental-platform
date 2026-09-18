@@ -1,8 +1,19 @@
+/*
+ * 디자인 토큰 정의서 7절 Forms 의 {components.input} 이다 — {colors.surface} + 1px {colors.border} ·
+ * {rounded.none} · h48 · 좌우 {spacing.md}. placeholder 는 {colors.text-tertiary}.
+ *
+ * px 리터럴은 높이 48 하나(사유는 Button.module.css 머리말과 같다)와 보더 두께 1px 이다.
+ * 48 은 정의서 9절의 터치 타겟 하한 44 를 그대로 넘으므로 모바일 예외가 없다.
+ */
 .input {
+  /* {components.input} — h48 */
+  --input-height: 48px;
+
   width: 100%;
-  padding: var(--spacing-sm) var(--spacing-md);
+  min-height: var(--input-height);
+  padding: 0 var(--spacing-md);
   border: 1px solid var(--color-border);
-  border-radius: var(--rounded-md);
+  border-radius: var(--rounded-none);
   background: var(--color-surface);
   color: var(--color-text);
 }

@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Link, Outlet, useMatches } from 'react-router';
+import { Link, NavLink, Outlet, useMatches } from 'react-router';
 import { Badge, Button, buttonClassName } from '../components/ui';
 import { formatCount } from '../lib/format';
 import { notificationQueries } from '../queries/notification';
@@ -9,6 +9,13 @@ import { AppFooter } from './AppFooter';
 import { NotificationStream } from './NotificationStream';
 import { hidesFooter } from './routeHandle';
 import styles from './AppShell.module.css';
+
+/**
+ * 내비 항목의 클래스. 활성 항목은 디자인 토큰 정의서 7절 {components.top-nav}가 정한 대로
+ * primary 글자 + primary-surface pill이다 — 표시는 NavLink의 isActive 하나로 한다.
+ */
+const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
+  [styles.navLink, 'type-body', isActive ? styles.navLinkActive : null].filter(Boolean).join(' ');
 
 /** 공통 레이아웃 — 헤더 + 본문 + 푸터. 섹션 순서 · 여백은 레이아웃 맵을 따른다 */
 export function AppShell() {
@@ -29,49 +36,58 @@ export function AppShell() {
       {/* 실시간 수신(NOTI-03) 연결은 애플리케이션 전역에 하나다. 화면을 그리지 않는다 */}
       {isAuthenticated && <NotificationStream />}
       <header className={styles.header}>
-        <Link to="/" className={`${styles.brand} type-heading-3`}>
-          전월세 부동산 금융 플랫폼
-        </Link>
-        <nav className={styles.actions} aria-label="계정">
-          {isAuthenticated ? (
-            <>
-              <Link to="/notifications" className={buttonClassName('ghost', 'sm')}>
-                알림
-                {unreadCount > 0 && (
-                  <Badge variant="primary" aria-label={`읽지 않은 알림 ${formatCount(unreadCount)}건`}>
-                    {formatCount(unreadCount)}
-                  </Badge>
-                )}
-              </Link>
-              <Link to="/me/notification-subscriptions" className={buttonClassName('ghost', 'sm')}>
-                알림 설정
-              </Link>
-              <Link to="/me/wishlist" className={buttonClassName('ghost', 'sm')}>
-                관심 매물
-              </Link>
-              <Link to="/me/profile" className={buttonClassName('ghost', 'sm')}>
-                계정 · 자격 정보
-              </Link>
-              <Button
-                variant="ghost"
-                size="sm"
-                isLoading={logoutMutation.isPending}
-                onClick={() => logoutMutation.mutate()}
-              >
-                로그아웃
-              </Button>
-            </>
-          ) : (
-            <>
-              <Link to="/login" className={buttonClassName('ghost', 'sm')}>
-                로그인
-              </Link>
-              <Link to="/signup" className={buttonClassName('primary', 'sm')}>
-                회원가입
-              </Link>
-            </>
-          )}
-        </nav>
+        {/* 내용은 푸터와 같은 컨테이너 안에 둔다 — 넓은 화면에서 좌우 끝이 맞아야 한다 */}
+        <div className={styles.container}>
+          <Link to="/" className={`${styles.brand} type-heading-3`}>
+            전월세 부동산 금융 플랫폼
+          </Link>
+          {/* 모바일은 이 줄이 가로로 스크롤된다 — 브랜드와 알림 배지가 먼저 보이고 나머지는 밀어서 본다 */}
+          <div className={styles.rail}>
+            {isAuthenticated && (
+              <nav className={styles.nav} aria-label="주요 메뉴">
+                <NavLink to="/notifications" className={navLinkClassName}>
+                  알림
+                  {unreadCount > 0 && (
+                    <Badge variant="primary" aria-label={`읽지 않은 알림 ${formatCount(unreadCount)}건`}>
+                      {formatCount(unreadCount)}
+                    </Badge>
+                  )}
+                </NavLink>
+                <NavLink to="/me/notification-subscriptions" className={navLinkClassName}>
+                  알림 설정
+                </NavLink>
+                <NavLink to="/me/wishlist" className={navLinkClassName}>
+                  관심 매물
+                </NavLink>
+                <NavLink to="/me/profile" className={navLinkClassName}>
+                  계정 · 자격 정보
+                </NavLink>
+              </nav>
+            )}
+            {/* 계정 액션. 내비와는 간격 + 구분선으로만 가른다 */}
+            <div className={styles.account}>
+              {isAuthenticated ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  isLoading={logoutMutation.isPending}
+                  onClick={() => logoutMutation.mutate()}
+                >
+                  로그아웃
+                </Button>
+              ) : (
+                <>
+                  <Link to="/login" className={buttonClassName('ghost', 'sm')}>
+                    로그인
+                  </Link>
+                  <Link to="/signup" className={buttonClassName('primary', 'sm')}>
+                    회원가입
+                  </Link>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       </header>
       <main className={styles.main}>
         <Outlet />

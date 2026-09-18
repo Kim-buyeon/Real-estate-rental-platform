@@ -1,3 +1,15 @@
+/*
+ * 공통 레이아웃. 헤더는 디자인 토큰 정의서 7절 「구조」의 {components.top-nav} 이고,
+ * 컨테이너 정렬은 레이아웃 맵(map-search 의 1번 top-nav 항목)이 정본이다.
+ *
+ * px 리터럴은 셋이다 —
+ *   1) 미디어 쿼리 조건 768 (global.css 머리말이 정본. 태블릿 · 데스크톱이 같아 1024 조건은 두지 않았다)
+ *   2) 1px 보더 두께 — 헤더 하단 선, 내비 ↔ 계정 구분선
+ *   3) 헤더 높이 계측값 80 (정의서 7절 · signup 맵) 과 모바일 56 (레이아웃 맵의 제안(미관측)) —
+ *      아래 .header 의 지역 변수에 모았다
+ * 컨테이너 최대 폭 · 터치 타겟 하한은 global.css 의 --container-max · --touch-target-min 을 쓴다.
+ */
+
 .shell {
   display: flex;
   flex-direction: column;
@@ -5,27 +17,123 @@
 }
 
 .header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-  padding: var(--spacing-sm) var(--spacing-xl);
-  border-bottom: 1px solid var(--color-border-subtle);
+  /* 모바일 기본값. 내비 4 + 계정 액션이 한 줄에 들어가지 않아 .rail 이 가로로 스크롤된다 */
+  --nav-height: 56px;
+  /* 본문이 길어도 헤더가 눌리지 않는다 */
+  flex: 0 0 auto;
+  height: var(--nav-height);
+  border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
 }
 
-.brand {
-  color: var(--color-primary);
-}
-
-.actions {
+.container {
   display: flex;
   align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  max-width: var(--container-max);
+  height: 100%;
+  margin: 0 auto;
+  /* 푸터와 같은 좌우 패딩 — 두 줄의 끝이 맞아야 한다 */
+  padding-inline: var(--spacing-md);
+}
+
+.brand {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-primary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/*
+ * 내비 + 계정. 모바일에서는 남는 폭만 차지하고 그 안에서 가로로 스크롤한다 — 앞에서부터 보이므로
+ * 알림과 읽지 않은 수가 먼저 남고 나머지는 밀어서 본다. 정의서에 없는 컴포넌트(dialog 등)를 만들지 않는
+ * 가장 싼 접기다.
+ */
+.rail {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.rail::-webkit-scrollbar {
+  display: none;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+}
+
+.navLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs);
+  min-height: var(--touch-target-min);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--rounded-pill);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.navLink:hover {
+  background: var(--color-surface-muted);
+}
+
+/* 정의서 7절 — 활성 항목은 primary 글자 + primary-surface pill */
+.navLinkActive {
+  color: var(--color-primary);
+  background: var(--color-primary-surface);
+}
+
+.navLink:focus-visible {
+  outline: var(--spacing-3xs) solid var(--color-focus);
+  outline-offset: var(--spacing-3xs);
+}
+
+.account {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
   gap: var(--spacing-xs);
+}
+
+/* 내비가 있을 때만 갈린다 — 비로그인 상태에는 내비 항목이 없어 구분선도 없다 */
+.nav + .account {
+  margin-inline-start: var(--spacing-md);
+  padding-inline-start: var(--spacing-md);
+  border-inline-start: 1px solid var(--color-border);
 }
 
 .main {
   display: flex;
   flex: 1;
   flex-direction: column;
+}
+
+@media (min-width: 768px) {
+  .header {
+    --nav-height: 80px;
+  }
+
+  /* 푸터 컨테이너도 여기서 24로 넓어진다 — 두 줄의 끝이 맞아야 한다 (AppFooter.module.css) */
+  .container {
+    padding-inline: var(--spacing-xl);
+  }
+
+  /* 폭이 넉넉하면 접지 않는다 — 우측 정렬로 되돌린다 */
+  .rail {
+    justify-content: flex-end;
+    overflow-x: visible;
+  }
+
+  .nav {
+    gap: var(--spacing-xs);
+  }
 }

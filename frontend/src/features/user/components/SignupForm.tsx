@@ -27,6 +27,10 @@ export function SignupForm({ onSignedUp }: SignupFormProps) {
 
   const errorOf = (name: FieldName) => (fieldError?.field === name ? fieldError.message : null);
 
+  // 레이아웃 맵의 「비활성 주 버튼」 — 필수 입력(이메일 · 비밀번호 · 이름)이 비어 있으면 누를 수 없다.
+  // 클라이언트 검증은 보조이고 판정은 서버가 한다 — 여기서 형식까지 보지 않는다
+  const isSubmittable = Boolean(values.email.trim() && values.password && values.name.trim());
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const { phone, ...rest } = values;
@@ -37,61 +41,73 @@ export function SignupForm({ onSignedUp }: SignupFormProps) {
 
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
-      {formError && <Alert variant="error">{formError.message}</Alert>}
-      <Field label="이메일" error={errorOf('email')}>
-        {(control) => (
-          <Input
-            {...control}
-            type="email"
-            name="email"
-            autoComplete="email"
-            required
-            maxLength={EMAIL_MAX_LENGTH}
-            value={values.email}
-            onChange={(event) => setValues((prev) => ({ ...prev, email: event.target.value }))}
-          />
-        )}
-      </Field>
-      <Field label="비밀번호" error={errorOf('password')}>
-        {(control) => (
-          <Input
-            {...control}
-            type="password"
-            name="password"
-            autoComplete="new-password"
-            required
-            value={values.password}
-            onChange={(event) => setValues((prev) => ({ ...prev, password: event.target.value }))}
-          />
-        )}
-      </Field>
-      <Field label="이름" error={errorOf('name')}>
-        {(control) => (
-          <Input
-            {...control}
-            name="name"
-            autoComplete="name"
-            required
-            maxLength={NAME_MAX_LENGTH}
-            value={values.name}
-            onChange={(event) => setValues((prev) => ({ ...prev, name: event.target.value }))}
-          />
-        )}
-      </Field>
-      <Field label="전화번호 (선택)" error={errorOf('phone')}>
-        {(control) => (
-          <Input
-            {...control}
-            type="tel"
-            name="phone"
-            autoComplete="tel"
-            maxLength={PHONE_MAX_LENGTH}
-            value={values.phone}
-            onChange={(event) => setValues((prev) => ({ ...prev, phone: event.target.value }))}
-          />
-        )}
-      </Field>
-      <Button type="submit" isLoading={signupMutation.isPending}>
+      {formError && (
+        <Alert variant="error" className={styles.alert}>
+          {formError.message}
+        </Alert>
+      )}
+      {/* field ↔ field 는 이 묶음의 gap 하나가 갖는다 — 주 버튼만 간격이 다르다 (레이아웃 맵) */}
+      <div className={styles.fields}>
+        <Field label="이메일" error={errorOf('email')}>
+          {(control) => (
+            <Input
+              {...control}
+              type="email"
+              name="email"
+              autoComplete="email"
+              required
+              maxLength={EMAIL_MAX_LENGTH}
+              value={values.email}
+              onChange={(event) => setValues((prev) => ({ ...prev, email: event.target.value }))}
+            />
+          )}
+        </Field>
+        <Field label="비밀번호" error={errorOf('password')}>
+          {(control) => (
+            <Input
+              {...control}
+              type="password"
+              name="password"
+              autoComplete="new-password"
+              required
+              value={values.password}
+              onChange={(event) => setValues((prev) => ({ ...prev, password: event.target.value }))}
+            />
+          )}
+        </Field>
+        <Field label="이름" error={errorOf('name')}>
+          {(control) => (
+            <Input
+              {...control}
+              name="name"
+              autoComplete="name"
+              required
+              maxLength={NAME_MAX_LENGTH}
+              value={values.name}
+              onChange={(event) => setValues((prev) => ({ ...prev, name: event.target.value }))}
+            />
+          )}
+        </Field>
+        <Field label="전화번호 (선택)" error={errorOf('phone')}>
+          {(control) => (
+            <Input
+              {...control}
+              type="tel"
+              name="phone"
+              autoComplete="tel"
+              maxLength={PHONE_MAX_LENGTH}
+              value={values.phone}
+              onChange={(event) => setValues((prev) => ({ ...prev, phone: event.target.value }))}
+            />
+          )}
+        </Field>
+      </div>
+      <Button
+        type="submit"
+        className={styles.submit}
+        disabled={!isSubmittable}
+        isLoading={signupMutation.isPending}
+      >
         회원가입
       </Button>
     </form>

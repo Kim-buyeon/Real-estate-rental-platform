@@ -25,7 +25,8 @@ export function Field({ label, error, hint, children }: FieldProps) {
 
   return (
     <div className={styles.field}>
-      <label htmlFor={id} className={`${styles.label} type-label`}>
+      {/* 정의서 7절 {components.field} — 라벨은 {typography.body-strong} 이다 */}
+      <label htmlFor={id} className={`${styles.label} type-body-strong`}>
         {label}
       </label>
       {children({ id, 'aria-invalid': hasError, 'aria-describedby': describedBy })}

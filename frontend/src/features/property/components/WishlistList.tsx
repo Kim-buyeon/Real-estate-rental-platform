@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { Alert, Badge, Button, Card } from '../../../components/ui';
+import { Alert, Badge, Button, Card, EmptyState } from '../../../components/ui';
 import { riskGradeLabel, riskGradeToken } from '../../../domain/risk';
 import { formatDate, formatWon } from '../../../lib/format';
 import { useRemoveWishlist, wishlistQueries } from '../../../queries/property';
@@ -39,8 +39,9 @@ export function WishlistList() {
     return <Alert variant="error">{wishlistQuery.error.message}</Alert>;
   }
 
+  // 빈 목록은 조회 실패가 아니다 - {components.empty-state} 2줄 중앙 정렬로 알림 목록과 같은 모양이다
   if (items.length === 0) {
-    return <Alert variant="info">등록한 관심 매물이 없습니다. 지도에서 매물을 열어 등록해 보세요.</Alert>;
+    return <EmptyState title="등록한 관심 매물이 없습니다." description="지도에서 매물을 열어 등록해 보세요." />;
   }
 
   return (

@@ -1,14 +1,31 @@
+/*
+ * 계정 · 자격 정보 폼. 정본은 레이아웃 맵 design/examples/my-info/layout.md 다.
+ *
+ * .facts 는 디자인 토큰 정의서 7절의 {components.info-row} 묶음이다 — 라벨 body-strong/text,
+ * 값 text-secondary, 높이 76. **보더는 행 사이가 아니라 목록 마지막 행 아래에만 있다** (정의서 7절).
+ *
+ * px 리터럴은 셋이다 — 미디어 쿼리 조건 768(global.css 머리말), 1px 보더 두께, 그리고 spacing 격자에
+ * 없는 계측값인 info-row 높이 76 (아래 .facts 의 지역 변수). 모바일 64 는 격자 안에 있어 px 가 아니라
+ * {spacing.4xl} 을 쓴다 (이슈 114).
+ *
+ * 맵과 다르게 간 곳 —
+ *   · info-row 우측 셰브런을 두지 않는다. 맵의 셰브런은 「행 전체가 편집으로 들어가는 링크」 표시인데
+ *     이 세 행(이메일 · 권한 · 가입일시)은 수정할 수 없는 값이라 들어갈 곳이 없다.
+ *   · 아바타를 두지 않는다. 프로필 이미지는 회원 API 명세에 없다.
+ */
+
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
+  /* 묶음 사이 — 정의서 4절 「폼 묶음 사이 32」 */
+  gap: var(--spacing-2xl);
 }
 
-/* 계정 · 자격 두 묶음. fieldset 기본 테두리를 걷고 묶음 간격만 남긴다 */
+/* 계정 · 자격 두 묶음. fieldset 기본 테두리를 걷고 묶음 안의 간격만 남긴다 */
 .group {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: var(--spacing-xl);
   margin: 0;
   padding: 0;
   border: none;
@@ -25,29 +42,42 @@
   padding-left: var(--spacing-lg);
 }
 
-/* 수정 불가 필드 — 입력이 아니라 읽기 전용 표시 */
+/* 수정 불가 필드 — 입력이 아니라 {components.info-row} 묶음으로 보여준다 */
 .facts {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2xs);
+  /* 모바일 64 = {spacing.4xl} — 터치 타겟 44 충족 (레이아웃 맵의 제안(미관측)) */
+  --info-row-height: var(--spacing-4xl);
   margin: 0;
-  padding: var(--spacing-sm);
-  border-radius: var(--rounded-md);
-  background: var(--color-surface-muted);
+  /* 마지막 행 아래에만 선이 있다 — 행 사이에는 없다 (정의서 7절) */
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
 }
 
 .fact {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-md);
+  min-height: var(--info-row-height);
 }
 
 .fact dt {
-  color: var(--color-text-tertiary);
+  color: var(--color-text);
 }
 
 .fact dd {
   margin: 0;
+  color: var(--color-text-secondary);
   text-align: right;
-  color: var(--color-text);
+}
+
+/* 입력 ↔ 주 버튼 48 = 묶음 사이 32 + 16 (정의서 K-14 확정값) */
+.submit {
+  width: 100%;
+  margin-top: var(--spacing-md);
+}
+
+@media (min-width: 768px) {
+  .facts {
+    --info-row-height: 76px;
+  }
 }

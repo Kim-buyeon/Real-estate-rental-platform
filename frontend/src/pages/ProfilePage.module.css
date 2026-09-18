@@ -1,14 +1,47 @@
+/*
+ * /me/profile — 정본은 레이아웃 맵 design/examples/my-info/layout.md 다.
+ *
+ * 카드 면(540 · 패딩 · 보더 · 모바일 붕괴)은 공용 UI 의 CardForm 이 갖는다 — 정의서 7절
+ * {components.card-form}. 여기에는 이 화면 고유의 배치만 남긴다.
+ *
+ * px 리터럴은 둘이다 —
+ *   1) 미디어 쿼리 조건 768 (global.css 머리말이 정본. 맵의 데스크톱 · 태블릿 차이는 탭 줄에 대한 것이고
+ *      우리에게는 탭이 없어 1024 조건을 두지 않았다)
+ *   2) spacing 격자에 없는 레이아웃 맵 계측값 — 아래 지역 변수에 모았다
+ *
+ * 맵과 다르게 간 곳 —
+ *   · 탭 줄(tabs/segmented)을 만들지 않는다. 우리는 탭이 아니라 라우트 둘이다.
+ *   · 그래서 「탭 ↔ 카드 162」 가 없고, 맵의 「페이지 제목 ↔ 다음 섹션 85」 를 제목 ↔ 카드로 쓴다.
+ *   · 페이지 제목은 모바일에서도 40(type-display) 이다. 맵의 제안은 24 인데 그 크기의 타이포 역할이
+ *     없고 컴포넌트 CSS 에 font-size 를 적을 수 없다 (frontend/CLAUDE.md 스타일 규칙).
+ *   · 카드 패딩은 맵 계측 76 이 아니라 정의서 {components.card-form} 의 {spacing.5xl}(80) 이다 —
+ *     한 어휘를 공용 컴포넌트로 모으면서 정의서 값으로 맞췄다 (이슈 114).
+ */
+
 .page {
   display: flex;
-  justify-content: center;
-  padding: var(--spacing-3xl) var(--spacing-md);
+  flex-direction: column;
+  align-items: center;
+  /* 레이아웃 맵 「반응형 붕괴」 제안(미관측) — nav 하단 ↔ 제목 40, 좌우 패딩 16 */
+  --title-top-gap: 40px;
+  --title-bottom-gap: 40px;
+  --card-bottom-gap: 40px;
+  padding: var(--title-top-gap) var(--spacing-md) var(--card-bottom-gap);
+}
+
+.title {
+  color: var(--color-text);
+  text-align: center;
 }
 
 .card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-lg);
-  width: 100%;
-  /* 레이아웃 1회성 값 — 폼 컨테이너 폭. 입력이 로그인 · 가입보다 많아 조금 넓다 */
-  max-width: 520px;
+  margin-top: var(--title-bottom-gap);
+}
+
+@media (min-width: 768px) {
+  .page {
+    --title-top-gap: 107px;
+    --title-bottom-gap: 85px;
+    --card-bottom-gap: 120px;
+  }
 }

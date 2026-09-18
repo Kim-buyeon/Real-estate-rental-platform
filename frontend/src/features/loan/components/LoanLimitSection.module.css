@@ -1,12 +1,11 @@
 /*
  * 값은 전부 토큰 변수다 — hex · 간격 px · font-size를 여기에 적지 않는다 (frontend/CLAUDE.md 스타일).
- * 브레이크포인트가 미확정이라 미디어 쿼리를 쓰지 않는다 — 패널 폭이 줄면 줄 단위로 접힌다.
+ * 상세 패널의 한 섹션이다 — 좌우 패딩과 섹션 사이 띠는 패널이 갖는다.
  */
-.card {
+.section {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
-  padding: var(--spacing-md);
 }
 
 .title {

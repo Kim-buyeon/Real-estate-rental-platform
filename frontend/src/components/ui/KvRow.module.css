@@ -1,0 +1,59 @@
+/*
+ * {components.kv-row} — 디자인 토큰 정의서 7절 「구조」. 계측은 레이아웃 맵 map-search 다.
+ *
+ * 라벨 열 150 · 행 높이 66 · 행마다 하단 1px {colors.border} · 라벨 {typography.body-strong}
+ * {colors.text} · 값 {colors.text-secondary}.
+ *
+ * 상세 패널 기본 정보 · 판정 근거 · 정합 확인 · 건축물대장 · 등기 이력 다섯 곳이 쓴다. 다섯 모듈에
+ * 같은 블록이 복사돼 있던 것을 여기로 모았다 (이슈 114).
+ *
+ * px 리터럴은 셋이다 (frontend/CLAUDE.md 스타일 규칙) —
+ *   1) 미디어 쿼리 조건 — 이 파일에는 없다
+ *   2) 1px 보더 두께
+ *   3) 정의서가 지정했으나 css-vars export 가 내지 않는 값 — labelWidth 150 · height 66.
+ *      한 컴포넌트에만 걸리므로 아래 지역 변수에 모았다
+ */
+
+/* 행 묶음. dl 은 global.css 의 margin 리셋 대상이 아니라 여기서 없앤다 */
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  /*
+   * 값 열의 색. 값 dd 에 다시 적지 않고 여기서 상속시킨다 — dd 에 적으면 쓰는 쪽이 덧입히는 색이
+   * 특이도에 밀려 조용히 무시된다. 실제로 그 일이 있었다 (이슈 114 검토 F-4).
+   *
+   * 값을 색으로 강조하지 않는다. 정의서 7절이 kv-row 에 허용한 강조는 {colors.primary}(강조 수치)
+   * 하나뿐이고, 등급 · 오류 색은 배지와 {components.alert-error} 를 통해서만 붙는다 (10절 7).
+   */
+  color: var(--color-text-secondary);
+}
+
+/*
+ * 행 하나의 격자와 하단 보더. 「행마다 하단」이므로 마지막 행에도 선이 있다 (정의서 7절 — 행 사이에만
+ * 선이 있는 것은 {components.info-row} 쪽이다).
+ *
+ * 66 은 고정이 아니라 최소 높이다 — 값이 두 줄인 행(시세의 산출 근거 · 등기의 접수일)이 있다.
+ */
+.row {
+  /* 정의서 {components.kv-row} 의 labelWidth · height. export 가 색 · 간격 · 반경만 내므로 여기 한 번 적는다 */
+  --kv-row-label-width: 150px;
+  --kv-row-height: 66px;
+
+  display: grid;
+  grid-template-columns: var(--kv-row-label-width) 1fr;
+  align-items: center;
+  gap: var(--spacing-md);
+  min-height: var(--kv-row-height);
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.label {
+  color: var(--color-text);
+}
+
+/* 값의 색은 .list 에서 상속받는다 — 여기서 다시 지정하지 않는 이유는 .list 주석에 있다 */
+.value {
+  margin: 0;
+}

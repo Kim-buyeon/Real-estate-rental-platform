@@ -1,24 +1,16 @@
-.card {
-  padding: var(--spacing-md);
-}
-
-.header {
+/* 상세 패널 하단 {components.action-bar} 안의 한 칸. 버튼이 칸 폭을 채우고 문구가 그 아래 쌓인다 */
+.action {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--spacing-sm);
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+  min-width: 0;
 }
 
-.title {
-  margin: 0;
-  color: var(--color-text);
+.button {
+  width: 100%;
 }
 
 .note {
-  margin: var(--spacing-2xs) 0 0;
-  color: var(--color-text-tertiary);
-}
-
-.result {
-  margin-top: var(--spacing-sm);
+  margin: 0;
+  color: var(--color-text-secondary);
 }

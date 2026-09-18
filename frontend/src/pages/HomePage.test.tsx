@@ -89,4 +89,43 @@ describe('HomePage', () => {
     // 상세 패널이 그 매물로 열렸다 — 패널에만 있는 「상세 닫기」 버튼으로 확인한다
     await waitFor(() => expect(screen.getByRole('button', { name: '상세 닫기' })).toBeInTheDocument());
   });
+
+  // 좁은 화면의 지도 ↔ 목록 전환 토글 (이슈 114 계획 「정한 것」). display: none으로 감추므로
+  // jsdom에는 지도 · 패널 DOM이 항상 둘 다 있다 — 여기서는 CSS 보임 여부가 아니라 토글 버튼 문구로
+  // narrowView 상태 전이를 확인한다. 지도는 SDK가 없어(jsdom) 렌더되지 않지만 토글 버튼은 HomePage가
+  // 소유한 상태라 SDK와 무관하게 렌더된다.
+  it('좁은 화면 전환 토글 버튼 문구가 목록 → 지도 → 목록으로 바뀐다', async () => {
+    server.use(...propertyHandlers);
+
+    renderHomePage();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
+
+    // 초기값은 지도가 보이는 쪽(MAP_VIEW)이라 버튼은 반대쪽으로 가는 「목록」이다
+    expect(screen.getByRole('button', { name: '목록' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '목록' }));
+    expect(screen.getByRole('button', { name: '지도' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '목록' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '지도' }));
+    expect(screen.getByRole('button', { name: '목록' })).toBeInTheDocument();
+  });
+
+  it('목록 항목에서 상세를 열면 좁은 화면 토글이 패널 쪽(지도 문구)으로 넘어간다', async () => {
+    server.use(...propertyHandlers, ...riskHandlers);
+
+    renderHomePage();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
+    // 상세를 열기 전에는 지도가 보이는 쪽 — 버튼 문구가 「목록」이다
+    expect(screen.getByRole('button', { name: '목록' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: `${LIST_ITEM.address} 상세 보기` }));
+
+    // 상세가 목록과 같은 자리를 덮으므로 좁은 화면은 패널 쪽(narrowView: 'panel')으로 넘어간다 —
+    // 버튼은 지도로 돌아가는 「지도」로 바뀐다
+    await waitFor(() => expect(screen.getByRole('button', { name: '지도' })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: '목록' })).not.toBeInTheDocument();
+  });
 });
