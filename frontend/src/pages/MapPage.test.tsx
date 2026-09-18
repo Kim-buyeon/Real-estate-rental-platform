@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { PROPERTY_DETAIL, PROPERTY_LIST_PAGE_1, propertyHandlers } from '../test/msw/handlers/property';
 import { riskHandlers } from '../test/msw/handlers/risk';
 import { server } from '../test/msw/server';
-import HomePage from './HomePage';
+import MapPage from './MapPage';
 
 const LIST_ITEM = PROPERTY_LIST_PAGE_1.items[0]!;
 
@@ -21,20 +21,20 @@ function trackRequestedUrls() {
   };
 }
 
-function renderHomePage() {
+function renderMapPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <HomePage />
+      <MapPage />
     </QueryClientProvider>,
   );
 }
 
-describe('HomePage', () => {
+describe('MapPage', () => {
   it('카카오맵 SDK가 없으면 자치구 집계가 도착해도 죽지 않고 안내를 보여준다', async () => {
     server.use(...propertyHandlers);
 
-    renderHomePage();
+    renderMapPage();
 
     // 집계 응답이 도착하면 자치구 중심 좌표 조회로 이어지는데, SDK가 없으면 그 경로를 타지 않아야 한다
     await waitFor(() =>
@@ -48,7 +48,7 @@ describe('HomePage', () => {
     server.use(...propertyHandlers);
     const tracker = trackRequestedUrls();
 
-    renderHomePage();
+    renderMapPage();
 
     // 기본 탭은 목록 — 목록 항목이 렌더된다
     await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
@@ -77,7 +77,7 @@ describe('HomePage', () => {
   it('목록 항목을 고르면 상세 탭이 활성이 되고 그 매물의 상세가 열린다', async () => {
     server.use(...propertyHandlers, ...riskHandlers);
 
-    renderHomePage();
+    renderMapPage();
 
     await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
     // 목록의 첫 항목(propertyId 1024)이 매물 상세(PROPERTY_DETAIL, 같은 propertyId)와 같은 매물이다
@@ -92,12 +92,12 @@ describe('HomePage', () => {
 
   // 좁은 화면의 지도 ↔ 목록 전환 토글 (이슈 114 계획 「정한 것」). display: none으로 감추므로
   // jsdom에는 지도 · 패널 DOM이 항상 둘 다 있다 — 여기서는 CSS 보임 여부가 아니라 토글 버튼 문구로
-  // narrowView 상태 전이를 확인한다. 지도는 SDK가 없어(jsdom) 렌더되지 않지만 토글 버튼은 HomePage가
+  // narrowView 상태 전이를 확인한다. 지도는 SDK가 없어(jsdom) 렌더되지 않지만 토글 버튼은 MapPage가
   // 소유한 상태라 SDK와 무관하게 렌더된다.
   it('좁은 화면 전환 토글 버튼 문구가 목록 → 지도 → 목록으로 바뀐다', async () => {
     server.use(...propertyHandlers);
 
-    renderHomePage();
+    renderMapPage();
 
     await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
 
@@ -115,7 +115,7 @@ describe('HomePage', () => {
   it('목록 항목에서 상세를 열면 좁은 화면 토글이 패널 쪽(지도 문구)으로 넘어간다', async () => {
     server.use(...propertyHandlers, ...riskHandlers);
 
-    renderHomePage();
+    renderMapPage();
 
     await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
     // 상세를 열기 전에는 지도가 보이는 쪽 — 버튼 문구가 「목록」이다

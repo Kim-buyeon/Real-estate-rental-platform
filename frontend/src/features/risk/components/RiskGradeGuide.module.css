@@ -1,0 +1,106 @@
+/*
+ * 등급 3단계 설명. 배치의 정본은 레이아웃 맵 home 「구역 3 — 카테고리 카드 그리드」다 —
+ * 카드 갭 20 {spacing.lg} · 카드 안 제목↔설명 16 {spacing.md} · 붕괴는 그 문서의 「제안(미관측)」
+ * (태블릿 2열 · 모바일 1열 갭 12 {spacing.sm}).
+ *
+ * 맵이 화면 작업에 넘긴 것 둘을 여기서 정했다 —
+ *   1) 카드 높이: 참고 사이트의 고정 200 을 따르지 않고 내용 높이로 둔다. 그 200 중 86 이 일러스트
+ *      자리인데 우리는 일러스트가 없어, 고정하면 카드 아래가 빈 채로 남는다 (맵 구역 3 주석)
+ *   2) 카드 면: 맵은 보더 없는 면 + Elevation 1 로 봤으나 그 그림자 값은 정의서 5절의 추정치이고
+ *      토큰이 없다. 정의서에 있는 {components.card}(1px {colors.border-subtle})로 경계를 낸다 —
+ *      Card 컴포넌트가 그 값을 갖는다
+ *
+ * px 리터럴은 셋이다 — 미디어 쿼리 조건 둘(정본은 global.css 머리말)과, 판정 근거 줄
+ * (.evidenceItem)의 세로 구분선 1px 보더 두께. 셋 다 frontend/CLAUDE.md 스타일 절이 허용하는 자리다.
+ */
+
+.guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+/* 등급 카드 — 모바일 1열. 갭은 맵의 모바일 제안 12 {spacing.sm} */
+.grades {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-sm);
+}
+
+/* 카드 안 리듬 — 배지 ↔ 기준 ↔ 설명. 맵의 「제목 ↔ 설명 16」이 {spacing.md} 다 */
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+  height: 100%;
+}
+
+.criteria {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.description {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+/* 판정 근거 넷. 카드가 아니라 등급 설명에 붙는 보조 줄이다 */
+.evidence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.evidenceTitle {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.evidenceItems {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-sm);
+}
+
+.evidenceItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xs);
+  padding-inline-start: var(--spacing-sm);
+  border-inline-start: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+.evidenceDescription {
+  color: var(--color-text-secondary);
+}
+
+@media (min-width: 768px) {
+  .guide {
+    gap: var(--spacing-2xl);
+  }
+
+  /* 맵 제안 — 태블릿 2열. 3장이라 마지막 한 장이 다음 줄로 간다 */
+  .grades {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-lg);
+  }
+
+  .evidenceItems {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-lg);
+  }
+}
+
+@media (min-width: 1024px) {
+  /* 등급이 셋이라 한 줄에 셋이다. 컬럼 폭은 px 로 적지 않는다 — 정의서 4절 Grid & Container */
+  .grades {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .evidenceItems {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}

@@ -145,7 +145,7 @@ export function getKakaoMapInstances(): readonly FakeKakaoMap[] {
  * window.kakao에 넣고 되돌리는 헬퍼. 구현은 호출 시점에 window.kakao를 읽으므로
  * (map.ts requireMaps) 렌더 전에 호출해야 한다. 반환하는 함수가 원래 상태로 되돌린다 —
  * 기본 상태(window.kakao 없음)로 돌아가야 SDK 없음 경로를 검증하는 다른 테스트에
- * 영향을 주지 않는다(HomePage.test.tsx · PropertyDetailPanel.test.tsx).
+ * 영향을 주지 않는다(MapPage.test.tsx · PropertyDetailPanel.test.tsx).
  */
 export function installFakeKakaoMaps(): () => void {
   const hadOwnProperty = Object.prototype.hasOwnProperty.call(window, 'kakao');

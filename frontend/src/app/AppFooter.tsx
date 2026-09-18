@@ -18,7 +18,7 @@ interface FooterColumn {
 const SITEMAP: FooterColumn[] = [
   {
     title: '매물',
-    links: [{ label: '지도 탐색', to: '/' }],
+    links: [{ label: '지도 탐색', to: '/map' }],
   },
   {
     title: '내 정보',

@@ -80,7 +80,7 @@ description: 저장소를 바꾸는 작업이나 운영 작업에 착수할 때 
 | `infra-operator` | `docs/infra/runbook.md` · `docs/infra/system.md` · `docs/infra/observability.md` · `docs/api/infra-observation.md` · `docs/infra/tech-stack.md` · `docs/infra/test-plan.md` · `docs/features/infra.md` | 운영 갈래 전부 |
 | `monitoring-engineer` | `docs/infra/observability.md` · `docs/api/infra-observation.md` · `docs/api/infra.md` · `docs/infra/system.md` · `docs/infra/tech-stack.md` · `docs/infra/runbook.md` · `docs/infra/test-plan.md` · `docs/features/infra.md` | 관측 설정 작성 |
 
-`frontend-dev`가 올리는 둘은 `docs/` 밖에 있다. 디자인 토큰 정의서와 레이아웃 맵은 프론트 코드가 직접 참조하는 정본이라 `frontend/` 안에 둔다 — 정의서가 `frontend/src/styles/tokens.css`를 만들고, 레이아웃 맵이 컴포넌트의 배치를 정한다 (이슈 #110 계획 승인). **레이아웃 맵이 있는 아키타입은** 여섯이다 — `map-search`(`/`) · `favorites`(관심 매물 · 알림 목록) · `login` · `signup` · `my-info`(계정 · 알림 구독) · `home`(푸터 구역만). 정의서 2절 Source pages가 일곱인 것은 `listing`이 토큰 계측에만 쓰였기 때문이다.
+`frontend-dev`가 올리는 둘은 `docs/` 밖에 있다. 디자인 토큰 정의서와 레이아웃 맵은 프론트 코드가 직접 참조하는 정본이라 `frontend/` 안에 둔다 — 정의서가 `frontend/src/styles/tokens.css`를 만들고, 레이아웃 맵이 컴포넌트의 배치를 정한다 (이슈 #110 계획 승인). **레이아웃 맵이 있는 아키타입은** 여섯이다 — `map-search`(`/map`) · `favorites`(관심 매물 · 알림 목록) · `login` · `signup` · `my-info`(계정 · 알림 구독) · `home`(`/` 메인 + 전 화면 푸터). 정의서 2절 Source pages가 일곱인 것은 `listing`이 토큰 계측에만 쓰였기 때문이다.
 
 `traffic-builder`는 인프라 갈래인데도 `docs/api/common.md`를 올린다. 1장의 제외 규칙은 인프라 구성이 앱 API를 쓰지 않기 때문인데, 부하 스크립트는 앱 API를 호출하고 응답 봉투를 파싱하므로 예외다.
 

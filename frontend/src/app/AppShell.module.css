@@ -104,7 +104,7 @@
   gap: var(--spacing-xs);
 }
 
-/* 내비가 있을 때만 갈린다 — 비로그인 상태에는 내비 항목이 없어 구분선도 없다 */
+/* 내비와 계정 액션을 가른다. 「지도」가 로그인 여부와 무관하게 있어 내비는 항상 있다 */
 .nav + .account {
   margin-inline-start: var(--spacing-md);
   padding-inline-start: var(--spacing-md);

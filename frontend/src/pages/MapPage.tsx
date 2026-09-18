@@ -9,7 +9,7 @@ import {
   PropertyList,
   useMapStage,
 } from '../features/property';
-import styles from './HomePage.module.css';
+import styles from './MapPage.module.css';
 
 const INITIAL_FILTER: PropertyFilter = {};
 
@@ -27,13 +27,13 @@ const PANEL_VIEW = 'panel';
 type NarrowView = typeof MAP_VIEW | typeof PANEL_VIEW;
 
 /**
- * `/` 지도 탐색. 필터 · 단계 · 고른 매물 · 패널 탭을 소유하고 기능 컴포넌트를 조합한다 —
+ * `/map` 지도 탐색. 필터 · 단계 · 고른 매물 · 패널 탭을 소유하고 기능 컴포넌트를 조합한다 —
  * 쿼리는 부르지 않는다.
  *
  * 목록은 별도 화면이 아니라 상세와 같은 패널 자리의 탭이다 (PROP-02 계획 승인) — 화면을 옮기지
  * 않으므로 지도 위치 · 확대 수준이 유지되고, 필터도 지도와 목록이 같은 상태 하나를 본다 (명세 1.1).
  */
-export default function HomePage() {
+export default function MapPage() {
   const [filter, setFilter] = useState<PropertyFilter>(INITIAL_FILTER);
   const [detailPropertyId, setDetailPropertyId] = useState<number | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>(LIST_TAB);

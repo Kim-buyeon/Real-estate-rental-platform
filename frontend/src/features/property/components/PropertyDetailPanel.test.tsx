@@ -1,10 +1,10 @@
 // PropertyDetailPanel 렌더링 검증 — 닫기 동작, 미분석 매물 안내, 그 외 오류의 Alert 처리,
 // 정상 판정일 때 다섯 블록(판정 근거 · 보증보험 3사 · 권리 침해/경고 · 정합 · 개인 자격) 노출을 확인한다.
 //
-// 열림 흐름(미리보기 카드의 「상세 보기」 → 패널 마운트)은 여기서 다루지 않는다. HomePage.test.tsx는
+// 열림 흐름(미리보기 카드의 「상세 보기」 → 패널 마운트)은 여기서 다루지 않는다. MapPage.test.tsx는
 // 카카오맵 SDK가 없는 jsdom 상태만 검증하고 있고(window.kakao를 모킹하지 않는다), MapExplorer는 SDK가
 // 없으면 마커 오버레이 자체를 그리지 않아 미리보기 카드에 닿을 수 없다. SDK를 모킹하는 새 방식을
-// 들이지 않는 한 그 경로는 이 슬라이스에서 검증할 수 없다 — HomePage.test.tsx에도 추가하지 않는다.
+// 들이지 않는 한 그 경로는 이 슬라이스에서 검증할 수 없다 — MapPage.test.tsx에도 추가하지 않는다.
 // 패널이 열린 뒤의 동작(닫기 · 데이터 렌더)만 여기서 컴포넌트 단위로 검증한다.
 import { QueryClient, QueryClientProvider, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';

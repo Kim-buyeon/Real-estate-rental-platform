@@ -1,0 +1,64 @@
+/*
+ * 최근 등록 매물 그리드. 배치의 정본은 레이아웃 맵 home 「구역 4 — 추천 매물 4열 그리드」다 —
+ * 4열 · 가로 갭 20 {spacing.lg} · 세로 갭 ≈30(→ 격자의 {spacing.2xl} 32) · 줄 피치 28 ·
+ * 줄 역할 넷(가격 {typography.heading-3} · 유형 · 주소 · 스펙).
+ * 붕괴는 그 문서의 「제안(미관측)」 — 태블릿 2열 · 모바일 1열.
+ *
+ * 컬럼 폭은 px 로 적지 않는다. 정의서 4절 Grid & Container 가 「repeat(4, 1fr) + gap {spacing.lg}」로
+ * 정했고, 그래야 컨테이너 폭이 바뀔 때 컬럼이 따라간다.
+ *
+ * px 리터럴은 미디어 쿼리 조건 둘뿐이고 정본은 global.css 머리말이다.
+ */
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-sm);
+}
+
+/*
+ * 카드 — 썸네일이 없어 글자 줄만 남으므로 {components.card} 가 경계를 낸다 (맵 구역 4 주석).
+ * 줄 사이는 {spacing.2xs} 다. 맵의 줄 피치 28 은 body-sm 행간(13 x 1.55)에 이 값을 더한 것이다.
+ */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+  height: 100%;
+}
+
+/* 가격 줄. 배지가 오른쪽 끝이다 — PropertyList 의 목록 행과 같은 자리다 */
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+}
+
+.price {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.kind {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.spec {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+@media (min-width: 768px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-2xl) var(--spacing-lg);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}

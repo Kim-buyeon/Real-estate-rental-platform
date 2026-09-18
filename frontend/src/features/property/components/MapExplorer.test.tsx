@@ -3,7 +3,7 @@
 // 가짜를 주입한다 — 저장소가 직접 쓴 가짜(frontend/src/test/kakao.ts · resizeObserver.ts)이고,
 // 테스트 전략 문서 1.2가 EventSource에 쓴 것과 같은 해법이다.
 //
-// 다른 지도 테스트(map.test.ts · useMapStage.test.ts)와 HomePage.test.tsx ·
+// 다른 지도 테스트(map.test.ts · useMapStage.test.ts)와 MapPage.test.tsx ·
 // PropertyDetailPanel.test.tsx는 SDK 없음(window.kakao undefined) 경로를 검증하므로 이 파일의
 // 가짜는 여기 하나에만 설치 · 해제한다 — 전역 기본값을 바꾸지 않는다.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

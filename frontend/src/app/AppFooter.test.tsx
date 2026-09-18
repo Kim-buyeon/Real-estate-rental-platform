@@ -20,14 +20,24 @@ function renderAt(path: string) {
 }
 
 describe('AppFooter', () => {
-  it('지도 화면에는 푸터를 렌더하지 않는다', async () => {
-    // 지도 화면은 진입만으로 자치구 집계 · 목록을 부른다. jsdom에는 SDK가 없어 안내가 뜬다
+  it('지도 화면(/map)에는 푸터를 렌더하지 않는다', async () => {
+    // 지도 화면은 진입만으로 자치구 집계 · 목록을 부른다. jsdom에는 SDK가 없어 안내가 뜬다.
+    // /map은 lazy 라우트라 청크가 로드될 때까지 findBy*로 기다린다 — getBy*는 로드 전에 실패한다
+    server.use(...propertyHandlers);
+
+    renderAt('/map');
+
+    expect(await screen.findByText('지도를 불러오지 못했습니다. 새로고침해 주세요.')).toBeInTheDocument();
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+  });
+
+  it('메인 화면(/)에는 푸터가 붙는다 — 지도 화면이 이 경로를 떠나도 푸터 유무 결정(이슈 112)은 지도에만 걸린다', async () => {
+    // 메인은 최근 등록 매물을 조회한다 — 지도와 같은 목록 핸들러가 필요하다
     server.use(...propertyHandlers);
 
     renderAt('/');
 
-    expect(await screen.findByText('지도를 불러오지 못했습니다. 새로고침해 주세요.')).toBeInTheDocument();
-    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
+    expect(await screen.findByRole('contentinfo')).toBeInTheDocument();
   });
 
   it('지도 밖의 화면에는 푸터가 붙는다', async () => {

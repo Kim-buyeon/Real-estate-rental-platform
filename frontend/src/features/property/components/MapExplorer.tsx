@@ -61,7 +61,7 @@ interface MapExplorerProps {
   /**
    * 지도가 화면에 보이는가. 좁은 화면의 지도 ↔ 목록 전환에서 감춰진 동안 컨테이너 크기가 0이
    * 되므로, 다시 보이는 시점에 relayout 해야 타일이 그려진다 (kakao-map 5장).
-   * 넓은 화면에서도 거짓이 된다 — 목록에서 상세를 열면 HomePage가 setNarrowView(PANEL_VIEW)를 한다.
+   * 넓은 화면에서도 거짓이 된다 — 목록에서 상세를 열면 MapPage가 setNarrowView(PANEL_VIEW)를 한다.
    * 그때 지도는 계속 보이지만 relayout이 멱등이라 다시 부르는 것이 무해하다.
    */
   isShown?: boolean;

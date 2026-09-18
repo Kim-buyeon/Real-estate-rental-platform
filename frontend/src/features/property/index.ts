@@ -4,6 +4,7 @@ export { MapExplorer } from './components/MapExplorer';
 export { PropertyDetailPanel } from './components/PropertyDetailPanel';
 export { PropertyFilterBar } from './components/PropertyFilterBar';
 export { PropertyList } from './components/PropertyList';
+export { RecentProperties } from './components/RecentProperties';
 export { WishlistButton } from './components/WishlistButton';
 export { WishlistList } from './components/WishlistList';
 export { useMapStage, type MapStage } from './hooks/useMapStage';
