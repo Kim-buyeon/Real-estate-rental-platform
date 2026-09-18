@@ -1,13 +1,15 @@
 /*
  * 공통 푸터. 구역 순서 · 여백 리듬 · 구분선 위치의 정본은 design/examples/home/layout.md 다.
  *
- * px 리터럴은 넷이다 —
+ * px 리터럴은 셋이다 —
  *   1) 미디어 쿼리 조건 768 (global.css 머리말이 정본. 데스크톱은 태블릿과 같아 1024 조건을 두지 않았다)
  *   2) 1px 보더 두께 — .linkBar 의 가로 구분선, 태블릿 .topCell 의 세로 구분선
  *   3) spacing 격자에 없는 레이아웃 맵 계측값 — 28 · 5 · 40 · 73 은 아래 .footer 의 지역 변수에 모았고,
  *      .topArrow 의 8 은 SVG 자체 크기라 그 자리에 둔다. 디자인 토큰 정의서 4절 「격자에 맞지 않는
  *      관측값은 토큰으로 올리지 않았다 — 해당 layout.md 가 갖는다」에 따른 것이다
- *   4) .footerButton 의 32 — {components.button-footer-primary} 가 지정한 높이이며, 그 클래스와 함께 사라진다
+ *
+ * {components.button-footer-primary} 의 h32 는 여기 없다 — 저장소 버튼이 Button 의 variant 를 쓰므로
+ * 그 값은 Button.module.css 가 갖는다 (이슈 112 검토 C · 이슈 114).
  *
  * 컨테이너 최대 폭 1200 · 터치 타겟 최소 44 는 정의서 9절이 정한 값이라 px 로 다시 적지 않는다 —
  * global.css 의 --container-max · --touch-target-min 을 쓴다 (이슈 112 검토 D · F).
@@ -144,27 +146,12 @@
 }
 
 /*
- * {components.button-footer-primary} — 소셜 버튼 4개를 대신하는 강조 버튼 하나.
- *
- * 임시. Button 을 정의서에 맞추는 작업(PR 111 의 N-1)에서 {components.button-footer-primary} 를
- * variant 로 올리고 이 클래스를 지운다. 지금 Button.module.css 는 {rounded.md}(8)를 쓰는데 정의서는
- * {rounded.sm}(4)이라, 먼저 맞추지 않고 variant 를 얹으면 어긋난 토대 위에 얹는 꼴이 된다.
+ * 저장소 버튼 — 소셜 버튼 4개를 대신하는 강조 버튼 하나. 면 · 높이 · 반경 · 글자는
+ * {components.button-footer-primary} 이고 Button 의 variant 가 갖는다. 여기 남는 것은 폭뿐이다 —
+ * 모바일 전폭은 이 푸터의 배치이지 버튼의 성질이 아니다.
  */
-.footerButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  /* 모바일은 100% 폭 · 터치 타겟 44 (정의서 9절). 태블릿부터 정의서의 h32로 내린다 */
+.repositoryButton {
   width: 100%;
-  min-height: var(--touch-target-min);
-  border-radius: var(--rounded-sm);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  transition: background-color 0.15s ease;
-}
-
-.footerButton:hover {
-  background: var(--color-primary-hover);
 }
 
 /* ── 태블릿 768~1023 ── */
@@ -206,11 +193,8 @@
     border-left: 1px solid var(--color-footer-divider);
   }
 
-  .footerButton {
+  .repositoryButton {
     width: auto;
-    /* {components.button-footer-primary} 가 지정한 h32. 위 주석의 Button 이관과 함께 사라지는 값이다 */
-    min-height: 32px;
-    padding-inline: var(--spacing-md);
   }
 }
 

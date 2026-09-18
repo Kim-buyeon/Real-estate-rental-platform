@@ -1,0 +1,35 @@
+/*
+ * {components.card-form} — 디자인 토큰 정의서 7절 Containment.
+ *
+ * 로그인 · 가입 · 계정 · 알림 설정 네 화면의 폼 카드다. 옆의 Card 는 {components.card} 로 보더 색 ·
+ * 반경 · 패딩이 모두 다른 별 항목이라 variant 로 합치지 않고 별개 컴포넌트로 둔다 (정의서 K-10 —
+ * 두 항목을 하나로 합칠지는 정의서의 승인 대상이지 코드가 정할 일이 아니다).
+ *
+ * 모바일 붕괴(전폭 · 패딩 24 · 보더 제거)를 이 파일이 갖는다. 쓰는 화면이 미디어 쿼리를 다시 쓰지 않는다.
+ *
+ * px 리터럴은 셋이다 (frontend/CLAUDE.md 스타일 규칙) —
+ *   1) 미디어 쿼리 조건 768 (global.css 머리말이 정본)
+ *   2) 1px 보더 두께
+ *   3) 정의서가 지정했으나 css-vars export 가 내지 않는 값 — 카드 폭 540. 아래 지역 변수에 모았다
+ */
+
+.cardForm {
+  /* 정의서 {components.card-form} 의 width. export 가 색 · 간격 · 반경만 내므로 여기 한 번 적는다 */
+  --card-form-width: 540px;
+
+  width: var(--card-form-width);
+  max-width: 100%;
+  /* 모바일 — 패딩 24 · 보더 없음. 전폭이라 보더가 화면 가장자리에 붙어 의미가 없다 */
+  padding: var(--spacing-xl);
+  border: 0;
+  border-radius: var(--rounded-none);
+  background: var(--color-surface);
+}
+
+@media (min-width: 768px) {
+  .cardForm {
+    /* 정의서 {components.card-form} — 패딩 {spacing.5xl} · 1px {colors.border} */
+    padding: var(--spacing-5xl);
+    border: 1px solid var(--color-border);
+  }
+}
