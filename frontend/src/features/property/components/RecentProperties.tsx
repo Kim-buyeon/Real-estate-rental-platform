@@ -1,10 +1,12 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
+import { Link } from 'react-router';
 import type { PropertyFilter } from '../../../api/property';
 import { Alert, Badge, Card, EmptyState } from '../../../components/ui';
 import { contractTypeLabel, propertyTypeLabel } from '../../../domain/property';
 import { debtRatioLabel, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
 import { formatDate, formatWon } from '../../../lib/format';
+import { propertyDetailPath } from '../../../lib/routes';
 import { propertyQueries } from '../../../queries/property';
 import styles from './RecentProperties.module.css';
 
@@ -57,26 +59,38 @@ export function RecentProperties() {
     <ul className={styles.grid}>
       {items.map((item) => (
         <li key={item.propertyId}>
-          <Card className={styles.card}>
-            <div className={styles.head}>
-              <p className={`${styles.price} type-heading-3`}>
-                {formatWon(item.deposit)}
-                {item.monthlyRent > 0 && ` / ${formatWon(item.monthlyRent)}`}
+          {/*
+            카드 전체가 그 매물의 상세로 가는 링크다 — 카드 안에 다른 동작이 없어 통째로 잇는다
+            (이슈 104. 목록 카드 꼴인데 눌러도 아무 일이 없던 것을 고친다). 이동이므로 라우터
+            Link이고, 경로 조립은 lib/routes.ts 하나가 갖는다. 이름은 카드 글자 전부 대신 주소로
+            둔다 — 「상세 보기」만으로는 카드마다 같은 이름이 된다 (PropertyList와 같은 방식).
+          */}
+          <Link
+            to={propertyDetailPath(item.propertyId)}
+            className={styles.cardLink}
+            aria-label={`${item.address} 상세 보기`}
+          >
+            <Card className={styles.card}>
+              <div className={styles.head}>
+                <p className={`${styles.price} type-heading-3`}>
+                  {formatWon(item.deposit)}
+                  {item.monthlyRent > 0 && ` / ${formatWon(item.monthlyRent)}`}
+                </p>
+                <Badge variant={riskGradeToken(item.riskGrade)}>{riskGradeLabel(item.riskGrade)}</Badge>
+              </div>
+
+              <p className={`${styles.kind} type-body`}>
+                {contractTypeLabel(item.contractType)} · {propertyTypeLabel(item.propertyType)}
               </p>
-              <Badge variant={riskGradeToken(item.riskGrade)}>{riskGradeLabel(item.riskGrade)}</Badge>
-            </div>
 
-            <p className={`${styles.kind} type-body`}>
-              {contractTypeLabel(item.contractType)} · {propertyTypeLabel(item.propertyType)}
-            </p>
+              <p className={`${styles.spec} type-body-sm`}>{item.address}</p>
 
-            <p className={`${styles.spec} type-body-sm`}>{item.address}</p>
-
-            <p className={`${styles.spec} type-body-sm`}>
-              {item.areaSqm}㎡ · {item.floor}층 · 전세가율 {debtRatioLabel(item.debtRatio)} ·{' '}
-              {formatDate(item.registeredAt)} 등록
-            </p>
-          </Card>
+              <p className={`${styles.spec} type-body-sm`}>
+                {item.areaSqm}㎡ · {item.floor}층 · 전세가율 {debtRatioLabel(item.debtRatio)} ·{' '}
+                {formatDate(item.registeredAt)} 등록
+              </p>
+            </Card>
+          </Link>
         </li>
       ))}
     </ul>

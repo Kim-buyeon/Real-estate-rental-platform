@@ -5,20 +5,26 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { delay, http, HttpResponse } from 'msw';
+import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { riskGradeLabel } from '../../../domain/risk';
+import { propertyDetailPath } from '../../../lib/routes';
 import { WISHLIST_PAGE_1, WISHLIST_PAGE_2, wishlistHandlers } from '../../../test/msw/handlers/property';
 import { server } from '../../../test/msw/server';
 import { WishlistList } from './WishlistList';
 
+// 항목의 「상세 보기」가 라우터 Link라 컨텍스트가 있어야 렌더된다(react-router 8) — MainPage.test.tsx와
+// 같은 방식(MemoryRouter). 이 파일은 목록 자체의 경로 조립은 검증하지 않으므로 initialEntries는 두지 않는다
 function renderList() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   render(
-    <QueryClientProvider client={queryClient}>
-      <WishlistList />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <WishlistList />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -166,5 +172,21 @@ describe('WishlistList', () => {
     // riskGrade와 previousGrade가 모두 같은 문구(미분석)라 두 곳 모두에서 보여야 한다
     const unanalyzedLabels = within(unanalyzedItem).getAllByText(riskGradeLabel(unanalyzed.riskGrade));
     expect(unanalyzedLabels.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('항목의 「상세 보기」 링크가 그 매물의 지도 딥링크(/map?propertyId=)를 가리킨다', async () => {
+    server.use(...wishlistHandlers);
+
+    renderList();
+
+    const target = WISHLIST_PAGE_1.items[0]!;
+    await waitFor(() => expect(screen.getByText(target.district)).toBeInTheDocument());
+
+    // closest('li') 구조 선택자는 findListItem이 이미 쓰던 방식 그대로다 — 여전히 유효하다
+    const item = findListItem(target.propertyId);
+    expect(within(item).getByRole('link', { name: '상세 보기' })).toHaveAttribute(
+      'href',
+      propertyDetailPath(target.propertyId),
+    );
   });
 });

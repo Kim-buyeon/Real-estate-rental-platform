@@ -1,8 +1,10 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { Alert, Badge, Button, Card, EmptyState } from '../../../components/ui';
+import { Link } from 'react-router';
+import { Alert, Badge, Button, Card, EmptyState, buttonClassName } from '../../../components/ui';
 import { notificationTypeLabel, notificationValueLabel } from '../../../domain/notification';
 import { formatCount, formatDateTime } from '../../../lib/format';
+import { propertyDetailPath } from '../../../lib/routes';
 import {
   notificationQueries,
   useMarkAllNotificationsRead,
@@ -116,8 +118,18 @@ export function NotificationList() {
                 <Alert variant="error">{markReadMutation.error.message}</Alert>
               )}
 
-              {!item.isRead && (
-                <div className={styles.actions}>
+              <div className={styles.actions}>
+                {/*
+                  알림이 가리키는 매물의 상세로 간다 (이슈 104) — 그 전에는 매물 번호를 글자로만
+                  보여줘 거기서 상세로 갈 수단이 없었다. 상세가 화면이 아니라 지도 옆 패널이라
+                  지도 경로 + 매물 번호이고, 조립은 lib/routes.ts 하나가 갖는다. 이동이라 라우터
+                  Link이고 버튼처럼 보이는 것은 buttonClassName이다.
+                */}
+                <Link to={propertyDetailPath(item.propertyId)} className={buttonClassName('secondary', 'sm')}>
+                  매물 보기
+                </Link>
+
+                {!item.isRead && (
                   <Button
                     type="button"
                     size="sm"
@@ -127,8 +139,8 @@ export function NotificationList() {
                   >
                     읽음
                   </Button>
-                </div>
-              )}
+                )}
+              </div>
             </Card>
           </li>
         ))}

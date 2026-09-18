@@ -1,8 +1,10 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { Alert, Badge, Button, Card, EmptyState } from '../../../components/ui';
+import { Link } from 'react-router';
+import { Alert, Badge, Button, Card, EmptyState, buttonClassName } from '../../../components/ui';
 import { riskGradeLabel, riskGradeToken } from '../../../domain/risk';
 import { formatDate, formatWon } from '../../../lib/format';
+import { propertyDetailPath } from '../../../lib/routes';
 import { useRemoveWishlist, wishlistQueries } from '../../../queries/property';
 import styles from './WishlistList.module.css';
 
@@ -78,6 +80,15 @@ export function WishlistList() {
               )}
 
               <div className={styles.actions}>
+                {/*
+                  항목에서 그 매물의 상세로 간다 (이슈 104). 상세가 화면이 아니라 지도 옆 패널이라
+                  지도 경로 + 매물 번호이고, 조립은 lib/routes.ts 하나가 갖는다. 이동이라 라우터
+                  Link이고 버튼처럼 보이는 것은 buttonClassName이다 — 두 번째 버튼 컴포넌트를
+                  만들지 않는다. 카드를 통째로 링크로 만들지 않은 것은 안에 해제 동작이 있어서다.
+                */}
+                <Link to={propertyDetailPath(item.propertyId)} className={buttonClassName('secondary', 'sm')}>
+                  상세 보기
+                </Link>
                 <Button
                   type="button"
                   size="sm"

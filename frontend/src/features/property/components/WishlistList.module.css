@@ -52,4 +52,6 @@
 .actions {
   display: flex;
   justify-content: flex-end;
+  /* 상세로 가는 링크와 관심 해제 버튼이 나란히 선다 (이슈 104) */
+  gap: var(--spacing-xs);
 }

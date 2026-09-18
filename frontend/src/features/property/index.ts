@@ -7,4 +7,5 @@ export { PropertyList } from './components/PropertyList';
 export { RecentProperties } from './components/RecentProperties';
 export { WishlistButton } from './components/WishlistButton';
 export { WishlistList } from './components/WishlistList';
+export { useDetailTarget, type DetailTarget } from './hooks/useDetailTarget';
 export { useMapStage, type MapStage } from './hooks/useMapStage';
