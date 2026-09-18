@@ -8,3 +8,11 @@ dist
 
 # 에이전트 작업 트리 — 로컬 전용
 .claude/worktrees/
+
+# 디자인 추출 작업 폴더 — 참고 사이트 스크린샷은 저작물이므로 커밋하지 않는다
+artifacts/
+picture/
+
+# JVM 크래시 로그
+hs_err_pid*.log
+replay_pid*.log
