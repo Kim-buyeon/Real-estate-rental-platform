@@ -122,6 +122,11 @@
     --nav-height: 80px;
   }
 
+  /* 푸터 컨테이너도 여기서 24로 넓어진다 — 두 줄의 끝이 맞아야 한다 (AppFooter.module.css) */
+  .container {
+    padding-inline: var(--spacing-xl);
+  }
+
   /* 폭이 넉넉하면 접지 않는다 — 우측 정렬로 되돌린다 */
   .rail {
     justify-content: flex-end;
