@@ -1,14 +1,25 @@
+/*
+ * 알림 구독 설정 폼. 카드 규격 · 여백의 정본은 레이아웃 맵 design/examples/my-info/layout.md 다.
+ *
+ * 체크박스는 네이티브 <input type="checkbox"> 그대로다 — 디자인 토큰 정의서에 checkbox 키가 없고
+ * (K-20) 정의서에 없는 컴포넌트를 만들지 않는다.
+ *
+ * px 리터럴은 둘이다 — 미디어 쿼리 조건 768(global.css 머리말) 과, 자치구 이름이 줄바꿈 없이 들어가는
+ * 최소 트랙 폭 112 (레이아웃 1회성 값). 터치 타겟 하한은 global.css 의 --touch-target-min 을 쓴다.
+ */
+
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
+  /* 묶음 사이 — 정의서 4절 「폼 묶음 사이 32」 */
+  gap: var(--spacing-2xl);
 }
 
-/* 신규 매물 · 수신 여부만 정하는 알림 두 묶음. fieldset 기본 테두리를 걷고 묶음 간격만 남긴다 */
+/* 신규 매물 · 수신 여부만 정하는 알림 두 묶음. fieldset 기본 테두리를 걷고 묶음 안의 간격만 남긴다 */
 .group {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: var(--spacing-xl);
   margin: 0;
   padding: 0;
   border: none;
@@ -27,7 +38,7 @@
   gap: var(--spacing-2xs) var(--spacing-xs);
   padding: var(--spacing-sm);
   border: 1px solid var(--color-border);
-  border-radius: var(--rounded-md);
+  border-radius: var(--rounded-none);
   background: var(--color-surface);
 }
 
@@ -40,6 +51,8 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-2xs);
+  /* 터치 구간의 하한. 포인터 구간에서는 줄 높이를 따른다 (정의서 9절) */
+  min-height: var(--touch-target-min);
   color: var(--color-text);
 }
 
@@ -51,4 +64,16 @@
   border-radius: var(--rounded-sm);
   outline: var(--spacing-3xs) solid var(--color-focus);
   outline-offset: var(--spacing-3xs);
+}
+
+/* 입력 ↔ 주 버튼 48 = 묶음 사이 32 + 16 (정의서 K-14 확정값) */
+.submit {
+  width: 100%;
+  margin-top: var(--spacing-md);
+}
+
+@media (min-width: 768px) {
+  .district {
+    min-height: auto;
+  }
 }

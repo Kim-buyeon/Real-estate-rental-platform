@@ -266,7 +266,7 @@ export function SubscriptionForm() {
         </Field>
       </fieldset>
 
-      <Button type="submit" isLoading={updateMutation.isPending}>
+      <Button type="submit" className={styles.submit} isLoading={updateMutation.isPending}>
         저장
       </Button>
     </form>

@@ -180,19 +180,22 @@ export function ProfileForm() {
           )}
         </Field>
 
-        {/* 수정 불가 — 이메일 변경은 별도 절차다 (명세 1.1). 숨기지 않고 읽기 전용으로 보여준다 */}
-        <dl className={`${styles.facts} type-body`}>
+        {/*
+          수정 불가 — 이메일 변경은 별도 절차다 (명세 1.1). 숨기지 않고 읽기 전용으로 보여준다.
+          행은 {components.info-row} 다 — 라벨 body-strong, 값 text-secondary
+        */}
+        <dl className={styles.facts}>
           <div className={styles.fact}>
-            <dt>이메일</dt>
-            <dd>{account.email}</dd>
+            <dt className="type-body-strong">이메일</dt>
+            <dd className="type-body">{account.email}</dd>
           </div>
           <div className={styles.fact}>
-            <dt>권한</dt>
-            <dd>{roleLabel(account.role)}</dd>
+            <dt className="type-body-strong">권한</dt>
+            <dd className="type-body">{roleLabel(account.role)}</dd>
           </div>
           <div className={styles.fact}>
-            <dt>가입일시</dt>
-            <dd>{formatDateTime(account.createdAt)}</dd>
+            <dt className="type-body-strong">가입일시</dt>
+            <dd className="type-body">{formatDateTime(account.createdAt)}</dd>
           </div>
         </dl>
       </fieldset>
@@ -290,7 +293,7 @@ export function ProfileForm() {
         </Field>
       </fieldset>
 
-      <Button type="submit" isLoading={updateMutation.isPending}>
+      <Button type="submit" className={styles.submit} isLoading={updateMutation.isPending}>
         저장
       </Button>
     </form>
