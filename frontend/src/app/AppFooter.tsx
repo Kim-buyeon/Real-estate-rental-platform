@@ -33,6 +33,7 @@ const SITEMAP: FooterColumn[] = [
     links: [
       { label: '국토교통부 실거래가 · 건축물대장', href: 'https://www.data.go.kr' },
       { label: '도로명주소', href: 'https://business.juso.go.kr' },
+      { label: '카카오 로컬', href: 'https://developers.kakao.com' },
       { label: '한국은행 ECOS', href: 'https://ecos.bok.or.kr' },
       { label: '금융상품 통합비교공시', href: 'https://finlife.fss.or.kr' },
     ],
