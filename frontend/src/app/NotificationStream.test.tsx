@@ -354,7 +354,7 @@ describe('NotificationStream', () => {
       // AUTH_TOKEN_EXPIRED가 아니므로 api/client.ts의 재발급 재시도 경로를 타지 않는다
       server.use(
         http.post('/api/notifications/stream-ticket', () =>
-          HttpResponse.json({ success: false, error: { code: 'AUTH_REQUIRED', message: '인증이 필요합니다.' } }, { status: 401 }),
+          HttpResponse.json({ success: false, error: { code: 'AUTH_INVALID_CREDENTIAL', message: '인증이 필요합니다.' } }, { status: 401 }),
         ),
       );
       const tracker = trackRequestPaths();
