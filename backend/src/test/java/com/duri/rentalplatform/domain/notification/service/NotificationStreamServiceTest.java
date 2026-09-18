@@ -17,7 +17,7 @@ class NotificationStreamServiceTest {
     private static final Duration MAX = Duration.ofMinutes(30);
 
     private final NotificationStreamService service =
-            new NotificationStreamService(new SseEmitterStore(), MAX, Clock.fixed(NOW, ZoneOffset.UTC));
+            new NotificationStreamService(new SseEmitterStore(), null, MAX, Clock.fixed(NOW, ZoneOffset.UTC));
 
     @Test
     @DisplayName("토큰이 1분 남았으면 수명도 1분 — 만료 뒤까지 연결이 유지되지 않는다")

@@ -16,6 +16,7 @@ import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.GlobalExceptionHandler;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.config.SecurityConfig;
+import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import com.duri.rentalplatform.domain.risk.dto.response.RegistryResponse;
 import com.duri.rentalplatform.domain.risk.enums.OwnershipRightType;
 import com.duri.rentalplatform.domain.risk.enums.RegistryDataSource;
@@ -52,6 +53,10 @@ import org.springframework.test.web.servlet.MockMvc;
 class RegistryControllerTest {
 
     private static final String SECRET = "registry-controller-test-secret-".repeat(3);
+
+    /** 실시간 수신 티켓을 소비하는 보안 체인의 의존. 이 슬라이스는 쓰지 않는다. */
+    @MockitoBean
+    StreamTicketStore streamTicketStore;
 
     @Autowired
     MockMvc mockMvc;

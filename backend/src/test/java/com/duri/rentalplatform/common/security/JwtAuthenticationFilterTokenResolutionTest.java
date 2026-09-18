@@ -7,15 +7,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 /**
- * {@link JwtAuthenticationFilter#resolveToken} — 헤더 우선, 쿼리 파라미터 토큰은 실시간 수신 경로의 GET 에서만(API 명세서 알림 1.1).
+ * {@link JwtAuthenticationFilter} 의 자격 증명 추출 — 토큰은 헤더에서만, 티켓은 실시간 수신 경로의 GET 쿼리에서만(API 명세서 알림 1.1).
+ *
+ * <p>쿼리 파라미터 {@code accessToken} 은 더 이상 읽지 않는다 — URI 쿼리의 액세스 토큰은 RFC 9700 이 금지한다.
  */
 class JwtAuthenticationFilterTokenResolutionTest {
 
     private static final String STREAM = "/api/notifications/stream";
 
     private static MockHttpServletRequest request(String method, String uri) {
-        MockHttpServletRequest request = new MockHttpServletRequest(method, uri);
-        return request;
+        return new MockHttpServletRequest(method, uri);
     }
 
     @Test
@@ -28,40 +29,40 @@ class JwtAuthenticationFilterTokenResolutionTest {
     }
 
     @Test
-    @DisplayName("스트림 경로에서 헤더가 없으면 쿼리 파라미터 accessToken 을 쓴다")
-    void usesQueryParameterOnStreamPathWithoutHeader() {
+    @DisplayName("스트림 경로에서도 토큰은 헤더에서만 읽는다 — 쿼리 파라미터 accessToken 은 인증이 아니다")
+    void ignoresAccessTokenQueryParameterOnStreamPath() {
         MockHttpServletRequest request = request("GET", STREAM);
         request.setParameter("accessToken", "query-token");
 
-        assertThat(JwtAuthenticationFilter.resolveToken(request)).isEqualTo("query-token");
+        assertThat(JwtAuthenticationFilter.resolveToken(request)).isNull();
+        assertThat(JwtAuthenticationFilter.resolveTicket(request)).isNull();
     }
 
     @Test
-    @DisplayName("스트림 경로에서 헤더와 쿼리 파라미터가 둘 다 있으면 헤더를 쓴다")
-    void headerWinsOverQueryParameter() {
+    @DisplayName("스트림 경로의 쿼리 파라미터 ticket 을 읽는다")
+    void readsTicketOnStreamPath() {
         MockHttpServletRequest request = request("GET", STREAM);
-        request.addHeader("Authorization", "Bearer header-token");
-        request.setParameter("accessToken", "query-token");
+        request.setParameter("ticket", "one-time-ticket");
 
-        assertThat(JwtAuthenticationFilter.resolveToken(request)).isEqualTo("header-token");
+        assertThat(JwtAuthenticationFilter.resolveTicket(request)).isEqualTo("one-time-ticket");
     }
 
     @Test
-    @DisplayName("다른 경로의 쿼리 파라미터 accessToken 은 읽지 않는다")
-    void ignoresQueryParameterOnOtherPaths() {
+    @DisplayName("다른 경로의 쿼리 파라미터 ticket 은 읽지 않는다")
+    void ignoresTicketOnOtherPaths() {
         MockHttpServletRequest request = request("GET", "/api/notifications");
-        request.setParameter("accessToken", "query-token");
+        request.setParameter("ticket", "one-time-ticket");
 
-        assertThat(JwtAuthenticationFilter.resolveToken(request)).isNull();
+        assertThat(JwtAuthenticationFilter.resolveTicket(request)).isNull();
     }
 
     @Test
-    @DisplayName("스트림 경로라도 GET 이 아니면 쿼리 파라미터를 읽지 않는다")
-    void ignoresQueryParameterForNonGet() {
+    @DisplayName("스트림 경로라도 GET 이 아니면 티켓을 읽지 않는다")
+    void ignoresTicketForNonGet() {
         MockHttpServletRequest request = request("POST", STREAM);
-        request.setParameter("accessToken", "query-token");
+        request.setParameter("ticket", "one-time-ticket");
 
-        assertThat(JwtAuthenticationFilter.resolveToken(request)).isNull();
+        assertThat(JwtAuthenticationFilter.resolveTicket(request)).isNull();
     }
 
     @Test
@@ -69,17 +70,17 @@ class JwtAuthenticationFilterTokenResolutionTest {
     void recognizesStreamPathUnderContextPath() {
         MockHttpServletRequest request = request("GET", "/app" + STREAM);
         request.setContextPath("/app");
-        request.setParameter("accessToken", "query-token");
+        request.setParameter("ticket", "one-time-ticket");
 
-        assertThat(JwtAuthenticationFilter.resolveToken(request)).isEqualTo("query-token");
+        assertThat(JwtAuthenticationFilter.resolveTicket(request)).isEqualTo("one-time-ticket");
     }
 
     @Test
-    @DisplayName("빈 쿼리 파라미터는 토큰이 없는 것으로 본다")
-    void blankQueryParameterIsNoToken() {
+    @DisplayName("빈 티켓 파라미터는 티켓이 없는 것으로 본다")
+    void blankTicketIsNoTicket() {
         MockHttpServletRequest request = request("GET", STREAM);
-        request.setParameter("accessToken", "  ");
+        request.setParameter("ticket", "  ");
 
-        assertThat(JwtAuthenticationFilter.resolveToken(request)).isNull();
+        assertThat(JwtAuthenticationFilter.resolveTicket(request)).isNull();
     }
 }

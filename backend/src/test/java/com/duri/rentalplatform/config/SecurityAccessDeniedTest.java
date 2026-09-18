@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.duri.rentalplatform.common.ApiResponse;
 import com.duri.rentalplatform.common.GlobalExceptionHandler;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
+import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -59,6 +61,10 @@ class SecurityAccessDeniedTest {
             new JwtTokenProvider(SECRET, Duration.ofMinutes(30), Duration.ofDays(14));
 
     private static final String DENIED_PATH = "/api/me/denied";
+
+    /** 실시간 수신 티켓을 소비하는 보안 체인의 의존. 이 슬라이스는 쓰지 않는다. */
+    @MockitoBean
+    StreamTicketStore streamTicketStore;
 
     @Autowired
     MockMvc mockMvc;

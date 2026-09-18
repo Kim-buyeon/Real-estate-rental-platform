@@ -227,7 +227,7 @@ server {
     }
 
     # SSE — 버퍼링을 끄지 않으면 이벤트가 버퍼에 갇힌다
-    location /api/notifications/stream {
+    location = /api/notifications/stream {
         proxy_pass http://app;
         proxy_http_version 1.1;
         proxy_set_header Connection "";

@@ -15,6 +15,7 @@ import com.duri.rentalplatform.config.SecurityConfig;
 import com.duri.rentalplatform.domain.loan.dto.response.LoanLimitResponse;
 import com.duri.rentalplatform.domain.loan.enums.AppliedRegulation;
 import com.duri.rentalplatform.domain.loan.service.LoanCommandService;
+import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
@@ -42,6 +43,10 @@ class LoanControllerTest {
     private static final long USER_ID = 42L;
     private static final long PROPERTY_ID = 1024L;
     private static final String PATH = "/api/loans/limit";
+
+    /** 실시간 수신 티켓을 소비하는 보안 체인의 의존. 이 슬라이스는 쓰지 않는다. */
+    @MockitoBean
+    StreamTicketStore streamTicketStore;
 
     @Autowired
     MockMvc mockMvc;

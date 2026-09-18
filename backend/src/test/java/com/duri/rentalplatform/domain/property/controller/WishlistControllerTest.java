@@ -19,6 +19,7 @@ import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.GlobalExceptionHandler;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.config.SecurityConfig;
+import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import com.duri.rentalplatform.domain.property.dto.request.WishlistListRequest;
 import com.duri.rentalplatform.domain.property.dto.response.WishlistResponse;
 import com.duri.rentalplatform.domain.property.enums.RiskGrade;
@@ -53,6 +54,10 @@ class WishlistControllerTest {
             new JwtTokenProvider(SECRET, Duration.ofMinutes(30), Duration.ofDays(14));
     private static final long USER_ID = 42L;
     private static final String PATH = "/api/me/wishlist";
+
+    /** 실시간 수신 티켓을 소비하는 보안 체인의 의존. 이 슬라이스는 쓰지 않는다. */
+    @MockitoBean
+    StreamTicketStore streamTicketStore;
 
     @Autowired
     MockMvc mockMvc;

@@ -21,6 +21,7 @@ import com.duri.rentalplatform.domain.notification.dto.request.NotificationSubsc
 import com.duri.rentalplatform.domain.notification.dto.response.NotificationSubscriptionResponse;
 import com.duri.rentalplatform.domain.notification.service.NotificationSubscriptionCommandService;
 import com.duri.rentalplatform.domain.notification.service.NotificationSubscriptionQueryService;
+import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
 import java.time.Duration;
 import java.util.List;
@@ -75,6 +76,10 @@ class NotificationSubscriptionControllerTest {
             new NotificationSubscriptionResponse.Toggle(true),
             new NotificationSubscriptionResponse.Toggle(true),
             new NotificationSubscriptionResponse.Toggle(true));
+
+    /** 실시간 수신 티켓을 소비하는 보안 체인의 의존. 이 슬라이스는 쓰지 않는다. */
+    @MockitoBean
+    StreamTicketStore streamTicketStore;
 
     @Autowired
     MockMvc mockMvc;

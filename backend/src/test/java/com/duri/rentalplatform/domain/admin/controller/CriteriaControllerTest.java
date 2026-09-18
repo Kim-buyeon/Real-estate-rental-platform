@@ -19,6 +19,7 @@ import com.duri.rentalplatform.domain.admin.dto.response.GuaranteeCriteriaRespon
 import com.duri.rentalplatform.domain.admin.dto.response.LoanRegulationsResponse;
 import com.duri.rentalplatform.domain.admin.service.CriteriaCommandService;
 import com.duri.rentalplatform.domain.admin.service.CriteriaQueryService;
+import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import com.duri.rentalplatform.domain.risk.enums.GuaranteeProvider;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -79,6 +80,10 @@ class CriteriaControllerTest {
               "changeReason": "대출 규제 개정 반영"
             }
             """;
+
+    /** 실시간 수신 티켓을 소비하는 보안 체인의 의존. 이 슬라이스는 쓰지 않는다. */
+    @MockitoBean
+    StreamTicketStore streamTicketStore;
 
     @Autowired
     MockMvc mockMvc;
