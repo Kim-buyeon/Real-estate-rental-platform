@@ -466,6 +466,7 @@ SDK를 어떻게 부르고 무엇을 그리는지는 `kakao-map` 스킬이 정�
 | 열거 유니언 · 값 | 유니언은 PascalCase, 값은 명세의 대문자 스네이크 | `RiskGrade` · `'DEPOSIT_ONLY'` |
 | 상수 · 매핑 | 대문자 스네이크 | `RISK_GRADE_LABEL` |
 | 불리언 props · 변수 | `is` · `has` · `can` 접두 | `isOpen` · `hasSeniorDebt` |
+| 응답 타입의 불리언 필드 | **명세의 이름 그대로.** 접두를 붙이지 않는다 | `violationBuilding` — 외부 공식 문서의 항목명을 옮긴 것이다. 규약 「이름이 의도를 말하게」의 예외 |
 | 이벤트 props | `on` + 동작 | `onSelect` · `onStageChange` |
 | CSS Module 파일 · 클래스 | 컴포넌트와 같은 이름 · camelCase | `Button.module.css` · `styles.primary` |
 | 그 외 파일 (훅 · 쿼리 · api · domain · lib) | camelCase | `useMapStage.ts` · `format.ts` |
