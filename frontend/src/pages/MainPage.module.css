@@ -1,0 +1,130 @@
+/*
+ * 메인 화면. 섹션 순서 · 그리드 · 여백 리듬의 정본은 레이아웃 맵 design/examples/home/layout.md 다.
+ * 아래 주석의 「구역 n」은 그 문서의 번호이고, 붕괴 값은 그 문서의 「제안(미관측)」이다 — 계측값이 아니다.
+ *
+ *   구역 2 hero          위 68 / 아래 28 → 데스크톱 제안 위 {spacing.4xl} 64 · 아래 {spacing.xl} 24,
+ *                        모바일 제안 위 {spacing.2xl} 32 · 아래 24. 요소 폭은 컨테이너의 58%
+ *   섹션 리듬            앞 구역 ↔ 다음 제목 {spacing.4xl} 64(모바일 · 태블릿 제안 {spacing.3xl} 48),
+ *                        제목 ↔ 내용 {spacing.3xl} 48(태블릿 {spacing.2xl} 32 · 모바일 {spacing.xl} 24)
+ *   구역 4 그리드 래퍼   면 {colors.surface-muted} · {rounded.lg} · 패딩 {spacing.xl} 24
+ *
+ * 컨테이너 최대 폭은 정의서 9절이 정한 값이고 global.css 의 --container-max 하나를 참조한다.
+ * 좌우 패딩은 헤더 · 푸터와 같은 모바일 16 · 태블릿 이상 24 다 — 세 줄의 끝이 맞아야 한다.
+ * 앞 섹션 ↔ 푸터 64 는 푸터가 갖는다 (AppFooter.module.css). 여기서 다시 주지 않는다.
+ *
+ * px 리터럴은 미디어 쿼리 조건 둘뿐이고 정본은 global.css 머리말이다.
+ */
+
+.page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding-inline: var(--spacing-md);
+}
+
+/* 구역 2 — hero. 배경은 화면 전폭, 내용은 컨테이너다 */
+.hero {
+  padding-block: var(--spacing-2xl) var(--spacing-xl);
+  background: var(--color-surface-muted);
+}
+
+.heroInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.heroTitle {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.heroLead {
+  margin: var(--spacing-md) 0 var(--spacing-xl);
+  color: var(--color-text-secondary);
+}
+
+/* 섹션 사이 리듬 — 맵 「섹션 사이 리듬」 표. 히어로 아래 여백은 히어로가 갖는다 */
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3xl);
+  padding-block: var(--spacing-xl) 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 섹션 제목 줄. 「전체 보기」는 오른쪽 끝이고 제목과 같은 줄에 선다 */
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-xl);
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.moreLink {
+  color: var(--color-primary);
+}
+
+.moreLink:focus-visible {
+  outline: var(--spacing-3xs) solid var(--color-focus);
+  outline-offset: var(--spacing-3xs);
+}
+
+/* 구역 4 — 그리드 래퍼. 썸네일이 없는 카드 묶음을 한 면으로 묶는다 */
+.gridWrapper {
+  padding: var(--spacing-md);
+  border-radius: var(--rounded-lg);
+  background: var(--color-surface-muted);
+}
+
+@media (min-width: 768px) {
+  .container {
+    padding-inline: var(--spacing-xl);
+  }
+
+  .hero {
+    padding-block: var(--spacing-4xl) var(--spacing-xl);
+  }
+
+  .sectionHead {
+    margin-bottom: var(--spacing-2xl);
+  }
+
+  .gridWrapper {
+    padding: var(--spacing-xl);
+  }
+}
+
+@media (min-width: 1024px) {
+  .sections {
+    gap: var(--spacing-4xl);
+  }
+
+  .sectionHead {
+    margin-bottom: var(--spacing-3xl);
+  }
+
+  /* 맵 구역 2 — 요소 폭은 컨테이너의 58% 다. 글줄이 화면 폭만큼 길어지지 않는다 */
+  .heroTitle,
+  .heroLead {
+    max-width: 58%;
+  }
+}

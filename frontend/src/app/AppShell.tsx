@@ -43,27 +43,33 @@ export function AppShell() {
           </Link>
           {/* 모바일은 이 줄이 가로로 스크롤된다 — 브랜드와 알림 배지가 먼저 보이고 나머지는 밀어서 본다 */}
           <div className={styles.rail}>
-            {isAuthenticated && (
-              <nav className={styles.nav} aria-label="주요 메뉴">
-                <NavLink to="/notifications" className={navLinkClassName}>
-                  알림
-                  {unreadCount > 0 && (
-                    <Badge variant="primary" aria-label={`읽지 않은 알림 ${formatCount(unreadCount)}건`}>
-                      {formatCount(unreadCount)}
-                    </Badge>
-                  )}
-                </NavLink>
-                <NavLink to="/me/notification-subscriptions" className={navLinkClassName}>
-                  알림 설정
-                </NavLink>
-                <NavLink to="/me/wishlist" className={navLinkClassName}>
-                  관심 매물
-                </NavLink>
-                <NavLink to="/me/profile" className={navLinkClassName}>
-                  계정 · 자격 정보
-                </NavLink>
-              </nav>
-            )}
+            <nav className={styles.nav} aria-label="주요 메뉴">
+              {/* 지도는 비로그인에도 열리는 화면이라 로그인 여부와 무관하게 둔다 (인증 「선택」) */}
+              <NavLink to="/map" className={navLinkClassName}>
+                지도
+              </NavLink>
+              {isAuthenticated && (
+                <>
+                  <NavLink to="/notifications" className={navLinkClassName}>
+                    알림
+                    {unreadCount > 0 && (
+                      <Badge variant="primary" aria-label={`읽지 않은 알림 ${formatCount(unreadCount)}건`}>
+                        {formatCount(unreadCount)}
+                      </Badge>
+                    )}
+                  </NavLink>
+                  <NavLink to="/me/notification-subscriptions" className={navLinkClassName}>
+                    알림 설정
+                  </NavLink>
+                  <NavLink to="/me/wishlist" className={navLinkClassName}>
+                    관심 매물
+                  </NavLink>
+                  <NavLink to="/me/profile" className={navLinkClassName}>
+                    계정 · 자격 정보
+                  </NavLink>
+                </>
+              )}
+            </nav>
             {/* 계정 액션. 내비와는 간격 + 구분선으로만 가른다 */}
             <div className={styles.account}>
               {isAuthenticated ? (
