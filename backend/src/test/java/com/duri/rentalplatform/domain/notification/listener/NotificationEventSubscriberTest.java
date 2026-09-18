@@ -31,7 +31,7 @@ class NotificationEventSubscriberTest {
 
     private final SseEmitterStore store = new SseEmitterStore();
     private final NotificationEventSubscriber subscriber =
-            new NotificationEventSubscriber(new NotificationStreamService(store, Duration.ofMinutes(30)), JSON);
+            new NotificationEventSubscriber(new NotificationStreamService(store, null, Duration.ofMinutes(30)), JSON);
 
     private static Message messageOf(String body) {
         return new DefaultMessage(SseNotificationSender.CHANNEL.getBytes(StandardCharsets.UTF_8),

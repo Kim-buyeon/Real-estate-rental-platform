@@ -4,6 +4,7 @@ import com.duri.rentalplatform.common.security.JwtAccessDeniedHandler;
 import com.duri.rentalplatform.common.security.JwtAuthenticationEntryPoint;
 import com.duri.rentalplatform.common.security.JwtAuthenticationFilter;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
+import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -65,6 +66,9 @@ public class SecurityConfig {
     private final JwtTokenProvider jwtTokenProvider;
     private final JsonMapper jsonMapper;
 
+    /** 실시간 수신 경로의 일회용 티켓을 소비한다 — API 명세서(알림) 1.1. 필터가 빈이 아니라 여기서 넘긴다. */
+    private final StreamTicketStore streamTicketStore;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
@@ -89,7 +93,7 @@ public class SecurityConfig {
                         .authenticationEntryPoint(new JwtAuthenticationEntryPoint(jsonMapper))
                         .accessDeniedHandler(new JwtAccessDeniedHandler(jsonMapper)))
                 .addFilterBefore(
-                        new JwtAuthenticationFilter(jwtTokenProvider),
+                        new JwtAuthenticationFilter(jwtTokenProvider, streamTicketStore),
                         UsernamePasswordAuthenticationFilter.class)
                 .build();
     }

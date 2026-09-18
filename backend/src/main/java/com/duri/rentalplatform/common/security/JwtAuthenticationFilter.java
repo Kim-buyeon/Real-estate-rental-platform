@@ -3,6 +3,7 @@ package com.duri.rentalplatform.common.security;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.security.JwtTokenProvider.TokenClaims;
+import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,7 +19,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Authorization 헤더의 Bearer 토큰을 검증해 SecurityContext를 채운다. 실시간 알림 수신 경로만 쿼리 파라미터 토큰도 받는다.
+ * Authorization 헤더의 Bearer 토큰을 검증해 SecurityContext를 채운다. 실시간 알림 수신 경로만 쿼리 파라미터 일회용 티켓도 받는다.
  *
  * <p>토큰이 없거나 무효여도 여기서 응답을 쓰지 않는다. 사유만 요청 속성에 남기고 체인을 이어가며, 차단 여부는
  * 인가 규칙이 정한다. 그래야 공개 경로(재발급 등)를 만료된 토큰을 든 채 호출해도 막히지 않고, 보호 경로에서는
@@ -34,7 +35,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     public static final String AUTHENTICATION_ERROR_ATTRIBUTE =
             JwtAuthenticationFilter.class.getName() + ".errorCode";
 
-    /** 인증에 쓴 액세스 토큰의 만료 시각을 담는 요청 속성 이름. 값은 {@link java.time.Instant}다. 실시간 수신 연결 수명에 쓴다. */
+    /**
+     * 인증에 쓴 액세스 토큰의 만료 시각을 담는 요청 속성 이름. 값은 {@link java.time.Instant}다. 실시간 수신 연결 수명에 쓴다.
+     * 헤더 토큰은 토큰에서, 티켓은 티켓에 담긴 값에서 채운다 — 두 경로의 연결 수명이 같아야 한다.
+     */
     public static final String ACCESS_TOKEN_EXPIRES_AT_ATTRIBUTE =
             "com.duri.rentalplatform.common.security.JwtAuthenticationFilter.accessTokenExpiresAt";
 
@@ -42,11 +46,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ROLE_PREFIX = "ROLE_";
 
-    /** 쿼리 파라미터 토큰을 받는 유일한 경로 — 실시간 알림 수신. */
+    /** 쿼리 파라미터 자격 증명을 받는 유일한 경로 — 실시간 알림 수신. */
     static final String STREAM_PATH = "/api/notifications/stream";
-    static final String ACCESS_TOKEN_PARAMETER = "accessToken";
+
+    /**
+     * 실시간 수신 경로의 일회용 티켓 파라미터. <b>액세스 토큰을 쿼리로 받지 않는다</b> — RFC 9700 이 URI 쿼리의 액세스 토큰을
+     * 금지한다. 티켓은 한 번 쓰이면 사라지고 수초 만에 만료되므로, 접근 로그 · 브라우저 기록에 남아도 열 수 있는 것이 없다.
+     */
+    static final String TICKET_PARAMETER = "ticket";
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final StreamTicketStore streamTicketStore;
 
     @Override
     protected void doFilterInternal(
@@ -56,26 +66,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = resolveToken(request);
         if (token != null) {
             authenticate(request, token);
+        } else if (isStreamRequest(request)) {
+            authenticateWithTicket(request);
         }
         filterChain.doFilter(request, response);
     }
 
-    /**
-     * 헤더의 Bearer 토큰을 먼저 본다. 헤더에 토큰이 없고 실시간 수신 경로의 GET 이면 쿼리 파라미터 {@value #ACCESS_TOKEN_PARAMETER} 를
-     * 본다 — 표준 {@code EventSource} 는 헤더를 붙일 수 없다(API 명세서 알림 1.1). 다른 경로는 쿼리 토큰을 받지 않는다. URL 은
-     * 접근 로그 · 브라우저 기록에 남으므로 필요한 곳 밖으로 넓히지 않는다.
-     */
+    /** 헤더의 Bearer 토큰. 경로를 가리지 않는다. */
     static String resolveToken(HttpServletRequest request) {
-        String headerToken = bearerToken(request.getHeader(AUTHORIZATION_HEADER));
-        if (headerToken != null || !isStreamRequest(request)) {
-            return headerToken;
+        return bearerToken(request.getHeader(AUTHORIZATION_HEADER));
+    }
+
+    /**
+     * 실시간 수신 경로의 GET 에서만 쿼리 파라미터 {@value #TICKET_PARAMETER} 를 읽는다 — 표준 {@code EventSource} 는 헤더를
+     * 붙일 수 없다(API 명세서 알림 1.1). 다른 경로는 읽지 않는다. 헤더 토큰이 있으면 그것을 쓰므로 여기까지 오지 않는다.
+     */
+    static String resolveTicket(HttpServletRequest request) {
+        if (!isStreamRequest(request)) {
+            return null;
         }
-        String parameter = request.getParameter(ACCESS_TOKEN_PARAMETER);
+        String parameter = request.getParameter(TICKET_PARAMETER);
         if (parameter == null) {
             return null;
         }
-        String token = parameter.trim();
-        return token.isEmpty() ? null : token;
+        String ticket = parameter.trim();
+        return ticket.isEmpty() ? null : ticket;
     }
 
     private static String bearerToken(String header) {
@@ -93,6 +108,41 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
         String path = request.getRequestURI().substring(request.getContextPath().length());
         return STREAM_PATH.equals(path);
+    }
+
+    /**
+     * 티켓을 소비해 인증을 세운다. 소비는 한 번만 성공한다 — 로그에 남은 티켓으로 두 번째 연결을 열 수 없다.
+     *
+     * <p>티켓이 없으면 아무것도 하지 않는다. 사유를 남기지 않아도 인가 규칙이 막고 {@link JwtAuthenticationEntryPoint} 가
+     * 기본 사유로 401 봉투를 쓴다 — 스트림을 열기 전이다(API 명세서 알림 1.1).
+     *
+     * <p>권한을 담지 않는다. 티켓은 수신 연결 하나를 여는 자격일 뿐이고 그 경로는 인증 「필수」 외의 권한을 요구하지 않는다.
+     * 역할을 실어 두면 티켓이 액세스 토큰을 대신하게 된다.
+     *
+     * <p>다만 <b>발급에 쓴 액세스 토큰의 만료 시각은 헤더 토큰 경로와 같은 요청 속성에 넣는다.</b> 연결 수명이 두 경로에서 같아야
+     * 한다 — 그러지 않으면 만료 직전 토큰으로 받은 티켓이 세션보다 오래 사는 연결을 연다.
+     */
+    private void authenticateWithTicket(HttpServletRequest request) {
+        String ticket = resolveTicket(request);
+        if (ticket == null) {
+            return;
+        }
+        streamTicketStore.consume(ticket).ifPresentOrElse(
+                claims -> {
+                    SecurityContext context = SecurityContextHolder.createEmptyContext();
+                    context.setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
+                            claims.userId(), null, List.of()));
+                    if (claims.tokenExpiresAt() != null) {
+                        request.setAttribute(
+                                ACCESS_TOKEN_EXPIRES_AT_ATTRIBUTE, claims.tokenExpiresAt());
+                    }
+                    SecurityContextHolder.setContext(context);
+                },
+                () -> {
+                    SecurityContextHolder.clearContext();
+                    request.setAttribute(
+                            AUTHENTICATION_ERROR_ATTRIBUTE, ErrorCode.AUTH_INVALID_CREDENTIAL);
+                });
     }
 
     private void authenticate(HttpServletRequest request, String token) {

@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.duri.rentalplatform.common.ApiResponse;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
+import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -23,6 +24,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -65,6 +67,10 @@ class SecurityConfigTest {
     private static final String PUBLIC_PATH = "/api/auth/probe";
     private static final String PROTECTED_PATH = "/api/me/probe";
     private static final String AUTHORITIES_PATH = "/api/me/probe/authorities";
+
+    /** 실시간 수신 티켓을 소비하는 보안 체인의 의존. 이 슬라이스는 쓰지 않는다. */
+    @MockitoBean
+    StreamTicketStore streamTicketStore;
 
     @Autowired
     MockMvc mockMvc;

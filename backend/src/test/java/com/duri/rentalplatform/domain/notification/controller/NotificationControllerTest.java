@@ -21,6 +21,7 @@ import com.duri.rentalplatform.domain.notification.dto.response.NotificationResp
 import com.duri.rentalplatform.domain.notification.enums.NotificationType;
 import com.duri.rentalplatform.domain.notification.service.NotificationQueryService;
 import com.duri.rentalplatform.domain.notification.service.NotificationReadCommandService;
+import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -49,6 +50,10 @@ class NotificationControllerTest {
             new JwtTokenProvider(SECRET, Duration.ofMinutes(30), Duration.ofDays(14));
     private static final long USER_ID = 42L;
     private static final String PATH = "/api/notifications";
+
+    /** 실시간 수신 티켓을 소비하는 보안 체인의 의존. 이 슬라이스는 쓰지 않는다. */
+    @MockitoBean
+    StreamTicketStore streamTicketStore;
 
     @Autowired
     MockMvc mockMvc;
