@@ -72,12 +72,15 @@ description: 저장소를 바꾸는 작업이나 운영 작업에 착수할 때 
 
 | 에이전트 | 더 올린다 | 언제 붙는가 |
 | --- | --- | --- |
+| `frontend-dev` | `frontend/design/DESIGN.md` · 그 화면에 해당하는 `frontend/design/examples/<아키타입>/layout.md` | 화면 · 컴포넌트를 만들거나 고치는 작업 전부 |
 | `test-engineer` | `docs/architecture/testing.md` | 테스트를 쓰는 작업 전부 |
 | `load-tester` | `docs/infra/test-plan.md` · `docs/infra/traffic.md` · `docs/infra/observability.md` | 부하 시험 |
 | `chaos-runner` | `docs/infra/test-plan.md` · `docs/infra/traffic.md` · `docs/infra/runbook.md` · `docs/infra/observability.md` | 장애 주입 시험 |
 | `traffic-builder` | `docs/infra/traffic.md` · `docs/infra/test-plan.md` · `docs/api/common.md` · 요청 조합의 엔드포인트가 속한 영역의 API 명세 | 부하 스크립트 작성 |
 | `infra-operator` | `docs/infra/runbook.md` · `docs/infra/system.md` · `docs/infra/observability.md` · `docs/api/infra-observation.md` · `docs/infra/tech-stack.md` · `docs/infra/test-plan.md` · `docs/features/infra.md` | 운영 갈래 전부 |
 | `monitoring-engineer` | `docs/infra/observability.md` · `docs/api/infra-observation.md` · `docs/api/infra.md` · `docs/infra/system.md` · `docs/infra/tech-stack.md` · `docs/infra/runbook.md` · `docs/infra/test-plan.md` · `docs/features/infra.md` | 관측 설정 작성 |
+
+`frontend-dev`가 올리는 둘은 `docs/` 밖에 있다. 디자인 토큰 정의서와 레이아웃 맵은 프론트 코드가 직접 참조하는 정본이라 `frontend/` 안에 둔다 — 정의서가 `frontend/src/styles/tokens.css`를 만들고, 레이아웃 맵이 컴포넌트의 배치를 정한다 (이슈 #110 계획 승인). 아키타입은 여섯이다 — `map-search`(`/`) · `favorites`(관심 매물 · 알림 목록) · `login` · `signup` · `my-info`(계정 · 알림 구독) · `home`(푸터 구역만).
 
 `traffic-builder`는 인프라 갈래인데도 `docs/api/common.md`를 올린다. 1장의 제외 규칙은 인프라 구성이 앱 API를 쓰지 않기 때문인데, 부하 스크립트는 앱 API를 호출하고 응답 봉투를 파싱하므로 예외다.
 
