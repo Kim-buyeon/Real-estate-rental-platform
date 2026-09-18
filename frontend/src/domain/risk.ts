@@ -183,3 +183,22 @@ export const personalConditionLabel = (condition: string) => labelOf(PERSONAL_CO
 /** rightViolations[] · warnings[]의 항목 문구. 두 배열이 같은 열거값을 쓴다 */
 export const ownershipRightTypeLabel = (rightType: string) => labelOf(OWNERSHIP_RIGHT_TYPE_LABEL, rightType);
 export const priceTypeLabel = (priceType: string) => labelOf(PRICE_TYPE_LABEL, priceType);
+
+/**
+ * 판정 항목의 해당 여부 표기 — 깡통전세(isNegativeEquity, 명세 1.1) · 위반건축물(consistency.violationBuilding).
+ * 문구를 컴포넌트에서 삼항으로 다시 만들지 않는다 (frontend/CLAUDE.md 재사용 원칙).
+ *
+ * domain/property.ts에도 같은 이름 · 같은 문구의 함수가 있다. 한 곳으로 모으지 않는다 —
+ * 쓰는 쪽이 매물(건축물대장 표기)과 위험도(판정 항목)로 갈리고, 도메인 모듈끼리는 서로를 import하지
+ * 않는다 (frontend/CLAUDE.md import 방향). 문구가 같은 것은 지금 우연이고, 한쪽이 바뀌어도 다른 쪽이
+ * 따라가야 할 이유가 없다.
+ *
+ * 참이 좋은 항목인지 나쁜 항목인지는 표기가 아니라 강조의 문제이므로 여기 두지 않는다 — 그 화면이 정한다.
+ */
+const APPLICABILITY_LABEL: Record<'applicable' | 'notApplicable', string> = {
+  applicable: '해당',
+  notApplicable: '해당 없음',
+};
+
+export const applicabilityLabel = (isApplicable: boolean) =>
+  isApplicable ? APPLICABILITY_LABEL.applicable : APPLICABILITY_LABEL.notApplicable;

@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import type { PropertyMarker } from '../../../api/property';
 import { Badge, Button, Card } from '../../../components/ui';
-import { CONTRACT_TYPE_LABEL } from '../../../domain/property';
+import { contractTypeLabel } from '../../../domain/property';
 import { debtRatioLabel, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
 import { formatWon } from '../../../lib/format';
 import styles from './MarkerPreviewCard.module.css';
@@ -35,7 +35,7 @@ export const MarkerPreviewCard = memo(function MarkerPreviewCard({
       <dl className={`${styles.facts} type-caption`}>
         <div className={styles.fact}>
           <dt>계약유형</dt>
-          <dd>{CONTRACT_TYPE_LABEL[marker.contractType]}</dd>
+          <dd>{contractTypeLabel(marker.contractType)}</dd>
         </div>
         {marker.monthlyRent > 0 && (
           <div className={styles.fact}>

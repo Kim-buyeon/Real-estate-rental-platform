@@ -1,7 +1,13 @@
 import { memo } from 'react';
 import type { RiskAnalysis } from '../../../api/risk';
 import { Badge, KvRow, KvRowList } from '../../../components/ui';
-import { gradeReasonLabel, priceTypeLabel, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
+import {
+  applicabilityLabel,
+  gradeReasonLabel,
+  priceTypeLabel,
+  riskGradeLabel,
+  riskGradeToken,
+} from '../../../domain/risk';
 import { formatDate, formatDateTime, formatPercent, formatWon } from '../../../lib/format';
 import styles from './RiskVerdict.module.css';
 
@@ -32,9 +38,7 @@ export const RiskVerdict = memo(function RiskVerdict({ analysis }: RiskVerdictPr
           </span>
         </KvRow>
         <KvRow label="선순위채권 합계">{formatWon(analysis.seniorDebtTotal)}</KvRow>
-        <KvRow label="깡통전세">
-          {analysis.isNegativeEquity ? '해당' : '해당 없음'}
-        </KvRow>
+        <KvRow label="깡통전세">{applicabilityLabel(analysis.isNegativeEquity)}</KvRow>
       </KvRowList>
 
       <p className={`${styles.analyzedAt} type-body-sm`}>분석 기준 {formatDateTime(analysis.analyzedAt)}</p>

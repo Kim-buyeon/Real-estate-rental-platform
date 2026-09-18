@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { ApiError } from '../../../api/client';
 import { Alert, Badge, Button, Disclosure, KvRow, KvRowList } from '../../../components/ui';
-import { CONTRACT_TYPE_LABEL, PROPERTY_TYPE_LABEL } from '../../../domain/property';
+import { contractTypeLabel, propertyTypeLabel } from '../../../domain/property';
 import { debtRatioLabel, priceTypeLabel, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
 import { formatDate, formatWon } from '../../../lib/format';
 import { propertyQueries } from '../../../queries/property';
@@ -85,14 +85,14 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
                 <Badge variant={riskGradeToken(detail.riskSummary?.riskGrade ?? null)}>
                   {riskGradeLabel(detail.riskSummary?.riskGrade ?? null)}
                 </Badge>
-                <span className="type-body-sm">{PROPERTY_TYPE_LABEL[detail.propertyType] ?? detail.propertyType}</span>
+                <span className="type-body-sm">{propertyTypeLabel(detail.propertyType)}</span>
               </div>
 
               <p className={`${styles.deposit} type-heading-1`}>{formatWon(detail.deposit)}</p>
               <p className={`${styles.address} type-body`}>{detail.address}</p>
 
               <KvRowList>
-                <KvRow label="계약유형">{CONTRACT_TYPE_LABEL[detail.contractType]}</KvRow>
+                <KvRow label="계약유형">{contractTypeLabel(detail.contractType)}</KvRow>
                 {detail.monthlyRent > 0 && <KvRow label="월세">{formatWon(detail.monthlyRent)}</KvRow>}
                 <KvRow label="전용면적">{detail.areaSqm}㎡</KvRow>
                 <KvRow label="층">{detail.floor}층</KvRow>

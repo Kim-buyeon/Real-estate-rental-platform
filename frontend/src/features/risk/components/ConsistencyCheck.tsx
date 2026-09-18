@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { RiskConsistency } from '../../../api/risk';
 import { KvRow, KvRowList } from '../../../components/ui';
+import { applicabilityLabel } from '../../../domain/risk';
 import styles from './ConsistencyCheck.module.css';
 
 export interface ConsistencyCheckProps {
@@ -11,7 +12,13 @@ export interface ConsistencyCheckProps {
 const ITEMS = [
   { key: 'ownerNameMatched', term: '명의 일치', met: '일치', unmet: '불일치' },
   { key: 'addressMatched', term: '주소 일치', met: '일치', unmet: '불일치' },
-  { key: 'violationBuilding', term: '위반건축물', met: '해당 없음', unmet: '해당' },
+  // 위반건축물은 다른 셋과 달리 일치 여부가 아니라 해당 여부다 — 문구는 domain/risk.ts가 갖는다
+  {
+    key: 'violationBuilding',
+    term: '위반건축물',
+    met: applicabilityLabel(false),
+    unmet: applicabilityLabel(true),
+  },
   { key: 'areaMatched', term: '면적 대조', met: '일치', unmet: '불일치' },
 ] as const;
 
