@@ -27,7 +27,7 @@ git diff develop...HEAD --name-only
 | 큰 동기 import | 차트 · 지도 · 날짜 라이브러리를 최상위에서 통째로 import | `import` 문의 패키지 크기. 카카오맵은 `kakao-map` 2장대로 `<script>` 태그 로드인지 | 없음 — SDK 접근 방식(직접 / 래퍼)은 `docs/tech-stack.md` 4장에서 미확정. 확정 전엔 규칙 제안 |
 | 쿼리 키 | 키에 없는 값으로 요청을 만든다 → 다른 조건의 결과가 캐시에서 나온다 | `queryFn`이 쓰는 변수와 `queryKey`의 원소를 대조한다. 키 리터럴(`queryKey: [`)이 팩토리 밖에 있으면 위반 | `docs/tech-stack.md` 4장 (쿼리 키 팩토리) · `frontend/CLAUDE.md` |
 | 리스너 · 연결 누수 | 정리되지 않는 리스너, 화면 안에서 여는 SSE | `kakao.maps.event.addListener`에 대응하는 `removeListener`가 정리 함수에 있는가. 오버레이 `content` 엘리먼트의 `addEventListener`가 오버레이 제거 시 해제되는가. `new EventSource(`가 최상위 연결 관리자 밖에 있으면 위반 | `kakao-map` 5장 · `docs/tech-stack.md` 4장 (EventSource) · `docs/architecture/notification.md` |
-| 토큰 이탈 | 색 · 간격이 토큰 변수가 아니라 리터럴이다 | `grep -rnE '#[0-9a-fA-F]{3,8}\b' frontend/src` — 토큰 파일 자신을 제외한 결과가 있으면 위반. px 리터럴은 레이아웃 1회성만 허용 | 디자인 토큰 정의서(경로는 `slice-start`) · `frontend/CLAUDE.md` |
+| 토큰 이탈 | 색 · 간격이 토큰 변수가 아니라 리터럴이다 | `grep -rnE '#[0-9a-fA-F]{3,8}\b' frontend/src` — 토큰 파일 자신을 제외한 결과가 있으면 위반. **px 리터럴의 허용 범위는 여기에 옮겨 적지 않는다** — `frontend/CLAUDE.md` 「스타일」 절의 목록이 정본이다 | 디자인 토큰 정의서(경로는 `slice-start`) · `frontend/CLAUDE.md` |
 | 열거값 분기 | 열거값을 `switch` · `if`로 문구 · 색에 매핑한다 | `riskGrade` `contractType` 등 열거값 위의 분기 | `docs/conventions.md` 「표시 문구는 열거형이 갖는다」 |
 | 서버 값의 HTML 삽입 | 서버 문자열이 HTML로 해석되는 경로 | `dangerouslySetInnerHTML`, 오버레이 `content`에 문자열 템플릿 | `kakao-map` 5장 · `frontend/CLAUDE.md` |
 
