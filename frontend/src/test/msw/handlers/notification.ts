@@ -1,6 +1,11 @@
 // 알림 도메인 MSW 핸들러. 응답은 알림 API 명세 1.3의 예시 그대로다 (frontend/CLAUDE.md 폴더 구조).
 import { http, HttpResponse } from 'msw';
-import type { Notification, NotificationPage, NotificationSubscriptions } from '../../../api/notification';
+import type {
+  Notification,
+  NotificationPage,
+  NotificationStreamTicket,
+  NotificationSubscriptions,
+} from '../../../api/notification';
 
 /** 명세 1.3 예시 그대로 — RISK_CHANGE의 beforeValue · afterValue는 위험 등급 상수명이다 */
 export const RISK_CHANGE_NOTIFICATION: Notification = {
@@ -83,7 +88,21 @@ export const NOTIFICATION_PAGE_2: NotificationPage = {
  * NOTIFICATION_PAGE_1.nextCursor로 오면 둘째 쪽 — 공통 규약 1.4를 어긴 커서면 첫 쪽으로 되돌아간다
  * (property.ts wishlistHandlers와 같은 방식). 읽음 처리 응답의 data는 null이다(명세 1.4 마지막 줄).
  */
+/** 발급할 때마다 올라간다. 정확한 값을 단언하지 않으므로 테스트 사이에 되돌리지 않는다 — 필요한
+ * 성질은 「매번 다른 값」 하나뿐이다 */
+let issuedTicketCount = 0;
+
+/** 테스트가 「액세스 토큰이 아닌 티켓이 URL에 실렸다」를 가릴 때 쓰는 접두 */
+export const STREAM_TICKET_PREFIX = 'stream-ticket-';
+
 export const notificationHandlers = [
+  // NOTI-03 스트림 티켓 발급 — 명세 1.1. 티켓은 1회용이라 부를 때마다 다른 값을 준다.
+  // 재연결이 티켓을 재사용하지 않는지를 테스트가 값으로 가를 수 있게 하기 위함이다
+  http.post('/api/notifications/stream-ticket', () => {
+    issuedTicketCount += 1;
+    const data: NotificationStreamTicket = { ticket: `${STREAM_TICKET_PREFIX}${issuedTicketCount}` };
+    return HttpResponse.json({ success: true, data });
+  }),
   http.get('/api/notifications', ({ request }) => {
     const cursor = new URL(request.url).searchParams.get('cursor');
     const page = cursor === NOTIFICATION_PAGE_1.nextCursor ? NOTIFICATION_PAGE_2 : NOTIFICATION_PAGE_1;

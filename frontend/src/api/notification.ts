@@ -1,7 +1,8 @@
 // 알림 API 명세 — 명세 표의 행 하나 = 함수 하나. 여기 있는 것은 NOTI-05 세 행(목록 · 개별 읽음 ·
 // 전체 읽음)과 NOTI-01 두 행(구독 설정 조회 · 수정)이다. NOTI-04 푸시 토큰은 차기 · 조건부 범위라
 // 함수를 만들지 않는다 (frontend/CLAUDE.md API 함수).
-// NOTI-03 실시간 수신 행은 request<T>()가 아니라 EventSource이며 app/NotificationStream.tsx가 갖는다.
+// NOTI-03은 두 행이다 — 스트림 티켓 발급은 request<T>()로 여기에 있고, 실시간 수신(SSE) 행은
+// request<T>()가 아니라 EventSource이며 app/NotificationStream.tsx가 갖는다.
 import type { NotificationType } from '../domain/notification';
 import type { ContractType } from '../domain/property';
 import { request } from './client';
@@ -37,6 +38,27 @@ export interface Notification {
 export interface NotificationPage extends CursorPage<Notification> {
   unreadCount: number;
 }
+
+/**
+ * 스트림 티켓 발급 응답 — 명세 1.1. 짧은 수명의 일회용 티켓 문자열 하나다.
+ * 만료 시각 · 수명을 필드로 받지 않는다 — 명세에 없는 필드를 만들지 않으며, 티켓은 받는 즉시
+ * 연결에 쓰므로 프론트가 수명을 알 이유가 없다.
+ */
+export interface NotificationStreamTicket {
+  ticket: string;
+}
+
+/**
+ * NOTI-03 · POST /api/notifications/stream-ticket — 인증 필수. 연결 하나마다 티켓 하나를 발급받는다.
+ *
+ * 표준 EventSource는 헤더를 붙일 수 없어 연결 자격을 URL로 넘겨야 하는데, 액세스 토큰을 URL에 담는
+ * 것은 RFC 9700이 금지하는 방식이다(이슈 102) — 그래서 URL에 실리는 값을 짧은 수명의 일회용
+ * 티켓으로 바꿨다. 발급은 Bearer 헤더를 붙일 수 있는 보통의 POST다.
+ *
+ * **받은 티켓을 저장하지 않는다.** 호출자는 URL에 쓰고 버린다 (app/NotificationStream.tsx).
+ */
+export const issueStreamTicket = () =>
+  request<NotificationStreamTicket>({ method: 'POST', url: '/notifications/stream-ticket' });
 
 /**
  * NOTI-05 · GET /api/notifications — 인증 필수. 커서 목록이다 (공통 규약 1.4).
