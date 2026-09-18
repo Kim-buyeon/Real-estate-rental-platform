@@ -1,8 +1,15 @@
 /*
- * 리셋 · 폰트 로드 · keep-all
+ * 리셋 · 폰트 로드 · keep-all · 브레이크포인트
  *
- * 브레이크포인트: 미확정 — 디자인 토큰 정의서 Responsive Behavior 절이 정한다.
- * 정해지면 값을 여기 한 번 적고, 미디어 쿼리는 그 값만 쓴다. 그 전에는 미디어 쿼리를 쓰지 않는다.
+ * 브레이크포인트는 디자인 토큰 정의서 9절 Responsive Behavior 가 정한다. 미디어 쿼리는 CSS 변수를
+ * 쓸 수 없으므로 값을 여기 한 번 적고, 어느 파일에서든 아래 둘만 조건으로 쓴다.
+ *
+ *   모바일    ~ 767px          기본 (미디어 쿼리 없음)
+ *   태블릿    768px ~ 1023px   @media (min-width: 768px)
+ *   데스크톱  1024px ~         @media (min-width: 1024px)
+ *
+ * 컨테이너 최대 폭 1200px · 터치 타겟 최소 44px 도 같은 절이 정한다.
+ * 셋 다 계측값이 아니라 프로젝트 정의다 — 참고 사이트의 모바일 컷이 없다 (정의서 K-16).
  */
 
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');

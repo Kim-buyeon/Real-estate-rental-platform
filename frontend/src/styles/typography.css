@@ -1,46 +1,93 @@
 /*
  * 타이포그래피 역할 클래스. 글꼴 · 글자 크기 · 행간 · 굵기는 여기로만 쓴다.
- * 임시본 · 다방 사이트 인상 토대의 추정값(미계측) · 디자인 토큰 정의서 typography 값으로 통째 교체
+ *
+ * 디자인 토큰 정의서 `typography` 의 역할 하나 = 클래스 하나. css-vars export 가 타이포그래피를
+ * 내지 않아 정의서 값을 손으로 옮긴 파일이다 (frontend/CLAUDE.md 「스타일」). 정의서가 바뀌면 함께 고친다.
+ *
+ * font-family 는 정의서의 스택과 같은 것을 global.css 가 body 에 한 번 걸고 여기서는 상속받는다.
+ * 같은 스택을 열네 번 되풀이하지 않기 위함이다.
  */
 
+.type-display {
+  font-size: 40px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
 .type-heading-1 {
-  font-size: 24px;
-  line-height: 32px;
+  font-size: 28px;
+  line-height: 1.35;
   font-weight: 700;
 }
 
 .type-heading-2 {
   font-size: 20px;
-  line-height: 28px;
+  line-height: 1.4;
   font-weight: 700;
 }
 
 .type-heading-3 {
-  font-size: 17px;
-  line-height: 24px;
-  font-weight: 600;
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.type-body-lg {
+  font-size: 16px;
+  line-height: 1.6;
+  font-weight: 400;
 }
 
 .type-body {
   font-size: 15px;
-  line-height: 22px;
+  line-height: 1.6;
   font-weight: 400;
 }
 
 .type-body-strong {
   font-size: 15px;
-  line-height: 22px;
-  font-weight: 600;
+  line-height: 1.6;
+  font-weight: 700;
+}
+
+.type-body-sm {
+  font-size: 13px;
+  line-height: 1.55;
+  font-weight: 400;
 }
 
 .type-label {
   font-size: 14px;
-  line-height: 20px;
+  line-height: 1.5;
   font-weight: 500;
 }
 
-.type-caption {
+.type-link {
+  font-size: 14px;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.type-button {
+  font-size: 16px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.type-button-sm {
   font-size: 13px;
-  line-height: 18px;
+  line-height: 1;
+  font-weight: 400;
+}
+
+.type-eyebrow {
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.type-caption {
+  font-size: 12px;
+  line-height: 1.4;
   font-weight: 400;
 }

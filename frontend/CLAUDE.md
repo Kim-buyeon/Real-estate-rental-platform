@@ -10,6 +10,9 @@ React · TypeScript · Vite · TanStack Query v5 · React Router 8 · axios · C
 frontend/
 ├── index.html                  카카오맵 SDK <script> 한 줄 — kakao-map 스킬 2장
 ├── vite.config.ts              envDir = 저장소 루트 · server.proxy /api → 백엔드
+├── design/                     디자인 정본. 코드가 아니라 코드의 근거다
+│   ├── DESIGN.md                 디자인 토큰 정의서. styles/tokens.css 를 만드는 입력
+│   └── examples/<아키타입>/       레이아웃 맵. 섹션 순서 · 그리드 · 여백 리듬 · 반응형 붕괴
 └── src/
     ├── main.tsx                진입. 세션 복원 → QueryClientProvider → RouterProvider
     ├── app/                    조합 루트. 앱 전체에 하나만 있는 것. main.tsx 외에 아무도 app을 import하지 않는다
@@ -308,7 +311,7 @@ export function useAddWishlist() {
 
 ### 공용 UI (`components/ui/`)
 
-**디자인 토큰 정의서의 `components` 항목 하나 = 컴포넌트 하나.** 정의서에 없는 컴포넌트를 만들지 않는다 — 필요하면 정의서에 먼저 넣고 승인 뒤 만든다 (`frontend-dev`). 정의서가 아직 없으면 우리 화면이 쓰는 어휘가 후보다 — `Button` · `Pulldown` · `Field` · `Input` · `Select` · `Checkbox` · `Card` · `Tabs` · `Dialog` · `Badge` · `Toast` · `Alert`.
+**디자인 토큰 정의서의 `components` 항목 하나 = 컴포넌트 하나.** 정의서에 없는 컴포넌트를 만들지 않는다 — 필요하면 정의서에 먼저 넣고 승인 뒤 만든다 (`frontend-dev`). 정의서에 **키가 없는 것**도 같다 — `dialog` · `toast` · `checkbox` · 로딩 표시는 참고 사이트에서 관측되지 않아 키가 없다(정의서 K-18~K-21). 이들을 쓰는 화면 작업은 정의서 추가가 선행된다.
 
 - 정의서의 변형(`button-primary` · `button-ghost`)은 `variant` prop 값이고, 상태(`-hover` · `-disabled`)는 CSS 상태다. 변형마다 컴포넌트를 만들지 않는다.
 - **도메인을 모른다.** `riskGrade` · `contractType`을 받지 않는다. `Badge`는 정의서 `badge-*` 항목 이름을 `variant`로 받는다. 등급 → 변형 매핑은 `domain/risk.ts`에 있고, `features/risk`의 `RiskGradeBadge`가 그것을 읽어 `Badge`에 넘긴다.
@@ -387,7 +390,7 @@ CSS Modules와 CSS 변수만 쓴다. CSS 프레임워크 · CSS-in-JS를 두지 
 
 - **색 · 간격 · 반경은 토큰 변수로만, 글꼴 · 글자 크기 · 행간은 `typography.css`의 역할 클래스로만 쓴다.** hex · `rgb()` · 색 이름 · 간격 px 리터럴 · `font-size`를 컴포넌트 CSS에 적지 않는다. 검사는 `grep -rnE '#[0-9a-fA-F]{3,8}\b' src` — `tokens.css` 외에 결과가 있으면 위반이다 (`quality-check`).
 - **px 리터럴이 허용되는 곳은 넷이고 그 밖은 위반이다** — `typography.css`(정의서 typography 값의 이관), 정의서에 없는 레이아웃 1회성 값(컨테이너 폭 · 그리드 트랙), 1px 보더 두께, 미디어 쿼리 조건. 미디어 쿼리는 CSS 변수를 쓸 수 없으므로 브레이크포인트 값은 정의서 Responsive Behavior 절의 것을 `global.css` 상단 주석에 한 번 적고 그 값만 쓴다. `frontend-dev`와 `quality-check`의 px 규칙은 이 목록을 가리킨다.
-- **정의서가 아직 없는 동안** `tokens.css`는 손으로 쓴 임시본이다 (`frontend-dev`). 정의서가 생기면 export 출력으로 파일을 통째로 대체한다 — 손으로 쓴 값을 남기지 않는다.
+- `tokens.css`에 손으로 쓴 값을 남기지 않는다. 값을 고칠 일이 생기면 정의서를 고치고 export를 다시 돌린다 — 파일을 직접 고치면 다음 export가 그것을 지운다.
 - 인라인 `style`은 런타임 계산값(오버레이 좌표 · 진행률)만. 색 · 간격을 넣지 않는다.
 - 정의서에 없는 색 · 컴포넌트가 필요하면 만들지 않고 멈춘다. 토큰 추가는 정의서의 작업이다 (`frontend-dev`).
 - 섹션 순서 · 그리드 · 여백 리듬은 레이아웃 맵을 따른다. 정의서는 토큰과 컴포넌트, 레이아웃 맵은 합성 — 둘의 분업은 `designmd-spec`.
@@ -476,8 +479,6 @@ SDK를 어떻게 부르고 무엇을 그리는지는 `kakao-map` 스킬이 정�
 | 서울 경계 · 자치구 단계 `level` — 상수 파일의 잠정값 | 위 지도 상수 표 — 브라우저 실측 (`kakao-map` 6장) | 실측할 수 있을 때 |
 | `setBounds` 뒤 `idle`이 반드시 오는가 (`kakao-map` 6장) | 브라우저 확인 | 같이. 지금은 이동 직후 `getBounds()`를 한 번 더 읽어 둔다 |
 | 운영에서 프론트를 서빙하는 위치 · 오리진 | 시스템 구성서 | 다른 오리진이면 API 기본 경로를 환경 변수로 |
-| 디자인 토큰 정의서 · 레이아웃 맵의 정본 경로 — `tokens.css` 생성 명령의 입력 경로 | `design-extract` 첫 계획 승인 → `slice-start` | 정의서 반영 |
-| 로딩 표시 컴포넌트(스피너 · 스켈레톤) — 정의서 어휘에 없다 | 디자인 토큰 정의서 프로젝트 정의 (`designmd-spec` 1.2) | 정의서 반영 |
-| `Disclosure`(접기 · 펼치기) — 정의서 어휘에 없다. 상세 패널의 건축물대장 · 등기 이력이 쓴다 (이슈 #91 계획) | 디자인 토큰 정의서 프로젝트 정의 (`designmd-spec` 1.2) | 정의서 반영 |
+| 로딩 표시 컴포넌트(스피너 · 스켈레톤) — 정의서 어휘에 없고 참고 사이트에서도 관측되지 않았다 | 디자인 토큰 정의서 프로젝트 정의 (`designmd-spec` 1.2) | 정의서 K-21이 값을 정할 때. 그 전에는 만들지 않는다 |
 | `QueryClient` 기본값(`staleTime` · `retry`) · axios 타임아웃 | 기반 셋업 계획 승인 | 셋업 |
 | 린터 · 포매터 | 기술 스택 정의서 5장 | 셋업 |
