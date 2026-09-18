@@ -7,7 +7,7 @@ import {
   SUBSCRIPTION_ITEM_HINT,
   SUBSCRIPTION_ITEM_LABEL,
 } from '../../../domain/notification';
-import { CONTRACT_TYPES, CONTRACT_TYPE_LABEL, SEOUL_DISTRICTS, type ContractType } from '../../../domain/property';
+import { CONTRACT_TYPES, SEOUL_DISTRICTS, contractTypeLabel, type ContractType } from '../../../domain/property';
 import { formatWon } from '../../../lib/format';
 import { notificationQueries, useUpdateNotificationSubscriptions } from '../../../queries/notification';
 import styles from './SubscriptionForm.module.css';
@@ -195,7 +195,7 @@ export function SubscriptionForm() {
               <option value="">전체</option>
               {CONTRACT_TYPES.map((contractType) => (
                 <option key={contractType} value={contractType}>
-                  {CONTRACT_TYPE_LABEL[contractType]}
+                  {contractTypeLabel(contractType)}
                 </option>
               ))}
             </Select>

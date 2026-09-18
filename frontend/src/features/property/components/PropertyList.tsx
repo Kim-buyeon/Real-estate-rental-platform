@@ -3,11 +3,11 @@ import { useMemo, useState } from 'react';
 import type { PropertyFilter } from '../../../api/property';
 import { Alert, Badge, Button, Field, Select } from '../../../components/ui';
 import {
-  CONTRACT_TYPE_LABEL,
   PROPERTY_SORTS,
   PROPERTY_SORT_DEFAULT_LABEL,
   PROPERTY_SORT_LABEL,
-  PROPERTY_TYPE_LABEL,
+  contractTypeLabel,
+  propertyTypeLabel,
   type PropertySort,
 } from '../../../domain/property';
 import { debtRatioLabel, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
@@ -89,7 +89,7 @@ export function PropertyList({ filter, onSelect }: PropertyListProps) {
                 </div>
 
                 <p className={`${styles.kind} type-body`}>
-                  {CONTRACT_TYPE_LABEL[item.contractType]} · {PROPERTY_TYPE_LABEL[item.propertyType] ?? item.propertyType}
+                  {contractTypeLabel(item.contractType)} · {propertyTypeLabel(item.propertyType)}
                 </p>
 
                 <p className={`${styles.spec} type-body-sm`}>{item.address}</p>

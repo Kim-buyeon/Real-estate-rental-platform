@@ -1,7 +1,12 @@
 import { memo, useCallback } from 'react';
 import type { PropertyFilter } from '../../../api/property';
 import { Button, Field, Select } from '../../../components/ui';
-import { CONTRACT_TYPES, CONTRACT_TYPE_LABEL, DEPOSIT_MAX_OPTIONS, type ContractType } from '../../../domain/property';
+import {
+  CONTRACT_TYPES,
+  DEPOSIT_MAX_OPTIONS,
+  contractTypeLabel,
+  type ContractType,
+} from '../../../domain/property';
 import { RISK_GRADES, RISK_GRADE_LABEL, type RiskGrade } from '../../../domain/risk';
 import { formatDepositShort } from '../../../lib/format';
 import styles from './PropertyFilterBar.module.css';
@@ -40,7 +45,7 @@ export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onCha
             <option value="">전체</option>
             {CONTRACT_TYPES.map((type) => (
               <option key={type} value={type}>
-                {CONTRACT_TYPE_LABEL[type]}
+                {contractTypeLabel(type)}
               </option>
             ))}
           </Select>

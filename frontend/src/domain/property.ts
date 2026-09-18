@@ -5,7 +5,8 @@
 export const CONTRACT_TYPES = ['DEPOSIT_ONLY', 'MONTHLY_RENT', 'SEMI_DEPOSIT'] as const;
 export type ContractType = (typeof CONTRACT_TYPES)[number];
 
-export const CONTRACT_TYPE_LABEL: Record<ContractType, string> = {
+/** 밖으로는 contractTypeLabel()만 낸다 — 매핑을 직접 인덱싱하면 모르는 코드 처리가 호출부마다 갈린다 */
+const CONTRACT_TYPE_LABEL: Record<ContractType, string> = {
   DEPOSIT_ONLY: '전세',
   MONTHLY_RENT: '월세',
   SEMI_DEPOSIT: '반전세',
@@ -19,7 +20,8 @@ export const CONTRACT_TYPE_LABEL: Record<ContractType, string> = {
 export const PROPERTY_TYPES = ['APARTMENT', 'OFFICETEL'] as const;
 export type PropertyType = (typeof PROPERTY_TYPES)[number];
 
-export const PROPERTY_TYPE_LABEL: Record<PropertyType, string> = {
+/** 밖으로는 propertyTypeLabel()만 낸다 — 위 CONTRACT_TYPE_LABEL과 같은 이유다 */
+const PROPERTY_TYPE_LABEL: Record<PropertyType, string> = {
   APARTMENT: '아파트',
   OFFICETEL: '오피스텔',
 };
@@ -61,6 +63,8 @@ export type SeoulDistrict = (typeof SEOUL_DISTRICTS)[number];
 /**
  * 건축물대장의 해당 여부 표기 — 주거용(isResidential) · 위반건축물(violationBuilding), 명세 1.8.
  * 문구를 컴포넌트에서 삼항으로 다시 만들지 않는다 (frontend/CLAUDE.md 재사용 원칙).
+ * 쓰는 쪽은 매물 하나다 — BuildingLedgerSection. 위험도 판정 항목의 같은 표기는 domain/risk.ts가
+ * 따로 갖는다(그쪽 주석에 모으지 않는 이유를 적었다).
  *
  * 참이 좋은 항목인지(주거용) 나쁜 항목인지(위반건축물)는 표기의 문제가 아니라 강조의 문제이므로
  * 여기 두지 않는다 — 어느 쪽을 강조할지는 그 화면이 정한다.
@@ -114,3 +118,18 @@ export const DEPOSIT_MAX_OPTIONS: readonly number[] = [
   300_000_000,
   500_000_000,
 ];
+
+// ── 표시 문구 헬퍼 ────────────────────────────────────────────────────────
+// domain/risk.ts와 같은 형태다. 서버가 우리가 모르는 코드를 보내도 화면이 빈칸이 되지 않게
+// 코드 문자열을 그대로 보여준다 — 지금 매물 유형은 아파트 · 오피스텔 둘뿐이지만 명세 1.1이
+// 「연립다세대 · 단독다가구 등」을 열어 두었고, 적재 서비스가 늘면 그 값이 실제로 온다.
+
+function labelOf(labels: Record<string, string>, code: string): string {
+  return labels[code] ?? code;
+}
+
+// 파라미터를 열거 유니언이 아니라 string으로 받는다 — 모르는 코드를 그대로 돌려주는 것이 이 함수들의 일이고,
+// 유니언으로 좁히면 그 경우를 호출하는 쪽에서 단언해야 한다 (domain/risk.ts와 같다)
+
+export const contractTypeLabel = (contractType: string) => labelOf(CONTRACT_TYPE_LABEL, contractType);
+export const propertyTypeLabel = (propertyType: string) => labelOf(PROPERTY_TYPE_LABEL, propertyType);
