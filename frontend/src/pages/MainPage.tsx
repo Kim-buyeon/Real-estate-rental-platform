@@ -2,10 +2,11 @@ import { Link } from 'react-router';
 import { buttonClassName } from '../components/ui';
 import { RecentProperties } from '../features/property';
 import { RiskGradeGuide } from '../features/risk';
+import { MAP_PATH } from '../lib/routes';
 import styles from './MainPage.module.css';
 
-/** 지도 탐색 경로. 히어로 버튼 · 「전체 보기」가 같은 곳으로 간다 */
-const MAP_PATH = '/map';
+// 지도 탐색 경로(히어로 버튼 · 「전체 보기」가 같은 곳으로 간다)는 lib/routes.ts 하나가 갖는다 —
+// 최근 등록 매물 카드가 같은 경로에 매물 번호를 붙여 상세로 가므로 두 곳에 적지 않는다 (이슈 104)
 
 /**
  * `/` 메인 화면. 조합만 한다 — 쿼리는 RecentProperties 가, 등급 설명은 RiskGradeGuide 가 갖는다.
