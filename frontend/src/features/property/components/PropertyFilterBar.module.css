@@ -7,6 +7,13 @@
  * 화면 낭독에서 무엇을 고르는 칸인지 알 수 없다.
  *
  * 모바일은 가로 스크롤 한 줄이다(레이아웃 맵 제안과 같다). 768 이상에서 줄바꿈으로 돌아간다.
+ *
+ * px 리터럴은 넷이다 (frontend/CLAUDE.md 스타일 규칙) —
+ *   1) 미디어 쿼리 조건 768 (global.css 머리말이 정본)
+ *   2) 1px 보더 두께 — 필터 줄 하단 선
+ *   3) spacing 격자에 없는 레이아웃 맵 계측값 — 줄 높이 72
+ *   4) 정의서가 지정했으나 css-vars export 가 내지 않는 값 — {components.pulldown} 의 h40.
+ *      한 컴포넌트에만 걸리므로 아래 .pulldown 의 지역 변수에 모았다 (이슈 114)
  */
 .bar {
   display: flex;
@@ -30,7 +37,10 @@
  * 두 모듈의 클래스 순서에 기대지 않으려고 .bar 를 앞에 붙여 우선순위를 높였다.
  */
 .bar .pulldown {
-  height: 40px;
+  /* 정의서 7절 {components.pulldown} 의 높이 */
+  --pulldown-height: 40px;
+
+  height: var(--pulldown-height);
   padding: 0 var(--spacing-md);
   border-radius: var(--rounded-pill);
 }

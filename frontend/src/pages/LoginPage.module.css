@@ -7,7 +7,9 @@
  * px 리터럴은 셋이다 —
  *   1) 미디어 쿼리 조건 768 (global.css 머리말이 정본. 맵이 「태블릿에서 붕괴 없음」이라 1024 조건이 없다)
  *   2) 1px 보더 두께 — 제목 아래 구분선
- *   3) spacing 격자에 없는 레이아웃 맵 계측값 — 아래 .page 의 지역 변수에 모았다
+ *   3) spacing 격자에 없는 레이아웃 맵 계측값(40 · 34 · 62) — 아래 .page 의 지역 변수에 모았다.
+ *      격자 안에 있는 값은 지역 변수라도 px 로 적지 않는다 — 안내문 ↔ 첫 field 의 모바일 32 는
+ *      {spacing.2xl} 이다 (이슈 114)
  *
  * 맵과 다르게 간 곳 —
  *   · 카드 제목은 모바일에서도 28(type-heading-1) 이다. 맵의 제안은 22 인데 그 크기의 타이포 역할이
@@ -24,8 +26,8 @@
   --card-bottom-gap: 40px;
   /* 레이아웃 맵 계측 — 구분선 ↔ 안내문 · 주 버튼 ↔ 보조 링크 */
   --card-rhythm: 34px;
-  /* 레이아웃 맵 — 안내문 ↔ 첫 field. 모바일 32 (제안) */
-  --lead-to-fields: 32px;
+  /* 레이아웃 맵 — 안내문 ↔ 첫 field. 모바일 32 (제안) = {spacing.2xl} */
+  --lead-to-fields: var(--spacing-2xl);
   padding: var(--card-top-gap) var(--spacing-md) var(--card-bottom-gap);
 }
 

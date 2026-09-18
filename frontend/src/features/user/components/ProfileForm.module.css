@@ -4,8 +4,9 @@
  * .facts 는 디자인 토큰 정의서 7절의 {components.info-row} 묶음이다 — 라벨 body-strong/text,
  * 값 text-secondary, 높이 76. **보더는 행 사이가 아니라 목록 마지막 행 아래에만 있다** (정의서 7절).
  *
- * px 리터럴은 둘이다 — 미디어 쿼리 조건 768(global.css 머리말) 과, spacing 격자에 없는 계측값인
- * info-row 높이 76 · 모바일 64 (아래 .facts 의 지역 변수).
+ * px 리터럴은 셋이다 — 미디어 쿼리 조건 768(global.css 머리말), 1px 보더 두께, 그리고 spacing 격자에
+ * 없는 계측값인 info-row 높이 76 (아래 .facts 의 지역 변수). 모바일 64 는 격자 안에 있어 px 가 아니라
+ * {spacing.4xl} 을 쓴다 (이슈 114).
  *
  * 맵과 다르게 간 곳 —
  *   · info-row 우측 셰브런을 두지 않는다. 맵의 셰브런은 「행 전체가 편집으로 들어가는 링크」 표시인데
@@ -43,8 +44,8 @@
 
 /* 수정 불가 필드 — 입력이 아니라 {components.info-row} 묶음으로 보여준다 */
 .facts {
-  /* 모바일 64 — 터치 타겟 44 충족 (레이아웃 맵의 제안(미관측)) */
-  --info-row-height: 64px;
+  /* 모바일 64 = {spacing.4xl} — 터치 타겟 44 충족 (레이아웃 맵의 제안(미관측)) */
+  --info-row-height: var(--spacing-4xl);
   margin: 0;
   /* 마지막 행 아래에만 선이 있다 — 행 사이에는 없다 (정의서 7절) */
   border-bottom: 1px solid var(--color-border);
