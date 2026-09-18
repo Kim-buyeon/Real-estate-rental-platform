@@ -10,7 +10,8 @@
  *      토큰이 없다. 정의서에 있는 {components.card}(1px {colors.border-subtle})로 경계를 낸다 —
  *      Card 컴포넌트가 그 값을 갖는다
  *
- * px 리터럴은 미디어 쿼리 조건 둘뿐이고 정본은 global.css 머리말이다.
+ * px 리터럴은 셋이다 — 미디어 쿼리 조건 둘(정본은 global.css 머리말)과, 판정 근거 줄
+ * (.evidenceItem)의 세로 구분선 1px 보더 두께. 셋 다 frontend/CLAUDE.md 스타일 절이 허용하는 자리다.
  */
 
 .guide {

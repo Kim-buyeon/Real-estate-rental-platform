@@ -8,6 +8,20 @@
  *                        제목 ↔ 내용 {spacing.3xl} 48(태블릿 {spacing.2xl} 32 · 모바일 {spacing.xl} 24)
  *   구역 4 그리드 래퍼   면 {colors.surface-muted} · {rounded.lg} · 패딩 {spacing.xl} 24
  *
+ * 위 두 값이 만나는 자리는 히어로 ↔ 첫 섹션 제목 하나다. 여기는 섹션 리듬이 지배한다 —
+ * 맵이 구역 2 총 높이를 68 + 48 + 28 로 셈하므로 「히어로 아래 24」는 띠 안쪽 값이고 이음매가 아니다.
+ * 이음매는 「앞 구역 하단 ↔ 다음 섹션 제목 상단 {spacing.4xl} 64」 행이며, 우리 구역 3 은 참고 사이트와
+ * 달리 섹션 제목으로 시작하므로 그 행이 그대로 맞는다. 띠 안쪽 24 는 .hero 가, 이음매 64(모바일 ·
+ * 태블릿 제안 48)는 .sections 가 갖는다 — 두 값을 더해 48 로 만들지 않는다 (이슈 117 검토).
+ *
+ * 구역 3 은 맵의 {colors.surface-muted} 를 따르지 않고 페이지 배경 위에 둔다. 사유 둘 —
+ *   1) 참고 사이트에서 그 면은 보더 없는 흰 카드를 페이지와 갈라 주는 장치인데, 우리 등급 카드는
+ *      {components.card} 의 1px {colors.border-subtle} 로 스스로 경계를 낸다
+ *      (RiskGradeGuide.module.css 머리말 2). 면까지 주면 경계 장치가 둘이 된다
+ *   2) 구역 3 · 4 가 같은 컨테이너 안에 있어 여기 주는 면은 컨테이너 폭에서 끊긴다. 히어로의 면은
+ *      화면 전폭이라 좌우 끝이 어긋나 참고 사이트에 없는 단이 생긴다. 맵대로 한 덩어리로 이으려면
+ *      구역 3 을 컨테이너 밖 전폭 섹션으로 빼야 하고, 그것은 MainPage.tsx 의 구조 변경이다
+ *
  * 컨테이너 최대 폭은 정의서 9절이 정한 값이고 global.css 의 --container-max 하나를 참조한다.
  * 좌우 패딩은 헤더 · 푸터와 같은 모바일 16 · 태블릿 이상 24 다 — 세 줄의 끝이 맞아야 한다.
  * 앞 섹션 ↔ 푸터 64 는 푸터가 갖는다 (AppFooter.module.css). 여기서 다시 주지 않는다.
@@ -51,12 +65,15 @@
   color: var(--color-text-secondary);
 }
 
-/* 섹션 사이 리듬 — 맵 「섹션 사이 리듬」 표. 히어로 아래 여백은 히어로가 갖는다 */
+/*
+ * 섹션 사이 리듬 — 맵 「섹션 사이 리듬」 표. 히어로 띠 안쪽 여백은 히어로가 갖고,
+ * 띠 하단 ↔ 첫 섹션 제목 이음매는 여기 위 패딩이다. 섹션 사이 간격과 같은 값을 쓴다
+ */
 .sections {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-3xl);
-  padding-block: var(--spacing-xl) 0;
+  padding-block: var(--spacing-3xl) 0;
 }
 
 .section {
@@ -116,6 +133,7 @@
 @media (min-width: 1024px) {
   .sections {
     gap: var(--spacing-4xl);
+    padding-block: var(--spacing-4xl) 0;
   }
 
   .sectionHead {
