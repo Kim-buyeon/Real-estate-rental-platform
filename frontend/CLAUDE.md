@@ -19,7 +19,9 @@ frontend/
     │   ├── router.tsx            라우트 표 (createBrowserRouter) · 인증 필수 화면의 가드
     │   ├── queryClient.ts        QueryClient 기본값
     │   ├── NotificationStream.tsx  SSE 연결 관리자 — EventSource를 여는 유일한 곳
-    │   └── AppShell.tsx          공통 레이아웃. 레이아웃 맵을 따른다
+    │   ├── AppShell.tsx          공통 레이아웃. 레이아웃 맵을 따른다
+    │   ├── AppFooter.tsx         공통 푸터. 지도 화면은 렌더하지 않는다
+    │   └── routeHandle.ts        라우트의 성질(`handle`) 타입과 좁히는 함수
     ├── session/                토큰 보관(store.ts) · 로그인 상태 훅(useSession.ts)
     ├── pages/                  라우트 하나 = 파일 하나. 조합만 한다
     ├── features/<도메인>/       user · property · risk · loan · notification
@@ -38,7 +40,7 @@ frontend/
     ├── styles/
     │   ├── tokens.css            정의서 export 출력. 손으로 고치지 않는다
     │   ├── typography.css        정의서 typography 역할 클래스
-    │   └── global.css            리셋 · 폰트 로드 · keep-all
+    │   └── global.css            리셋 · 폰트 로드 · keep-all · 프로젝트 정의 변수
     └── test/                   setup.ts · msw/handlers/<도메인>.ts — 응답은 API 명세의 예시 그대로
 ```
 
@@ -385,11 +387,11 @@ CSS Modules와 CSS 변수만 쓴다. CSS 프레임워크 · CSS-in-JS를 두지 
 | --- | --- | --- |
 | `styles/tokens.css` | `:root`의 CSS 변수. `--color-<키>` · `--spacing-<키>` · `--rounded-<키>` | **`npx @google/design.md export <정의서> --format css-vars` 출력 그대로.** 손으로 고치지 않는다. 정의서와 같은 커밋 |
 | `styles/typography.css` | 정의서 `typography` 역할마다 클래스 하나 — `.type-body` · `.type-heading-1` | `css-vars` export가 타이포그래피를 내지 않아 정의서 값을 손으로 옮긴다. 정의서와 같은 커밋 |
-| `styles/global.css` | 리셋 · 폰트 로드 · `word-break: keep-all` · 브레이크포인트 주석 | 한 번 |
+| `styles/global.css` | 리셋 · 폰트 로드 · `word-break: keep-all` · 브레이크포인트 주석 · **정의서가 정했으나 `css-vars` export가 내지 않는 값**(`--container-max` · `--touch-target-min`) | 한 번 |
 | `<컴포넌트>.module.css` | 그 컴포넌트의 스타일 | 컴포넌트 옆 |
 
-- **색 · 간격 · 반경은 토큰 변수로만, 글꼴 · 글자 크기 · 행간은 `typography.css`의 역할 클래스로만 쓴다.** hex · `rgb()` · 색 이름 · 간격 px 리터럴 · `font-size`를 컴포넌트 CSS에 적지 않는다. 검사는 `grep -rnE '#[0-9a-fA-F]{3,8}\b' src` — `tokens.css` 외에 결과가 있으면 위반이다 (`quality-check`).
-- **px 리터럴이 허용되는 곳은 넷이고 그 밖은 위반이다** — `typography.css`(정의서 typography 값의 이관), 정의서에 없는 레이아웃 1회성 값(컨테이너 폭 · 그리드 트랙), 1px 보더 두께, 미디어 쿼리 조건. 미디어 쿼리는 CSS 변수를 쓸 수 없으므로 브레이크포인트 값은 정의서 Responsive Behavior 절의 것을 `global.css` 상단 주석에 한 번 적고 그 값만 쓴다. `frontend-dev`와 `quality-check`의 px 규칙은 이 목록을 가리킨다.
+- **색 · 간격 · 반경은 토큰 변수로만, 글꼴 · 글자 크기 · 행간은 `typography.css`의 역할 클래스로만 쓴다.** hex · `rgb()` · 색 이름 · 간격 px 리터럴 · `font-size`를 컴포넌트 CSS에 적지 않는다. 검사는 `grep -rnE '#[0-9a-fA-F]{3,8}\b' src` — `tokens.css` 외에 결과가 있으면 위반이다 (`quality-check`). **CSS 주석에 이슈 번호를 `#112` 꼴로 적지 않는다** — 이 검사에 그대로 걸린다. 「이슈 112」로 적는다. `.tsx`는 검사 대상이 아니다.
+- **px 리터럴이 허용되는 곳은 다섯이고 그 밖은 위반이다** — `typography.css`(정의서 typography 값의 이관), 정의서에 없는 레이아웃 1회성 값(그리드 트랙 · 격자에 맞지 않는 레이아웃 맵 계측값), 1px 보더 두께, 미디어 쿼리 조건, 그리고 **정의서가 정했으나 `css-vars` export가 내지 않는 값**. 미디어 쿼리는 CSS 변수를 쓸 수 없으므로 브레이크포인트 값은 정의서 Responsive Behavior 절의 것을 `global.css` 상단 주석에 한 번 적고 그 값만 쓴다. 다섯째는 컨테이너 최대 폭과 터치 타겟 하한이다. export가 색 · 간격 · 반경만 내므로 쓸 토큰이 없는데, 그렇다고 컴포넌트마다 px로 다시 적으면 정의서가 값을 고쳐도 따라오지 않는다. **`global.css`에 프로젝트 정의 변수로 한 번 두고 그것만 참조한다** — `--container-max` · `--touch-target-min`. 미디어 쿼리 조건과 같은 처리이고 이유도 같다. `frontend-dev`와 `quality-check`의 px 규칙은 이 목록을 가리킨다.
 - `tokens.css`에 손으로 쓴 값을 남기지 않는다. 값을 고칠 일이 생기면 정의서를 고치고 export를 다시 돌린다 — 파일을 직접 고치면 다음 export가 그것을 지운다.
 - 인라인 `style`은 런타임 계산값(오버레이 좌표 · 진행률)만. 색 · 간격을 넣지 않는다.
 - 정의서에 없는 색 · 컴포넌트가 필요하면 만들지 않고 멈춘다. 토큰 추가는 정의서의 작업이다 (`frontend-dev`).
