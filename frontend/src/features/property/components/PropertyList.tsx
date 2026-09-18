@@ -1,7 +1,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import type { PropertyFilter } from '../../../api/property';
-import { Alert, Badge, Button, Card, Field, Select } from '../../../components/ui';
+import { Alert, Badge, Button, Field, Select } from '../../../components/ui';
 import {
   CONTRACT_TYPE_LABEL,
   PROPERTY_SORTS,
@@ -75,63 +75,41 @@ export function PropertyList({ filter, onSelect }: PropertyListProps) {
         {items.length > 0 && (
           <ul className={styles.items}>
             {items.map((item) => (
-              <li key={item.propertyId}>
-                <Card className={styles.item}>
-                  <div className={styles.head}>
-                    <Badge variant={riskGradeToken(item.riskGrade)}>{riskGradeLabel(item.riskGrade)}</Badge>
-                    <span className="type-caption">
-                      {PROPERTY_TYPE_LABEL[item.propertyType] ?? item.propertyType}
-                    </span>
-                  </div>
+              /*
+               * 목록 행 — 레이아웃 맵 map-search 「list-panel 내부」. 썸네일은 만들지 않는다
+               * (이미지 데이터가 없다). 위계는 맵 그대로 가격 → 유형 → 스펙이다.
+               */
+              <li key={item.propertyId} className={styles.item}>
+                <div className={styles.head}>
+                  <p className={`${styles.price} type-heading-3`}>
+                    {formatWon(item.deposit)}
+                    {item.monthlyRent > 0 && ` / ${formatWon(item.monthlyRent)}`}
+                  </p>
+                  <Badge variant={riskGradeToken(item.riskGrade)}>{riskGradeLabel(item.riskGrade)}</Badge>
+                </div>
 
-                  <p className={`${styles.address} type-body-strong`}>{item.address}</p>
-                  <p className={`${styles.deposit} type-heading-3`}>{formatWon(item.deposit)}</p>
+                <p className={`${styles.kind} type-body`}>
+                  {CONTRACT_TYPE_LABEL[item.contractType]} · {PROPERTY_TYPE_LABEL[item.propertyType] ?? item.propertyType}
+                </p>
 
-                  <dl className={`${styles.facts} type-caption`}>
-                    <div className={styles.fact}>
-                      <dt>계약유형</dt>
-                      <dd>{CONTRACT_TYPE_LABEL[item.contractType]}</dd>
-                    </div>
-                    {item.monthlyRent > 0 && (
-                      <div className={styles.fact}>
-                        <dt>월세</dt>
-                        <dd>{formatWon(item.monthlyRent)}</dd>
-                      </div>
-                    )}
-                    <div className={styles.fact}>
-                      <dt>자치구</dt>
-                      <dd>{item.district}</dd>
-                    </div>
-                    <div className={styles.fact}>
-                      <dt>전세가율</dt>
-                      <dd>{debtRatioLabel(item.debtRatio)}</dd>
-                    </div>
-                    <div className={styles.fact}>
-                      <dt>전용면적</dt>
-                      <dd>{item.areaSqm}㎡</dd>
-                    </div>
-                    <div className={styles.fact}>
-                      <dt>층</dt>
-                      <dd>{item.floor}층</dd>
-                    </div>
-                    <div className={styles.fact}>
-                      <dt>등록일</dt>
-                      <dd>{formatDate(item.registeredAt)}</dd>
-                    </div>
-                  </dl>
+                <p className={`${styles.spec} type-body-sm`}>{item.address}</p>
 
-                  <div className={styles.actions}>
-                    {/* 주소를 이름에 넣는다 — 「상세 보기」가 목록에 여럿이라 그것만으로는 구분되지 않는다 */}
-                    <Button
-                      type="button"
-                      size="sm"
-                      aria-label={`${item.address} 상세 보기`}
-                      onClick={() => onSelect(item.propertyId)}
-                    >
-                      상세 보기
-                    </Button>
-                  </div>
-                </Card>
+                <p className={`${styles.spec} type-body-sm`}>
+                  {item.district} · {item.areaSqm}㎡ · {item.floor}층 · 전세가율 {debtRatioLabel(item.debtRatio)} ·{' '}
+                  {formatDate(item.registeredAt)} 등록
+                </p>
+
+                <div className={styles.actions}>
+                  {/* 주소를 이름에 넣는다 — 「상세 보기」가 목록에 여럿이라 그것만으로는 구분되지 않는다 */}
+                  <Button
+                    type="button"
+                    size="sm"
+                    aria-label={`${item.address} 상세 보기`}
+                    onClick={() => onSelect(item.propertyId)}
+                  >
+                    상세 보기
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>

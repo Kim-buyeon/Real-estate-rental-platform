@@ -31,6 +31,7 @@ export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onCha
         {(control) => (
           <Select
             {...control}
+            className={styles.pulldown}
             value={filter.contractType ?? ''}
             onChange={(event) =>
               onChange({ ...filter, contractType: (event.target.value || undefined) as ContractType | undefined })
@@ -50,6 +51,7 @@ export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onCha
         {(control) => (
           <Select
             {...control}
+            className={styles.pulldown}
             value={filter.depositMax ?? ''}
             onChange={(event) =>
               onChange({ ...filter, depositMax: event.target.value ? Number(event.target.value) : undefined })
@@ -67,21 +69,23 @@ export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onCha
 
       <fieldset className={styles.grades}>
         <legend className={`${styles.legend} type-label`}>위험 등급</legend>
-        {RISK_GRADES.map((grade) => {
-          const isSelected = (filter.riskGrade ?? []).includes(grade);
-          return (
-            <Button
-              key={grade}
-              type="button"
-              size="sm"
-              variant={isSelected ? 'primary' : 'secondary'}
-              aria-pressed={isSelected}
-              onClick={() => toggleGrade(grade)}
-            >
-              {RISK_GRADE_LABEL[grade]}
-            </Button>
-          );
-        })}
+        <div className={styles.gradeButtons}>
+          {RISK_GRADES.map((grade) => {
+            const isSelected = (filter.riskGrade ?? []).includes(grade);
+            return (
+              <Button
+                key={grade}
+                type="button"
+                size="sm"
+                variant={isSelected ? 'primary' : 'secondary'}
+                aria-pressed={isSelected}
+                onClick={() => toggleGrade(grade)}
+              >
+                {RISK_GRADE_LABEL[grade]}
+              </Button>
+            );
+          })}
+        </div>
       </fieldset>
     </div>
   );

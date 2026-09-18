@@ -58,6 +58,12 @@ interface OverlayItem {
 interface MapExplorerProps {
   filter: PropertyFilter;
   stage: MapStage;
+  /**
+   * 지도가 화면에 보이는가. 좁은 화면의 지도 ↔ 목록 전환에서 감춰진 동안 컨테이너 크기가 0이
+   * 되므로, 다시 보이는 시점에 relayout 해야 타일이 그려진다 (kakao-map 5장).
+   * 넓은 화면에서는 늘 참이라 아무 일도 하지 않는다.
+   */
+  isShown?: boolean;
   onSelectDistrict: (district: string) => void;
   onOpenDetail: (propertyId: number) => void;
 }
@@ -66,7 +72,7 @@ interface MapExplorerProps {
  * 지도 드릴다운 1 · 2단계. 오버레이 내용은 React 컴포넌트를 포털로 그리고,
  * CustomOverlay의 생성 · 제거는 map 폴더가 맡는다 (kakao-map 5장).
  */
-export function MapExplorer({ filter, stage, onSelectDistrict, onOpenDetail }: MapExplorerProps) {
+export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, onOpenDetail }: MapExplorerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMap | null>(null);
   const layerRef = useRef<OverlayLayer | null>(null);
@@ -104,8 +110,13 @@ export function MapExplorer({ filter, stage, onSelectDistrict, onOpenDetail }: M
     const removeClick = addClickListener(map, () => setPreviewId(null));
 
     // 컨테이너 크기가 바뀌면 타일이 어긋난다 (kakao-map 5장).
-    // 상세 패널이 열리고 닫힐 때도 지도 폭이 바뀌므로 창이 아니라 컨테이너를 본다
-    const handleResize = () => relayoutMap(map);
+    // 상세 패널이 열리고 닫힐 때도 지도 폭이 바뀌므로 창이 아니라 컨테이너를 본다.
+    // 크기가 0인 동안(좁은 화면에서 목록으로 전환해 감춰졌을 때)은 부르지 않는다 — 그 크기로
+    // 맞춰 두면 다시 보일 때 중심과 확대 수준이 어긋난다. 돌아오는 시점의 호출은 아래 효과가 한다
+    const handleResize = () => {
+      if (container.clientWidth === 0 || container.clientHeight === 0) return;
+      relayoutMap(map);
+    };
     window.addEventListener('resize', handleResize);
     const observer = new ResizeObserver(handleResize);
     observer.observe(container);
@@ -129,6 +140,17 @@ export function MapExplorer({ filter, stage, onSelectDistrict, onOpenDetail }: M
       containers.clear();
     };
   }, [containers, isSdkMissing]);
+
+  /**
+   * 감춰져 있던 지도가 다시 보이는 시점의 relayout. 숨겨진 동안 컨테이너 크기가 0이었다가
+   * 돌아오면 SDK가 스스로 타일을 다시 그리지 않는다 (kakao-map 5장 「지도 컨테이너 크기가
+   * 바뀌면 relayout()」). window.kakao를 읽는 것은 map 폴더의 relayoutMap 하나다.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isShown) return;
+    relayoutMap(map);
+  }, [isShown]);
 
   // 단계 이동. 자치구는 Geocoder가 돌려준 중심으로 옮기고, 그 뒤 첫 idle이 표시 영역을 읽는다.
   // idle이 오지 않는 경우를 대비해 이동 직후에도 한 번 읽는다 (kakao-map 6장)

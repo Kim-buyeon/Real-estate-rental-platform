@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import type { RiskConsistency } from '../../../api/risk';
-import { Card } from '../../../components/ui';
+import { KvRow, KvRowList } from '../../../components/ui';
 import styles from './ConsistencyCheck.module.css';
 
 export interface ConsistencyCheckProps {
@@ -18,23 +18,24 @@ const ITEMS = [
 /**
  * 명의 · 문서 정합 확인 (RISK-04). 서버가 준 대조 결과를 표시만 한다.
  * violationBuilding은 참일 때가 문제이므로 다른 셋과 반대로 읽는다.
+ *
+ * 상세 패널의 한 섹션이다 — 좌우 패딩과 섹션 사이 띠는 패널이 갖는다.
  */
 export const ConsistencyCheck = memo(function ConsistencyCheck({ consistency }: ConsistencyCheckProps) {
   return (
-    <Card className={styles.card}>
-      <h3 className={`${styles.title} type-body-strong`}>명의 · 문서 정합</h3>
+    <section aria-label="명의 · 문서 정합">
+      <h3 className={`${styles.title} type-heading-3`}>명의 · 문서 정합</h3>
 
-      <dl className={`${styles.facts} type-caption`}>
+      <KvRowList>
         {ITEMS.map((item) => {
           const isMet = item.key === 'violationBuilding' ? !consistency[item.key] : consistency[item.key];
           return (
-            <div key={item.key} className={styles.fact}>
-              <dt>{item.term}</dt>
-              <dd className={isMet ? undefined : styles.flagged}>{isMet ? item.met : item.unmet}</dd>
-            </div>
+            <KvRow key={item.key} label={item.term} valueClassName={isMet ? undefined : styles.flagged}>
+              {isMet ? item.met : item.unmet}
+            </KvRow>
           );
         })}
-      </dl>
-    </Card>
+      </KvRowList>
+    </section>
   );
 });

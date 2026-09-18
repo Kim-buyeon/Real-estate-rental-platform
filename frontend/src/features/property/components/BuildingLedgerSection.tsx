@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Alert } from '../../../components/ui';
+import { Alert, KvRow, KvRowList } from '../../../components/ui';
 import { applicabilityLabel } from '../../../domain/property';
 import { formatDate, formatDateTime } from '../../../lib/format';
 import { propertyQueries } from '../../../queries/property';
@@ -32,39 +32,21 @@ export function BuildingLedgerSection({ propertyId }: BuildingLedgerSectionProps
 
   return (
     <>
-      <dl className={`${styles.facts} type-caption`}>
-        <div className={styles.fact}>
-          <dt>주용도</dt>
-          <dd>{ledger.mainPurpose}</dd>
-        </div>
-        <div className={styles.fact}>
-          <dt>주거용</dt>
-          {/* 주거용은 거짓일 때가 문제다 — 위반건축물과 강조 조건이 반대다. 문구는 domain이 갖는다 */}
-          <dd className={ledger.isResidential ? undefined : styles.flagged}>
-            {applicabilityLabel(ledger.isResidential)}
-          </dd>
-        </div>
-        <div className={styles.fact}>
-          <dt>위반건축물</dt>
-          <dd className={ledger.violationBuilding ? styles.flagged : undefined}>
-            {applicabilityLabel(ledger.violationBuilding)}
-          </dd>
-        </div>
-        <div className={styles.fact}>
-          <dt>연면적</dt>
-          <dd>{ledger.totalFloorArea}㎡</dd>
-        </div>
-        <div className={styles.fact}>
-          <dt>전용면적</dt>
-          <dd>{ledger.exclusiveArea}㎡</dd>
-        </div>
-        <div className={styles.fact}>
-          <dt>사용승인일</dt>
-          <dd>{formatDate(ledger.approvalDate)}</dd>
-        </div>
-      </dl>
+      <KvRowList>
+        <KvRow label="주용도">{ledger.mainPurpose}</KvRow>
+        {/* 주거용은 거짓일 때가 문제다 — 위반건축물과 강조 조건이 반대다. 문구는 domain이 갖는다 */}
+        <KvRow label="주거용" valueClassName={ledger.isResidential ? undefined : styles.flagged}>
+          {applicabilityLabel(ledger.isResidential)}
+        </KvRow>
+        <KvRow label="위반건축물" valueClassName={ledger.violationBuilding ? styles.flagged : undefined}>
+          {applicabilityLabel(ledger.violationBuilding)}
+        </KvRow>
+        <KvRow label="연면적">{ledger.totalFloorArea}㎡</KvRow>
+        <KvRow label="전용면적">{ledger.exclusiveArea}㎡</KvRow>
+        <KvRow label="사용승인일">{formatDate(ledger.approvalDate)}</KvRow>
+      </KvRowList>
 
-      <p className={`${styles.collectedAt} type-caption`}>대장 수집 {formatDateTime(ledger.collectedAt)}</p>
+      <p className={`${styles.collectedAt} type-body-sm`}>대장 수집 {formatDateTime(ledger.collectedAt)}</p>
     </>
   );
 }

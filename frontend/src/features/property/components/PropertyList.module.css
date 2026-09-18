@@ -12,33 +12,39 @@
 .toolbar {
   display: flex;
   justify-content: flex-end;
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-bottom: 1px solid var(--color-border-subtle);
+  padding: var(--spacing-sm) var(--spacing-xl);
+  border-bottom: 1px solid var(--color-border);
 }
 
+/*
+ * 행이 좌우 패딩(24)을 직접 갖는다 — 행 사이 보더가 패널 폭 끝까지 이어져야 한다
+ * ({components.card-list-item} · 레이아웃 맵 map-search 「목록 행」).
+ * 빈 상태 · 오류 · 「더 보기」는 행이 아니므로 좌우 여백을 따로 준다.
+ */
 .body {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: var(--spacing-sm);
-  padding: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-xl);
   overflow-y: auto;
 }
 
 .items {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
-  margin: 0;
+  margin: 0 calc(var(--spacing-xl) * -1);
   padding: 0;
   list-style: none;
 }
 
+/* {components.card-list-item} — 하단 1px 보더 · 패딩 {spacing.xl} */
 .item {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2xs);
-  padding: var(--spacing-md);
+  padding: var(--spacing-xl);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .head {
@@ -46,38 +52,22 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-xs);
-  color: var(--color-text-tertiary);
 }
 
-.address {
+/* 가격 — 행의 첫 줄이자 가장 큰 글자다 (레이아웃 맵 「가격 {typography.heading-3}」) */
+.price {
   margin: 0;
   color: var(--color-text);
 }
 
-.deposit {
+/* 유형 — 계약유형 · 매물유형 */
+.kind {
   margin: 0;
   color: var(--color-text);
 }
 
-.facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-2xs) var(--spacing-md);
-  margin: 0;
-}
-
-/* 이름과 값을 한 쌍으로 붙여 둔다 — 항목마다 값의 길이가 달라 열을 맞추지 않는다 */
-.fact {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2xs);
-}
-
-.fact dt {
-  color: var(--color-text-tertiary);
-}
-
-.fact dd {
+/* 스펙 줄 — 주소와 면적 · 층 · 전세가율 · 등록일 */
+.spec {
   margin: 0;
   color: var(--color-text-secondary);
 }
@@ -85,4 +75,5 @@
 .actions {
   display: flex;
   justify-content: flex-end;
+  margin-top: var(--spacing-xs);
 }

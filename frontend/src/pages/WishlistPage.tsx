@@ -8,8 +8,8 @@ import styles from './WishlistPage.module.css';
 export default function WishlistPage() {
   return (
     <section className={styles.page}>
-      <h1 className="type-heading-2">관심 매물</h1>
-      <p className={`${styles.note} type-caption`}>등록 순으로 최근에 담은 매물이 먼저 보입니다.</p>
+      <h1 className={`${styles.title} type-display`}>관심 매물</h1>
+      <p className={`${styles.note} type-body`}>등록 순으로 최근에 담은 매물이 먼저 보입니다.</p>
       <WishlistList />
     </section>
   );

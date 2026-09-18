@@ -11,8 +11,8 @@ import styles from './NotificationsPage.module.css';
 export default function NotificationsPage() {
   return (
     <section className={styles.page}>
-      <h1 className="type-heading-2">알림</h1>
-      <p className={`${styles.note} type-caption`}>관심 매물의 위험 등급 변경과 등기 변동을 최신순으로 보여 줍니다.</p>
+      <h1 className={`${styles.title} type-display`}>알림</h1>
+      <p className={`${styles.note} type-body`}>관심 매물의 위험 등급 변경과 등기 변동을 최신순으로 보여 줍니다.</p>
       <NotificationList />
     </section>
   );

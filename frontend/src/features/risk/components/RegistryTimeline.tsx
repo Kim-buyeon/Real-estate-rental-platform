@@ -35,14 +35,14 @@ export function RegistryTimeline({ propertyId }: RegistryTimelineProps) {
 
   return (
     <>
-      <p className={`${styles.note} type-caption`}>접수일이 우선변제 순서를 정합니다.</p>
+      <p className={`${styles.note} type-body-sm`}>접수일이 우선변제 순서를 정합니다.</p>
 
       <section className={styles.section}>
         <h4 className={`${styles.sectionTitle} type-label`}>갑구 · 소유권</h4>
         {registry.ownerships.length === 0 ? (
-          <p className={`${styles.empty} type-caption`}>없음</p>
+          <p className={`${styles.empty} type-body`}>없음</p>
         ) : (
-          <ol className={`${styles.list} type-caption`}>
+          <ol className={`${styles.list} type-body`}>
             {registry.ownerships.map((ownership) => (
               <OwnershipRow key={`${ownership.rankNo}-${ownership.receivedDate}`} ownership={ownership} />
             ))}
@@ -53,9 +53,9 @@ export function RegistryTimeline({ propertyId }: RegistryTimelineProps) {
       <section className={styles.section}>
         <h4 className={`${styles.sectionTitle} type-label`}>을구 · 근저당</h4>
         {registry.mortgages.length === 0 ? (
-          <p className={`${styles.empty} type-caption`}>없음</p>
+          <p className={`${styles.empty} type-body`}>없음</p>
         ) : (
-          <ol className={`${styles.list} type-caption`}>
+          <ol className={`${styles.list} type-body`}>
             {registry.mortgages.map((mortgage) => (
               <MortgageRow key={`${mortgage.rankNo}-${mortgage.receivedDate}`} mortgage={mortgage} />
             ))}
@@ -63,7 +63,7 @@ export function RegistryTimeline({ propertyId }: RegistryTimelineProps) {
         )}
       </section>
 
-      <p className={`${styles.collectedAt} type-caption`}>등기 수집 {formatDateTime(registry.collectedAt)}</p>
+      <p className={`${styles.collectedAt} type-body-sm`}>등기 수집 {formatDateTime(registry.collectedAt)}</p>
     </>
   );
 }

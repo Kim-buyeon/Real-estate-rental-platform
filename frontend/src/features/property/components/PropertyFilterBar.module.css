@@ -1,25 +1,60 @@
+/*
+ * filter-bar — 레이아웃 맵 map-search 2번 섹션. 높이 72 · pulldown 높이 40 · {rounded.pill} ·
+ * 항목 간격 {spacing.md}(16).
+ *
+ * 맵과 다르게 간 곳: 참고 사이트의 pulldown 은 라벨 없는 칩이지만 우리 필터는 Field 의 라벨을
+ * 달고 있다. 라벨 줄이 위에 붙어 72 를 고정 높이가 아니라 최소 높이로 둔다 — 라벨을 지우면
+ * 화면 낭독에서 무엇을 고르는 칸인지 알 수 없다.
+ *
+ * 모바일은 가로 스크롤 한 줄이다(레이아웃 맵 제안과 같다). 768 이상에서 줄바꿈으로 돌아간다.
+ */
 .bar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: var(--spacing-md);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-bottom: 1px solid var(--color-border-subtle);
+  min-height: 72px;
+  padding: 0 var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
+  overflow-x: auto;
+}
+
+/* 가로 스크롤 줄에서 칸이 눌리지 않게 한다 */
+.bar > * {
+  flex: none;
+}
+
+/*
+ * {components.pulldown} — h40 · {rounded.pill}. 공용 Select 의 값을 이 줄에서만 덮는다.
+ * 두 모듈의 클래스 순서에 기대지 않으려고 .bar 를 앞에 붙여 우선순위를 높였다.
+ */
+.bar .pulldown {
+  height: 40px;
+  padding: 0 var(--spacing-md);
+  border-radius: var(--rounded-pill);
 }
 
 .grades {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
   margin: 0;
   padding: 0;
   border: none;
 }
 
 .legend {
-  float: left;
-  width: 100%;
-  padding: 0;
+  padding: 0 0 var(--spacing-2xs);
   color: var(--color-text-secondary);
+}
+
+.gradeButtons {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+@media (min-width: 768px) {
+  .bar {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
 }
