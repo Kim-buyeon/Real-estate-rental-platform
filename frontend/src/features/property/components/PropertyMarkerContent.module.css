@@ -1,7 +1,14 @@
+/*
+ * 지도 가격 마커. 정의서 어휘에 없다 — 참고 사이트의 지도 마커는 계측 인벤토리의 「어휘 밖 관측」이다.
+ * 다만 이것이 보여주는 것은 위험 등급이고, 같은 등급 칩이 바로 위에 뜨는 미리보기 카드에서는
+ * {components.badge} 로 나온다. 한 화면에 두 모양이 나란히 보이지 않도록 반경과 패딩을 배지에 맞춘다.
+ *
+ * 배지의 min-height 30 은 따르지 않는다 — 마커는 지도 위에 수십 개가 겹쳐 뜨므로 높이를 내용에 맡긴다.
+ */
 .marker {
-  padding: var(--spacing-3xs) var(--spacing-xs);
+  padding: var(--spacing-2xs) var(--spacing-sm);
   border: 1px solid transparent;
-  border-radius: var(--rounded-pill);
+  border-radius: var(--rounded-sm);
   color: var(--color-on-risk);
   cursor: pointer;
 }

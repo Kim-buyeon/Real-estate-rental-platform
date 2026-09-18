@@ -42,6 +42,7 @@ frontend/
     │   ├── typography.css        정의서 typography 역할 클래스
     │   └── global.css            리셋 · 폰트 로드 · keep-all · 프로젝트 정의 변수
     └── test/                   setup.ts · msw/handlers/<도메인>.ts — 응답은 API 명세의 예시 그대로
+                                jsdom에 없는 전역의 가짜 — eventSource.ts · kakao.ts · resizeObserver.ts
 ```
 
 테스트 파일은 대상 옆에 `<이름>.test.tsx`로 둔다. 무엇을 테스트하는지는 테스트 전략 문서가 정한다.
