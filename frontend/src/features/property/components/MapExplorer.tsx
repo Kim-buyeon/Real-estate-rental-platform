@@ -61,7 +61,8 @@ interface MapExplorerProps {
   /**
    * 지도가 화면에 보이는가. 좁은 화면의 지도 ↔ 목록 전환에서 감춰진 동안 컨테이너 크기가 0이
    * 되므로, 다시 보이는 시점에 relayout 해야 타일이 그려진다 (kakao-map 5장).
-   * 넓은 화면에서는 늘 참이라 아무 일도 하지 않는다.
+   * 넓은 화면에서도 거짓이 된다 — 목록에서 상세를 열면 HomePage가 setNarrowView(PANEL_VIEW)를 한다.
+   * 그때 지도는 계속 보이지만 relayout이 멱등이라 다시 부르는 것이 무해하다.
    */
   isShown?: boolean;
   onSelectDistrict: (district: string) => void;
@@ -144,7 +145,8 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
   /**
    * 감춰져 있던 지도가 다시 보이는 시점의 relayout. 숨겨진 동안 컨테이너 크기가 0이었다가
    * 돌아오면 SDK가 스스로 타일을 다시 그리지 않는다 (kakao-map 5장 「지도 컨테이너 크기가
-   * 바뀌면 relayout()」). window.kakao를 읽는 것은 map 폴더의 relayoutMap 하나다.
+   * 바뀌면 relayout()」). SDK 호출은 map 폴더의 relayoutMap을 거친다 — 그 함수는 map.relayout()만
+   * 부르고, window.kakao 전역을 읽는 곳은 map/map.ts의 isMapSdkReady · requireMaps 둘이다.
    */
   useEffect(() => {
     const map = mapRef.current;
