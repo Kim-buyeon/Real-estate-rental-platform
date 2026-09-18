@@ -1,7 +1,7 @@
 # map-search layout — source: dabangapp
 
 > 컷: `reference-desktop-01-map-list.jpg` · `02-detail-price.jpg` · `03-detail-info-options.jpg` · `04-detail-trade-chart.jpg` · `05-detail-head-agency.jpg`
-> 대응 화면: `/` 지도 탐색 + 목록 탭 + 상세 패널
+> 대응 화면: `/map` 지도 탐색 + 목록 탭 + 상세 패널
 > 단위는 CSS px. 배율 근거는 `analysis/tokens.md` 0장 (**배율 ×1.0 확정**).
 > 토큰 이름은 `DESIGN.md` 프론트매터 기준이다 (계측 단계 이름은 `analysis/tokens.md`).
 

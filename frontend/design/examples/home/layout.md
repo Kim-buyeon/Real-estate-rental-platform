@@ -1,6 +1,7 @@
 # home layout — source: dabangapp
 
 > 컷: `reference-desktop-01-hero-cards.jpg` · `reference-desktop-02-recommend-grid.jpg` · `reference-desktop-03-content-footer.jpg`
+> 대응 화면: `/` 메인. 푸터 구역은 지도 탐색(`/map`)을 뺀 전 화면
 > 푸터 구역 교차 확인 `login/01` · `signup/01` · `favorites/01-03` · `listing/06`
 > 단위는 CSS px. 배율 근거는 `analysis/tokens.md` 0장 (**배율 ×1.0 확정**).
 > 토큰 이름은 `DESIGN.md` 프론트매터 기준이다 (계측 단계 이름은 `analysis/tokens.md`).
