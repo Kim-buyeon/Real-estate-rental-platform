@@ -19,8 +19,6 @@ interface KvRowProps {
   label: ReactNode;
   /** 값 열. 배지 · 링크 · 여러 줄이 그대로 들어간다 */
   children: ReactNode;
-  /** 값 열에 더 입힐 클래스. 강조 · 경고 색처럼 쓰는 쪽의 사정이 여기로 온다 */
-  valueClassName?: string;
 }
 
 /**
@@ -33,12 +31,11 @@ interface KvRowProps {
  * `<dl>` 구조가 아닌 곳(등기 이력의 `<li>` 목록)은 이 컴포넌트 대신 `kvRowClassName`을 쓴다
  * (kvRowClassName.ts).
  */
-export function KvRow({ label, children, valueClassName }: KvRowProps) {
-  const valueClasses = valueClassName ? `${styles.value} ${valueClassName}` : styles.value;
+export function KvRow({ label, children }: KvRowProps) {
   return (
     <div className={styles.row}>
       <dt className={`${styles.label} type-body-strong`}>{label}</dt>
-      <dd className={valueClasses}>{children}</dd>
+      <dd className={styles.value}>{children}</dd>
     </div>
   );
 }

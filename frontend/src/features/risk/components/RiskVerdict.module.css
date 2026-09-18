@@ -1,3 +1,8 @@
+/*
+ * 값을 색으로 강조하지 않는다 — 사유는 BuildingLedgerSection.module.css 머리말과 같다
+ * (정의서 10절 7 · 7절 {components.kv-row}).
+ */
+
 /* 아래 여백은 {components.kv-row} 묶음과의 사이 간격이다 — 묶음이 아니라 이 섹션이 갖는다 */
 .header {
   display: flex;
@@ -14,10 +19,6 @@
 .source {
   display: block;
   color: var(--color-text-tertiary);
-}
-
-.flagged {
-  color: var(--color-error);
 }
 
 .analyzedAt {

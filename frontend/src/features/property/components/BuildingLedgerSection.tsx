@@ -15,7 +15,8 @@ interface BuildingLedgerSectionProps {
  * 데이터를 부르는 컴포넌트다 — 부모가 이 컴포넌트를 펼칠 때 비로소 마운트하므로 여기서 쿼리를
  * 부르는 것이 곧 「펼칠 때 조회」다 (매물 API 명세 1.4 「탐색 동작과 호출 시점」).
  *
- * 위반건축물은 참일 때가 문제이므로 다른 항목과 반대로 읽는다 — 보증보험 집 단위 조건에 걸린다(RISK-05).
+ * 위반건축물은 참일 때가 문제다 — 보증보험 집 단위 조건에 걸린다(RISK-05). 그 사실을 값의 색으로
+ * 강조하지는 않는다 (BuildingLedgerSection.module.css).
  */
 export function BuildingLedgerSection({ propertyId }: BuildingLedgerSectionProps) {
   const ledgerQuery = useQuery(propertyQueries.ledger(propertyId));
@@ -34,13 +35,9 @@ export function BuildingLedgerSection({ propertyId }: BuildingLedgerSectionProps
     <>
       <KvRowList>
         <KvRow label="주용도">{ledger.mainPurpose}</KvRow>
-        {/* 주거용은 거짓일 때가 문제다 — 위반건축물과 강조 조건이 반대다. 문구는 domain이 갖는다 */}
-        <KvRow label="주거용" valueClassName={ledger.isResidential ? undefined : styles.flagged}>
-          {applicabilityLabel(ledger.isResidential)}
-        </KvRow>
-        <KvRow label="위반건축물" valueClassName={ledger.violationBuilding ? styles.flagged : undefined}>
-          {applicabilityLabel(ledger.violationBuilding)}
-        </KvRow>
+        {/* 문구는 domain이 갖는다 — 주거용은 거짓일 때, 위반건축물은 참일 때가 문제다 */}
+        <KvRow label="주거용">{applicabilityLabel(ledger.isResidential)}</KvRow>
+        <KvRow label="위반건축물">{applicabilityLabel(ledger.violationBuilding)}</KvRow>
         <KvRow label="연면적">{ledger.totalFloorArea}㎡</KvRow>
         <KvRow label="전용면적">{ledger.exclusiveArea}㎡</KvRow>
         <KvRow label="사용승인일">{formatDate(ledger.approvalDate)}</KvRow>

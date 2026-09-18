@@ -1,6 +1,10 @@
-.flagged {
-  color: var(--color-error);
-}
+/*
+ * 건축물대장 섹션. 행 모양은 {components.kv-row}(components/ui/KvRow.module.css) 가 갖는다.
+ *
+ * 값을 색으로 강조하지 않는다 — 오류 색은 배지와 {components.alert-error} 를 통해서만 붙고
+ * ({colors.error} 는 {colors.risk-danger} 와 값이 같아 등급 색과 구분되지 않는다), {components.kv-row}
+ * 의 값 색은 {colors.text-secondary} 다 (정의서 10절 7 · 7절, 이슈 114).
+ */
 
 .collectedAt {
   margin: var(--spacing-sm) 0 0;

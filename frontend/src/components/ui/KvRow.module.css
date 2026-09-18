@@ -19,7 +19,13 @@
   display: flex;
   flex-direction: column;
   margin: 0;
-  /* 값 열의 색. 값 dd 에 다시 적지 않는다 — 적으면 쓰는 쪽의 강조 색(.flagged)이 특이도에 밀린다 */
+  /*
+   * 값 열의 색. 값 dd 에 다시 적지 않고 여기서 상속시킨다 — dd 에 적으면 쓰는 쪽이 덧입히는 색이
+   * 특이도에 밀려 조용히 무시된다. 실제로 그 일이 있었다 (이슈 114 검토 F-4).
+   *
+   * 값을 색으로 강조하지 않는다. 정의서 7절이 kv-row 에 허용한 강조는 {colors.primary}(강조 수치)
+   * 하나뿐이고, 등급 · 오류 색은 배지와 {components.alert-error} 를 통해서만 붙는다 (10절 7).
+   */
   color: var(--color-text-secondary);
 }
 

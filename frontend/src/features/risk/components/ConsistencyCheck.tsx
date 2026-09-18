@@ -30,7 +30,7 @@ export const ConsistencyCheck = memo(function ConsistencyCheck({ consistency }: 
         {ITEMS.map((item) => {
           const isMet = item.key === 'violationBuilding' ? !consistency[item.key] : consistency[item.key];
           return (
-            <KvRow key={item.key} label={item.term} valueClassName={isMet ? undefined : styles.flagged}>
+            <KvRow key={item.key} label={item.term}>
               {isMet ? item.met : item.unmet}
             </KvRow>
           );

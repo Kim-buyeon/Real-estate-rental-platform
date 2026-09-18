@@ -1,9 +1,10 @@
+/*
+ * 값을 색으로 강조하지 않는다 — 사유는 BuildingLedgerSection.module.css 머리말과 같다
+ * (정의서 10절 7 · 7절 {components.kv-row}).
+ */
+
 /* 섹션 제목 — 레이아웃 맵 map-search 「섹션 제목 위 24 / 아래 16」. 위 여백은 섹션 패딩이 갖는다 */
 .title {
   margin: 0 0 var(--spacing-md);
   color: var(--color-text);
-}
-
-.flagged {
-  color: var(--color-error);
 }

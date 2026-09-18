@@ -32,7 +32,7 @@ export const RiskVerdict = memo(function RiskVerdict({ analysis }: RiskVerdictPr
           </span>
         </KvRow>
         <KvRow label="선순위채권 합계">{formatWon(analysis.seniorDebtTotal)}</KvRow>
-        <KvRow label="깡통전세" valueClassName={analysis.isNegativeEquity ? styles.flagged : undefined}>
+        <KvRow label="깡통전세">
           {analysis.isNegativeEquity ? '해당' : '해당 없음'}
         </KvRow>
       </KvRowList>
