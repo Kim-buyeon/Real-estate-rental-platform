@@ -6,6 +6,11 @@
   min-height: 0;
 }
 
+/* 없는 매물 번호 안내. 필터 바와 단계 바 사이에 한 줄로 낀다 (이슈 104) */
+.notice {
+  padding: var(--spacing-xs) var(--spacing-md);
+}
+
 .stageBar {
   display: flex;
   flex-wrap: wrap;

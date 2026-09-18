@@ -17,6 +17,19 @@
 }
 
 /*
+ * 카드 전체가 상세로 가는 링크다 (이슈 104). 그리드 칸을 다 채워야 카드 높이가 서로 맞는다.
+ * 색 · 밑줄은 global.css 의 a 규칙이 이미 지운다 — 여기서는 누를 수 있다는 것만 드러낸다.
+ */
+.cardLink {
+  display: block;
+  height: 100%;
+}
+
+.cardLink:hover .card {
+  border-color: var(--color-primary);
+}
+
+/*
  * 카드 — 썸네일이 없어 글자 줄만 남으므로 {components.card} 가 경계를 낸다 (맵 구역 4 주석).
  * 줄 사이는 {spacing.2xs} 다. 맵의 줄 피치 28 은 body-sm 행간(13 x 1.55)에 이 값을 더한 것이다.
  */

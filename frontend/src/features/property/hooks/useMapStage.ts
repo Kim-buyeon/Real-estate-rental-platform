@@ -13,5 +13,22 @@ export function useMapStage() {
   const selectDistrict = useCallback((district: string) => setStage({ type: 'district', district }), []);
   const backToSeoul = useCallback(() => setStage({ type: 'seoul' }), []);
 
-  return { stage, selectDistrict, backToSeoul };
+  /**
+   * 이미 정해진 자치구에 단계를 맞춘다 — 상세가 열릴 때 그 매물의 자치구를 따라가는 경로다
+   * (딥링크로 들어오면 패널만 열리고 지도가 무관한 자리를 비추면 안 된다).
+   *
+   * 이미 그 자치구면 **같은 상태 객체를 그대로 돌려준다.** React가 그 갱신을 걸러 단계를 보고
+   * 지도를 옮기는 효과가 다시 돌지 않는다 — 사용자가 그 구 안에서 지도를 움직인 뒤 상세를 열어도
+   * 지도가 중심으로 튀지 않는다. 사용자가 직접 고르는 selectDistrict는 그대로 둔다: 같은 구를
+   * 다시 고르는 것은 「그 구로 되돌려 달라」는 요청이라 다시 옮기는 쪽이 맞다.
+   */
+  const showDistrict = useCallback(
+    (district: string) =>
+      setStage((prev) =>
+        prev.type === 'district' && prev.district === district ? prev : { type: 'district', district },
+      ),
+    [],
+  );
+
+  return { stage, selectDistrict, backToSeoul, showDistrict };
 }

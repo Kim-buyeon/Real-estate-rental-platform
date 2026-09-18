@@ -1,8 +1,15 @@
 // SDK가 없는 환경의 동작만 검증한다 — 렌더링 전반은 대상이 아니다 (docs/architecture/testing.md 1.1).
 // jsdom에는 window.kakao가 없으므로 SDK를 가짜로 만들지 않고 그 상태를 그대로 쓴다.
+//
+// 딥링크(이슈 104)는 useSearchParams를 쓰므로 라우터 컨텍스트가 있어야 렌더된다 —
+// createMemoryRouter + RouterProvider로 감싸고, initialEntries로 진입 경로(?propertyId=)를 준다.
+// router.state.location으로 히스토리 · 검색 파라미터 변화를 관찰한다.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { describe, expect, it } from 'vitest';
+import { propertyDetailPath } from '../lib/routes';
 import { PROPERTY_DETAIL, PROPERTY_LIST_PAGE_1, propertyHandlers } from '../test/msw/handlers/property';
 import { riskHandlers } from '../test/msw/handlers/risk';
 import { server } from '../test/msw/server';
@@ -21,13 +28,15 @@ function trackRequestedUrls() {
   };
 }
 
-function renderMapPage() {
+function renderMapPage(path = '/map') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const router = createMemoryRouter([{ path: '/map', element: <MapPage /> }], { initialEntries: [path] });
+  render(
     <QueryClientProvider client={queryClient}>
-      <MapPage />
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return router;
 }
 
 describe('MapPage', () => {
@@ -127,5 +136,145 @@ describe('MapPage', () => {
     // 버튼은 지도로 돌아가는 「지도」로 바뀐다
     await waitFor(() => expect(screen.getByRole('button', { name: '지도' })).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: '목록' })).not.toBeInTheDocument();
+  });
+
+  // ── 딥링크(이슈 104) ────────────────────────────────────────────────────
+
+  it('?propertyId로 들어오면 상세 탭이 곧바로 열리고 지도가 그 매물의 자치구 단계로 간다', async () => {
+    server.use(...propertyHandlers, ...riskHandlers);
+
+    renderMapPage(propertyDetailPath(PROPERTY_DETAIL.propertyId));
+
+    // 탭이 상세이고 그 매물의 상세가 보인다
+    await waitFor(() => expect(screen.getByRole('tab', { name: '상세' })).toHaveAttribute('aria-selected', 'true'));
+    await waitFor(() => expect(screen.getByText(PROPERTY_DETAIL.address)).toBeInTheDocument());
+
+    // 지도가 상세 응답의 district(강서구) 단계로 간다 — 자치구 선택기 값과 「← 서울 전체」 버튼으로
+    // 확인한다. 이것이 빠지면 패널은 열렸는데 지도가 무관한 자리를 비춘다(이슈 104 계획 핵심)
+    await waitFor(() => expect(screen.getByLabelText('자치구')).toHaveValue(PROPERTY_DETAIL.district));
+    expect(screen.getByRole('button', { name: '← 서울 전체' })).toBeInTheDocument();
+  });
+
+  it('propertyId가 숫자가 아니면 없는 것으로 다뤄 목록이 기본 탭으로 열린다', async () => {
+    server.use(...propertyHandlers);
+
+    renderMapPage('/map?propertyId=abc');
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: '목록' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '상세' })).toBeDisabled();
+  });
+
+  it('propertyId가 0 이하이면 없는 것으로 다뤄 목록이 기본 탭으로 열린다', async () => {
+    server.use(...propertyHandlers);
+
+    renderMapPage('/map?propertyId=0');
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: '목록' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '상세' })).toBeDisabled();
+  });
+
+  it('없는 매물 번호(404 PROPERTY_NOT_FOUND)면 Alert가 뜨고 파라미터가 사라진다', async () => {
+    const message = '존재하지 않는 매물입니다.';
+    server.use(
+      http.get('/api/properties/:propertyId', () =>
+        HttpResponse.json({ success: false, error: { code: 'PROPERTY_NOT_FOUND', message } }, { status: 404 }),
+      ),
+      ...propertyHandlers,
+      ...riskHandlers,
+    );
+
+    const router = renderMapPage(propertyDetailPath(9999));
+
+    // getByRole('alert')는 쓰지 않는다 — SDK가 없는 지도(MapExplorer)도 role=alert 안내를 함께
+    // 띄우므로(이 화면의 첫 테스트) 자리가 둘이다. 문구로 특정한다
+    await waitFor(() => expect(screen.getByText(message)).toBeInTheDocument());
+    // 파라미터가 지워진다 — 잘못된 링크를 새로고침마다 되풀이하지 않기 위함이다
+    await waitFor(() => expect(router.state.location.search).toBe(''));
+    // 매물이 사라졌으니 목록 탭으로 돌아간다
+    await waitFor(() => expect(screen.getByRole('tab', { name: '목록' })).toHaveAttribute('aria-selected', 'true'));
+  });
+
+  it('5xx 오류에서는 Alert가 뜨지만 파라미터는 남는다', async () => {
+    const message = '일시적인 오류로 매물을 불러오지 못했습니다.';
+    server.use(
+      http.get('/api/properties/:propertyId', () =>
+        HttpResponse.json({ success: false, error: { code: 'INTERNAL_ERROR', message } }, { status: 500 }),
+      ),
+      ...propertyHandlers,
+      ...riskHandlers,
+    );
+
+    const router = renderMapPage(propertyDetailPath(PROPERTY_DETAIL.propertyId));
+
+    await waitFor(() => expect(screen.getByText(message)).toBeInTheDocument());
+    // 404만 지운다 — 지금 못 불러온 것이라 사용자가 가리키던 매물을 잃지 않는다
+    expect(new URLSearchParams(router.state.location.search).get('propertyId')).toBe(
+      String(PROPERTY_DETAIL.propertyId),
+    );
+  });
+
+  it('네트워크 오류에서도 파라미터는 남는다', async () => {
+    server.use(
+      http.get('/api/properties/:propertyId', () => HttpResponse.error()),
+      ...propertyHandlers,
+      ...riskHandlers,
+    );
+
+    const router = renderMapPage(propertyDetailPath(PROPERTY_DETAIL.propertyId));
+
+    // 패널 안(aside 「매물 상세」)의 오류로 특정한다 — SDK 없는 지도의 role=alert 안내와 겹친다
+    const panel = await screen.findByRole('complementary', { name: '매물 상세' });
+    await waitFor(() => expect(within(panel).getByRole('alert')).toBeInTheDocument());
+    expect(new URLSearchParams(router.state.location.search).get('propertyId')).toBe(
+      String(PROPERTY_DETAIL.propertyId),
+    );
+  });
+
+  it('상세를 열고 뒤로가면 닫힌다', async () => {
+    server.use(...propertyHandlers, ...riskHandlers);
+    const router = renderMapPage();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: `${LIST_ITEM.address} 상세 보기` }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '상세 닫기' })).toBeInTheDocument());
+
+    await router.navigate(-1);
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: '상세 닫기' })).not.toBeInTheDocument());
+    expect(screen.getByRole('tab', { name: '목록' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('상세를 닫고 뒤로가면 다시 열린다', async () => {
+    server.use(...propertyHandlers, ...riskHandlers);
+    const router = renderMapPage(propertyDetailPath(PROPERTY_DETAIL.propertyId));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '상세 닫기' })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: '상세 닫기' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '상세 닫기' })).not.toBeInTheDocument());
+
+    await router.navigate(-1);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '상세 닫기' })).toBeInTheDocument());
+  });
+
+  // ── 지도 단계가 튀지 않는 경계 ──────────────────────────────────────────
+
+  it('상세를 열어 둔 채 「← 서울 전체」로 벗어나도 다시 그 자치구를 따라가지 않는다 — 매물 하나에 한 번만 따라간다', async () => {
+    server.use(...propertyHandlers, ...riskHandlers);
+
+    renderMapPage(propertyDetailPath(PROPERTY_DETAIL.propertyId));
+
+    await waitFor(() => expect(screen.getByLabelText('자치구')).toHaveValue(PROPERTY_DETAIL.district));
+
+    fireEvent.click(screen.getByRole('button', { name: '← 서울 전체' }));
+
+    // 서울 전체로 돌아간 채 유지된다 — 자동으로 다시 그 자치구로 따라가면 사용자와 다툰다
+    expect(screen.getByLabelText('자치구')).toHaveValue('');
+    expect(screen.queryByRole('button', { name: '← 서울 전체' })).not.toBeInTheDocument();
+    // 상세는 여전히 열려 있다 — 지도 단계와 무관하게 패널은 그대로다
+    expect(screen.getByRole('button', { name: '상세 닫기' })).toBeInTheDocument();
   });
 });
