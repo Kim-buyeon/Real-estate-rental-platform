@@ -2,9 +2,11 @@
 // 더 보기 · beforeValue/afterValue 표기가 명세대로 되는지를 확인한다.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { riskGradeLabel } from '../../../domain/risk';
 import { formatCount } from '../../../lib/format';
+import { propertyDetailPath } from '../../../lib/routes';
 import {
   NOTIFICATION_PAGE_1,
   NOTIFICATION_PAGE_2,
@@ -15,12 +17,16 @@ import {
 import { server } from '../../../test/msw/server';
 import { NotificationList } from './NotificationList';
 
+// 항목의 「매물 보기」가 라우터 Link라 컨텍스트가 있어야 렌더된다(react-router 8) — MainPage.test.tsx와
+// 같은 방식(MemoryRouter). 이 파일은 목록 자체의 경로 조립은 검증하지 않으므로 initialEntries는 두지 않는다
 function renderList() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(
-    <QueryClientProvider client={queryClient}>
-      <NotificationList />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={queryClient}>
+        <NotificationList />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -129,5 +135,21 @@ describe('NotificationList', () => {
     // REGISTRY_CHANGE — 지문 요약 문자열은 서버 값 그대로 보인다(명세 1.3)
     const registryChangeText = `${REGISTRY_CHANGE_NOTIFICATION.beforeValue} → ${REGISTRY_CHANGE_NOTIFICATION.afterValue}`;
     expect(screen.getByText((_, el) => el?.tagName === 'DD' && el.textContent === registryChangeText)).toBeInTheDocument();
+  });
+
+  it('항목의 「매물 보기」 링크가 그 알림이 가리키는 매물의 지도 딥링크(/map?propertyId=)를 가리킨다', async () => {
+    server.use(...notificationHandlers);
+
+    renderList();
+
+    // 항목 순서가 응답 순서와 같다(명세 1.3 최신순) — 인덱스로 각 링크를 그 항목의 매물과 짝짓는다
+    const links = await waitFor(() => {
+      const found = screen.getAllByRole('link', { name: '매물 보기' });
+      expect(found).toHaveLength(NOTIFICATION_PAGE_1.items.length);
+      return found;
+    });
+    NOTIFICATION_PAGE_1.items.forEach((item, index) => {
+      expect(links[index]).toHaveAttribute('href', propertyDetailPath(item.propertyId));
+    });
   });
 });

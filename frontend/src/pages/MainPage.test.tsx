@@ -11,6 +11,7 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import type { PropertyListItem } from '../api/property';
 import type { CursorPage } from '../api/types';
+import { propertyDetailPath } from '../lib/routes';
 import { server } from '../test/msw/server';
 import MainPage from './MainPage';
 
@@ -83,6 +84,19 @@ describe('MainPage', () => {
     expect(new URL(requestUrl!).search).toBe('');
 
     tracker.stop();
+  });
+
+  it('최근 등록 매물 카드가 그 매물의 지도 딥링크(/map?propertyId=)를 가리킨다', async () => {
+    mockPropertyList({ items: FIVE_ITEMS, nextCursor: null, hasNext: false });
+
+    renderMainPage();
+
+    await waitFor(() => expect(screen.getByText(FIVE_ITEMS[0]!.address)).toBeInTheDocument());
+
+    expect(screen.getByRole('link', { name: `${FIVE_ITEMS[0]!.address} 상세 보기` })).toHaveAttribute(
+      'href',
+      propertyDetailPath(FIVE_ITEMS[0]!.propertyId),
+    );
   });
 
   it('「지도에서 매물 찾기」와 「전체 보기」가 둘 다 /map을 가리킨다', () => {
