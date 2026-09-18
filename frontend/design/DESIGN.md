@@ -396,7 +396,7 @@ omitted: []
 
 ## 2. Colors
 
-> Source pages: `map-search` · `favorites` · `login` · `signup` · `my-info` · `home`(푸터 구역) · `listing`
+> Source pages: `map-search` · `favorites` · `login` · `signup` · `my-info` · `home` · `listing`
 > (`listing`은 우리가 만들지 않는 화면이고 토큰 인벤토리 계측에만 썼다. **`home`은 메인 화면(`/`)의 정본이 됐다** —
 > 처음에는 푸터 구역만 계측했으나 메인을 만들면서 본문 구역까지 보강했다(이슈 #117). `home/01` · `home/02`는
 > 약 1.33~1.34배 확대 캡처라 보정값이며, 푸터 정본은 `home/03`이다.)
