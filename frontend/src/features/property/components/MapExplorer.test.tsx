@@ -74,6 +74,19 @@ describe('MapExplorer relayout', () => {
     restoreResizeObserver();
   });
 
+  it('언마운트하면 크기 관찰을 끊는다', async () => {
+    const { unmount } = renderExplorer(true);
+    await firstSettledMap();
+    await waitFor(() => expect(getResizeObserverInstances()).toHaveLength(1));
+    // 바로 위 대기가 인스턴스가 정확히 하나임을 확인했다
+    const observer = getResizeObserverInstances()[0]!;
+    expect(observer.isDisconnected).toBe(false);
+
+    unmount();
+
+    expect(observer.isDisconnected).toBe(true);
+  });
+
   it('isShown이 거짓에서 참으로 바뀌면 relayout이 불린다', async () => {
     const { setIsShown } = renderExplorer(false);
     // 마운트 자체도(isShown 무관) 컨테이너 크기 확정 뒤 lockSeoulView가 relayout을 부른다 —

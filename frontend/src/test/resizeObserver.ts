@@ -13,6 +13,9 @@ export class FakeResizeObserver implements ResizeObserver {
 
   private readonly callback: ResizeObserverCallback;
 
+  /** disconnect가 불렸는가 — 언마운트 정리의 회귀를 테스트가 잡는 자리 */
+  isDisconnected = false;
+
   constructor(callback: ResizeObserverCallback) {
     this.callback = callback;
     FakeResizeObserver.instances.push(this);
@@ -27,7 +30,8 @@ export class FakeResizeObserver implements ResizeObserver {
   }
 
   disconnect(): void {
-    // 언마운트 정리를 흉내 낼 필요가 없다 — 인스턴스 목록은 install/uninstall이 관리한다
+    // 관찰을 실제로 끊을 대상은 없다 — 불렸다는 사실만 남긴다. 인스턴스 목록은 install/uninstall이 관리한다
+    this.isDisconnected = true;
   }
 
   /**
