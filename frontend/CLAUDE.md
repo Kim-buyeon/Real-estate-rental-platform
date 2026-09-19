@@ -135,7 +135,7 @@ axios 인스턴스 하나와 `request<T>()` 하나다. **API 함수는 `request<
 | 재발급 | 401 + `AUTH_TOKEN_EXPIRED`면 재발급을 **한 번** 하고 원 요청을 **한 번** 재시도한다. 동시에 난 401들은 진행 중인 재발급 하나를 공유한다. 재발급이 실패하면 세션을 비운다 — 로그인 화면으로의 이동은 `app/router.tsx`의 가드가 세션 없음을 보고 한다. `client`는 라우터를 모른다 |
 | 파라미터 직렬화 | 배열 파라미터(`riskGrade` 다중 선택)는 **같은 키 반복**이고 값은 **사전순 정렬** — 공통 규약 1.1. axios 기본값은 `riskGrade[]=SAFE` 꼴이라 그대로 쓰지 않는다. `paramsSerializer: { indexes: null }`로 반복 키를 만들고, 정렬은 요청 인터셉터에서 배열 값에 한 번 적용한다. 이 설정은 `client.ts` 한 곳에만 있다 |
 
-- 재발급 대상에서 빼는 경로: 로그인 · 가입 · 재발급 자신. 로그인 실패(`AUTH_INVALID_CREDENTIAL`)는 재발급이 아니라 그대로 던진다.
+- 재발급 대상에서 빼는 경로: 로그인 · 가입 · 비밀번호 재설정 요청 · 확정 · 재발급 자신. 로그인 실패(`AUTH_INVALID_CREDENTIAL`)는 재발급이 아니라 그대로 던진다.
 - **재발급 함수 `reissue()`는 `client.ts` 안에 있고 인터셉터를 거치지 않는 호출로 한다.** `api/user.ts`에 두면 `client` → `user` → `client` 순환이다. 기동 시 세션 복원(`main.tsx`)도 이 함수를 쓴다. 회원·인증 명세의 재발급 행은 이 함수가 담당한다.
 - 오류 문구는 서버 `error.message`를 그대로 보여준다. **코드별 문구를 프론트에 다시 적지 않는다** — 두 곳에 적으면 한쪽만 고쳐진다. 예외는 `NETWORK_ERROR` 하나다.
 - 기본 경로는 `/api` 상대 경로다. 개발은 Vite `server.proxy`가 백엔드로 넘긴다. 환경 변수로 두지 않는다 — 운영에서는 앞단 Nginx가 화면(`/`)과 API(`/api/`)를 **같은 오리진**으로 서빙한다(시스템 구성서 · 운영 절차서 4장). 다른 오리진으로 바뀌면 그때 변수를 추가하고 `.env.example`에 올린다.
@@ -279,7 +279,7 @@ export function useAddWishlist() {
 | 세션 | `session/` | 아래 |
 | 화면 상태 (필터 · 지도 단계 · 패널 열림) | 그것을 소유하는 페이지 · 컴포넌트의 `useState` / `useReducer` | 화면 사이에 공유해야 하면 컨텍스트. **전역 상태 라이브러리를 두지 않는다** — 기술 스택 정의서 4장 |
 | **고른 매물** | `useSearchParams` — `/map?propertyId=`. 조립과 파싱은 `lib/routes.ts` 한 곳 | 링크로 가리킬 수 있어야 하는 것만 URL에 둔다. 필터 · 단계 · 탭을 올리면 지도를 움직일 때마다 히스토리가 쌓인다 (이슈 #104 계획 승인) |
-| 폼 입력 | 폼 컴포넌트의 상태 | 폼 라이브러리를 두지 않는다. 폼은 로그인 · 가입 · 자격 정보 · 알림 구독 넷이다 |
+| 폼 입력 | 폼 컴포넌트의 상태 | 폼 라이브러리를 두지 않는다. 폼은 로그인 · 가입 · 비밀번호 찾기 · 재설정 · 자격 정보 · 알림 구독 여섯이다 |
 
 - **필터는 지도 단계 · 선택 매물과 별도 상태다.** 지도 페이지가 소유하고, 단계가 바뀌거나 패널이 열려도 건드리지 않는다. 자치구로 되돌아갈 때 필터가 초기화되는 것이 이슈 가이드가 예로 든 버그다.
 - **화면에서 판정하지 않는다.** 위험 등급 · 전세가율 · 대출 한도 · 보증한도는 서버 값을 표시만 한다.
@@ -378,6 +378,7 @@ export function Button({ variant = 'primary', size = 'md', isLoading = false, ty
 | `/` | 메인 | 서비스 소개 · 위험 등급 3단계 안내 · 최근 등록 매물 — 기능 ID 없음. 정의는 「매물 기능 정의서」의 메인 화면 절 | 공개 |
 | `/map` · `/map?propertyId=` | 지도 탐색 + 상세 패널 | PROP-08 · 02 · 03 · 04 · RISK-01 · 07 표시 · RISK-08 재분석 · LOAN-01 표시 | 선택 |
 | `/login` · `/signup` | 로그인 · 가입 | USER-02 · 01 | 공개 |
+| `/password-reset` · `/password-reset/confirm?token=` | 비밀번호 찾기 · 재설정 | USER-06 | 공개 |
 | `/me/profile` | 계정 · 자격 정보 | USER-03 | 필수 |
 | `/me/wishlist` | 관심 매물 | PROP-05 | 필수 |
 | `/notifications` | 알림 목록 | NOTI-05 | 필수 |
@@ -385,7 +386,7 @@ export function Button({ variant = 'primary', size = 'md', isLoading = false, ty
 
 매물 목록(PROP-01)은 별도 화면을 두지 않고 `/map`의 상세 패널 자리에 탭으로 둔다 (PROP-02 계획 승인). 필터와 지도 상태를 화면 간에 다시 맞추지 않기 위함이다.
 
-**경로 문자열의 자리.** 라우트 표의 정본은 `app/router.tsx`다. 링크 · 이동은 경로를 **리터럴로** 쓴다(`'/login'` · `'/me/wishlist'`). `lib/routes.ts`에는 **검색 파라미터를 싣는 경로만** 둔다 — 조립하는 쪽과 읽는 쪽이 여럿이라 파라미터 이름이 갈리면 조용히 깨지기 때문이다. 지금은 `/map?propertyId=`와 `/login?redirect=` 둘이고, `MAP_PATH`는 앞의 조립에 쓰려고 있는 상수다. 파라미터 없는 경로를 전부 상수로 올리지 않는다 — 한 경로만 올리면 규칙이 둘이 되고, 전부 올리면 라우트 표와 상수 파일이 같은 목록을 두 번 갖는다 (이슈 #130).
+**경로 문자열의 자리.** 라우트 표의 정본은 `app/router.tsx`다. 링크 · 이동은 경로를 **리터럴로** 쓴다(`'/login'` · `'/me/wishlist'`). `lib/routes.ts`에는 **검색 파라미터를 싣는 경로만** 둔다 — 조립하는 쪽과 읽는 쪽이 여럿이라 파라미터 이름이 갈리면 조용히 깨지기 때문이다. 지금은 `/map?propertyId=` · `/login?redirect=` · `/login?signedUp=` · `/login?passwordReset=` · `/password-reset/confirm?token=`(싣는 쪽은 서버 메일)이고, `MAP_PATH`는 앞의 조립에 쓰려고 있는 상수다. 파라미터 없는 경로를 전부 상수로 올리지 않는다 — 한 경로만 올리면 규칙이 둘이 되고, 전부 올리면 라우트 표와 상수 파일이 같은 목록을 두 번 갖는다 (이슈 #130).
 
 ---
 
@@ -399,6 +400,7 @@ CSS Modules와 CSS 변수만 쓴다. CSS 프레임워크 · CSS-in-JS를 두지 
 | `styles/typography.css` | 정의서 `typography` 역할마다 클래스 하나 — `.type-body` · `.type-heading-1` | `css-vars` export가 타이포그래피를 내지 않아 정의서 값을 손으로 옮긴다. 정의서와 같은 커밋 |
 | `styles/global.css` | 리셋 · 폰트 로드 · `word-break: keep-all` · 브레이크포인트 주석 · **정의서가 정했으나 `css-vars` export가 내지 않는 값**(`--container-max` · `--touch-target-min`) | 한 번 |
 | `<컴포넌트>.module.css` | 그 컴포넌트의 스타일 | 컴포넌트 옆 |
+| `<골격>.module.css` (camelCase) | 같은 레이아웃 맵 골격을 쓰는 여러 화면 · 폼의 공용 여백 — `pages/authCard` · `features/user/components/authForm`. 계측값을 화면마다 옮겨 적지 않는다 | 쓰는 파일들이 있는 폴더. 한 곳에서만 쓰면 두지 않는다 |
 
 - **색 · 간격 · 반경은 토큰 변수로만, 글꼴 · 글자 크기 · 행간은 `typography.css`의 역할 클래스로만 쓴다.** hex · `rgb()` · 색 이름 · 간격 px 리터럴 · `font-size`를 컴포넌트 CSS에 적지 않는다. 검사는 `grep -rnE '#[0-9a-fA-F]{3,8}\b' src` — `tokens.css` 외에 결과가 있으면 위반이다 (`quality-check`). **CSS 주석에 이슈 번호를 `#112` 꼴로 적지 않는다** — 이 검사에 그대로 걸린다. 「이슈 112」로 적는다. `.tsx`는 검사 대상이 아니다.
 - **px 리터럴이 허용되는 곳은 다섯이고 그 밖은 위반이다** — `typography.css`(정의서 typography 값의 이관), 정의서에 없는 레이아웃 1회성 값(그리드 트랙 · 격자에 맞지 않는 레이아웃 맵 계측값), 1px 보더 두께, 미디어 쿼리 조건, 그리고 **정의서가 정했으나 `css-vars` export가 내지 않는 값**. 미디어 쿼리는 CSS 변수를 쓸 수 없으므로 브레이크포인트 값은 정의서 Responsive Behavior 절의 것을 `global.css` 상단 주석에 한 번 적고 그 값만 쓴다. 다섯째는 컨테이너 최대 폭 · 터치 타겟 하한 · **컴포넌트가 지정한 치수**(높이 · 폭 · 간격 — `button-primary` 60 · `input` 48 · `badge` 30 · `card-form` 폭 540 · `kv-row` 라벨 열 150 · `tabs-underline` 간격 36 같은 것)다. export가 색 · 간격 · 반경만 내므로 쓸 토큰이 없는데, 그렇다고 값을 쓰는 자리마다 px로 다시 적으면 정의서가 값을 고쳐도 따라오지 않는다. **한 번만 적고 그것을 참조한다** — 여러 파일에 걸리는 값은 `global.css`의 프로젝트 정의 변수(`--container-max` · `--touch-target-min`)로, 한 컴포넌트에만 걸리는 값은 그 모듈 CSS의 지역 변수로 모은다. 어느 쪽이든 **어느 정의서 항목에서 온 값인지 주석에 적는다.** 미디어 쿼리 조건과 같은 처리이고 이유도 같다. `frontend-dev`와 `quality-check`의 px 규칙은 이 목록을 가리킨다.
@@ -475,7 +477,7 @@ SDK를 어떻게 부르고 무엇을 그리는지는 `kakao-map` 스킬이 정�
 | 불리언 props · 변수 | `is` · `has` · `can` 접두 | `isOpen` · `hasSeniorDebt` |
 | 응답 타입의 불리언 필드 | **명세의 이름 그대로.** 접두를 붙이지 않는다 | `violationBuilding` — 외부 공식 문서의 항목명을 옮긴 것이다. 규약 「이름이 의도를 말하게」의 예외 |
 | 이벤트 props | `on` + 동작 | `onSelect` · `onStageChange` |
-| CSS Module 파일 · 클래스 | 컴포넌트와 같은 이름 · camelCase | `Button.module.css` · `styles.primary` |
+| CSS Module 파일 · 클래스 | 컴포넌트와 같은 이름 · camelCase. 여러 화면이 함께 쓰는 골격 모듈만 골격 이름 camelCase(스타일 절의 공용 모듈 행) | `Button.module.css` · `authCard.module.css` · `styles.primary` |
 | 그 외 파일 (훅 · 쿼리 · api · domain · lib) | camelCase | `useMapStage.ts` · `format.ts` |
 | 폴더 | 소문자 | `features/property/map` |
 

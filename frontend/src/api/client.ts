@@ -24,8 +24,17 @@ const NETWORK_ERROR_MESSAGE = '서버에 연결하지 못했습니다. 잠시 �
 
 const AUTH_TOKEN_EXPIRED = 'AUTH_TOKEN_EXPIRED';
 const REISSUE_URL = '/auth/reissue';
-/** 401이어도 재발급하지 않는 경로 — 로그인 · 가입 · 재발급 자신 */
-const REISSUE_EXCLUDED_URLS: readonly string[] = ['/auth/login', '/auth/signup', REISSUE_URL];
+/**
+ * 401이어도 재발급하지 않는 경로 — 로그인 · 가입 · 비밀번호 재설정 요청 · 확정 · 재발급 자신.
+ * 로그인 전에 부르는 인증 경로라 재발급할 세션이 없다 (이슈 148)
+ */
+const REISSUE_EXCLUDED_URLS: readonly string[] = [
+  '/auth/login',
+  '/auth/signup',
+  '/auth/password-reset',
+  '/auth/password-reset/confirm',
+  REISSUE_URL,
+];
 
 const instance = axios.create({
   baseURL: BASE_URL,

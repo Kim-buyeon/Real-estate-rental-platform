@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Alert, CardForm } from '../components/ui';
 import { LoginForm } from '../features/user';
-import { LOGIN_REDIRECT_PARAM } from '../lib/routes';
+import { LOGIN_REDIRECT_PARAM, isLoginAfterPasswordReset, isLoginAfterSignup } from '../lib/routes';
 import { useSession } from '../session/useSession';
-import styles from './LoginPage.module.css';
+import styles from './authCard.module.css';
 
 const HOME_PATH = '/';
 
@@ -34,7 +34,8 @@ export default function LoginPage() {
   const { isAuthenticated } = useSession();
   const navigate = useNavigate();
   const redirectTo = safeRedirect(searchParams.get(LOGIN_REDIRECT_PARAM));
-  const isSignedUp = searchParams.get('signedUp') === '1';
+  const isSignedUp = isLoginAfterSignup(searchParams);
+  const isPasswordReset = isLoginAfterPasswordReset(searchParams);
 
   useEffect(() => {
     if (isAuthenticated) void navigate(redirectTo, { replace: true });
@@ -48,16 +49,26 @@ export default function LoginPage() {
         <h1 className="type-heading-1">로그인</h1>
         <hr className={styles.divider} />
         {isSignedUp && (
-          <Alert variant="info" className={styles.alert}>
+          <Alert variant="info" className={styles.notice}>
             가입이 완료되었습니다. 로그인해 주세요.
+          </Alert>
+        )}
+        {isPasswordReset && (
+          <Alert variant="info" className={styles.notice}>
+            비밀번호를 바꿨습니다. 새 비밀번호로 로그인해 주세요.
           </Alert>
         )}
         <p className={`${styles.lead} type-body-strong`}>가입한 이메일과 비밀번호를 입력해 주세요.</p>
         <div className={styles.formSlot}>
           <LoginForm />
         </div>
+        {/* 레이아웃 맵 7번 보조 링크 줄 — 링크 2개 + 가운데 | 구분자 */}
         <p className={`${styles.links} type-link`}>
-          계정이 없으신가요? <Link to="/signup">회원가입</Link>
+          <Link to="/password-reset">비밀번호 찾기</Link>
+          <span className={styles.separator} aria-hidden="true">
+            |
+          </span>
+          <Link to="/signup">회원가입</Link>
         </p>
       </CardForm>
     </section>

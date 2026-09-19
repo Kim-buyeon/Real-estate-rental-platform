@@ -26,6 +26,26 @@ export const signup = (form: SignupForm) =>
 /** 본문 없음. 성공 시 data는 null — 명세 1.2 */
 export const logout = () => request<null>({ method: 'POST', url: '/auth/logout' });
 
+// ── USER-06 비밀번호 재설정 (명세 1.3) ──────────────────────────────────
+
+/** POST /api/auth/password-reset/confirm 요청 — 명세 1.3. token은 메일 링크의 쿼리에서 읽은 값 그대로다 */
+export interface PasswordResetConfirmForm {
+  token: string;
+  newPassword: string;
+}
+
+/** 가입 여부와 무관하게 항상 200 · data null — 명세 1.3. 형식 오류만 400 INVALID_REQUEST */
+export const requestPasswordReset = (email: string) =>
+  request<null>({ method: 'POST', url: '/auth/password-reset', data: { email } });
+
+/** 성공 시 data는 null. 무효 토큰은 400 AUTH_RESET_TOKEN_INVALID, 비밀번호 규칙 위반은 400 INVALID_REQUEST + field newPassword — 명세 1.3 */
+export const confirmPasswordReset = (token: string, newPassword: string) =>
+  request<null>({
+    method: 'POST',
+    url: '/auth/password-reset/confirm',
+    data: { token, newPassword } satisfies PasswordResetConfirmForm,
+  });
+
 // ── USER-03 프로필 (명세 1.1) ───────────────────────────────────────────
 // 조회와 수정이 같은 중첩 구조를 쓴다. 수정 요청에는 「수정 가능」으로 표시된 필드를 모두 담는다 —
 // 바뀐 것만 보내는 부분 전송이 아니다. 수정 불가 필드가 섞이면 서버가 무시한다.
