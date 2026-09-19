@@ -8,10 +8,19 @@ import styles from './LoginPage.module.css';
 
 const HOME_PATH = '/';
 
-/** 같은 오리진 경로만 — `/`로 시작하고 `//`로 시작하지 않을 때. 그 밖은 오픈 리다이렉트라 홈으로 */
+/**
+ * 이 오리진 안의 경로일 때만 그대로, 그 밖(오픈 리다이렉트)은 홈으로.
+ *
+ * 문자열 접두 검사로 판정하지 않는다 — 브라우저의 URL 파서는 `\`를 `/`로 읽고 탭 · 줄바꿈을 지우므로 `/\evil.com`,
+ * 탭이 낀 `/<TAB>/evil.com`이 `//evil.com`과 같은 곳으로 간다. 같은 파서(WHATWG URL)로 해석해 오리진이 바뀌는지 본다.
+ */
 function safeRedirect(value: string | null): string {
-  if (value && value.startsWith('/') && !value.startsWith('//')) return value;
-  return HOME_PATH;
+  if (!value || !value.startsWith('/')) return HOME_PATH;
+  try {
+    return new URL(value, window.location.origin).origin === window.location.origin ? value : HOME_PATH;
+  } catch {
+    return HOME_PATH;
+  }
 }
 
 /**
