@@ -20,7 +20,7 @@ APP-01 · DB-01 · DB-02 세 노드의 구성과 상시 경로.
 
 | 노드 | 담긴 것 |
 |---|---|
-| APP-01 | Nginx, 애플리케이션 두 슬롯, Redis |
+| APP-01 | Nginx, 애플리케이션 두 슬롯, 정적 화면(web), Redis. 1차 배포에서는 PostgreSQL도 함께 둔다(2.1절) |
 | DB-01 | PostgreSQL Primary. WAL을 오브젝트 스토리지로 아카이빙 |
 | DB-02 | PostgreSQL Standby. 복제만 수신하며 트래픽을 받지 않는다 |
 
@@ -33,6 +33,7 @@ APP-01 · DB-01 · DB-02 세 노드의 구성과 상시 경로.
 | 1차 | AWS EC2 | Amazon Linux 2023 — EC2 기본 AMI | 로드맵 4주차 |
 | 2차 | AWS EC2 | **Rocky Linux 9** — Rocky 공식 AMI(AWS Marketplace) | 로드맵 6주차 |
 
+- **1차 배포는 APP-01 한 대에 PostgreSQL까지 둔다.** DB 노드 분리 · 복제(INF-03)에서 DB-01 · DB-02로 옮긴다 — 로드맵 6주차. 구성 파일은 `infra/docker-compose.yml`.
 - **1차에서 구성을 완성하고 2차에서 같은 구성을 옮긴다.** 컨테이너로 구동하므로 옮기는 대상은 OS 준비(Docker 설치 · SELinux · 방화벽)와 데이터다. 애플리케이션 이미지와 Compose 파일은 그대로다.
 - Rocky Linux 9를 고른 이유: 공식 AMI가 Marketplace에 있고 Docker 공식 저장소가 RHEL 9 계열을 지원한다. 10은 2025년 공개로 운용 사례가 적다. **부 버전은 AMI를 받을 때 확정해 여기에 적는다.**
 - **접속은 공인 IP + HTTP다.** 도메인 · TLS는 두지 않는다(2026-09-19 결정). 4장의 443 행과 6장의 TLS 인증서 · 도메인 행은 도메인을 붙일 때 되살린다.
@@ -42,7 +43,7 @@ APP-01 · DB-01 · DB-02 세 노드의 구성과 상시 경로.
 
 | 노드 | 사양 | 구동 대상 | 상시 기동 |
 |---|---|---|---|
-| APP-01 | 2 vCPU / 4 GB | Nginx, App ×2, Redis | 예 |
+| APP-01 | 2 vCPU / 4 GB | Nginx, App ×2, web, Redis | 예 |
 | DB-01 | 2 vCPU / 2 GB | PostgreSQL Primary | 예 |
 | DB-02 | 1 vCPU / 1 GB | PostgreSQL Standby | 예 (복제 수신 전용) |
 
@@ -67,6 +68,7 @@ APP-01 단일 노드에 두 프로세스를 두는 구성은 노드 자체의 �
 |---|---|---|
 | 사용자 → Nginx | 80 | 전체. 도메인 · TLS를 붙이면 443을 열고 80은 443으로 리다이렉트한다(2.1절) |
 | Nginx → App | 8081 · 8082 | 동일 노드 루프백 |
+| Nginx → web(정적 화면) | 8090 | 동일 노드 루프백 |
 | App → PostgreSQL | 5432 | APP-01 사설 IP만 |
 | App → Redis | 6379 | 동일 노드 루프백. 외부 바인딩 금지 |
 | Primary → Standby | 5432 | DB-01 사설 IP만 |

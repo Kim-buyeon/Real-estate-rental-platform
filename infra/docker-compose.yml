@@ -1,0 +1,103 @@
+# 운영 구성 — APP-01 노드. 시스템 구성서 2 · 3장, 운영 절차서 3 · 4장.
+# 이 파일이 있는 infra/ 에서 실행한다. 값은 같은 폴더의 .env 에서 읽는다(루트 .env.example 과 같은 이름).
+#
+#   cd infra && docker compose up -d
+#
+# 파일 이름이 docker-compose.yml 인 이유: 배포 스크립트(운영 절차서 3.2)가 -f 없이 infra/ 에서 docker compose 를 부른다.
+# 다른 이름이면 Compose 가 상위 폴더로 올라가 루트의 로컬 구성을 집는다.
+#
+# 1차 배포(EC2)에서는 PostgreSQL 도 이 노드에 둔다. DB 노드 분리 · 복제(INF-03)에서 postgres 서비스를 빼고
+# DB_HOST 를 DB-01 사설 IP 로 바꾼다 — 로드맵 6주차.
+#
+# 이미지 — 레지스트리 파이프라인(INF-02) 전에는 로컬 빌드 이미지를 쓴다(운영 절차서 3.2 전제).
+# APP_IMAGE · WEB_IMAGE 로 덮으면 레지스트리 이미지가 된다.
+# 로컬 구성(루트, name: rental)과 컨테이너 · 볼륨 이름이 겹치지 않게 한다
+name: rental-prod
+
+x-app: &app
+  image: ${APP_IMAGE:-rental-backend:local}
+  env_file: .env
+  restart: unless-stopped
+  # graceful 종료 대기(application.yml 30초)보다 길게 준다. Compose 기본 10초면 30초를 채우기 전에 SIGKILL 된다.
+  stop_grace_period: 40s
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  # 앞단 — 요청 분산 · SSE 전달 · 정적 화면 전달. 호스트 네트워크여야 upstream 의 127.0.0.1 이 호스트를 가리킨다(운영 절차서 4.1).
+  nginx:
+    image: nginx:1.26-alpine
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d
+    depends_on:
+      - app-1
+      - app-2
+      - web
+
+  # 슬롯 둘 — 액티브-액티브(INF-01). 포트는 호스트 루프백에만 연다(시스템 구성서 4장)
+  app-1:
+    <<: *app
+    environment:
+      SERVER_PORT: 8081
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "127.0.0.1:8081:8081"
+
+  app-2:
+    <<: *app
+    environment:
+      SERVER_PORT: 8082
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "127.0.0.1:8082:8082"
+
+  web:
+    image: ${WEB_IMAGE:-rental-frontend:local}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:80"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # 상한과 축출 정책 — 시스템 구성서 3장. 상한 값은 미확정이라 잠정 256MB(1차 배포에서 사용량을 보고 확정한다).
+    # 토큰 · 티켓 · 락은 만료가 있는 키라 volatile-lru 로 만료 키부터 내보낸다.
+    command: ["sh", "-c", "exec redis-server --maxmemory 256mb --maxmemory-policy volatile-lru $${REDIS_PASSWORD:+--requirepass $$REDIS_PASSWORD}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    # 외부 바인딩 금지 — 앱은 Compose 네트워크로 닿는다. 호스트 포트를 열지 않는다
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli $${REDIS_PASSWORD:+-a $$REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

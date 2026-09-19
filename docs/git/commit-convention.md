@@ -75,7 +75,7 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 
 | 경로 | 내용 |
 | --- | --- |
-| `docker-compose.yml` · `infra/docker-compose.prod.yml` · `Dockerfile` | 컨테이너 정의 |
+| `docker-compose.yml` · `infra/docker-compose.yml` · `Dockerfile` | 컨테이너 정의 |
 | `infra/nginx/` | Nginx 설정, upstream |
 | `infra/prometheus/` · `infra/grafana/` · `infra/alertmanager/` · `infra/promtail/` | 스크레이프 설정, 알림 규칙, 대시보드 |
 | `infra/` | `postgresql.conf`, `pg_hba.conf`, 복제 설정 |
