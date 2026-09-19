@@ -127,6 +127,8 @@ const fakeServices: KakaoServices = {
 
 function createFakeMaps(): KakaoMaps {
   return {
+    // 이미 준비된 SDK다 — 로더는 생성자가 있으면 스크립트를 넣지 않으므로 이 경로를 타지 않지만, 표면은 맞춘다
+    load: (callback) => callback(),
     LatLng: FakeKakaoLatLng,
     LatLngBounds: FakeKakaoLatLngBounds,
     Map: FakeKakaoMap,
@@ -143,7 +145,8 @@ export function getKakaoMapInstances(): readonly FakeKakaoMap[] {
 
 /**
  * window.kakao에 넣고 되돌리는 헬퍼. 구현은 호출 시점에 window.kakao를 읽으므로
- * (map.ts requireMaps) 렌더 전에 호출해야 한다. 반환하는 함수가 원래 상태로 되돌린다 —
+ * (map.ts requireMaps · loader.ts isMapSdkReady) 렌더 전에 호출해야 한다. 넣어 두면 로더가
+ * 스크립트 없이 곧바로 준비로 판정한다. 반환하는 함수가 원래 상태로 되돌린다 —
  * 기본 상태(window.kakao 없음)로 돌아가야 SDK 없음 경로를 검증하는 다른 테스트에
  * 영향을 주지 않는다(MapPage.test.tsx · PropertyDetailPanel.test.tsx).
  */

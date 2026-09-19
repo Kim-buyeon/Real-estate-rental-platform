@@ -13,6 +13,7 @@ import {
   fitSeoul,
   groupMarkers,
   isMapSdkReady,
+  loadKakaoMaps,
   lockSeoulView,
   moveToPoint,
   OVERLAY_Z_FRONT,
@@ -34,6 +35,9 @@ import styles from './MapExplorer.module.css';
 
 /** 아직 이번 단계의 표시 영역을 읽지 못했을 때 쿼리 정의에 넘기는 자리값. enabled가 false라 요청되지 않는다 */
 const PENDING_BBOX: BoundingBox = { minLat: 0, maxLat: 0, minLng: 0, maxLng: 0 };
+
+/** SDK 로드 상태. 지도 화면에 들어온 뒤에야 내려받는다 (kakao-map 2장) */
+type SdkStatus = 'loading' | 'ready' | 'error';
 
 const stageKeyOf = (stage: MapStage) => (stage.type === 'seoul' ? 'seoul' : `district:${stage.district}`);
 
@@ -80,8 +84,10 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
   // 포털 컨테이너. 키가 같으면 같은 엘리먼트를 다시 쓴다 — 오버레이는 새 것만 만들고 사라진 것만 지운다
   const [containers] = useState(() => new Map<string, HTMLDivElement>());
 
-  // SDK는 index.html의 정적 <script>로 먼저 실행된다. 첫 렌더에 판정하면 효과에서 상태를 바꾸지 않아도 된다
-  const [isSdkMissing] = useState(() => !isMapSdkReady());
+  // SDK는 이 화면에 들어온 뒤 loadKakaoMaps가 내려받는다. 이미 받아 두었으면(다른 화면을 다녀왔을 때) 첫 렌더부터 준비다
+  const [sdkStatus, setSdkStatus] = useState<SdkStatus>(() => (isMapSdkReady() ? 'ready' : 'loading'));
+  const isSdkReady = sdkStatus === 'ready';
+  const isSdkMissing = sdkStatus === 'error';
   const [districtError, setDistrictError] = useState<string | null>(null);
   const [view, setView] = useState<MapView | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
@@ -95,10 +101,26 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     stageKeyRef.current = stageKey;
   }, [stageKey]);
 
+  // SDK 로드. 스크립트는 로더가 한 번만 넣으므로 다시 마운트되어도 두 번 내려받지 않는다
+  useEffect(() => {
+    if (sdkStatus !== 'loading') return;
+    let cancelled = false;
+    loadKakaoMaps()
+      .then(() => {
+        if (!cancelled) setSdkStatus('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setSdkStatus('error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sdkStatus]);
+
   // 지도 생성 · idle 구독. 표시 영역은 idle에서만 갱신한다 (kakao-map 4장)
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || isSdkMissing) return;
+    if (!container || !isSdkReady) return;
 
     const map = createMap(container);
     mapRef.current = map;
@@ -140,13 +162,13 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
       mapRef.current = null;
       containers.clear();
     };
-  }, [containers, isSdkMissing]);
+  }, [containers, isSdkReady]);
 
   /**
    * 감춰져 있던 지도가 다시 보이는 시점의 relayout. 숨겨진 동안 컨테이너 크기가 0이었다가
    * 돌아오면 SDK가 스스로 타일을 다시 그리지 않는다 (kakao-map 5장 「지도 컨테이너 크기가
    * 바뀌면 relayout()」). SDK 호출은 map 폴더의 relayoutMap을 거친다 — 그 함수는 map.relayout()만
-   * 부르고, window.kakao 전역을 읽는 곳은 map/map.ts의 isMapSdkReady · requireMaps 둘이다.
+   * 부르고, window.kakao 전역을 읽는 곳은 map/loader.ts와 map/map.ts의 requireMaps 둘이다.
    */
   useEffect(() => {
     const map = mapRef.current;
@@ -155,7 +177,9 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
   }, [isShown]);
 
   // 단계 이동. 자치구는 Geocoder가 돌려준 중심으로 옮기고, 그 뒤 첫 idle이 표시 영역을 읽는다.
-  // idle이 오지 않는 경우를 대비해 이동 직후에도 한 번 읽는다 (kakao-map 6장)
+  // idle이 오지 않는 경우를 대비해 이동 직후에도 한 번 읽는다 (kakao-map 6장).
+  // isSdkReady도 deps다 — SDK가 늦게 준비되면 지도가 그때 만들어지므로, 그 전에 정해진 단계
+  // (?propertyId 딥링크의 자치구)를 지도가 생긴 뒤 한 번 적용해야 한다
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -188,7 +212,7 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     // deps가 단계 「객체」(참조 비교)라서, 같은 자치구에 머무를 때는 단계 쪽이 같은 객체를 넘겨야 이 효과가 다시 돌지 않고
     // 지도가 중심으로 튀지 않는다. useMapStage.showDistrict가 같은 자치구면 같은 객체를 돌려주는 것이 그 절반이다.
     // 새 객체를 만들어 넘기는 소비자가 생기면 튄다. stageKey 문자열로 걸면 소비자와 무관해진다 (이슈 #122 1번)
-  }, [stage]);
+  }, [stage, isSdkReady]);
 
   const isSeoul = stage.type === 'seoul';
   const districtCountsQuery = useQuery({ ...propertyQueries.districtCounts(filter), enabled: isSeoul });
@@ -214,7 +238,8 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     () => (districtCountsQuery.data?.districts ?? []).map((district) => district.name),
     [districtCountsQuery.data],
   );
-  const districtPoints = useDistrictPoints(isSeoul ? districtNames : []);
+  // SDK가 준비되기 전 · 실패한 뒤에는 조회하지 않는다 — 지도가 없으면 좌표를 쓸 곳도 없다
+  const districtPoints = useDistrictPoints(isSeoul && isSdkReady ? districtNames : []);
 
   const handleHoverMarker = useCallback((propertyId: number) => setPreviewId(propertyId), []);
   const handleSelectMarker = useCallback((propertyId: number) => setPreviewId(propertyId), []);
@@ -329,6 +354,8 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     [containers],
   );
 
+  // SDK 준비를 deps에 두지 않는다 — 오버레이 항목은 레이어보다 먼저 생길 수 없다. 자치구 좌표는 준비 뒤에야
+  // 조회하고(useDistrictPoints), 마커는 지도에서 읽은 표시 영역이 있어야 조회한다
   useEffect(() => {
     const layer = layerRef.current;
     if (!layer) return;

@@ -7,9 +7,17 @@
 // PropertyDetailPanel.test.tsx는 SDK 없음(window.kakao undefined) 경로를 검증하므로 이 파일의
 // 가짜는 여기 하나에만 설치 · 해제한다 — 전역 기본값을 바꾸지 않는다.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { installFakeKakaoMaps, getKakaoMapInstances } from '../../../test/kakao';
+import { act, render, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type {
+  KakaoAddressSearchResult,
+  KakaoCustomOverlayOptions,
+  KakaoGeocoder,
+  KakaoMaps,
+  KakaoStatus,
+} from '../map/kakao';
+import type { MapStage } from '../hooks/useMapStage';
+import { FakeKakaoCustomOverlay, installFakeKakaoMaps, getKakaoMapInstances } from '../../../test/kakao';
 import { installFakeResizeObserver, getResizeObserverInstances } from '../../../test/resizeObserver';
 import { propertyHandlers } from '../../../test/msw/handlers/property';
 import { server } from '../../../test/msw/server';
@@ -133,5 +141,135 @@ describe('MapExplorer relayout', () => {
     Object.defineProperty(mapContainer as HTMLElement, 'clientHeight', { value: 300, configurable: true });
     observer.trigger();
     expect(map.relayout).toHaveBeenCalledTimes(1);
+  });
+});
+
+/*
+ * SDK가 첫 렌더 뒤에 준비되는 경로 — 실제 브라우저의 동적 로드(kakao-map 2장)와 같은 순서다.
+ * 위 describe는 렌더 전에 가짜를 설치해 첫 렌더부터 준비라 이 경로를 타지 않는다.
+ *
+ * 키를 스텁해 로더가 스크립트를 넣게 하고, 그 스크립트의 load 이벤트와 kakao.maps.load 콜백을
+ * 흉내 내 렌더 뒤에 가짜 SDK를 준비시킨다. Geocoder는 좌표를 돌려주는 것으로 바꾸고,
+ * 만들어진 오버레이를 모은다.
+ */
+const geocodeCalls = vi.fn<(address: string) => void>();
+
+class ResolvingGeocoder implements KakaoGeocoder {
+  addressSearch(address: string, callback: (result: KakaoAddressSearchResult[], status: KakaoStatus) => void) {
+    geocodeCalls(address);
+    callback([{ x: '126.8666', y: '37.5170' }], 'OK');
+  }
+}
+
+let createdOverlays: FakeKakaoCustomOverlay[] = [];
+
+class RecordingOverlay extends FakeKakaoCustomOverlay {
+  constructor(options: KakaoCustomOverlayOptions) {
+    super(options);
+    createdOverlays.push(this);
+  }
+}
+
+function insertedSdkScript(): HTMLScriptElement | undefined {
+  return [...document.head.querySelectorAll<HTMLScriptElement>('script')].find((script) =>
+    script.src.includes('dapi.kakao.com/v2/maps/sdk.js'),
+  );
+}
+
+/** 로더가 넣은 스크립트가 실행되고, SDK 본체가 kakao.maps.load 콜백으로 준비되는 것을 흉내 낸다 */
+async function finishSdkLoad() {
+  const script = insertedSdkScript();
+  expect(script).toBeDefined();
+  const partial = {
+    maps: {
+      load: (callback: () => void) => {
+        installFakeKakaoMaps();
+        const maps: KakaoMaps = window.kakao.maps;
+        window.kakao = {
+          maps: {
+            ...maps,
+            CustomOverlay: RecordingOverlay,
+            services: { ...maps.services, Geocoder: ResolvingGeocoder },
+          },
+        };
+        callback();
+      },
+    },
+  };
+  window.kakao = partial as unknown as Window['kakao'];
+  await act(async () => {
+    script!.dispatchEvent(new Event('load'));
+  });
+}
+
+function renderAt(stage: MapStage) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MapExplorer filter={{}} stage={stage} onSelectDistrict={() => {}} onOpenDetail={() => {}} />
+    </QueryClientProvider>,
+  );
+}
+
+describe('MapExplorer SDK가 렌더 뒤에 준비될 때', () => {
+  beforeEach(() => {
+    server.use(...propertyHandlers);
+    vi.stubEnv('VITE_KAKAO_MAP_KEY', 'test-key');
+    restoreResizeObserver = installFakeResizeObserver();
+    geocodeCalls.mockClear();
+    createdOverlays = [];
+  });
+
+  afterEach(() => {
+    // setup.ts의 테스트 기본값(키 없음)으로 되돌린다
+    vi.stubEnv('VITE_KAKAO_MAP_KEY', '');
+    insertedSdkScript()?.remove();
+    delete (window as unknown as Record<string, unknown>).kakao;
+    restoreResizeObserver();
+  });
+
+  it('자치구 단계로 들어온 채 준비되면 그 자치구를 한 번 조회해 그 중심으로 옮긴다', async () => {
+    // 자치구 좌표는 map 모듈이 캐시하므로 이 파일의 다른 테스트가 쓰지 않는 구를 쓴다
+    renderAt({ type: 'district', district: '양천구' });
+
+    // 로드 중에는 지도를 만들지 않는다
+    expect(getKakaoMapInstances()).toHaveLength(0);
+
+    await finishSdkLoad();
+
+    await waitFor(() => expect(getKakaoMapInstances()).toHaveLength(1));
+    const map = getKakaoMapInstances()[0]!;
+    await waitFor(() => expect(map.setCenter).toHaveBeenCalledTimes(1));
+    expect(geocodeCalls).toHaveBeenCalledTimes(1);
+    expect(geocodeCalls).toHaveBeenCalledWith('서울특별시 양천구');
+    const center = map.setCenter.mock.calls[0]![0] as { getLat(): number; getLng(): number };
+    expect(center.getLat()).toBeCloseTo(37.517);
+    expect(center.getLng()).toBeCloseTo(126.8666);
+  });
+
+  it('서울 전체 단계에서 준비되면 자치구 오버레이를 지도에 그린다', async () => {
+    renderAt({ type: 'seoul' });
+
+    await finishSdkLoad();
+
+    await waitFor(() => expect(getKakaoMapInstances()).toHaveLength(1));
+    const map = getKakaoMapInstances()[0]!;
+    await waitFor(() => expect(createdOverlays.length).toBeGreaterThan(0));
+    for (const overlay of createdOverlays) {
+      expect(overlay.setMap).toHaveBeenCalledWith(map);
+    }
+  });
+
+  it('로드 중에 언마운트하면 로드가 끝나도 지도를 만들지 않고 조회도 하지 않는다', async () => {
+    const { unmount } = renderAt({ type: 'district', district: '영등포구' });
+    expect(insertedSdkScript()).toBeDefined();
+
+    unmount();
+    await finishSdkLoad();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(getKakaoMapInstances()).toHaveLength(0);
+    expect(createdOverlays).toHaveLength(0);
+    expect(geocodeCalls).not.toHaveBeenCalled();
   });
 });

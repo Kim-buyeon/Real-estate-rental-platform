@@ -19,7 +19,6 @@ export {
   createMap,
   fitBoundingBox,
   fitSeoul,
-  isMapSdkReady,
   lockSeoulView,
   moveToPoint,
   readBoundingBox,
@@ -28,6 +27,8 @@ export {
   searchDistrictPoint,
 } from './map';
 export type { MapPoint, RawBoundingBox } from './map';
+
+export { isMapSdkReady, loadKakaoMaps } from './loader';
 
 export { groupMarkers } from './cluster';
 export type { GroupedMarkers, MarkerCluster } from './cluster';

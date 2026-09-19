@@ -1,6 +1,7 @@
 import type { BoundingBox } from '../../../api/property';
 import { BBOX_PRECISION, DISTRICT_LEVEL, SEOUL_BOUNDS, SEOUL_INITIAL_LEVEL } from './constants';
 import type { KakaoMap, KakaoMaps } from './kakao';
+import { isMapSdkReady, loadKakaoMaps } from './loader';
 
 /** 지도에서 읽은, 반올림하기 전의 표시 영역 좌표 */
 export interface RawBoundingBox {
@@ -15,14 +16,9 @@ export interface MapPoint {
   lng: number;
 }
 
-/** SDK가 준비되었는지 — index.html의 정적 <script>가 실행되면 참이다 */
-export function isMapSdkReady(): boolean {
-  return typeof window !== 'undefined' && typeof window.kakao !== 'undefined' && Boolean(window.kakao.maps);
-}
-
 /**
- * window.kakao 전역을 읽는 곳은 이 함수와 isMapSdkReady 둘뿐이다 — overlay.ts도 이 함수를 거친다.
- * 준비되지 않은 상태에서 부르는 것은 호출 순서 오류이므로 던진다.
+ * 준비된 SDK를 꺼낸다. window.kakao 전역을 읽는 곳은 이 함수와 loader.ts 둘뿐이다 — overlay.ts도
+ * 이 함수를 거친다. 준비되지 않은 상태(loadKakaoMaps가 끝나기 전)에서 부르는 것은 호출 순서 오류이므로 던진다.
  */
 export function requireMaps(): KakaoMaps {
   if (!isMapSdkReady()) {
@@ -139,7 +135,9 @@ export function relayoutMap(map: KakaoMap): void {
 /** 자치구 중심 좌표는 런타임에 한 번만 조회한다 — 같은 구를 두 번 부르지 않는다 */
 const districtPointCache = new Map<string, Promise<MapPoint>>();
 
-function requestDistrictPoint(district: string): Promise<MapPoint> {
+async function requestDistrictPoint(district: string): Promise<MapPoint> {
+  // Geocoder는 services 라이브러리다 — SDK 로드가 끝난 뒤에만 있다. 로드 실패는 그대로 reject로 전해진다
+  await loadKakaoMaps();
   // SDK 확인과 Geocoder 생성을 실행자 안에서 한다 — 밖에서 던지면 호출자의 catch가 받지 못한다
   return new Promise<MapPoint>((resolve, reject) => {
     const maps = requireMaps();

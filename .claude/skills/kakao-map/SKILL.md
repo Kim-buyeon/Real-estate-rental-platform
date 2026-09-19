@@ -21,9 +21,11 @@ description: 카카오맵 Web SDK로 지도 탐색 화면을 만들 때 따른�
 
 ## 2. SDK 로드
 
-```html
-<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=%VITE_KAKAO_MAP_KEY%&libraries=services"></script>
 ```
+//dapi.kakao.com/v2/maps/sdk.js?appkey=<VITE_KAKAO_MAP_KEY>&libraries=services&autoload=false
+```
+
+지도 화면이 이 주소의 `<script>`를 동적으로 넣고 `kakao.maps.load(콜백)`을 부른다. 코드는 `features/property/map/loader.ts` 하나다.
 
 | 라이브러리 | 쓰는 곳 | 넣는가 |
 | --- | --- | --- |
@@ -34,11 +36,13 @@ description: 카카오맵 Web SDK로 지도 탐색 화면을 만들 때 따른�
 
 | 규칙 | 이유 |
 | --- | --- |
-| `index.html`의 정적 `<script>` 태그 한 번으로 로드한다 | SPA에서 라우트가 바뀌어도 SDK는 한 번만 있으면 된다 |
-| `Map`은 `window.kakao.maps`가 준비된 뒤, 컨테이너가 마운트된 뒤 만든다 | 정적 로드면 스크립트 실행 순서로 보장된다 |
-| `autoload=false` + `kakao.maps.load(콜백)` 동적 로드는 **6장 확인 전에 쓰지 않는다.** 확인되면 지도 없는 화면에서 SDK를 내려받지 않으려 할 때 쓸 수 있다 | 공식 가이드 · 레퍼런스 본문에서 그 파라미터를 확인하지 못했다 |
+| **지도를 쓰는 화면에 들어갈 때 동적으로 로드한다.** `index.html`에 정적 `<script>`를 두지 않는다 | 지도가 없는 화면(메인 · 로그인 · 관심 매물 · 알림)에서 SDK를 내려받지 않는다 |
+| 스크립트는 **한 번만** 넣는다 — 진행 중 · 끝난 로드를 모듈 수준 Promise로 캐시하고, 여러 곳이 동시에 불러도 그것을 기다린다. 이미 준비되어 있으면 넣지 않는다 | SPA에서 라우트가 바뀌어도 SDK는 한 번만 있으면 된다 |
+| **스크립트 `onload`가 아니라 `kakao.maps.load` 콜백에서 준비를 알린다.** 준비 판정은 `kakao.maps` 객체가 아니라 생성자(`kakao.maps.Map`)가 있는지로 한다 | `autoload=false`면 `onload` 직후 `kakao.maps`는 있어도 `Map` · `services`가 아직 없다 (6장 확인) |
+| 스크립트 오류 · 키 없음 · **`load` 콜백 미도착(상한 초과)** 은 reject하고 캐시를 비운다. 실패한 태그는 치운다. 상한은 지도 상수 파일의 잠정값이다 | 다음 진입이 다시 시도할 수 있어야 한다. 콜백이 오지 않으면 상한이 없는 한 로드가 끝나지 않아 지도 영역이 안내 없이 빈다 |
+| `Map` · `Geocoder`는 로드가 끝난 뒤, 컨테이너가 마운트된 뒤 만든다. 로드 중에는 지도 영역이 비어 있고, 실패하면 지도 영역에 오류 안내 | 동적 로드라 스크립트 실행 순서로 보장되지 않는다 |
 
-`%VITE_KAKAO_MAP_KEY%`는 Vite가 HTML에서 치환하는 표기다. 키를 문자열로 붙여 쓰지 않는다.
+키는 `import.meta.env.VITE_KAKAO_MAP_KEY`로 로더 한 곳에서 읽는다. 키 값을 코드에 적지 않는다.
 
 ## 3. 3단계 드릴다운
 
@@ -99,12 +103,12 @@ idle ──▶ map.getBounds() ──▶ sw = getSouthWest() · ne = getNorthEas
 
 | 동작 | 확인 방법 | 실패하면 |
 | --- | --- | --- |
-| `autoload=false` + `kakao.maps.load(콜백)` 동적 로드 | 확인 코드에서 동적 삽입 뒤 `kakao.maps.services`가 정의되는지 본다 | 2장의 정적 `<script>` 로드를 유지한다 |
+| ~~`autoload=false` + `kakao.maps.load(콜백)` 동적 로드~~ | **확인 완료 (2026-09-19) — 2장이 이것을 쓴다.** 공식 레퍼런스 https://apis.map.kakao.com/web/documentation/ 의 `kakao.maps.load`: 「v3 스크립트를 동적으로 로드하기 위해 사용한다 … 주소에 `autoload=false`를 지정해 주어야 한다」. 실측: localhost:5173에서 헤드리스 Chrome으로 `libraries=services&autoload=false`를 동적 삽입 — 스크립트 `onload` 직후 `kakao.maps.Map`은 `undefined`, `kakao.maps.load` 콜백 안에서 `Map`(function) · `services`(object) · `services.Geocoder`(function)가 준비된다 | — |
 | `setBounds` 뒤 `idle`이 반드시 오는가 | 이미 그 영역을 보고 있어 중심 · 레벨이 바뀌지 않을 때 `idle`이 오는지 본다 | 오지 않으면 2단계 진입 시 `getBounds()`를 한 번 직접 읽어 첫 호출을 한다 |
 | ~~`MarkerClusterer`에 `CustomOverlay`를 넣기~~ | **확인하지 않는다.** 7장 (가)에서 클러스터러를 쓰지 않기로 정해 이 미검증 동작에 기대지 않는다 | — |
 | 서울 전체 `level` · 서울 경계 · 자치구 경계 | 데스크톱 · 모바일 폭에서 25개 구가 모두 보이는 가장 확대된 레벨과 그때의 `getBounds()`. 자치구 경계도 같은 방법으로 (3장 ②) | — |
 
-**첫 번째 작업으로 확인 코드를 만든다.** 확인 전에 그 위에 화면을 쌓지 않는다.
+**남은 행은 첫 번째 작업으로 확인 코드를 만든다.** 확인 전에 그 위에 화면을 쌓지 않는다.
 
 ## 7. 착수 전 문서 확인
 
