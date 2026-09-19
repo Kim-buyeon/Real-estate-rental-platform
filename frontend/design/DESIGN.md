@@ -171,6 +171,21 @@ components:
   input-disabled:
     backgroundColor: "{colors.surface-muted}"
     textColor: "{colors.text-disabled}"
+  checkbox:
+    backgroundColor: "{colors.surface}"
+    borderColor: "{colors.border-strong}"
+    rounded: "{rounded.sm}"
+    size: 20px
+  checkbox-checked:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
+    rounded: "{rounded.sm}"
+    size: 20px
+  checkbox-disabled:
+    backgroundColor: "{colors.disabled-surface}"
+    borderColor: "{colors.border}"
+    rounded: "{rounded.sm}"
+    size: 20px
   select:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.text}"
@@ -272,6 +287,32 @@ components:
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: 16px
+  # 아래 dialog · toast · 로딩(spinner · skeleton)과 Forms의 checkbox 셋은 참고 사이트에 없는 프로젝트 정의다. 새 색 · 새 수치 없이 기존 토큰만
+  # 조합했다(사용자 결정 2026-09-19, 이슈 #150). 수치는 spacing · rounded 척도의 값이다 — 11절 K-18 ~ K-21
+  dialog:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    borderColor: "{colors.border}"
+    rounded: "{rounded.lg}"
+    padding: 24px
+  toast:
+    backgroundColor: "{colors.inverse-surface}"
+    textColor: "{colors.on-inverse}"
+    typography: "{typography.body}"
+    rounded: "{rounded.md}"
+    padding: 12px 16px
+  toast-error:
+    backgroundColor: "{colors.error}"
+    textColor: "{colors.on-error}"
+    typography: "{typography.body}"
+    rounded: "{rounded.md}"
+    padding: 12px 16px
+  spinner:
+    textColor: "{colors.text-tertiary}"
+    size: 24px
+  skeleton:
+    backgroundColor: "{colors.surface-muted}"
+    rounded: "{rounded.sm}"
   tooltip:
     backgroundColor: "{colors.inverse-surface}"
     textColor: "{colors.on-inverse}"
@@ -660,6 +701,9 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | `{components.input-error}` | `{colors.error}` 보더 | 검증 실패 |
 | `{components.input-disabled}` | `{colors.surface-muted}` / `{colors.text-disabled}` | 비활성 입력 |
 | `{components.select}` | `{colors.surface}` / `{colors.text}` + 1px `{colors.border}` · `{rounded.md}` · 패딩 8/12 · 최소 폭 140 | **프로젝트 정의** — seen on: project |
+| `{components.checkbox}` | `{colors.surface}` + 1px `{colors.border-strong}` · `{rounded.sm}` · 20(`{spacing.lg}`) | **프로젝트 정의** — K-20. 다중 선택 · 동의 |
+| `{components.checkbox-checked}` | `{colors.primary}` 면 / `{colors.on-primary}` 체크 표시 | 선택됨 |
+| `{components.checkbox-disabled}` | `{colors.disabled-surface}` + 1px `{colors.border}` | 비활성 |
 
 참고 사이트의 필터는 native select가 아니라 커스텀 `{components.pulldown}`이다. 우리 `select`는
 참고 사이트에 없고 기존 구현(`Select.module.css`)의 값을 그대로 옮겼다.
@@ -689,6 +733,11 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | `{components.alert-info}` | `{colors.surface-muted}` / `{colors.text-secondary}` + 1px `{colors.border-subtle}` · `{rounded.md}` · 패딩 `{spacing.md}` | 조회 실패 · 빈 상태 안내 | **project** |
 | `{components.alert-error}` | `{colors.error-surface}` / `{colors.error}` · `{rounded.md}` · 패딩 `{spacing.md}` | 인라인 오류 | **project** |
 | `{components.tooltip}` | `{colors.inverse-surface}` / `{colors.on-inverse}` · `{typography.body-sm}` · 패딩 8/14 | 용어 설명 | map-search/02 · map-search/04 |
+| `{components.dialog}` | `{colors.surface}` / `{colors.text}` + 1px `{colors.border}` · `{rounded.lg}` · 패딩 `{spacing.xl}` | 확인이 필요한 조작(관심 해제 등) | **project** — K-18 |
+| `{components.toast}` | `{colors.inverse-surface}` / `{colors.on-inverse}` · `{typography.body}` · `{rounded.md}` · 패딩 `{spacing.sm}`/`{spacing.md}` | 조작 결과 · 알림 수신 피드백 | **project** — K-19 |
+| `{components.toast-error}` | `{colors.error}` / `{colors.on-error}` · 나머지는 toast와 같다 | 뮤테이션 실패 | **project** — K-19 |
+| `{components.spinner}` | `{colors.text-tertiary}` · 24(`{spacing.xl}`) | 짧은 대기(버튼 · 패널 안) | **project** — K-21 |
+| `{components.skeleton}` | `{colors.surface-muted}` 면 · `{rounded.sm}` | 목록 · 카드 자리 표시 | **project** — K-21 |
 | `{components.badge-neutral}` | `{colors.surface-muted}` / `{colors.text-secondary}` | 중립 표시 | map-search/01 |
 | `{components.badge-primary}` | `{colors.primary-surface}` / `{colors.primary-hover}` | 강조 표시 | project |
 | `{components.badge-inverse}` | `{colors.inverse-surface}` / `{colors.on-inverse}` | 상태 표시(마감 등) | listing/05 |
@@ -839,23 +888,23 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 
 ### 의도적 이탈 — 린터 경고
 
-**실측 총계: error 0 · warning 36 · info 1.** 아래는 예상이 아니라 `npx @google/design.md lint DESIGN.md`를
-실행한 결과다(전문은 `reviews/designmd-review.md` 0장). warning 36건은 전부 K-25 · K-01 · K-02로 설명되며,
+**실측 총계: error 0 · warning 39 · info 1.** 아래는 예상이 아니라 `npx @google/design.md lint DESIGN.md`를
+실행한 결과다(전문은 `reviews/designmd-review.md` 0장). warning 39건은 전부 K-25 · K-01 · K-02로 설명되며,
 **error는 0건이다** — 규격 밖 하위 토큰도 값은 전부 정의된 토큰을 가리키므로 실제로 깨진 참조는 없다.
 
 | 규칙 | 건수 | 어디 |
 | --- | --- | --- |
-| `broken-ref` | **34** | 규격 밖 component 하위 토큰 (K-25) |
+| `broken-ref` | **37** | 규격 밖 component 하위 토큰 (K-25). #150에서 dialog · checkbox · checkbox-disabled의 `borderColor` 3건 추가 |
 | `contrast-ratio` | **2** | `{components.button-primary-disabled}` · `{components.input-disabled}` (K-01 · K-02) |
-| `token-summary` (info) | 1 | 색 30 · 타이포 14 · 반경 5 · 간격 11 · 컴포넌트 52 |
+| `token-summary` (info) | 1 | 색 30 · 타이포 16 · 반경 5 · 간격 11 · 컴포넌트 60 |
 | `orphaned-tokens` · `missing-primary` · `section-order` · `unknown-key` · `token-like-ignored` · `missing-sections` · `missing-typography` | **0** | — |
 
 | # | 항목 | 내용 |
 | --- | --- | --- |
-| K-25 | **규격 밖 component 하위 토큰 — `broken-ref` 34건** | 규격이 인정하는 하위 토큰은 `backgroundColor` · `textColor` · `typography` · `rounded` · `padding` · `size` · `height` · `width` **8개뿐**이고, 여기에 **보더와 간격이 없다.** 내역: `borderColor` **28** · `gap` **3**(`field` · `tabs-underline` · `empty-state`) · `shadow` **1**(`input-focus`) · `minWidth` **1**(`select`) · `labelWidth` **1**(`kv-row`). **유지하기로 결정했다 — 이슈 #110 작업 판단(2026-09-18), 검수 권장 수용. 사용자 승인 사항이 아니다.** 사유 — **이 시스템은 그림자 대신 1px 실선으로 면을 나누므로 보더 색은 부가 정보가 아니라 핵심 표현 수단이고, 따라서 산문이 아니라 기계가 읽는 자리에 남긴다.** 어느 컴포넌트가 `{colors.border}`를 쓰고 어느 것이 `{colors.border-subtle}`를 쓰는지가 `components`에서 사라지면 CSS로 옮길 때 정보를 잃는다. **값은 전부 `{colors.*}` 참조라 실제로 깨진 참조가 아니며 severity도 warning이다**(error 0건). 대가로 린터 경고 34건을 안고 간다 |
+| K-25 | **규격 밖 component 하위 토큰 — `broken-ref` 37건** | 규격이 인정하는 하위 토큰은 `backgroundColor` · `textColor` · `typography` · `rounded` · `padding` · `size` · `height` · `width` **8개뿐**이고, 여기에 **보더와 간격이 없다.** 내역: `borderColor` **31** · `gap` **3**(`field` · `tabs-underline` · `empty-state`) · `shadow` **1**(`input-focus`) · `minWidth` **1**(`select`) · `labelWidth` **1**(`kv-row`). **유지하기로 결정했다 — 이슈 #110 작업 판단(2026-09-18), 검수 권장 수용. 사용자 승인 사항이 아니다.** 사유 — **이 시스템은 그림자 대신 1px 실선으로 면을 나누므로 보더 색은 부가 정보가 아니라 핵심 표현 수단이고, 따라서 산문이 아니라 기계가 읽는 자리에 남긴다.** 어느 컴포넌트가 `{colors.border}`를 쓰고 어느 것이 `{colors.border-subtle}`를 쓰는지가 `components`에서 사라지면 CSS로 옮길 때 정보를 잃는다. **값은 전부 `{colors.*}` 참조라 실제로 깨진 참조가 아니며 severity도 warning이다**(error 0건). 대가로 린터 경고 37건을 안고 간다 |
 | K-01 | **비활성 버튼 대비 — `contrast-ratio` 1건** | 계측(`signup/01`)은 `{colors.disabled-surface}` + 흰 글자로 대비 ≈1.4:1이다. 우리는 글자를 `{colors.text-disabled}`(#999999)로 바꿔 **2.00:1**을 확보했다. 그래도 4.5:1 미만이라 경고가 난다. WCAG 2.2 SC 1.4.3은 **비활성 사용자 인터페이스 구성요소의 텍스트를 대비 요건에서 제외**하므로 위반은 아니다(SC 1.4.11도 같다). **검수에서 예외 적용을 승인했다.** **참고 사이트를 그대로 베끼지 않았다는 사실을 함께 기록한다** |
 | K-02 | **`{components.input-disabled}` 대비 — `contrast-ratio` 1건** | `{colors.surface-muted}` + `{colors.text-disabled}` = **2.61:1**. 같은 비활성 예외이고 **검수에서 승인됐다.** 기존 구현값 유지 |
-| K-15 | 컴포넌트가 참조하지 않는 색 토큰 2종 | `{colors.background}`(`global.css`이 `background: var(--color-background)`로 실제 사용 중 — 지우면 전역 배경이 깨진다) · `{colors.on-error}`(진한 오류 면 미사용. `tokens.css`가 정의하고 있고 K-19의 토스트·모달에서 쓰인다). **`orphaned-tokens` 경고는 나지 않는다** — 린터가 본문 산문의 참조까지 세는데 둘 다 2절 Surface · Semantic 표와 10절에서 참조되기 때문이다. 경고가 없더라도 **삭제 후보가 아니라는 사실**을 남긴다 |
+| K-15 | 컴포넌트가 참조하지 않는 색 토큰 1종 | `{colors.background}`(`global.css`이 `background: var(--color-background)`로 실제 사용 중 — 지우면 전역 배경이 깨진다). `{colors.on-error}`는 #150에서 `{components.toast-error}`가 참조해 해소됐다. **`orphaned-tokens` 경고는 나지 않는다** — 린터가 본문 산문의 참조까지 세는데 2절 Surface 표와 10절에서 참조되기 때문이다. 경고가 없더라도 **삭제 후보가 아니라는 사실**을 남긴다 |
 
 ### 값 충돌 — 승인 대상
 
@@ -886,10 +935,10 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | # | 항목 |
 | --- | --- |
 | K-09 | **미분석 등급의 도메인 용어가 없다.** 지금은 `{colors.risk-unanalyzed}` · `{components.badge-risk-unanalyzed}`로 적었다. 도메인 용어 표에 용어가 추가되면 그 이름으로 바꾼다 |
-| K-18 | `dialog` — **미구현 · 미관측.** 관심 해제 확인 등에 필요하다. 값이 없으므로 **키를 만들지 않았다** |
-| K-19 | `toast` — **미구현 · 미관측.** 뮤테이션 실패 · 알림 수신 피드백에 필요하다. 키 없음 |
-| K-20 | `checkbox` — **미구현 · 미관측.** 약관 동의 · 필터 다중 선택에 필요하다. `components/ui/`에 구현 파일이 없어 옮겨올 값이 없다. 키 없음 |
-| K-21 | 로딩 표시(스피너 · 스켈레톤) — 표준 어휘에 없고 구현도 없다. **프로젝트 정의 — 값 미확정** |
+| K-18 | `dialog` — **키 정의됨 · 미구현 · 미관측.** 기존 토큰 조합(사용자 결정 2026-09-19, #150). 뒤 막(scrim)은 기존 토큰에 반투명 값이 없어 정하지 않았다 — 쓰는 화면이 생길 때 정의서에 먼저 넣는다 |
+| K-19 | `toast` · `toast-error` — **키 정의됨 · 미구현 · 미관측.** 기존 토큰 조합(#150). 표시 위치 · 지속 시간 · 겹침 순서(K-13 z-index)는 쓰는 화면에서 정한다 |
+| K-20 | `checkbox` · `-checked` · `-disabled` — **키 정의됨 · 미구현 · 미관측.** 기존 토큰 조합(#150). 알림 구독 화면은 아직 네이티브 `<input>`을 직접 그린다 — 공용 컴포넌트로 옮길 때 이 키를 쓴다. 20px은 터치 타겟(44)이 아니라 상자 크기다 — 터치 구간(`~767px`)에서는 누르는 영역이 44 하한을 채워야 한다(9절). 채우는 방식은 구현 때 정한다 |
+| K-21 | 로딩 표시 `spinner` · `skeleton` — **키 정의됨 · 미구현.** 표준 어휘에 없는 프로젝트 정의, 기존 토큰 조합(#150). 애니메이션(회전 · 맥동)의 속도는 정하지 않았다 |
 | K-22 | `radio` · `switch` · `textarea` · `date` · `calendar` — 미관측 · 미사용. 필요해지면 정의서에 먼저 넣는다 |
 | K-23 | 차트(실거래가 · 시세)는 차기 범위다. 데이터 시각화 색은 **미사용** |
 | K-24 | `{colors.border-subtle}` · `{colors.focus}` · `{colors.error}` 계열 · `{typography.label}` · `{spacing.3xs}`는 참고 사이트에서 관측되지 않았다. **기존 구현값을 유지**했고 삭제하지 않았다 |
