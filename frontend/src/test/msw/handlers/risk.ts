@@ -61,7 +61,7 @@ export const RISK_ANALYSIS: RiskAnalysis = {
   analyzedAt: '2026-07-29T03:00:00+09:00',
 };
 
-/** 위험도 API 명세 1.3 응답 예시 그대로 — RegistryTimeline 테스트가 쓴다 */
+/** 위험도 API 명세 1.3 응답 예시 그대로 — RegistryTimeline 테스트가 쓴다. propertyId만 명세(2048)와 달리 테스트가 쓰는 1024다 */
 export const REGISTRY: Registry = {
   propertyId: 1024,
   ownerships: [
@@ -87,7 +87,7 @@ export const REGISTRY: Registry = {
   dataSource: 'MOCK',
 };
 
-/** 위험도 API 명세 1.4 응답 예시 그대로 — 등급이 바뀐 경우다 */
+/** 위험도 API 명세 1.4 응답 예시 그대로 — 등급이 바뀐 경우다. propertyId만 명세(2048)와 달리 테스트가 쓰는 1024다 */
 export const REANALYZE_RESULT: RiskReanalyzeResult = {
   propertyId: 1024,
   previousGrade: 'CAUTION',
