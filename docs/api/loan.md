@@ -29,7 +29,7 @@
 | dsrLimit | 정수 | DSR 기준 한도 (원). 주택 보유자만, 무주택이면 null |
 | stressDsrLimit | 정수 | 스트레스 금리 적용 한도 (원) — **참고, 최종 한도에 미반영.** 주택 보유자만, 무주택이면 null |
 | finalLimit | 정수 | 보증금 기준 · 보증기관 상한 · DSR(해당 시) · 상품 한도 중 최솟값 |
-| appliedRegulation | 문자열 | 최종 한도를 결정한 항목. DEPOSIT_RATIO / GUARANTEE_CAP / DSR / PRODUCT_LIMIT. 같은 값이면 이 순서의 앞 항목 |
+| appliedRegulation | 문자열 | 최종 한도를 결정한 항목. DEPOSIT_RATIO / GUARANTEE_CAP / DSR / PRODUCT_LIMIT. 같은 값이면 이 순서의 앞 항목. 상품 한도는 금액 필드를 따로 두지 않는다 — `PRODUCT_LIMIT`이면 `finalLimit`가 곧 상품 한도다 |
 | dtiReference | 실수 | 참고용 총부채상환비율 (%, 소수 첫째 자리, 한도 판정에 미사용). 연소득이 0이면 null |
 | missingFields[] | 배열 | 계산에 필요하나 미입력된 자격 정보 항목. 성공 응답에서는 빈 배열 |
 
