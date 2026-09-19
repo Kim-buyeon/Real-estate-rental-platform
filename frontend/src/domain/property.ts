@@ -14,8 +14,8 @@ const CONTRACT_TYPE_LABEL: Record<ContractType, string> = {
 
 /**
  * 매물 유형 — 백엔드 PropertyType. 적재 경로가 만들어 내는 값만 둔다.
- * 명세 1.1은 「아파트·연립다세대·단독다가구·오피스텔 등」으로 열어 두었으나 지금 붙은 실거래가
- * 서비스가 아파트 · 오피스텔 둘뿐이다. 값이 늘면 백엔드 enum과 함께 여기에 추가한다.
+ * 명세 1.1과 같이 지금 붙은 실거래가 서비스가 아파트 · 오피스텔 둘뿐이다.
+ * 값이 늘면 백엔드 enum · 명세와 함께 여기에 추가한다.
  */
 export const PROPERTY_TYPES = ['APARTMENT', 'OFFICETEL'] as const;
 export type PropertyType = (typeof PROPERTY_TYPES)[number];
@@ -122,7 +122,7 @@ export const DEPOSIT_MAX_OPTIONS: readonly number[] = [
 // ── 표시 문구 헬퍼 ────────────────────────────────────────────────────────
 // domain/risk.ts와 같은 형태다. 서버가 우리가 모르는 코드를 보내도 화면이 빈칸이 되지 않게
 // 코드 문자열을 그대로 보여준다 — 지금 매물 유형은 아파트 · 오피스텔 둘뿐이지만 명세 1.1이
-// 「연립다세대 · 단독다가구 등」을 열어 두었고, 적재 서비스가 늘면 그 값이 실제로 온다.
+// 연립다세대 · 단독다가구를 적재 서비스를 붙일 때 추가한다고 적고 있어, 그때 새 값이 실제로 온다.
 
 function labelOf(labels: Record<string, string>, code: string): string {
   return labels[code] ?? code;

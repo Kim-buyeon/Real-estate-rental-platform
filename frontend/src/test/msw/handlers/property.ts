@@ -25,8 +25,6 @@ export const PROPERTY_DETAIL: PropertyDetail = {
   address: '서울특별시 강서구 화곡로 123',
   latitude: 37.5501234,
   longitude: 126.8497561,
-  // 명세 1.7 예시는 MULTIPLEX(연립다세대)이나 프론트 PropertyType은 지금 APARTMENT · OFFICETEL만 지원한다
-  // (domain/property.ts) — 타입에 맞춰 APARTMENT로 둔다
   propertyType: 'APARTMENT',
   contractType: 'DEPOSIT_ONLY',
   deposit: 230000000,
@@ -105,8 +103,6 @@ export const WISHLIST_PAGE_2: CursorPage<WishlistItem> = {
 /**
  * 목록 조회 응답 첫 쪽 — 명세 1.6 예시 그대로다. 항목 하나에 propertyId 1024로, PROPERTY_DETAIL과
  * 같은 매물이다(명세 1.7 예시도 같은 propertyId를 쓴다).
- * 명세 1.6 예시는 propertyType이 MULTIPLEX(연립다세대)이나 프론트 PropertyType은 지금 APARTMENT ·
- * OFFICETEL만 지원한다(domain/property.ts) — PROPERTY_DETAIL과 같은 사유로 APARTMENT로 둔다.
  */
 export const PROPERTY_LIST_PAGE_1: CursorPage<PropertyListItem> = {
   items: [

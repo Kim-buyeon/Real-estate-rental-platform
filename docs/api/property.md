@@ -30,7 +30,7 @@
 | contractType | 열거 | DEPOSIT_ONLY(전세) · MONTHLY_RENT(월세) · SEMI_DEPOSIT(반전세) |
 | depositMin / depositMax | 정수 | 보증금 범위 (원) |
 | monthlyRentMax | 정수 | 월세 상한 (원) |
-| propertyType | 열거 | 아파트·연립다세대·단독다가구·오피스텔 등 공통 코드값 |
+| propertyType | 열거 | APARTMENT(아파트) · OFFICETEL(오피스텔). 적재 경로가 만드는 값만 둔다 — 전월세 실거래가는 주택 유형마다 서비스가 나뉘고 지금 붙은 것이 둘이다. 연립다세대 · 단독다가구는 그 서비스를 붙이는 변경에서 추가한다 |
 | riskGrade | 열거 배열 | SAFE, CAUTION, DANGER 중 다중 선택 |
 | areaMin / areaMax | 실수 | 전용면적 범위 (㎡) |
 
@@ -162,7 +162,7 @@ GET /api/properties?district=강서구&contractType=DEPOSIT_ONLY&sort=deposit,as
         "propertyId": 1024,
         "district": "강서구",
         "address": "서울특별시 강서구 화곡로 123",
-        "propertyType": "MULTIPLEX",
+        "propertyType": "APARTMENT",
         "contractType": "DEPOSIT_ONLY",
         "deposit": 230000000,
         "monthlyRent": 0,
@@ -192,7 +192,7 @@ GET /api/properties/1024
     "address": "서울특별시 강서구 화곡로 123",
     "latitude": 37.5501234,
     "longitude": 126.8497561,
-    "propertyType": "MULTIPLEX",
+    "propertyType": "APARTMENT",
     "contractType": "DEPOSIT_ONLY",
     "deposit": 230000000,
     "monthlyRent": 0,

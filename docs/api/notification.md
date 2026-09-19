@@ -105,7 +105,7 @@ GET · PUT /api/me/notification-subscriptions — 공통 구조
         "notificationId": 9012,
         "type": "RISK_CHANGE",
         "title": "관심 매물의 위험 등급이 변경되었습니다",
-        "propertyId": 1024,
+        "propertyId": 2048,
         "beforeValue": "CAUTION",
         "afterValue": "DANGER",
         "isRead": false,
@@ -145,14 +145,14 @@ GET /api/notifications/stream — 서버 전송 이벤트
 {
   "notificationId": 9012,
   "type": "RISK_CHANGE",
-  "propertyId": 1024,
+  "propertyId": 2048,
   "createdAt": "2026-07-29T03:05:00+09:00"
 }
 ```
 
 ```
 event:RISK_CHANGE
-data:{"notificationId":9012,"type":"RISK_CHANGE","propertyId":1024,"createdAt":"2026-07-29T03:05:00+09:00"}
+data:{"notificationId":9012,"type":"RISK_CHANGE","propertyId":2048,"createdAt":"2026-07-29T03:05:00+09:00"}
 ```
 
 - 이벤트 이름은 알림 유형과 동일하게 지정한다. 본문에는 식별자와 유형만 담고, 상세 내용은 목록 조회로 가져온다.

@@ -31,7 +31,7 @@ public record ProfileUpdateRequest(
             @Size(max = 50)
             String name,
 
-            // 필수로 두지 않는 이유: users.phone 이 NULL 을 허용하고 명세가 필수 여부를 정하지 않았다. 가입 요청과 같다.
+            // 선택 항목이다 — API 명세(회원) 1.1 · 1.2. users.phone 도 NULL 을 허용한다. 가입 요청과 같다.
             @Size(max = 20)
             String phone
     ) {
