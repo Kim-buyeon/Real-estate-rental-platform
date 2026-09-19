@@ -17,7 +17,7 @@ closes #
 
 ## 🏷️ 관련 기능ID
 
-`USER-01` · `PROP-02` · `RISK-05` · `LOAN-01` · `NOTI-02` · `ADMIN-01` (`docs/features/`) · `INF-01`~`06` (`docs/features/infra.md`) · `T1`~`T7` (`docs/infra/traffic.md`). 기능에 속하지 않는 변경(설정 · 문서 · 공통 리팩토링)이면 「없음」.
+`USER-01` · `PROP-02` · `RISK-05` · `LOAN-01` · `NOTI-02` · `ADMIN-01` (`docs/features/`) · `INF-01`~`04` · `07`~`09` (`docs/features/infra.md`). 기능에 속하지 않는 변경(설정 · 문서 · 공통 리팩토링)이면 「없음」.
 
 -
 
@@ -42,7 +42,7 @@ closes #
 | 백엔드 빌드 · 테스트 (단위 · 매퍼 · 통합 · 다중 인스턴스) | |
 | 프론트 타입 검사 · 빌드 · 테스트 | |
 
-인프라 파일(Nginx · Prometheus · Alertmanager · Compose · 배포 스크립트 · k6)을 바꿨으면 `docs/git/commit-convention.md`의 확인 명령 결과를 함께 적는다. **CI는 이것을 확인하지 못한다.**
+인프라 파일(Nginx · Compose · 배포 스크립트 · Rocky 노드 설정 `infra/os/`)을 바꿨으면 `docs/git/commit-convention.md`의 확인 명령 결과를 함께 적는다. **CI는 이것을 확인하지 못한다.**
 
 돌리지 못한 것은 이유와 함께 적는다. Docker가 없어 Testcontainers를 건너뛴 경우가 그렇다.
 

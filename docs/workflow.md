@@ -45,7 +45,7 @@
 
 ## 3. 인프라 작업의 차이
 
-인프라도 2장의 순서를 그대로 따른다. 다만 **10단계의 CI가 게이트 역할을 하지 못한다.** Nginx 설정, `prometheus.yml`, Compose 파일은 컴파일도 테스트도 되지 않아 CI가 통과해도 확인된 것이 없다.
+인프라도 2장의 순서를 그대로 따른다. 다만 **10단계의 CI가 게이트 역할을 하지 못한다.** Nginx 설정, Compose 파일, Rocky 노드 설정(`infra/os/`)은 컴파일도 테스트도 되지 않아 CI가 통과해도 확인된 것이 없다.
 
 **게이트는 7단계로 옮겨간다.** 커밋 body에 남기는 확인 명령 결과가 유일한 검증이다. 어떤 명령을 쓰는지는 `docs/git/commit-convention.md`.
 
@@ -57,7 +57,7 @@
 
 | 2장 | 운영 작업 |
 | --- | --- |
-| 읽을 문서를 고른다 | **같다.** `slice-start`가 운영 갈래로 `docs/infra/runbook.md` · `docs/infra/system.md` · `docs/infra/observability.md` 등을 올린다. 목록은 그 스킬이 정한다 |
+| 읽을 문서를 고른다 | **같다.** `slice-start`가 운영 갈래로 `docs/infra/runbook.md` · `docs/infra/system.md` · `docs/infra/platform.md` 등을 올린다. 목록은 그 스킬이 정한다 |
 | 이슈 · 브랜치 | 없다. 장애는 이슈를 만들고 시작하지 않는다 |
 | 계획을 제시하고 승인 | **`docs/infra/runbook.md`가 계획이다.** 상태를 바꾸는 단계마다 받는 확인이 승인이다 |
 | 구현 · 테스트 · 검토 | 없다. `infra-operator`가 `docs/infra/runbook.md`를 밟는다 |

@@ -29,7 +29,7 @@ description: 검토와 PR 전에 CI가 볼 것을 먼저 돌린다. 빌드·테�
 
 ## 3. 인프라 파일을 건드렸으면 더 돌린다
 
-**CI가 게이트 역할을 하지 못한다.** Nginx 설정, `prometheus.yml`, Compose 파일은 컴파일도 테스트도 되지 않아 CI가 통과해도 확인된 것이 없다 — `docs/workflow.md` 3장.
+**CI가 게이트 역할을 하지 못한다.** Nginx 설정, Compose 파일, Rocky 노드 설정(`infra/os/`)은 컴파일도 테스트도 되지 않아 CI가 통과해도 확인된 것이 없다 — `docs/workflow.md` 3장.
 
 확인 명령이 그 자리를 대신한다. **대상별 명령은 `docs/git/commit-convention.md`의 표를 읽는다.** 결과는 커밋 body에 남긴다.
 

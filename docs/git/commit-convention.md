@@ -77,11 +77,12 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 | --- | --- |
 | `docker-compose.yml` · `infra/docker-compose.yml` · `Dockerfile` | 컨테이너 정의 |
 | `infra/nginx/` | Nginx 설정, upstream |
+| `infra/os/` | Rocky Linux 노드 설정 — firewalld · NFS 공유 · systemd timer · sshd |
 | `infra/prometheus/` · `infra/grafana/` · `infra/alertmanager/` · `infra/promtail/` | 스크레이프 설정, 알림 규칙, 대시보드 |
 | `infra/` | `postgresql.conf`, `pg_hba.conf`, 복제 설정 |
 | `infra/` 스크립트 | `deploy.sh` · `smoke.sh` · `maintenance.sh` · 페일오버 |
 | `.github/workflows/` | CI |
-| `chaos-harness/` | k6 부하 스크립트, 장애 주입 스크립트, 수집기 |
+| `chaos-harness/` | k6 부하 스크립트, 장애 주입 스크립트, 수집기 — 차기 범위 |
 
 **`infra`도 type을 전부 쓴다.** 인프라 변경이라고 모두 `chore`가 아니다.
 
@@ -113,8 +114,8 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 | 계열 | ID | 출처 |
 | --- | --- | --- |
 | 서비스 기능 | `USER-01` · `PROP-02` · `RISK-05` · `LOAN-01` · `NOTI-02` · `ADMIN-01` | `docs/features/` |
-| 인프라 기능 | `INF-01` ~ `INF-06` | `docs/features/infra.md` |
-| 부하 프로파일 | `T1` ~ `T7` | `docs/infra/traffic.md` |
+| 인프라 기능 | `INF-01` ~ `INF-09` | `docs/features/infra.md` |
+| 부하 프로파일 | `T1` ~ `T7` | `docs/infra/traffic.md` — 차기 범위 |
 
 - 기능별 추적에 사용한다. `git log --oneline | grep RISK-05`
 - 장애 시나리오 9종은 별도 ID를 두지 않고 `INF-06`으로 묶는다
@@ -153,7 +154,7 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 
 ### 인프라 커밋은 동작 확인 방법을 적는다
 
-인프라 변경은 **컴파일도 테스트도 되지 않는 것이 많다.** Nginx 설정, `prometheus.yml`, Compose 파일은 틀려도 커밋 시점에 아무 일이 없고 배포할 때 터진다. 무엇으로 확인했는지 남기지 않으면 이력만으로는 검증 여부를 알 수 없다.
+인프라 변경은 **컴파일도 테스트도 되지 않는 것이 많다.** Nginx 설정, Rocky 노드 설정(`infra/os/`), Compose 파일은 틀려도 커밋 시점에 아무 일이 없고 배포할 때 터진다. 무엇으로 확인했는지 남기지 않으면 이력만으로는 검증 여부를 알 수 없다.
 
 ```
 fix(infra): upstream 주소를 컨테이너 이름에서 루프백으로 변경 (INF-01)
@@ -167,13 +168,15 @@ Nginx는 upstream 호스트명을 설정 로드 시점에 한 번만 해석한�
 | 대상 | 확인 명령 |
 | --- | --- |
 | Nginx 설정 | `nginx -t` |
-| 스크레이프 설정 | `promtool check config` |
-| 알림 규칙 | `promtool check rules` + `promtool test rules` |
-| 알림 라우팅 | `amtool check-config` |
-| 로그 수집 · 저장 | `promtail -check-syntax` · `loki -verify-config` |
 | Compose | `docker compose config` |
 | 배포 스크립트 | 실제 슬롯 교체 1회 |
-| k6 스크립트 | `dropped_iterations == 0` 확인 |
+| sshd 설정 | `sshd -t` — root 권한과 호스트 키가 필요하다. 조각 파일만 보려면 `sshd -t -f <파일>` |
+| systemd service · timer | `systemd-analyze verify <유닛>` |
+| firewalld | 노드에 넣은 뒤 `firewall-cmd --check-config` — 저장소 파일이 아니라 그 호스트의 영구 설정을 검사한다 |
+| NFS 공유 | 적용 뒤 `exportfs -v` — 문법만 보는 명령이 없어 노드에서 확인한다 |
+| 셸 스크립트 | `bash -n` |
+
+관측 · 부하 시험 설정(`promtool` · `amtool` · k6)의 확인 명령은 그 작업이 차기 범위라 뺐다 — git 이력에 있다. Rocky 노드 설정은 이 PC에서 적용해 볼 수 없는 것이 많다. **문법만 본 것과 노드에서 동작을 본 것을 구분해 적는다.**
 
 ---
 

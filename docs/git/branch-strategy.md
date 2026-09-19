@@ -47,7 +47,7 @@ feature/*, fix/*, chore/*, docs/* ─► 작업 브랜치 (develop에서 분기)
 | 계열 | ID | 출처 |
 | --- | --- | --- |
 | 서비스 기능 | `USER-01` · `PROP-02` · `RISK-05` · `LOAN-01` · `NOTI-02` · `ADMIN-01` | `docs/features/` |
-| 인프라 기능 | `INF-01` ~ `INF-06` | `docs/features/infra.md` |
+| 인프라 기능 | `INF-01` ~ `INF-09` | `docs/features/infra.md` |
 
 ### 예시
 
@@ -129,6 +129,9 @@ feature/infra/INF-01-app-redundancy      앱 이중화
 feature/infra/INF-02-rolling-deploy      슬롯 순차 교체 배포
 feature/infra/INF-03-db-replication      DB 복제
 feature/infra/INF-04-backup-pitr         백업과 시점 복구
+feature/infra/INF-07-network-isolation   네트워크 격리 · 접근 통제
+feature/infra/INF-08-backup-nas          백업 저장소(NAS)
+feature/infra/INF-09-server-baseline     서버 운영 기반
 feature/infra/INF-06-load-harness        부하·장애 주입 환경
 feature/infra/INF-05-observability       관측 스택 기동
 ```
@@ -232,7 +235,7 @@ hotfix/infra/INF-01-health-path
 
 커밋 type은 `fix`를 쓴다.
 
-**인프라 hotfix는 별도로 유의한다.** 설정 파일 변경은 컴파일도 테스트도 되지 않으므로, CI만으로는 검증되지 않는다. `docs/git/commit-convention.md`에 따라 `nginx -t`·`promtool check rules` 같은 확인 결과를 body에 남긴다.
+**인프라 hotfix는 별도로 유의한다.** 설정 파일 변경은 컴파일도 테스트도 되지 않으므로, CI만으로는 검증되지 않는다. `docs/git/commit-convention.md`에 따라 `nginx -t` · `sshd -t` 같은 확인 결과를 body에 남긴다.
 
 ---
 
