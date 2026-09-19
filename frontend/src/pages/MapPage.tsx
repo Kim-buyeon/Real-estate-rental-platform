@@ -103,11 +103,26 @@ export default function MapPage() {
     setSearchParams((prev) => withoutDetailPropertyId(prev));
   }, [setSearchParams]);
 
-  const handleSelectTab = useCallback((id: string) => setSelectedTab(id as PanelTab), []);
+  /**
+   * 탭 전환. 「목록」으로 가면 URL의 매물 번호를 지운다 (이슈 140) — 남겨 두면 새로고침이 상세로
+   * 되돌아오고, 뒤로가기가 목록 탭 전환을 되돌리지 못해 아무 일도 안 하는 것처럼 보인다.
+   * 탭 전환은 히스토리에 칸을 만들지 않는다(replace) — 열기 · 닫기와 달리 같은 패널 안의 보기 전환이다.
+   * 매물이 사라지면 위 유도가 목록을 보여주고 상세 탭은 비활성이 된다. 다시 보려면 매물을 고른다.
+   */
+  const handleSelectTab = useCallback(
+    (id: string) => {
+      const tab = id as PanelTab;
+      setSelectedTab(tab);
+      if (tab === LIST_TAB && detailPropertyId !== null) {
+        setSearchParams((prev) => withoutDetailPropertyId(prev), { replace: true });
+      }
+    },
+    [detailPropertyId, setSearchParams],
+  );
 
   /**
    * 없는 매물 번호. 서버 문구를 그대로 알리고 파라미터를 지운다 — 링크가 잘못됐으므로 남겨 두면
-   * 새로고침마다 같은 404가 되풀이된다. 지울 때만 replace다: 사용자의 동작이 아니라 잘못된 주소의
+   * 새로고침마다 같은 404가 되풀이된다. 여기서 지우는 것은 replace다: 사용자의 동작이 아니라 잘못된 주소의
    * 정정이라 히스토리에 칸을 만들면 뒤로가기가 그 주소로 되돌아간다.
    *
    * 여기서 가르는 것은 404 하나다 — 네트워크 · 5xx는 패널이 제 자리에서 보여주고 파라미터를 남긴다
