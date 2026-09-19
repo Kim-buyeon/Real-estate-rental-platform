@@ -260,6 +260,48 @@ describe('MapPage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '상세 닫기' })).toBeInTheDocument());
   });
 
+  // ── 목록 탭 전환(이슈 140) ──────────────────────────────────────────────
+
+  it('상세가 열린 채 목록 탭으로 가면 URL의 매물 번호가 지워지고 히스토리에 칸이 생기지 않는다', async () => {
+    server.use(...propertyHandlers, ...riskHandlers);
+    const router = renderMapPage();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
+    // 열기는 push다 — 히스토리: [/map, /map?propertyId=]
+    fireEvent.click(screen.getByRole('button', { name: `${LIST_ITEM.address} 상세 보기` }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '상세 닫기' })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('tab', { name: '목록' }));
+
+    await waitFor(() => expect(router.state.location.search).toBe(''));
+    expect(router.state.historyAction).toBe('REPLACE');
+    expect(screen.getByRole('tab', { name: '목록' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '상세' })).toBeDisabled();
+
+    // replace라 칸이 늘지 않았다 — 뒤로가기는 상세를 연 칸이 아니라 그 앞(/map)으로 간다.
+    // push였다면 [/map, /map?propertyId=, /map]이 되어 뒤로가기가 상세를 다시 연다
+    await router.navigate(-1);
+    await waitFor(() => expect(router.state.historyAction).toBe('POP'));
+    expect(router.state.location.search).toBe('');
+    expect(screen.queryByRole('button', { name: '상세 닫기' })).not.toBeInTheDocument();
+  });
+
+  it('목록 탭으로 간 뒤 목록에서 매물을 다시 고르면 상세가 열리고 URL에 번호가 붙는다', async () => {
+    server.use(...propertyHandlers, ...riskHandlers);
+    const router = renderMapPage(propertyDetailPath(PROPERTY_DETAIL.propertyId));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '상세 닫기' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('tab', { name: '목록' }));
+    await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
+    expect(router.state.location.search).toBe('');
+
+    fireEvent.click(screen.getByRole('button', { name: `${LIST_ITEM.address} 상세 보기` }));
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: '상세' })).toHaveAttribute('aria-selected', 'true'));
+    expect(new URLSearchParams(router.state.location.search).get('propertyId')).toBe(String(LIST_ITEM.propertyId));
+    expect(router.state.historyAction).toBe('PUSH');
+  });
+
   // ── 지도 단계가 튀지 않는 경계 ──────────────────────────────────────────
 
   it('상세를 열어 둔 채 「← 서울 전체」로 벗어나도 다시 그 자치구를 따라가지 않는다 — 매물 하나에 한 번만 따라간다', async () => {

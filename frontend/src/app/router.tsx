@@ -23,8 +23,17 @@ export const routes: RouteObject[] = [
         handle: { hideFooter: true } satisfies RouteHandle,
       },
       // 공개. 로그인 상태로 /login에 오면 LoginPage가 redirect 경로(없으면 /)로 보낸다
-      { path: '/login', lazy: async () => ({ Component: (await import('../pages/LoginPage')).default }) },
-      { path: '/signup', lazy: async () => ({ Component: (await import('../pages/SignupPage')).default }) },
+      // 로그인 · 가입은 헤더 로그인 링크가 redirect로 싣지 않는 화면이다 (이슈 140)
+      {
+        path: '/login',
+        lazy: async () => ({ Component: (await import('../pages/LoginPage')).default }),
+        handle: { isAuthEntry: true } satisfies RouteHandle,
+      },
+      {
+        path: '/signup',
+        lazy: async () => ({ Component: (await import('../pages/SignupPage')).default }),
+        handle: { isAuthEntry: true } satisfies RouteHandle,
+      },
       {
         element: <RequireAuth />,
         children: [

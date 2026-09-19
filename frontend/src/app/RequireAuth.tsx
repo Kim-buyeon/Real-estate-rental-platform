@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router';
+import { loginPath } from '../lib/routes';
 import { useSession } from '../session/useSession';
 
 /**
@@ -11,8 +12,7 @@ export function RequireAuth() {
   const { isAuthenticated } = useSession();
   const location = useLocation();
   if (!isAuthenticated) {
-    const redirect = encodeURIComponent(`${location.pathname}${location.search}`);
-    return <Navigate to={`/login?redirect=${redirect}`} replace />;
+    return <Navigate to={loginPath(`${location.pathname}${location.search}`)} replace />;
   }
   return <Outlet />;
 }
