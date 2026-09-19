@@ -1,4 +1,4 @@
-// 회원 도메인 MSW 핸들러. 응답은 회원·인증 API 명세 1.1의 예시 그대로다 (frontend/CLAUDE.md 폴더 구조).
+// 회원 도메인 MSW 핸들러. 응답은 회원·인증 API 명세 1.1 · 1.3의 예시 그대로다 (frontend/CLAUDE.md 폴더 구조).
 import { http, HttpResponse } from 'msw';
 import type { Profile } from '../../../api/user';
 
@@ -47,7 +47,13 @@ export const PROFILE_INCOMPLETE: Profile = {
   missingFields: ['annualIncome', 'creditScore'],
 };
 
+/** POST /api/auth/password-reset/confirm 요청 예시의 토큰 — 명세 1.3 */
+export const PASSWORD_RESET_TOKEN = 'Qm9nVXNlclJlc2V0VG9rZW5FeGFtcGxl';
+
 export const userHandlers = [
   http.get('/api/me/profile', () => HttpResponse.json({ success: true, data: PROFILE })),
   http.put('/api/me/profile', () => HttpResponse.json({ success: true, data: PROFILE })),
+  // 명세 1.3 — 요청은 가입 여부와 무관하게 항상 200 · data null, 확정 성공도 200 · data null
+  http.post('/api/auth/password-reset', () => HttpResponse.json({ success: true, data: null })),
+  http.post('/api/auth/password-reset/confirm', () => HttpResponse.json({ success: true, data: null })),
 ];
