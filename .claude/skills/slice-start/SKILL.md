@@ -15,7 +15,7 @@ description: 저장소를 바꾸는 작업이나 운영 작업에 착수할 때 
 | --- | --- | --- |
 | 백엔드 기능 | 기능 ID가 있고 서버 작업 | 영역 + 구현 방침 |
 | 프론트 기능 | 기능 ID가 있고 화면 작업 | 영역. 구현 방침은 알림 작업일 때만 |
-| 인프라 | `INF-01` ~ `06` | 영역(인프라 행). `docs/api/common.md`는 제외 |
+| 인프라 | `INF-01` ~ `04` · `07` ~ `09`(`05` · `06`은 차기) | 영역(인프라 행). `docs/api/common.md`는 제외 |
 | 기반 | 기능 ID가 없고 코드·설정을 만든다 | 아래 목록 + 구현 방침 |
 | 운영 | **서버를 대상으로 한다** — 상태를 바꾸든 읽든. 배포 · 롤백 · 점검 · 복구 · 장애 대응 · 운영 보고. INF ID가 붙어 있어도 저장소를 바꾸지 않으면 운영이다 | 2장 에이전트 표의 `infra-operator` 행. 그것만 |
 | 문서 | **산출물이 문서뿐이다** — 문서 · 규칙 · 스킬 · 에이전트 정의를 고치고 코드도 서버도 건드리지 않는다. 기능 ID가 붙어 있어도 코드를 바꾸지 않으면 문서다 | 고칠 문서와 그것을 인용하는 쪽. 아래 목록 |
@@ -57,7 +57,7 @@ description: 저장소를 바꾸는 작업이나 운영 작업에 착수할 때 
 
 **에이전트는 붙지 않는다.** 2장의 「붙는 에이전트에 따라 더 올린다」 표를 건너뛴다. 검토는 `code-reviewer`가 커밋 뒤에 맡는다.
 
-**운영 산출물을 저장소에 넣는 작업은 예외다.** 장애 보고서 · 월간 운영 보고 · 시험 결과서는 고칠 문서가 없고 근거가 운영 문서에 있다 — `docs/workflow.md` 4장이 이것을 문서 작업으로 정한다. 이 경우 2장 에이전트 표에서 근거 문서를 고른다. 장애 보고서 · 월간 운영 보고는 `infra-operator` 행, 시험 결과서는 `load-tester` · `chaos-runner` 행이다.
+**운영 산출물을 저장소에 넣는 작업은 예외다.** 장애 보고서 · 월간 운영 보고는 고칠 문서가 없고 근거가 운영 문서에 있다 — `docs/workflow.md` 4장이 이것을 문서 작업으로 정한다. 이 경우 2장 에이전트 표의 `infra-operator` 행에서 근거 문서를 고른다. 시험 결과서는 부하 · 장애 시험(INF-06)이 차기 범위라 지금은 없다.
 
 ## 2. 색인을 따라간다
 
@@ -74,15 +74,10 @@ description: 저장소를 바꾸는 작업이나 운영 작업에 착수할 때 
 | --- | --- | --- |
 | `frontend-dev` | `frontend/design/DESIGN.md` · 그 화면에 해당하는 `frontend/design/examples/<아키타입>/layout.md` | 화면 · 컴포넌트를 만들거나 고치는 작업 전부 |
 | `test-engineer` | `docs/architecture/testing.md` | 테스트를 쓰는 작업 전부 |
-| `load-tester` | `docs/infra/test-plan.md` · `docs/infra/traffic.md` · `docs/infra/observability.md` | 부하 시험 |
-| `chaos-runner` | `docs/infra/test-plan.md` · `docs/infra/traffic.md` · `docs/infra/runbook.md` · `docs/infra/observability.md` | 장애 주입 시험 |
-| `traffic-builder` | `docs/infra/traffic.md` · `docs/infra/test-plan.md` · `docs/api/common.md` · 요청 조합의 엔드포인트가 속한 영역의 API 명세 | 부하 스크립트 작성 |
-| `infra-operator` | `docs/infra/runbook.md` · `docs/infra/system.md` · `docs/infra/observability.md` · `docs/api/infra-observation.md` · `docs/infra/tech-stack.md` · `docs/infra/test-plan.md` · `docs/features/infra.md` | 운영 갈래 전부 |
-| `monitoring-engineer` | `docs/infra/observability.md` · `docs/api/infra-observation.md` · `docs/api/infra.md` · `docs/infra/system.md` · `docs/infra/tech-stack.md` · `docs/infra/runbook.md` · `docs/infra/test-plan.md` · `docs/features/infra.md` | 관측 설정 작성 |
+| `infra-operator` | `docs/infra/runbook.md` · `docs/infra/system.md` · `docs/infra/platform.md` · `docs/infra/tech-stack.md` · `docs/features/infra.md` | 운영 갈래 전부 |
+| `infra-builder` | `docs/infra/platform.md` · `docs/infra/system.md` · `docs/infra/runbook.md` · `docs/infra/tech-stack.md` · `docs/features/infra.md` · `docs/api/infra.md` | 인프라 구성 파일 · 스크립트 작성(`infra/`) |
 
 `frontend-dev`가 올리는 둘은 `docs/` 밖에 있다. 디자인 토큰 정의서와 레이아웃 맵은 프론트 코드가 직접 참조하는 정본이라 `frontend/` 안에 둔다 — 정의서가 `frontend/src/styles/tokens.css`를 만들고, 레이아웃 맵이 컴포넌트의 배치를 정한다 (이슈 #110 계획 승인). **레이아웃 맵이 있는 아키타입은** 여섯이다 — `map-search`(`/map`) · `favorites`(관심 매물 · 알림 목록) · `login` · `signup` · `my-info`(계정 · 알림 구독) · `home`(`/` 메인 + 전 화면 푸터). 정의서 2절 Source pages가 일곱인 것은 `listing`이 토큰 계측에만 쓰였기 때문이다.
-
-`traffic-builder`는 인프라 갈래인데도 `docs/api/common.md`를 올린다. 1장의 제외 규칙은 인프라 구성이 앱 API를 쓰지 않기 때문인데, 부하 스크립트는 앱 API를 호출하고 응답 봉투를 파싱하므로 예외다.
 
 나중에 부를 것이라도 **착수 시점에 올린다.** 작업 도중에 다시 고르지 않는다.
 

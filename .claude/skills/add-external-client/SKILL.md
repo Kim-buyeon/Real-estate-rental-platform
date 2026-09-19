@@ -36,7 +36,7 @@ description: 외부 API 연동 클라이언트(건축물대장·실거래가·�
 | --- | --- | --- |
 | 타임아웃 | 대상마다 연결 · 읽기 타임아웃. **값 미확정** — 계획에서 정하고 설정 파일에 둔다 | `tech-stack.md` 2장 Resilience4j |
 | 재시도 | 조회(멱등)만. 횟수 · 간격 **미확정** | 같음 |
-| 서킷 브레이커 | 대상마다 하나. 임계값 **미확정.** 서킷 상태를 커스텀 지표로 노출한다 — 지표 이름과 카탈로그 등록은 `monitoring-engineer`와 `docs/infra/observability.md` 지표 카탈로그 소관 | `tech-stack.md` 2장 Actuator |
+| 서킷 브레이커 | 대상마다 하나. 임계값 **미확정.** 서킷 상태 지표 노출은 관측(INF-05)이 차기 범위라 지금은 하지 않는다 — 상태 전이는 로그로 남긴다 | `tech-stack.md` 2장 Actuator |
 | 폴백 | 대상별로 정한다. **폴백이 판정 입력을 채우면 안 된다** — 대장 조회 실패를 「위반건축물 아님」으로 채우면 `business-logic.md` 2장의 조건 검사가 거짓 통과한다. 판정 불가 상태를 어떻게 표현 · 저장할지는 **미확정**(RISK_ANALYSIS의 가입 여부 컬럼은 NOT NULL 불리언이다 — 스키마 변경 여부를 첫 연동 계획에서 판단) | `database.md` RISK_ANALYSIS · `docs/api/common.md` 2장 `EXTERNAL_API_UNAVAILABLE` |
 | 트랜잭션 밖 | 외부 호출을 트랜잭션 안에 두지 않는다 | `backend/CLAUDE.md` Service |
 | 병렬 호출 | 매물 1건 분석의 등기 · 대장 · 시세는 동시에 — 가상 스레드 | `docs/architecture/performance.md` 1.1 · `data-loading.md` 1.2 |

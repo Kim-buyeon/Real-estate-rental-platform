@@ -110,7 +110,6 @@ gh issue view <이슈번호> --comments
 | `frontend/` | `frontend-dev` |
 | 테스트가 없거나 경계를 보지 못한다 | `test-engineer` |
 | `infra/` 구성 · 배포 스크립트 | `infra-builder` |
-| 관측 · 알림 설정 | `monitoring-engineer` |
 | 문서 | 부르지 않는다. 루트 `CLAUDE.md`의 문서 수정 규칙을 따른다 |
 
 - **「남긴다」는 부르지 않는다.** 이슈로 분리한다.
