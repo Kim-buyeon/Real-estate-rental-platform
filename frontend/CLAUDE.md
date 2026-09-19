@@ -320,7 +320,7 @@ export function useAddWishlist() {
 
 ### 공용 UI (`components/ui/`)
 
-**디자인 토큰 정의서의 `components` 항목 하나 = 컴포넌트 하나.** 정의서에 없는 컴포넌트를 만들지 않는다 — 필요하면 정의서에 먼저 넣고 승인 뒤 만든다 (`frontend-dev`). 정의서에 **키가 없는 것**도 같다 — `dialog` · `toast` · `checkbox` · 로딩 표시는 참고 사이트에서 관측되지 않아 키가 없다(정의서 K-18~K-21). 이들을 쓰는 화면 작업은 정의서 추가가 선행된다.
+**디자인 토큰 정의서의 `components` 항목 하나 = 컴포넌트 하나.** 정의서에 없는 컴포넌트를 만들지 않는다 — 필요하면 정의서에 먼저 넣고 승인 뒤 만든다 (`frontend-dev`). `dialog` · `toast` · `checkbox` · 로딩 표시(`spinner` · `skeleton`)는 참고 사이트에 없어 기존 토큰 조합으로 키를 정의해 두었다(정의서 K-18~K-21) — 쓰는 화면이 생기면 그 키로 만든다. 정의서가 정하지 않은 것(대화상자 뒤 막 · 애니메이션 속도 · 토스트 위치)은 정의서에 먼저 넣는다.
 
 - 정의서의 변형(`button-primary` · `button-ghost`)은 `variant` prop 값이고, 상태(`-hover` · `-disabled`)는 CSS 상태다. 변형마다 컴포넌트를 만들지 않는다.
 - **도메인을 모른다.** `riskGrade` · `contractType`을 받지 않는다. `Badge`는 정의서 `badge-*` 항목 이름을 `variant`로 받는다. 등급 → 변형 매핑은 `domain/risk.ts`에 있고, `features/risk`의 `RiskGradeBadge`가 그것을 읽어 `Badge`에 넘긴다.
@@ -493,6 +493,5 @@ SDK를 어떻게 부르고 무엇을 그리는지는 `kakao-map` 스킬이 정�
 | --- | --- | --- |
 | 서울 경계 · 자치구 단계 `level` — 상수 파일의 잠정값 | 위 지도 상수 표 — 브라우저 실측 (`kakao-map` 6장) | 실측할 수 있을 때 |
 | `setBounds` 뒤 `idle`이 반드시 오는가 (`kakao-map` 6장) | 브라우저 확인 | 같이. 지금은 이동 직후 `getBounds()`를 한 번 더 읽어 둔다 |
-| 로딩 표시 컴포넌트(스피너 · 스켈레톤) — 정의서 어휘에 없고 참고 사이트에서도 관측되지 않았다 | 디자인 토큰 정의서 프로젝트 정의 (`designmd-spec` 1.2) | 정의서 K-21이 값을 정할 때. 그 전에는 만들지 않는다 |
 | `QueryClient` 기본값(`staleTime` · `retry`) · axios 타임아웃 | 기반 셋업 계획 승인 | 셋업 |
 | 린터 · 포매터 | 기술 스택 정의서 5장 | 셋업 |
