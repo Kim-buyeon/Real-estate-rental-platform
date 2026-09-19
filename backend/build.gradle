@@ -15,6 +15,11 @@ java {
 	}
 }
 
+// 내장 Tomcat 버전을 BOM 보다 올린다. Boot 4.1.1(최신)이 관리하는 11.0.24 에 CRITICAL 3건(CVE-2026-65182 ·
+// CVE-2026-65905 · CVE-2026-68525)이 있고 11.0.25 에서 고쳐졌다 — 이미지 워크플로의 Trivy 가 막았다.
+// Boot 가 11.0.25 이상을 관리하는 버전으로 올라가면 이 줄을 지운다.
+ext['tomcat.version'] = '11.0.26'
+
 repositories {
 	mavenCentral()
 }

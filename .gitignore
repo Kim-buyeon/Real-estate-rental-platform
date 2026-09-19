@@ -16,3 +16,6 @@ picture/
 # JVM 크래시 로그
 hs_err_pid*.log
 replay_pid*.log
+
+# 점검 모드 표시 파일 — 서버 상태이지 구성이 아니다(infra/maintenance.sh)
+infra/nginx/maintenance/on

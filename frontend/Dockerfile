@@ -17,7 +17,8 @@ ENV VITE_KAKAO_MAP_KEY=${VITE_KAKAO_MAP_KEY}
 RUN npm run build
 
 # ── 실행 ─────────────────────────────────────────────────────────────────
-FROM nginx:1.26-alpine
+# 1.26 계열은 지원이 끝났고 그 이미지의 OpenSSL 에 CRITICAL(CVE-2026-31789)이 남아 있다 — 현재 stable 계열을 쓴다
+FROM nginx:1.30-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /workspace/dist /usr/share/nginx/html
 EXPOSE 80

@@ -38,7 +38,7 @@
 │   ├── template.md         작업 계획 양식
 │   └── workflow.md         작업 순서와 각 단계의 수단
 │
-├── infra/                운영 구성. 서버에 반영되는 설정과 스크립트 — 미작성
+├── infra/                운영 구성. 서버에 반영되는 Compose · 설정 · 배포 스크립트
 │   ├── nginx/              요청 분산 · 점검 모드
 │   └── prometheus/ · alertmanager/ · promtail/ · grafana/   관측 — 차기 범위
 │
@@ -48,7 +48,7 @@
 │   └── report/             지표 수집과 결과서 생성
 │
 ├── .github/
-│   ├── workflows/          빌드·테스트(ci.yml). 배포 · 시험 실행은 미작성
+│   ├── workflows/          빌드·테스트(ci.yml) · 이미지 빌드·스캔·등록(image.yml)
 │   ├── ISSUE_TEMPLATE/     이슈 템플릿
 │   └── pull_request_template.md   PR 본문의 정본
 │
@@ -63,6 +63,7 @@
 ├── docker-compose.yml    로컬 구성. PostgreSQL · Redis + 앱 · 웹 이미지(프로파일)
 ├── .env.example          환경 변수 목록. 값 없음, 커밋 대상
 ├── .env                  실제 값. 커밋하지 않음
+├── .gitattributes        서버에서 실행 · 마운트하는 파일의 LF 고정
 ├── .gitignore
 ├── README.md             저장소 표지
 └── CLAUDE.md             본 문서

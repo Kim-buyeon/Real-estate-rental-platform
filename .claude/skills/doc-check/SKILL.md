@@ -56,7 +56,7 @@ description: 바꾼 것과 문서가 어긋나지 않았는지 확인한다. 변
 | `infra/promtail/` | `docs/api/infra-observation.md` · `docs/infra/observability.md` | 로그 라벨 · 구조화 전제 |
 | PostgreSQL · Redis 설정 | `docs/infra/tech-stack.md` · `docs/infra/system.md` | 자원 상한 · WAL · 복제 슬롯 · 보존 기간 |
 | `docker-compose*.yml` | `docs/infra/system.md` · `docs/api/infra.md` · `docs/infra/tech-stack.md` | 포트와 접근 통제 표 · 구성 요소 목록 |
-| 배포 · 관측 스크립트 | `docs/infra/runbook.md` | **스크립트 전문이 문서에 실려 있다.** 인자 · 대기 시간 · 임계 |
+| 배포 스크립트(`infra/*.sh`) | `docs/infra/runbook.md` 3장 · 4.2 | 스크립트는 파일이 정본이고 절차서는 단계 표와 기준을 싣는다. 인자 · 대기 시간 · 판정 기준 · 재시도 횟수가 표와 맞는지 |
 | `chaos-harness/load/` | `docs/infra/traffic.md` · `docs/infra/test-plan.md` | 파일명 · executor · RPS · 엔드포인트 비중 · think time |
 | `chaos-harness/scenarios/` | `docs/infra/test-plan.md` · `docs/features/infra.md` | 시나리오 번호 · 주입 명령 · 기능과 검증의 대응 |
 | `chaos-harness/report/` | `docs/infra/test-plan.md` | 결과서 파일명 규칙 · 수집 구간 |
