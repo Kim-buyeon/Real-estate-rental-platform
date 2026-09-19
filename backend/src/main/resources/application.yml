@@ -26,6 +26,9 @@ spring:
           time_zone: Asia/Seoul
   flyway:
     enabled: true
+  lifecycle:
+    # graceful 종료의 대기 상한. 넘으면 남은 요청을 끊고 내려간다. 배포 drain(30초)과 같게 둔다 — 운영 절차서 3.2.
+    timeout-per-shutdown-phase: 30s
   task:
     scheduling:
       pool:
@@ -37,6 +40,26 @@ spring:
       # 기동할 때 Job 을 자동으로 돌리지 않는다. 등기 재조회 배치는 스케줄이 날짜 락 안에서만 시작한다 — 기동마다 돌면 두 인스턴스가
       # 락 없이 각자 관심 매물 등기를 뗀다. Boot 기본값은 true 다(spring-boot-batch 4.1.1 메타데이터).
       enabled: false
+
+server:
+  # 종료 신호를 받으면 새 요청을 받지 않고 처리 중인 요청을 끝낸 뒤 내려간다. 슬롯 교체 배포(운영 절차서 3장)가 drain 뒤에
+  # 컨테이너를 교체하므로 남은 요청이 끊기지 않게 한다. 기다리는 상한은 아래 timeout-per-shutdown-phase 다.
+  shutdown: graceful
+  # 슬롯 번호별 포트(8081 · 8082)는 컨테이너 환경 변수 SERVER_PORT 로 덮는다 — 시스템 구성서 4장. 기본은 로컬 개발 포트다.
+  port: 8080
+
+# 준비 상태 확인 — 인프라 API 명세 1.1. 노출은 health 하나뿐이다. 지표(Prometheus)는 관측(INF-05)이 차기 범위라 열지 않는다.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      # liveness · readiness 그룹. Boot 는 쿠버네티스 위에서만 자동으로 켜므로 Compose 운용에서는 명시해야 한다.
+      # readiness 그룹의 기본 구성은 readinessState 하나라 DB 순단에 DOWN 이 되지 않는다 — 명세 1.1 이 readiness 를 쓰는 이유다.
+      probes:
+        enabled: true
 
 # 조회 전용 매퍼 설정. 쓰기는 JPA 가 담당한다 — 아키텍처 설계서(영속성 구조) 1.1.
 # 키 이름은 mybatis-spring-boot-autoconfigure 4.1.0 의 spring-configuration-metadata.json 에서 확인했다.
