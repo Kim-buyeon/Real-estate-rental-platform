@@ -104,6 +104,7 @@
 | AUTH_INVALID_CREDENTIAL | 401 | 인증 정보 불일치 |
 | AUTH_FORBIDDEN | 403 | 권한 부족 |
 | USER_DUPLICATED | 409 | 이미 가입된 이메일 또는 소셜 계정 |
+| AUTH_RESET_TOKEN_INVALID | 400 | 비밀번호 재설정 토큰이 없거나 만료 · 사용 · 대체됨 |
 | PROFILE_INCOMPLETE | 422 | 한도 계산에 필요한 자격 정보 미입력 |
 | PROPERTY_NOT_FOUND | 404 | 존재하지 않는 매물 |
 | RISK_NOT_ANALYZED | 404 | 아직 분석되지 않은 매물 |

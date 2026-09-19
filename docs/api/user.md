@@ -1,7 +1,7 @@
 # 전월세 부동산 금융 플랫폼 — API 명세서 — 회원 · 인증
 
-> 가입, 로그인, 프로필, 탈퇴
-> USER-01 ~ USER-05
+> 가입, 로그인, 프로필, 탈퇴, 비밀번호 재설정
+> USER-01 ~ USER-06
 >
 > ※ 요청·응답 형식과 오류 코드는 「API 명세서 — 공통 규약」을 따른다.
 > 작성 기준일 : 2026년 7월
@@ -20,6 +20,8 @@
 | USER-04 | GET | /api/me/search-history | 검색 이력 조회 | 필수 |
 | USER-04 | DELETE | /api/me/search-history | 검색 이력 삭제 | 필수 |
 | USER-05 | DELETE | /api/me | 회원 탈퇴 | 필수 |
+| USER-06 | POST | /api/auth/password-reset | 비밀번호 재설정 메일 요청 | 공개 |
+| USER-06 | POST | /api/auth/password-reset/confirm | 재설정 토큰으로 새 비밀번호 설정 | 공개 |
 
 ### 1.1 프로필 조회 · 수정
 
@@ -150,3 +152,40 @@ POST /api/auth/reissue — 요청
 ```
 
 - 회원 가입, 로그아웃, 검색 이력 삭제, 회원 탈퇴는 본문이 없으며 성공 시 data를 null로 반환한다.
+
+### 1.3 비밀번호 재설정
+
+근거: [OWASP Forgot Password Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html) — 계정 유무와 무관한 같은 응답, 고엔트로피 일회용 토큰, 짧은 수명, 해시 저장, 재설정 후 세션 무효화.
+
+POST /api/auth/password-reset — 요청
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+| 규약 | 내용 |
+| --- | --- |
+| 응답 | **항상 200, data null.** 가입되지 않은 이메일 · 소셜 전용 계정 · 발송 간격 안의 재요청도 같다 — 응답으로 가입 여부를 알 수 없게 한다 |
+| 응답 시간 | 메일은 응답 뒤 비동기로 보낸다. 계정 유무로 응답 시간이 갈리지 않게 한다 |
+| 메일 | 비밀번호로 가입한 계정에만 보낸다. 본문의 링크는 화면 경로 `/password-reset/confirm?token=<토큰>`이다 |
+| 발송 간격 | 같은 이메일로는 60초에 한 번만 보낸다. 간격 안의 요청도 200이다 |
+| 토큰 | 32바이트 난수(URL 안전 Base64). 서버는 해시만 보관한다. **수명 30분 · 한 번 쓰면 사라진다.** 새로 요청하면 이전 토큰은 무효가 된다 |
+| 형식 오류 | 이메일 형식이 아니면 400 `INVALID_REQUEST` — 가입 여부와 무관한 입력 검증이다 |
+
+POST /api/auth/password-reset/confirm — 요청
+
+```json
+{
+  "token": "Qm9nVXNlclJlc2V0VG9rZW5FeGFtcGxl",
+  "newPassword": "N3wP@ssw0rd!"
+}
+```
+
+| 규약 | 내용 |
+| --- | --- |
+| 성공 | 200, data null. 비밀번호를 바꾸고 **그 회원의 리프레시 토큰을 폐기**한다 — 다른 기기의 로그인이 재발급에서 끊긴다. 발급된 액세스 토큰은 만료(최대 30분)까지 남는다 |
+| 토큰 무효 | 없는 토큰 · 만료 · 이미 사용 · 이후 요청으로 대체됨 — 모두 400 `AUTH_RESET_TOKEN_INVALID`. 사유를 구분하지 않는다 |
+| 비밀번호 규칙 | 가입과 같다. 어기면 400 `INVALID_REQUEST`, 오류 봉투의 `field`에 `newPassword` — 이때 토큰은 소비하지 않는다 |
+| 로그인 | 재설정은 로그인을 대신하지 않는다. 성공 뒤 새 비밀번호로 로그인한다 |
