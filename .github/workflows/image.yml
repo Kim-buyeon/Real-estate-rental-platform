@@ -1,0 +1,85 @@
+name: Image
+
+# 배포 이미지 — 운영 절차서 3장. 커밋 해시 태그로 GHCR 에 올리고, 올리기 전에 Trivy 로 CRITICAL 을 막는다.
+# PR 에서는 빌드 · 스캔만 하고 올리지 않는다(이미지 변경이 스캔을 통과하는지 머지 전에 본다).
+on:
+  push:
+    branches: [develop, main]
+    paths: [backend/**, frontend/**, .github/workflows/image.yml]
+  pull_request:
+    branches: [develop, main]
+    paths: [backend/**, frontend/**, .github/workflows/image.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # GHCR 이름은 소문자여야 한다. 공개 저장소라 이미지도 공개다 — 인프라 기술 스택 2장
+  REGISTRY: ghcr.io/kim-buyeon/real-estate-rental-platform
+
+# 서드파티 액션은 태그가 아니라 커밋 SHA 로 고정한다. 2026-03 trivy-action 태그 76개가 탈취돼 CI 비밀값을
+# 빼가는 코드로 바뀐 사고가 있었다(GHSA-69fq-xp46-6x23 · CVE-2026-33634). 태그는 다시 가리킬 수 있지만 SHA 는 못 바꾼다.
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.component }}
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ matrix.component }}:${{ github.sha }}
+          # 카카오맵 JavaScript 키는 번들에 들어가는 공개 값이라 Secret 이 아니라 저장소 변수다(.env.example).
+          # 백엔드 Dockerfile 은 이 인자를 쓰지 않는다.
+          build-args: VITE_KAKAO_MAP_KEY=${{ vars.VITE_KAKAO_MAP_KEY }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
+      # HIGH 는 기록만 — 운영 절차서 3.1. 1인 운영에서 HIGH 까지 막으면 배포가 멈춘 채 시간이 흐른다
+      - name: Scan (HIGH · CRITICAL report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.component }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+          format: table
+          output: trivy-${{ matrix.component }}.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-${{ matrix.component }}
+          path: trivy-${{ matrix.component }}.txt
+
+      # CRITICAL 이 있으면 여기서 멈춰 이미지를 올리지 않는다 — 배포할 이미지가 없으므로 배포가 성립하지 않는다
+      - name: Scan (CRITICAL gate)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.component }}:${{ github.sha }}
+          severity: CRITICAL
+          exit-code: '1'
+          skip-setup-trivy: true
+
+      # 올리는 것은 develop · main 뿐이다. 수동 실행(workflow_dispatch)을 기능 브랜치에서 해도 올라가지 않는다
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+        run: docker push ${{ env.REGISTRY }}/${{ matrix.component }}:${{ github.sha }}
