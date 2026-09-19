@@ -12,6 +12,8 @@ import com.duri.rentalplatform.domain.user.dto.request.ProfileUpdateRequest;
 import com.duri.rentalplatform.domain.user.entity.User;
 import com.duri.rentalplatform.domain.user.repository.UserAuthRepository;
 import com.duri.rentalplatform.domain.user.repository.UserRepository;
+import com.duri.rentalplatform.domain.user.sender.PasswordResetMailSender;
+import com.duri.rentalplatform.domain.user.store.PasswordResetTokenStore;
 import com.duri.rentalplatform.domain.user.store.RefreshTokenStore;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,7 +33,8 @@ class UserCommandServiceProfileTest {
     void setUp() {
         userRepository = mock(UserRepository.class);
         service = new UserCommandService(userRepository, mock(UserAuthRepository.class),
-                mock(PasswordEncoder.class), mock(JwtTokenProvider.class), mock(RefreshTokenStore.class));
+                mock(PasswordEncoder.class), mock(JwtTokenProvider.class), mock(RefreshTokenStore.class),
+                mock(PasswordResetTokenStore.class), mock(PasswordResetMailSender.class));
     }
 
     @Test

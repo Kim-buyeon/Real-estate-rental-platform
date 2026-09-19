@@ -4,6 +4,8 @@ import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.domain.user.dto.request.LoginRequest;
+import com.duri.rentalplatform.domain.user.dto.request.PasswordResetConfirmRequest;
+import com.duri.rentalplatform.domain.user.dto.request.PasswordResetRequest;
 import com.duri.rentalplatform.domain.user.dto.request.ProfileUpdateRequest;
 import com.duri.rentalplatform.domain.user.dto.request.ReissueRequest;
 import com.duri.rentalplatform.domain.user.dto.request.SignupRequest;
@@ -13,6 +15,8 @@ import com.duri.rentalplatform.domain.user.entity.UserAuth;
 import com.duri.rentalplatform.domain.user.enums.AuthType;
 import com.duri.rentalplatform.domain.user.repository.UserAuthRepository;
 import com.duri.rentalplatform.domain.user.repository.UserRepository;
+import com.duri.rentalplatform.domain.user.sender.PasswordResetMailSender;
+import com.duri.rentalplatform.domain.user.store.PasswordResetTokenStore;
 import com.duri.rentalplatform.domain.user.store.RefreshTokenStore;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 사용자와 인증 수단을 변경하는 서비스. 이번 범위에서는 이메일 회원 가입과 로그인·재발급·로그아웃을 담당한다.
+ * 사용자와 인증 수단을 변경하는 서비스. 이메일 회원 가입, 로그인·재발급·로그아웃, 자격 정보 수정, 비밀번호 재설정을 담당한다.
  */
 @Slf4j
 @Service
@@ -35,6 +39,8 @@ public class UserCommandService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenStore refreshTokenStore;
+    private final PasswordResetTokenStore passwordResetTokenStore;
+    private final PasswordResetMailSender passwordResetMailSender;
 
     @Transactional
     public void signUpWithEmail(SignupRequest request) {
@@ -140,6 +146,56 @@ public class UserCommandService {
         user.changeAccount(account.name(), account.phone());
         user.changeQualification(profile.annualIncome(), profile.creditScore(), profile.existingLoan(),
                 profile.existingLoanAnnualPayment(), profile.hasHouse(), profile.ownFund());
+    }
+
+    /**
+     * 비밀번호 재설정 메일을 요청한다 — API 명세(회원) 1.3. <b>결과를 돌려주지 않는다.</b> 가입되지 않은 이메일 · 소셜 전용 계정 ·
+     * 발송 간격 안의 재요청도 예외 없이 조용히 끝나, 응답으로 가입 여부를 알 수 없다.
+     *
+     * <p><b>요청 스레드는 계정 확인(DB 조회 1회)까지만 한다.</b> 간격 · 토큰 발급 · 발송은 계정이 있을 때만 일어나는 일이라, 여기서
+     * 하면 계정이 있는 요청만 Redis 왕복만큼 느려지고 Redis 장애 때 그 요청만 500 이 되어 가입 여부가 드러난다. 그래서 회원 식별자와
+     * 이메일만 비동기 쪽({@link PasswordResetMailSender})에 넘기고 끝낸다. 두 경로의 차이는 비동기 제출 하나다.
+     *
+     * <p>트랜잭션을 열지 않는다. 데이터베이스 접근이 인증 수단 한 건 조회뿐이고 그 조회는 저장소가 자기 트랜잭션에서 한다. 커밋을
+     * 기다릴 쓰기가 없다({@link #reissue} 와 같은 판단).
+     */
+    public void requestPasswordReset(PasswordResetRequest request) {
+        // 이메일 인증 수단만 찾는다. 소셜 계정의 provider_id 는 제공자 식별자라 여기 걸리지 않고, 소셜 전용 회원은
+        // 비밀번호가 없어 대상이 아니다 — 기능 정의(회원) USER-06.
+        UserAuth userAuth = userAuthRepository
+                .findByAuthTypeAndProviderId(AuthType.EMAIL, request.email())
+                .orElse(null);
+        if (userAuth == null) {
+            return;
+        }
+
+        // 연관 프록시의 식별자는 초기화 없이 읽힌다 — 트랜잭션 밖이어도 회원 조회가 나가지 않는다.
+        passwordResetMailSender.send(userAuth.getUser().getUserId(), request.email());
+    }
+
+    /**
+     * 재설정 토큰으로 새 비밀번호를 설정한다 — API 명세(회원) 1.3.
+     *
+     * <p>비밀번호 규칙은 컨트롤러의 입력 검증이 이미 봤다. 규칙을 어긴 요청은 여기 닿지 않으므로 토큰이 소비되지 않는다 — 입력
+     * 실수 한 번에 메일부터 다시 받게 하지 않는다.
+     *
+     * <p>토큰은 {@code GETDEL} 로 먼저 소비한다. 두 요청이 같은 토큰으로 들어와도 하나만 비밀번호를 바꾼다. 소비 뒤 데이터베이스
+     * 저장이 실패하면 토큰은 사라지고 비밀번호는 그대로다 — 다시 요청하면 되고, 반대(바뀌었는데 토큰이 남음)보다 안전하다.
+     *
+     * <p>리프레시 토큰 폐기가 커밋보다 앞선다. 커밋이 실패하면 비밀번호는 그대로인데 로그인만 끊긴 상태가 되지만, 반대로 커밋 뒤에
+     * 폐기가 실패하면 옛 비밀번호로 얻은 세션이 살아남는다. 끊기는 쪽을 고른다. 액세스 토큰은 만료까지 남는다(명세 1.3, 로그아웃과 같다).
+     */
+    @Transactional
+    public void confirmPasswordReset(PasswordResetConfirmRequest request) {
+        Long userId = passwordResetTokenStore.consume(request.token())
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_RESET_TOKEN_INVALID));
+
+        // 토큰을 발급한 뒤 인증 수단이 사라진 경우다(탈퇴 등). 토큰은 이미 소비됐고 쓸 곳이 없으니 무효와 같게 답한다.
+        UserAuth userAuth = userAuthRepository.findByUserUserIdAndAuthType(userId, AuthType.EMAIL)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_RESET_TOKEN_INVALID));
+
+        userAuth.changePassword(passwordEncoder.encode(request.newPassword()));
+        refreshTokenStore.delete(userId);
     }
 
     /** 토큰 두 벌을 발급하고 리프레시 토큰을 보관한다. 같은 키에 덮어쓰는 것이 곧 회전이다. */

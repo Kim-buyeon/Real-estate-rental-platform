@@ -17,4 +17,7 @@ public interface UserAuthRepository extends JpaRepository<UserAuth, Long> {
     boolean existsByAuthTypeAndProviderId(AuthType authType, String providerId);
 
     Optional<UserAuth> findByAuthTypeAndProviderId(AuthType authType, String providerId);
+
+    // 비밀번호 재설정 확정(USER-06). 토큰이 가리키는 것은 회원이고, 바꿀 비밀번호는 그 회원의 이메일 인증 수단에 있다.
+    Optional<UserAuth> findByUserUserIdAndAuthType(Long userId, AuthType authType);
 }

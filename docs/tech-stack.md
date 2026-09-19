@@ -49,6 +49,7 @@
 | Spring Web MVC | — | WebFlux 대신 MVC를 선택한다. 가상 스레드로 동시성 요구가 해소되므로 리액티브의 학습 비용을 감수할 이유가 없다. JPA가 블로킹 기반인 점도 MVC 쪽이 정합적이다 |
 | Spring Data JPA + Hibernate 7 | — | 알림(NOTIFICATION + 하위)과 보증보험 기준(GUARANTEE_CRITERIA + HUG/HF/SGI)이 배타적 슈퍼타입-서브타입이므로 JOINED 상속 전략으로 설계 의도를 코드에 그대로 반영한다. **엔티티를 반환하는 모든 경로를 담당한다** — 등록·수정·삭제, 변경 대상 로딩, 연관 탐색 |
 | MyBatis | 스타터 4.1.x | **화면에 전달할 데이터를 반환하는 조회를 담당한다.** 매물 검색의 동적 조건 조합은 동적 SQL로, 순위번호 기준 선순위채권 합산과 자치구 집계는 SQL을 직접 작성해 실행 계획을 통제한다. 경계는 반환 타입으로 나눈다 — 엔티티가 필요하면 JPA, 화면 전달용이면 MyBatis. 역할 분담은 `docs/architecture/persistence.md`를 따른다. **스타터 4.1.x가 Spring Boot 4.1 대응 라인이다** — 4.0.x는 Boot 4.0용. 코어 MyBatis 버전은 스타터가 고정한다 |
+| Spring Boot Mail (JavaMailSender) | Boot BOM | 비밀번호 재설정 메일(USER-06). 운영은 Gmail SMTP(앱 비밀번호) — 도메인 없이 보낼 수 있고 일 발송 한도가 이 규모에 충분하다. 외부 연동 규칙대로 Mock(링크를 로그로) · Real · Fault 세 구현을 두고 발송은 응답 뒤 비동기다. 모드는 `external.mail.mode`(기본 mock). 환경 변수 `MAIL_HOST` · `MAIL_PORT` · `MAIL_USERNAME` · `MAIL_PASSWORD`(Gmail 앱 비밀번호) · `MAIL_FROM`, 메일 링크의 화면 기준 주소 `APP_BASE_URL` — 값은 `.env` |
 | Spring Security + JWT | — | 액세스·리프레시 토큰 발급과 회전. 토큰은 Redis에 보관한다. `USER_AUTH`의 `auth_type`·`provider_id` 컬럼은 소셜 로그인 확장 지점으로 남긴다 |
 | RestClient | Spring Framework 7 | 외부 API 연동용. 동기식이지만 가상 스레드 위에서 동작하므로 병렬 호출에 문제가 없고 WebClient 대비 코드가 단순하다. **연동 대상별로 인터페이스를 두고 Mock·Real·Fault 세 구현을 둔다** |
 | Resilience4j | — | 등기 API 한 곳의 장애가 매물 조회 전체를 멈추게 해서는 안 되므로 타임아웃·재시도·서킷 브레이커와 대상별 폴백을 적용한다. 서킷 상태는 커스텀 지표로 노출한다 |
@@ -116,6 +117,7 @@
 | 주소 정규화·좌표 | 도로명주소 API + 카카오 로컬 | `PROPERTY` 좌표. 등기 주소와 대장 주소 일치 판정의 기준 | 1단계 |
 | 부동산 등기부등본 | 대법원 인터넷등기소 | `BUILDING_REGISTRY`, `OWNERSHIP_HISTORY`, `MORTGAGE_HISTORY` — **무료 공개 API가 없고 유료 중계만 존재하므로 Mock 어댑터로 구현한다** | 1단계 |
 | 보증보험 3사 기준 | HUG · HF · SGI 공시 자료 | `GUARANTEE_CRITERIA` 및 서브타입 — 개방 API 부재. 시드 적재 후 ADMIN-01로 갱신 | 1단계 |
+| 비밀번호 재설정 메일 | Gmail SMTP | 발송만. 적재 대상 없음 — USER-06. 사용 신청이 필요 없어 아래 「1일차 신청」 대상이 아니다 | 1단계 (9/19 추가) |
 | 대출 상품·금리 | 금융감독원 금융상품 비교공시 | `LOAN_PRODUCT` | **차기 (LOAN-03)** |
 | 기준금리·시장금리 | 한국은행 ECOS | `INTEREST_RATE_HISTORY` | **차기 (LOAN-06)** |
 | 소셜 로그인 | 카카오 · 네이버 OAuth 2.0 | `USER_AUTH` | **차기** |

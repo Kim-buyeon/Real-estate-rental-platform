@@ -23,6 +23,8 @@ public enum ErrorCode {
 
     // 회원
     USER_DUPLICATED(409, "이미 가입된 계정입니다."),
+    // 없음 · 만료 · 사용됨 · 대체됨을 가르지 않는다 — 가르면 토큰 상태가 드러난다(API 명세 회원 1.3).
+    AUTH_RESET_TOKEN_INVALID(400, "비밀번호 재설정 링크가 유효하지 않습니다. 다시 요청해 주세요."),
     PROFILE_INCOMPLETE(422, "대출 한도 계산에 필요한 자격 정보가 없습니다."),
 
     // 매물
