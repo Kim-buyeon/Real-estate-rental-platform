@@ -3,7 +3,6 @@ package com.duri.rentalplatform.common.security;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.security.JwtTokenProvider.TokenClaims;
-import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

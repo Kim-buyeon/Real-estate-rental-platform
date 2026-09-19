@@ -1,4 +1,4 @@
-package com.duri.rentalplatform.domain.notification.store;
+package com.duri.rentalplatform.common.security;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -31,6 +31,10 @@ import org.springframework.stereotype.Component;
  * 소비는 {@code GETDEL} 한 번으로 조회와 삭제를 함께 한다 — 조회 뒤 삭제로 나누면 두 요청이 같은 티켓으로 각각 연결을 연다.
  *
  * <p>문자열 템플릿을 쓰는 이유는 {@code RefreshTokenStore} 와 같다.
+ *
+ * <p><b>알림 도메인이 아니라 공통 인증에 둔다.</b> 티켓은 인증 자격이고 담는 것은 회원 식별자와 토큰 만료뿐이라 알림에 대해 아무것도
+ * 모른다. 소비하는 쪽이 공통 인증 필터라 도메인에 두면 {@code common} 이 {@code domain} 을 참조하는 순환이 생긴다(이슈 #125).
+ * 키 접두 {@code noti:} 는 발급 경로가 알림 API 에 있어 붙은 이름이고, 이미 발급된 티켓과 호환되도록 그대로 둔다.
  */
 @Component
 public class StreamTicketStore {

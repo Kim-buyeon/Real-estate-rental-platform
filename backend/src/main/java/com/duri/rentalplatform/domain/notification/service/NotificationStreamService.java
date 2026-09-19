@@ -1,9 +1,9 @@
 package com.duri.rentalplatform.domain.notification.service;
 
+import com.duri.rentalplatform.common.security.StreamTicketStore;
 import com.duri.rentalplatform.domain.notification.dto.response.NotificationEventResponse;
 import com.duri.rentalplatform.domain.notification.dto.response.StreamTicketResponse;
 import com.duri.rentalplatform.domain.notification.store.SseEmitterStore;
-import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import com.duri.rentalplatform.domain.notification.vo.NotificationDelivery;
 import java.time.Clock;
 import java.time.Duration;

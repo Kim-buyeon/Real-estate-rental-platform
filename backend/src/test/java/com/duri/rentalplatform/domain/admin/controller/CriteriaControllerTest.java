@@ -14,12 +14,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.duri.rentalplatform.common.GlobalExceptionHandler;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
+import com.duri.rentalplatform.common.security.StreamTicketStore;
 import com.duri.rentalplatform.config.SecurityConfig;
 import com.duri.rentalplatform.domain.admin.dto.response.GuaranteeCriteriaResponse;
 import com.duri.rentalplatform.domain.admin.dto.response.LoanRegulationsResponse;
 import com.duri.rentalplatform.domain.admin.service.CriteriaCommandService;
 import com.duri.rentalplatform.domain.admin.service.CriteriaQueryService;
-import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import com.duri.rentalplatform.domain.risk.enums.GuaranteeProvider;
 import java.math.BigDecimal;
 import java.time.Duration;
