@@ -62,4 +62,13 @@ describe('LoginPage 리다이렉트', () => {
 
     expect(await screen.findByRole('heading', { name: MAIN_HEADING }, NAVIGATION_TIMEOUT)).toBeInTheDocument();
   });
+
+  // 브라우저는 역슬래시를 슬래시로, 탭 · 줄바꿈은 지워 읽는다 — 접두 검사만으로는 둘 다 //evil.com 으로 새어 나간다
+  it.each(['/\\evil.com', '/\t/evil.com'])('역슬래시 · 제어 문자로 위장한 외부 redirect(%j)도 메인(/)으로 보낸다', async (redirect) => {
+    server.use(...propertyHandlers);
+
+    renderLoggedInAt(`/login?redirect=${encodeURIComponent(redirect)}`);
+
+    expect(await screen.findByRole('heading', { name: MAIN_HEADING }, NAVIGATION_TIMEOUT)).toBeInTheDocument();
+  });
 });
