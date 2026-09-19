@@ -242,6 +242,30 @@ describe('request — 재발급', () => {
     expect(reissueCallCount).toBe(0);
   });
 
+  // 로그인 전에 부르는 인증 경로다. 남아 있던 만료 토큰 때문에 401이 와도 재발급하지 않는다 (이슈 148)
+  test.each(['/auth/password-reset', '/auth/password-reset/confirm'])(
+    '비밀번호 재설정 경로(%s)의 401 AUTH_TOKEN_EXPIRED는 재발급 없이 그대로 던진다',
+    async (url) => {
+      setTokens({ accessToken: 'old-access', refreshToken: 'old-refresh' });
+      let reissueCallCount = 0;
+      server.use(
+        http.post(`/api${url}`, () =>
+          HttpResponse.json({ success: false, error: { code: 'AUTH_TOKEN_EXPIRED', message: '토큰이 만료되었습니다.' } }, { status: 401 }),
+        ),
+        http.post('/api/auth/reissue', () => {
+          reissueCallCount += 1;
+          return HttpResponse.json({ success: true, data: {} });
+        }),
+      );
+
+      await expect(request({ method: 'POST', url })).rejects.toMatchObject({
+        status: 401,
+        code: 'AUTH_TOKEN_EXPIRED',
+      });
+      expect(reissueCallCount).toBe(0);
+    },
+  );
+
   test('재발급 뒤 재시도도 401이면 재발급을 다시 시도하지 않는다', async () => {
     setTokens({ accessToken: 'old-access', refreshToken: 'old-refresh' });
     let reissueCallCount = 0;
