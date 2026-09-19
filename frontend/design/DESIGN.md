@@ -46,6 +46,8 @@ colors:
 typography:
   display: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 40px, fontWeight: 700, lineHeight: 1.3 }
   heading-1: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 28px, fontWeight: 700, lineHeight: 1.35 }
+  display-mobile: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 24px, fontWeight: 700, lineHeight: 1.3 }     # 프로젝트 정의 · 모바일(~767) 전용 — 9절
+  heading-1-mobile: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 22px, fontWeight: 700, lineHeight: 1.35 }  # 프로젝트 정의 · 모바일(~767) 전용 — 9절
   heading-2: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 20px, fontWeight: 700, lineHeight: 1.4 }
   heading-3: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 18px, fontWeight: 700, lineHeight: 1.4 }
   body-lg: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 16px, fontWeight: 400, lineHeight: 1.6 }
@@ -495,6 +497,8 @@ omitted: []
 | --- | --- | --- | --- |
 | `{typography.display}` | 40 / 700 / 1.3 | 페이지 제목(중앙 정렬) | favorites/01 · my-info/01 |
 | `{typography.heading-1}` | 28 / 700 / 1.35 | 폼 카드 제목 · 상세 패널 가격 | login/01 · signup/01 · map-search/05 |
+| `{typography.display-mobile}` | 24 / 700 / 1.3 | 모바일(`~767px`)의 페이지 제목 — `{typography.display}` 대신 | 프로젝트 정의 · 9절 |
+| `{typography.heading-1-mobile}` | 22 / 700 / 1.35 | 모바일(`~767px`)의 폼 카드 제목 — `{typography.heading-1}` 대신 | 프로젝트 정의 · 9절 |
 | `{typography.heading-2}` | 20 / 700 / 1.4 | 섹션 제목 · 패널 헤더 | map-search/02-03 · listing/05 |
 | `{typography.heading-3}` | 18 / 700 / 1.4 | 목록 카드 가격 · 표 행 제목 | map-search/01 · home/02 |
 | `{typography.body-lg}` | 16 / 400 / 1.6 | 폼 안내문 · 빈 상태 · 탭 라벨 | login/01 · favorites/01 |
@@ -790,6 +794,19 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
   **AAA** 기준이고 AA 기준인 SC 2.5.8 Target Size (Minimum)은 **24×24**라는 것이다. 즉 32는 포인터 구간에서 AA를
   넘고, 터치 구간에서는 우리가 AAA를 목표로 44까지 올린다. 충돌 자체는 K-26에 남긴다.
 
+### Typography
+
+모바일(`~767px`)에서 두 제목 역할만 작은 역할로 바꾼다. 나머지 역할은 구간과 무관하게 같다.
+
+| 데스크톱 · 태블릿 | 모바일 | 제안한 곳 |
+| --- | --- | --- |
+| `{typography.display}` 40 | `{typography.display-mobile}` 24 | `examples/favorites/layout.md` · `examples/my-info/layout.md` 「페이지 제목 40 → 24」 |
+| `{typography.heading-1}` 28 | `{typography.heading-1-mobile}` 22 | `examples/login/layout.md` 「카드 제목 28 → 22」 |
+
+- **값은 레이아웃 맵의 반응형 제안(미관측)을 옮긴 프로젝트 정의다.** 모바일 컷이 없으므로 계측값이 아니다. weight · line-height는 원 역할과 같게 둔다.
+- 역할을 새로 두는 이유: 컴포넌트 CSS가 `font-size`를 직접 적지 않는다는 규칙 때문에, 크기를 바꾸려면 바꿀 대상 역할이 정의서에 있어야 한다.
+- 화면 적용(`typography.css` 이관과 미디어 쿼리)은 별도 프론트 작업이다 — 이슈 #130 범위 밖.
+
 ### Collapsing
 
 붕괴 규칙은 **정의서가 쓰지 않는다.** 각 `layout.md`의 「반응형 붕괴 — 제안(미관측)」을 가리킨다.
@@ -876,3 +893,4 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | K-22 | `radio` · `switch` · `textarea` · `date` · `calendar` — 미관측 · 미사용. 필요해지면 정의서에 먼저 넣는다 |
 | K-23 | 차트(실거래가 · 시세)는 차기 범위다. 데이터 시각화 색은 **미사용** |
 | K-24 | `{colors.border-subtle}` · `{colors.focus}` · `{colors.error}` 계열 · `{typography.label}` · `{spacing.3xs}`는 참고 사이트에서 관측되지 않았다. **기존 구현값을 유지**했고 삭제하지 않았다 |
+| K-27 | `{typography.display-mobile}` · `{typography.heading-1-mobile}` — **정의만 있고 미구현.** `typography.css` 이관과 모바일 미디어 쿼리 적용은 별도 프론트 작업이다 (9절 Typography, 이슈 #130) |
