@@ -29,7 +29,8 @@ x-app: &app
 services:
   # 앞단 — 요청 분산 · SSE 전달 · 정적 화면 전달. 호스트 네트워크여야 upstream 의 127.0.0.1 이 호스트를 가리킨다(운영 절차서 4.1).
   nginx:
-    image: nginx:1.26-alpine
+    # 현재 stable 계열. 프론트 이미지(frontend/Dockerfile)와 같은 계열로 둔다
+    image: nginx:1.30-alpine
     network_mode: host
     restart: unless-stopped
     volumes:
