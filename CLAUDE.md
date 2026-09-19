@@ -30,7 +30,7 @@
 │   ├── architecture/       구현 방침. 어떻게 만드는가
 │   ├── features/           영역별 기능 정의. 무엇을 만드는가
 │   ├── git/                브랜치 · 커밋 · 이슈 · PR 규칙
-│   ├── infra/              노드 구성 · 운영 절차. 관측 · 부하 · 시험 문서는 차기 범위
+│   ├── infra/              노드 구성 · 서버 운영 기반(네트워크 · NAS · 계정 · 정기 작업) · 운영 절차. 관측 · 부하 · 시험 문서는 차기 범위
 │   ├── business-logic.md   판정 산식과 임계값
 │   ├── conventions.md      네이밍 · 도메인 용어 · 코딩 규칙
 │   ├── roadmap.md          주차별 일정과 판정 지점
@@ -40,6 +40,7 @@
 │
 ├── infra/                운영 구성. 서버에 반영되는 Compose · 설정 · 배포 스크립트
 │   ├── nginx/              요청 분산 · 점검 모드
+│   ├── os/                 Rocky Linux 노드 설정 — firewalld · NFS 공유 · systemd timer · sshd — 미작성
 │   └── prometheus/ · alertmanager/ · promtail/ · grafana/   관측 — 차기 범위
 │
 ├── chaos-harness/        시험 실행 — 차기 범위
@@ -56,7 +57,7 @@
 │   ├── agents/             역할별 에이전트 정의. 하위 폴더까지 읽힌다
 │   │   ├── backend/          서버 구현
 │   │   ├── frontend/         화면 · 디자인
-│   │   ├── infra/            시험 · 운영 · 관측
+│   │   ├── infra/            운영 · 인프라 구성 파일 작성
 │   │   └── *.md              갈래를 넘는 것 — 검토 · 테스트
 │   └── skills/             반복 작업 절차
 │
