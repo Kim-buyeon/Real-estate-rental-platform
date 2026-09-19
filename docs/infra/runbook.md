@@ -73,7 +73,7 @@ reload() { docker compose exec -T nginx nginx -t \
              && docker compose exec -T nginx nginx -s reload; }
 
 down_slot() { sed -i "s|\(127\.0\.0\.1:$1[^;]*\);|\1 down;|" "$UP"; reload; }
-up_slot()   { sed -i "s|\(127\.0\.0\.1:$1\) down;|\1;|"      "$UP"; reload; }
+up_slot()   { sed -i "s|\(127\.0\.0\.1:$1[^;]*\) down;|\1;|" "$UP"; reload; }
 
 for slot in "${SLOTS[@]}"; do
   read -r NAME PORT <<< "$slot"
@@ -187,63 +187,26 @@ awk -v r="$REQ" -v e="$ERR" -v p="${P95:-99}" \
 
 슬롯 목록을 별도 파일로 분리해 배포 스크립트가 이 파일만 수정하게 한다. 서버 항목은 항상 두 개가 상주하며 `down` 플래그만 토글된다.
 
-```nginx
-# ./nginx/conf.d/upstream.conf  — 컨테이너에 볼륨 마운트
-upstream app {
-    server 127.0.0.1:8081 max_fails=3 fail_timeout=10s;
-    server 127.0.0.1:8082 max_fails=3 fail_timeout=10s;
-    keepalive 32;
-}
-```
+설정 파일은 `infra/nginx/conf.d/upstream.conf`다. 앱 슬롯 두 개(`app` — 127.0.0.1:8081 · 8082, `max_fails=3 fail_timeout=10s`, `keepalive 32`)와 정적 화면 하나(`web` — 127.0.0.1:8090)를 둔다. **배포 스크립트는 `app`의 `down` 플래그만 토글한다.**
 
 **주소를 컨테이너 이름이 아니라 루프백 IP로 고정한다.** Nginx는 upstream 호스트명을 설정 로드 시점에 한 번 해석하므로, 컨테이너 이름을 쓰면 컨테이너 재생성으로 IP가 바뀌었을 때 옛 IP로 계속 전달하는 문제가 발생할 수 있다. 두 애플리케이션 프로세스가 동일 노드에 있으므로 루프백 고정으로 이 문제를 원천 차단한다.
 
 **Nginx 컨테이너는 `network_mode: host`로 기동한다.** 브리지 네트워크에 두면 컨테이너 안의 `127.0.0.1`이 호스트가 아니라 컨테이너 자신을 가리켜 위 설정이 동작하지 않는다. 호스트 네트워크를 쓰면 애플리케이션이 노출한 루프백 포트에 그대로 접근할 수 있고, 컨테이너 이름 해석에 의존하지 않으므로 DNS 캐싱 문제도 발생하지 않는다.
 
-```yaml
-nginx:
-  image: nginx:1.26-alpine
-  network_mode: host
-  volumes:
-    - ./nginx/conf.d:/etc/nginx/conf.d
-    - ./nginx/certs:/etc/letsencrypt
-```
+Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스크립트가 `infra/`에서 `-f` 없이 부르므로 이 이름이다). `nginx.conf`와 `conf.d/`를 마운트한다 — main 문맥 지시어(`worker_shutdown_timeout`)를 두려고 `nginx.conf`도 이미지 기본값 대신 마운트한다. 인증서 마운트는 도메인을 붙일 때 더한다.
 
 ### 4.2 서버 블록
 
-> **지금은 공인 IP + HTTP다**(시스템 구성서 2.1절, 2026-09-19). 아래 `listen 443 ssl` · 인증서 마운트는 도메인을 붙일 때의 설계이며, 이번 구간은 같은 블록을 `listen 80`으로 쓰고 인증서 줄을 두지 않는다. INF-01 Nginx 작업에서 이 절을 그에 맞춰 고친다.
+설정 파일은 `infra/nginx/conf.d/default.conf`(서버 블록)와 `infra/nginx/nginx.conf`(main · http 문맥)다. **공인 IP + HTTP이므로 `listen 80`이다**(시스템 구성서 2.1절). 도메인을 붙이면 443 블록과 80 → 443 리다이렉트를 더한다.
 
-```nginx
-worker_shutdown_timeout 30s;   # SSE로 인한 old worker 누적 방지
+| 경로 | 전달 | 요점 |
+|---|---|---|
+| `/actuator` | 404 | 관리 경로는 밖으로 열지 않는다. readiness는 배포 스크립트가 슬롯 포트로 직접 본다 |
+| `/api/` | `app` | `proxy_connect_timeout 2s` · `proxy_next_upstream error timeout http_502 http_503` |
+| `= /api/notifications/stream` | `app` | SSE — `proxy_buffering off` · `proxy_read_timeout 3600s`. 접근 로그를 쿼리 없는 형식으로 남겨 일회용 티켓이 로그에 남지 않게 한다 |
+| `/` | `web` | 정적 화면. 클라이언트 라우팅 fallback은 프론트 이미지가 한다 |
 
-server {
-    listen 443 ssl;
-    server_name example.com;
-
-    # 일반 API
-    location /api/ {
-        proxy_pass http://app;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_connect_timeout 2s;
-        proxy_next_upstream error timeout http_502 http_503;
-    }
-
-    # SSE — 버퍼링을 끄지 않으면 이벤트가 버퍼에 갇힌다
-    location = /api/notifications/stream {
-        proxy_pass http://app;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 3600s;
-    }
-
-    # 점검 모드 — 페일오버 시 활성화(6장 2단계)
-    # location / { return 503; }
-}
-```
+`worker_shutdown_timeout 30s`는 `nginx.conf`에 있다 — SSE로 인한 옛 worker 누적 방지. 점검 모드(6장 2단계)의 구현은 INF-02 작업에서 정한다 — `/`만 막으면 더 긴 접두사인 `/api/`가 우선해 쓰기가 계속 들어오므로 전 경로를 막는 방식이어야 한다.
 
 `proxy_next_upstream`이 실질적인 무손실 장치다. 한 슬롯이 죽어 502를 반환하면 Nginx가 동일 요청을 다른 슬롯으로 재시도한다. **다만 POST 등 비멱등 요청은 기본적으로 재시도하지 않는다**(중복 처리 방지). 따라서 "요청 손실 0건"은 조회 요청에 대한 서술이며, 쓰기 요청은 극소수 실패할 수 있다. 장애 시험 결과서에는 이 구분을 그대로 기록한다.
 
