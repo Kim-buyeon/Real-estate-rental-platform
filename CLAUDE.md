@@ -60,7 +60,7 @@
 │   │   └── *.md              갈래를 넘는 것 — 검토 · 테스트
 │   └── skills/             반복 작업 절차
 │
-├── docker-compose.yml    로컬 구성. PostgreSQL · Redis — 미작성
+├── docker-compose.yml    로컬 구성. PostgreSQL · Redis + 앱 · 웹 이미지(프로파일)
 ├── .env.example          환경 변수 목록. 값 없음, 커밋 대상
 ├── .env                  실제 값. 커밋하지 않음
 ├── .gitignore

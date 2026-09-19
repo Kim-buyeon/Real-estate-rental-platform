@@ -1,0 +1,73 @@
+# 로컬 구성 — 개발 환경 설계서 1.1. 저장소 루트에서 실행한다.
+#
+#   docker compose up -d                    PostgreSQL · Redis 만 (앱은 IDE · bootRun · npm run dev 로)
+#   docker compose --profile app up -d      앱 · 웹 이미지까지 빌드해 함께
+#     web(:8090)은 정적 파일만 서빙한다 — /api 전달은 앞단 Nginx(INF-01)가 맡으므로 이 조합에서 화면의 API 호출은 되지 않는다.
+#     이미지가 뜨는지 확인하는 용도다. 화면 개발은 npm run dev(프록시 있음)로 한다.
+#
+# 값은 루트 .env 에서 읽는다(.env.example). 운영 구성(2슬롯 · Nginx)은 이 파일이 아니다 — INF-01.
+name: rental
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # 호스트 루프백에만 연다 — 호스트의 DB 클라이언트 · bootRun 이 쓴다
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # 비밀번호가 비어 있으면 인증 없이 뜬다(로컬). 값이 있으면 requirepass 로 건다
+    command: ["sh", "-c", "exec redis-server $${REDIS_PASSWORD:+--requirepass $$REDIS_PASSWORD}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli $${REDIS_PASSWORD:+-a $$REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    profiles: [app]
+    build: ./backend
+    image: rental-backend:local
+    env_file: .env
+    # .env 의 DB_HOST · REDIS_HOST 는 호스트 기준(localhost)이다. 컨테이너 안에서는 서비스 이름으로 덮는다
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    profiles: [app]
+    build:
+      context: ./frontend
+      args:
+        VITE_KAKAO_MAP_KEY: ${VITE_KAKAO_MAP_KEY}
+    image: rental-frontend:local
+    ports:
+      - "127.0.0.1:8090:80"
+
+volumes:
+  pgdata:
