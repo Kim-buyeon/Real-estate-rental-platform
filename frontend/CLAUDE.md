@@ -10,6 +10,7 @@ React · TypeScript · Vite · TanStack Query v5 · React Router 8 · axios · C
 frontend/
 ├── index.html                  카카오맵 SDK <script> 한 줄 — kakao-map 스킬 2장
 ├── vite.config.ts              envDir = 저장소 루트 · server.proxy /api → 백엔드
+├── vitest.webStreams.ts        테스트 풀(vmThreads)의 vm 컨텍스트에 없는 Node 웹 스트림 전역 — setupFiles 첫 자리
 ├── design/                     디자인 정본. 코드가 아니라 코드의 근거다
 │   ├── DESIGN.md                 디자인 토큰 정의서. styles/tokens.css 를 만드는 입력
 │   └── examples/<아키타입>/       레이아웃 맵. 섹션 순서 · 그리드 · 여백 리듬 · 반응형 붕괴
