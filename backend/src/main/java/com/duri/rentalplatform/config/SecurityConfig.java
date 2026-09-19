@@ -4,7 +4,7 @@ import com.duri.rentalplatform.common.security.JwtAccessDeniedHandler;
 import com.duri.rentalplatform.common.security.JwtAuthenticationEntryPoint;
 import com.duri.rentalplatform.common.security.JwtAuthenticationFilter;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
-import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
+import com.duri.rentalplatform.common.security.StreamTicketStore;
 import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;

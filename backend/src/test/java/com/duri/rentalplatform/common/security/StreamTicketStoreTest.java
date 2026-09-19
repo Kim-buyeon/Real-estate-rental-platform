@@ -1,4 +1,4 @@
-package com.duri.rentalplatform.domain.notification.store;
+package com.duri.rentalplatform.common.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

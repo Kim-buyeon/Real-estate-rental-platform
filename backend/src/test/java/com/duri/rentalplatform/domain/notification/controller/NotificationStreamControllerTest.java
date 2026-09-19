@@ -15,10 +15,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.duri.rentalplatform.common.GlobalExceptionHandler;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
+import com.duri.rentalplatform.common.security.StreamTicketStore;
 import com.duri.rentalplatform.config.SecurityConfig;
 import com.duri.rentalplatform.domain.notification.dto.response.StreamTicketResponse;
 import com.duri.rentalplatform.domain.notification.service.NotificationStreamService;
-import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;

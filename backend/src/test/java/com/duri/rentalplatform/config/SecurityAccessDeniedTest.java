@@ -7,7 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.duri.rentalplatform.common.ApiResponse;
 import com.duri.rentalplatform.common.GlobalExceptionHandler;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
-import com.duri.rentalplatform.domain.notification.store.StreamTicketStore;
+import com.duri.rentalplatform.common.security.StreamTicketStore;
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
