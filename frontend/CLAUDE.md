@@ -386,7 +386,7 @@ export function Button({ variant = 'primary', size = 'md', isLoading = false, ty
 
 매물 목록(PROP-01)은 별도 화면을 두지 않고 `/map`의 상세 패널 자리에 탭으로 둔다 (PROP-02 계획 승인). 필터와 지도 상태를 화면 간에 다시 맞추지 않기 위함이다.
 
-**경로 문자열의 자리.** 라우트 표의 정본은 `app/router.tsx`다. 링크 · 이동은 경로를 **리터럴로** 쓴다(`'/login'` · `'/me/wishlist'`). `lib/routes.ts`에는 **검색 파라미터를 싣는 경로만** 둔다 — 조립하는 쪽과 읽는 쪽이 여럿이라 파라미터 이름이 갈리면 조용히 깨지기 때문이다. 지금은 `/map?propertyId=` · `/login?redirect=` · `?signedUp=` · `?passwordReset=` · `/password-reset/confirm?token=`(싣는 쪽은 서버 메일)이고, `MAP_PATH`는 앞의 조립에 쓰려고 있는 상수다. 파라미터 없는 경로를 전부 상수로 올리지 않는다 — 한 경로만 올리면 규칙이 둘이 되고, 전부 올리면 라우트 표와 상수 파일이 같은 목록을 두 번 갖는다 (이슈 #130).
+**경로 문자열의 자리.** 라우트 표의 정본은 `app/router.tsx`다. 링크 · 이동은 경로를 **리터럴로** 쓴다(`'/login'` · `'/me/wishlist'`). `lib/routes.ts`에는 **검색 파라미터를 싣는 경로만** 둔다 — 조립하는 쪽과 읽는 쪽이 여럿이라 파라미터 이름이 갈리면 조용히 깨지기 때문이다. 지금은 `/map?propertyId=` · `/login?redirect=` · `/login?signedUp=` · `/login?passwordReset=` · `/password-reset/confirm?token=`(싣는 쪽은 서버 메일)이고, `MAP_PATH`는 앞의 조립에 쓰려고 있는 상수다. 파라미터 없는 경로를 전부 상수로 올리지 않는다 — 한 경로만 올리면 규칙이 둘이 되고, 전부 올리면 라우트 표와 상수 파일이 같은 목록을 두 번 갖는다 (이슈 #130).
 
 ---
 
@@ -477,7 +477,7 @@ SDK를 어떻게 부르고 무엇을 그리는지는 `kakao-map` 스킬이 정�
 | 불리언 props · 변수 | `is` · `has` · `can` 접두 | `isOpen` · `hasSeniorDebt` |
 | 응답 타입의 불리언 필드 | **명세의 이름 그대로.** 접두를 붙이지 않는다 | `violationBuilding` — 외부 공식 문서의 항목명을 옮긴 것이다. 규약 「이름이 의도를 말하게」의 예외 |
 | 이벤트 props | `on` + 동작 | `onSelect` · `onStageChange` |
-| CSS Module 파일 · 클래스 | 컴포넌트와 같은 이름 · camelCase | `Button.module.css` · `styles.primary` |
+| CSS Module 파일 · 클래스 | 컴포넌트와 같은 이름 · camelCase. 여러 화면이 함께 쓰는 골격 모듈만 골격 이름 camelCase(스타일 절의 공용 모듈 행) | `Button.module.css` · `authCard.module.css` · `styles.primary` |
 | 그 외 파일 (훅 · 쿼리 · api · domain · lib) | camelCase | `useMapStage.ts` · `format.ts` |
 | 폴더 | 소문자 | `features/property/map` |
 
