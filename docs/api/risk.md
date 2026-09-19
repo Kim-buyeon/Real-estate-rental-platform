@@ -43,7 +43,7 @@
 | consistency | 객체 | 명의 일치·주소 일치·위반건축물·면적 대조 결과 |
 | analyzedAt | 일시 | 분석 기준 시각 |
 
-GET /api/properties/1024/risk — 응답
+GET /api/properties/2048/risk — 응답
 
 ```json
 {
@@ -134,13 +134,13 @@ GET /api/properties/1024/risk — 응답
 
 갑구 · 을구 모두 접수일 오름차순, 같으면 순위번호 순이다. 접수일이 우선변제 순서를 정한다.
 
-GET /api/properties/1024/registry
+GET /api/properties/2048/registry
 
 ```json
 {
   "success": true,
   "data": {
-    "propertyId": 1024,
+    "propertyId": 2048,
     "ownerships": [
       {
         "rankNo": 2,
@@ -168,13 +168,13 @@ GET /api/properties/1024/registry
 
 ### 1.4 재분석 응답
 
-POST /api/properties/1024/risk/reanalyze — 성공
+POST /api/properties/2048/risk/reanalyze — 성공
 
 ```json
 {
   "success": true,
   "data": {
-    "propertyId": 1024,
+    "propertyId": 2048,
     "previousGrade": "CAUTION",
     "riskGrade": "DANGER",
     "gradeChanged": true,

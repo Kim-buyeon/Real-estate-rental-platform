@@ -29,7 +29,7 @@ account — 계정 정보
 | 필드 | 타입 | 수정 | 설명 |
 | --- | --- | --- | --- |
 | name | 문자열 | 가능 | 이름 |
-| phone | 문자열 | 가능 | 전화번호 |
+| phone | 문자열 | 가능 | 전화번호. 가입할 때 입력하지 않았으면 null — 가입 요청에서 선택 항목이다(1.2) |
 | email | 문자열 | 불가 | 계정 이메일. 변경은 별도 절차로 처리한다 |
 | role | 열거 | 불가 | 권한 USER, ADMIN |
 | createdAt | 일시 | 불가 | 가입일시 |
@@ -105,6 +105,8 @@ POST /api/auth/signup — 요청
   "phone": "010-1234-5678"
 }
 ```
+
+- `phone`은 선택 항목이다. 빼거나 null로 보내면 null로 저장되고, 프로필 조회(1.1)의 `account.phone`도 null로 온다.
 
 POST /api/auth/login — 요청
 
