@@ -39,139 +39,61 @@
 | **`down` 플래그만 토글한다** | 서버 목록 자체를 바꾸면 실패 시 설정과 컨테이너 상태가 어긋난다 |
 | **제외 → drain → 교체 → 확인 → 복귀 순서 고정** | 컨테이너를 먼저 정지하면 그 사이 요청이 전부 실패한다 |
 | **실패 시 해당 슬롯을 down으로 유지하고 중단** | 남은 슬롯이 구버전으로 계속 서비스하므로 별도 롤백이 불필요하다 |
-| **첫 슬롯 복귀 후 관찰(6분)** | 교체 직후는 신·구 50:50 상태다. 지표를 확인한 뒤 진행하고, 이상이면 되돌린다 |
+| **첫 슬롯은 복귀 전에 관찰한다** | 워밍업 60초 뒤 교체한 슬롯을 직접 두드려(3.3) 통과해야 upstream에 넣는다. 관측 스택이 차기 범위라 지표 대신 판정 요청을 스스로 만든다 |
+| **화면(web)은 두 슬롯이 끝난 뒤 교체한다** | 중간에 멈추면 신버전 화면이 구버전 API를 부른다 |
 | **이전 이미지 태그 3개 보존** | 배포 완료 후 문제가 발견된 경우의 롤백 경로 |
 | **배포 전 이미지 취약점 스캔** | 취약한 이미지를 올리면 발견할 때까지 노출된 상태로 운영된다 |
 
 **취약점 스캔** — Trivy로 컨테이너 이미지의 OS 패키지와 Java 의존성을 한 번에 검사한다. CRITICAL이 남아 있으면 배포를 중단하고, HIGH는 기록만 남기고 진행한다. 1인 운영에서 HIGH까지 차단하면 배포가 멈춘 채로 시간이 흐른다.
 
-```bash
-trivy image --severity HIGH,CRITICAL --exit-code 0 "$IMAGE" > report/trivy-$(date +%F).txt
-trivy image --severity CRITICAL --exit-code 1 "$IMAGE" || {
-  echo "!!! CRITICAL 취약점. 배포를 중단한다."; exit 1; }
-```
+**스캔은 이미지를 올리기 전에 CI가 한다** — `.github/workflows/image.yml`. CRITICAL이면 이미지를 GHCR에 올리지 않으므로 서버가 받을 이미지가 없고 배포가 성립하지 않는다. HIGH · CRITICAL 목록은 워크플로 산출물(`trivy-backend` · `trivy-frontend`)로 남는다. PR에서는 빌드 · 스캔만 하고 올리지 않는다.
 
-배포 시마다 실행하므로 별도 점검 주기를 두지 않는다. 다만 코드가 바뀌지 않아도 새 취약점은 계속 공개되므로, 분기 1회 베이스 이미지를 갱신해 다시 빌드하고 스캔한다.
+**워크플로의 서드파티 액션은 커밋 SHA로 고정한다.** 2026-03 trivy-action 태그 76개가 탈취돼 CI 비밀값을 빼가는 코드로 바뀐 사고가 있었다(GHSA-69fq-xp46-6x23). 태그는 다시 가리킬 수 있지만 SHA는 바꿀 수 없다.
+
+이미지를 올릴 때마다 실행하므로 별도 점검 주기를 두지 않는다. 다만 코드가 바뀌지 않아도 새 취약점은 계속 공개되므로, 분기 1회 베이스 이미지를 갱신해 다시 빌드하고 스캔한다.
 
 마이그레이션은 하위 호환이어야 한다. 컬럼 삭제·이름 변경·NOT NULL 추가는 단일 배포에서 수행하지 않고 세 단계(추가 → 양쪽 기록 → 제거)로 분리한다.
 
 ### 3.2 배포 스크립트
 
-**전제** — GitHub Actions가 이미지를 빌드해 GitHub Container Registry(`ghcr.io/<계정>/<저장소>:<커밋 해시>`)에 올리고, 스크립트의 `docker compose pull`이 그것을 받아온다. 파이프라인은 4주차(9월 17일~)에 구성하며, 그때까지는 로컬 빌드 이미지를 사용한다.
+**전제** — GitHub Actions가 이미지를 빌드해 GHCR에 커밋 해시 태그로 올린다(`ghcr.io/kim-buyeon/real-estate-rental-platform/backend:<해시>` · `.../frontend:<해시>`). `develop` · `main`에 push되면 올라간다.
 
-**시크릿** — DB 비밀번호와 외부 API 키는 서버의 `.env` 파일에 두고 `docker compose`가 컨테이너에 주입한다. 파일 권한은 소유자만 읽도록 제한하고 저장소에는 커밋하지 않는다. 백업 복호화 키만 이 파일과 분리해 보관한다. 1주차 셋업 시점에 확정하고 본 절을 갱신한다.
+**시크릿** — DB 비밀번호와 외부 API 키는 서버의 **`infra/.env`** 에 두고 `docker compose`가 컨테이너에 주입한다(이름은 루트 `.env.example`과 같다). 파일 권한은 소유자만 읽도록 제한하고 저장소에는 커밋하지 않는다. 백업 복호화 키만 이 파일과 분리해 보관한다.
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-UP=./nginx/conf.d/upstream.conf   # 컨테이너에 볼륨 마운트
-SLOTS=("app-2 8082" "app-1 8081")
-FIRST=1
-
-reload() { docker compose exec -T nginx nginx -t \
-             && docker compose exec -T nginx nginx -s reload; }
-
-down_slot() { sed -i "s|\(127\.0\.0\.1:$1[^;]*\);|\1 down;|" "$UP"; reload; }
-up_slot()   { sed -i "s|\(127\.0\.0\.1:$1[^;]*\) down;|\1;|" "$UP"; reload; }
-
-for slot in "${SLOTS[@]}"; do
-  read -r NAME PORT <<< "$slot"
-
-  echo ">>> [$NAME] upstream 제외 후 drain"
-  down_slot "$PORT"
-  sleep 30
-
-  echo ">>> [$NAME] 이미지 교체"
-  docker compose pull "$NAME"
-  docker compose up -d --force-recreate "$NAME"
-
-  echo ">>> [$NAME] readiness 대기"
-  for i in $(seq 1 30); do
-    if curl -fs "http://127.0.0.1:$PORT/actuator/health/readiness" \
-         | grep -q '"status":"UP"'; then
-      break
-    fi
-    if [ "$i" -eq 30 ]; then
-      echo "!!! [$NAME] 기동 실패. down 상태를 유지하고 배포를 중단한다."
-      exit 1
-    fi
-    sleep 2
-  done
-
-  echo ">>> [$NAME] upstream 복귀"
-  up_slot "$PORT"
-
-  # 첫 슬롯 교체 직후는 신·구 버전이 50:50인 상태다. 여기서 지표를 확인한다.
-  if [ "$FIRST" -eq 1 ]; then
-    FIRST=0
-    echo ">>> 관찰 시작 (신버전 50% 노출)"
-    sleep 360                                 # 워밍업 60초 + 관찰 5분
-    if ! bash observe.sh; then
-      echo "!!! 지표 이상. [$NAME] 을 제외하고 배포를 중단한다."
-      down_slot "$PORT"
-      exit 1
-    fi
-    echo ">>> 관찰 통과. 다음 슬롯으로 진행"
-  fi
-done
-
-echo ">>> 배포 완료. Grafana에 마커 기록"
-```
-
-**Nginx도 컨테이너로 구동한다.** 설정 파일과 TLS 인증서는 호스트 디렉터리를 볼륨으로 마운트해 컨테이너 밖에서 수정하고, `reload`만 컨테이너 안에서 실행한다. 스크립트가 `sed`로 고치는 `upstream.conf`는 마운트된 호스트 파일이다.
-
-### 3.3 관찰 판정 (`observe.sh`)
-
-> **관측 스택(INF-05)이 차기 범위로 빠졌다**(2026-09-19). 아래 스크립트는 Prometheus를 전제하므로 이번 구간에는 쓸 수 없다. 관찰 단계의 판정 수단은 **INF-02 배포 스크립트 작업에서 다시 정하고 이 절을 고친다**(예: readiness와 대표 경로 스모크 요청). 그때까지 아래는 차기 설계로 남긴다.
-
-첫 슬롯이 복귀하면 신·구 버전이 50:50으로 서비스된다. 관찰이 끝난 시점에 한 번 실행해 다음 슬롯으로 진행할지 판정한다.
-
-**대기 6분, 조회 5분.** 방금 기동한 JVM은 첫 1분이 JIT 컴파일로 느리므로 6분을 기다린 뒤 직전 5분치를 조회해 그 구간을 제외한다. 부하 시험의 워밍업 제외 기준과 같다(`docs/infra/traffic.md` 3.4절).
+스크립트는 `infra/deploy.sh`다. `infra/`에서 실행한다.
 
 ```bash
-#!/usr/bin/env bash
-# 통과 0, 이상 1
-set -uo pipefail
-PROM=${PROM:-http://127.0.0.1:9090}
-
-q() { curl -sfG "$PROM/api/v1/query" --data-urlencode "query=$1" \
-        | grep -o '"value":\[[^]]*\]' | sed 's/.*,"//;s/"//'; }
-
-# 1. 관측이 살아 있는가
-UP=$(q 'count(up{job="app"} == 1)')
-if [ -z "${UP:-}" ]; then
-  echo "Prometheus가 앱을 스크레이프하지 못한다. 배포를 중단한다."
-  exit 1
-fi
-
-REQ=$(q 'sum(increase(http_server_requests_seconds_count[5m]))');                   REQ=${REQ:-0}
-ERR=$(q 'sum(increase(http_server_requests_seconds_count{status=~"5.."}[5m]))');    ERR=${ERR:-0}
-P95=$(q 'histogram_quantile(0.95,
-         sum(rate(http_server_requests_seconds_bucket[5m])) by (le))')
-
-printf '요청 %.0f건  5xx %.0f건  p95 %ss\n' "$REQ" "$ERR" "${P95:-NA}"
-
-# 2. 판정할 표본이 있는가
-if awk -v r="$REQ" 'BEGIN { exit !(r < 100) }'; then
-  echo "요청 100건 미만. 지표 판정을 생략하고 진행한다."
-  exit 0
-fi
-
-# 3. 기준: 5xx 1% 미만, p95 1초 미만
-awk -v r="$REQ" -v e="$ERR" -v p="${P95:-99}" \
-    'BEGIN { exit !(e / r < 0.01 && p < 1.0) }'
+bash deploy.sh <커밋 해시>              # 일상 배포
+bash deploy.sh <이전 해시> --rollback   # 롤백 — 관찰을 건너뛴다(3.4)
 ```
 
-| 확인 | 통과하지 못하면 |
-|---|---|
-| Prometheus가 앱을 스크레이프하는가 | 중단. 관측이 없는 상태의 승격은 근거가 없다 |
-| 5분간 요청이 100건 이상인가 | 지표 판정을 생략하고 진행 |
-| 5xx 1% 미만, p95 1초 미만인가 | 해당 슬롯을 `down`으로 되돌리고 중단 |
+| 단계 | 하는 일 | 실패하면 |
+|---|---|---|
+| 이미지 확인 | 두 이미지가 로컬에 없으면 받는다 | 아무것도 바꾸지 않은 채 멈춘다 |
+| 슬롯마다(app-2 → app-1) | `down` 토글 → drain 30초 → 교체(`--no-deps --force-recreate`) → readiness 최대 120초 | 그 슬롯을 `down`으로 둔 채 멈춘다. 남은 슬롯이 구버전으로 서비스한다 |
+| 첫 슬롯만 | 워밍업 60초 → `smoke.sh`(3.3) → 통과해야 복귀 | 같다 |
+| 화면 | 두 슬롯이 끝난 뒤 web 교체 | — |
+| 기록 | `.env`의 `APP_IMAGE` · `WEB_IMAGE`를 새 태그로 | 중간에 멈추면 기록하지 않는다 — `.env`는 구버전을 가리키므로 이후 `docker compose up`이 남은 슬롯을 바꾸지 않는다 |
+| 정리 | 최근 태그 3개(지금 것 포함)를 남기고 지운다 | — |
 
-**표본이 없는 것과 판정에 실패한 것을 구분한다.** 트래픽이 적은 시간대에는 5분간 요청이 몇 건뿐일 수 있고, 3건 중 1건이 실패하면 33%가 되어 어떤 임계로도 통과하지 못한다.
+- `down` 토글은 이미 `down`인 줄을 건드리지 않는다 — 실패로 멈춘 슬롯을 롤백으로 다시 돌릴 때 `down down`이 되지 않게 한다.
+- `DRAIN` · `WARMUP` · `REGISTRY` 환경 변수로 기본값을 덮을 수 있다(로컬 시험용).
 
-**임계값은 `docs/infra/observability.md` 5장 알림 규칙과 같은 값이다.** 배포 판정이 더 느슨하면 배포는 통과했는데 직후에 알림이 울린다.
+### 3.3 관찰 판정 (`smoke.sh`)
+
+**관측 스택(INF-05)이 차기 범위라 지표를 조회하지 않는다**(2026-09-19). 대신 교체한 첫 슬롯을 **upstream에 넣기 전에** 직접 두드린다. 신버전이 사용자 요청을 받기 전에 걸러진다.
+
+```bash
+bash smoke.sh <포트>    # 통과 0, 이상 1
+```
+
+| 항목 | 값 | 이유 |
+|---|---|---|
+| 요청 | 대표 조회 경로 2개(`/api/properties/district-counts` · `/api/properties?size=20`)를 번갈아 60건 | 1등급 경로(시스템 구성서 5.1)의 대표 조회 |
+| 기준 | 실패(5xx · 연결 실패) 1% 미만, p95 1초 미만 | 이전 지표 판정과 같은 값 |
+| 대기 | 복귀 전 워밍업 60초 | 방금 기동한 JVM은 첫 1분이 JIT 컴파일로 느리다 |
+
+**표본이 없어 판정을 생략하는 경우가 없다.** 판정 요청을 스스로 만들기 때문이다. 대신 **실제 사용자 트래픽 아래의 신버전은 보지 못한다** — 50:50 구간의 지표 비교는 관측이 돌아올 때(차기) 되살린다.
 
 ### 3.4 이미지 태그 보존
 
@@ -206,7 +128,7 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 | `= /api/notifications/stream` | `app` | SSE — `proxy_buffering off` · `proxy_read_timeout 3600s`. 접근 로그를 쿼리 없는 형식으로 남겨 일회용 티켓이 로그에 남지 않게 한다 |
 | `/` | `web` | 정적 화면. 클라이언트 라우팅 fallback은 프론트 이미지가 한다 |
 
-`worker_shutdown_timeout 30s`는 `nginx.conf`에 있다 — SSE로 인한 옛 worker 누적 방지. 점검 모드(6장 2단계)의 구현은 INF-02 작업에서 정한다 — `/`만 막으면 더 긴 접두사인 `/api/`가 우선해 쓰기가 계속 들어오므로 전 경로를 막는 방식이어야 한다.
+`worker_shutdown_timeout 30s`는 `nginx.conf`에 있다 — SSE로 인한 옛 worker 누적 방지. 점검 모드(6장 2단계)는 `bash maintenance.sh on` · `off`다. 표시 파일(`nginx/maintenance/on`)이 있으면 서버 블록이 **location 매칭보다 먼저** 전 경로에 503을 돌려준다 — `/`만 막으면 더 긴 접두사인 `/api/`가 우선해 쓰기가 계속 들어온다. 파일 유무는 요청마다 보므로 reload가 필요 없다.
 
 `proxy_next_upstream`이 실질적인 무손실 장치다. 한 슬롯이 죽어 502를 반환하면 Nginx가 동일 요청을 다른 슬롯으로 재시도한다. **다만 POST 등 비멱등 요청은 기본적으로 재시도하지 않는다**(중복 처리 방지). 따라서 "요청 손실 0건"은 조회 요청에 대한 서술이며, 쓰기 요청은 극소수 실패할 수 있다. 장애 시험 결과서에는 이 구분을 그대로 기록한다.
 
@@ -238,7 +160,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 단계 | 작업 | 예상 소요 | 판단 기준 |
 |---|---|---|---|
 | 1 | 알림 수신 및 장애 확인 | 3분 | primary 헬스체크 3회 연속 실패 + SSH 접속 불가 |
-| 2 | 애플리케이션을 점검 모드로 전환 (Nginx 503 반환) | 2분 | 이중 기록 방지. 승격 전 필수 |
+| 2 | 애플리케이션을 점검 모드로 전환 (`bash maintenance.sh on` — 전 경로 503, 4.2절) | 2분 | 이중 기록 방지. 승격 전 필수 |
 | 3 | standby의 복제 지연 확인 (`pg_last_wal_replay_lsn`) | 2분 | 지연이 크면 WAL 아카이브 추가 재생 |
 | 4 | standby 승격 (`pg_ctl promote`) | 3분 | 승격 후 쓰기 가능 여부 확인 |
 | 5 | 애플리케이션의 DB 접속 대상 전환 후 재기동 | 5분 | 설정 변경 + 롤링 재기동 |
@@ -314,7 +236,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 |---|---|---|
 | 가용성 | 등급별 달성률과 목표 대비 | `docs/infra/system.md` 5.1절 집계식 |
 | 장애 | 발생 건수, 심각도별 분포, 평균 인지·복구 시간 | 7.2절 장애 보고서 |
-| 변경 | 배포 횟수, 롤백 횟수와 사유 | 이미지 태그 이력, Grafana 배포 마커 |
+| 변경 | 배포 횟수, 롤백 횟수와 사유 | 이미지 태그 이력(배포 스크립트 출력 · GHCR 태그). Grafana 배포 마커는 관측(차기)과 함께 |
 | 용량 | 헤드룸 추이, 디스크 소진 예측, 증설 판단 | `docs/infra/observability.md` 4장 용량 대시보드 |
 | 복구 검증 | 백업 복원 검증 결과, 복원 소요 | `docs/infra/test-plan.md` 6장 |
 | 미결 | 이월된 조치 사항과 기한 | 전월 보고서 |
