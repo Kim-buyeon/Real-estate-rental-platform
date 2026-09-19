@@ -3,7 +3,7 @@
  *
  * 타입 패키지를 의존성으로 추가하지 않는다 — kakao-map 3장 ⑤ · 이슈 #85 계획.
  * 여기에 없는 API를 쓰게 되면 먼저 이 파일에 선언을 추가한다.
- * SDK는 index.html의 정적 <script>로 로드되므로 런타임 값은 window.kakao 하나다.
+ * SDK는 loader.ts가 지도 화면에서 동적으로 넣는다(autoload=false). 런타임 값은 window.kakao 하나다.
  */
 
 export interface KakaoLatLng {
@@ -76,6 +76,8 @@ export interface KakaoServices {
 }
 
 export interface KakaoMaps {
+  /** autoload=false일 때 SDK 본체를 불러온다. 콜백 안에서부터 아래 생성자 · services가 있다 (kakao-map 2장) */
+  load(callback: () => void): void;
   LatLng: new (lat: number, lng: number) => KakaoLatLng;
   LatLngBounds: new (sw: KakaoLatLng, ne: KakaoLatLng) => KakaoLatLngBounds;
   Map: new (container: HTMLElement, options: KakaoMapOptions) => KakaoMap;
@@ -86,7 +88,10 @@ export interface KakaoMaps {
 
 declare global {
   interface Window {
-    /** index.html의 <script>가 로드되기 전에는 없다. isMapSdkReady()로 확인한 뒤 읽는다 */
+    /**
+     * loader.ts가 스크립트를 넣기 전에는 없고, 스크립트 실행 직후에는 load만 있다.
+     * 생성자를 쓰기 전에는 loadKakaoMaps()를 기다리거나 isMapSdkReady()로 확인한다
+     */
     kakao: { maps: KakaoMaps };
   }
 }

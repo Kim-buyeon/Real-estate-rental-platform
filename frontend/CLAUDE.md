@@ -8,7 +8,7 @@ React · TypeScript · Vite · TanStack Query v5 · React Router 8 · axios · C
 
 ```
 frontend/
-├── index.html                  카카오맵 SDK <script> 한 줄 — kakao-map 스킬 2장
+├── index.html                  진입 HTML. 카카오맵 SDK는 여기 두지 않는다 — 지도 화면이 동적으로 로드한다 (kakao-map 스킬 2장)
 ├── vite.config.ts              envDir = 저장소 루트 · server.proxy /api → 백엔드
 ├── vitest.webStreams.ts        테스트 풀(vmThreads)의 vm 컨텍스트에 없는 Node 웹 스트림 전역 — setupFiles 첫 자리
 ├── design/                     디자인 정본. 코드가 아니라 코드의 근거다
@@ -423,7 +423,8 @@ SDK를 어떻게 부르고 무엇을 그리는지는 `kakao-map` 스킬이 정�
 - **마커가 겹치면 격자로 묶는다.** 표시 영역을 나눈 셀마다 건수 하나를 그리고, 셀에 한 건이면 개별 마커다. 누르면 그 셀로 확대한다 — 같은 건물의 매물은 좌표가 같아 묶지 않으면 위의 하나만 고를 수 있다. 묶는 규칙은 `features/property/map/cluster.ts`, 격자 칸 수·임계값은 아래 「지도 상수」와 같은 파일이다 (`kakao-map` 7장 (가) 결정)
 - 마커 오버레이는 `propertyId`로 diff한다 — 새로 온 것만 만들고 사라진 것만 `setMap(null)`, 남은 것은 위치만 옮긴다. 재조회마다 전부 지우고 다시 그리지 않는다. 내용은 포털이 갱신하므로 `setContent`를 쓰지 않는다.
 - 마커 배열 · 자치구 집계에서 파생하는 값(정렬 · 그룹핑 · 좌표 계산)은 `useMemo`다. 컴포넌트 본문에서 매 렌더 계산하지 않는다.
-- SDK는 `index.html`의 `<script>`로 로드한다. 번들에 넣지 않는다 (`kakao-map` 2장).
+- **SDK는 지도 화면에 들어갈 때 `map/loader.ts`의 `loadKakaoMaps()`가 동적으로 로드한다** — `autoload=false` 스크립트를 한 번만 넣고 `kakao.maps.load` 콜백에서 준비된다. 번들에 넣지 않고 `index.html`에도 두지 않는다 (`kakao-map` 2장). 지도 생성과 `Geocoder` 조회는 이 로드를 기다린다. 로드 중에는 지도 영역이 비어 있고, 실패하면 지도 영역의 `Alert`다.
+- 테스트는 SDK를 내려받지 않는다 — `test/setup.ts`가 키를 비워 로더가 곧바로 실패하게 하고, SDK가 필요한 테스트는 `test/kakao.ts`의 가짜를 설치한다(설치되어 있으면 로더가 스크립트를 넣지 않는다).
 
 ### 지도 상수
 
@@ -442,7 +443,7 @@ SDK를 어떻게 부르고 무엇을 그리는지는 `kakao-map` 스킬이 정�
 
 - **`.env`는 저장소 루트 하나다.** `vite.config.ts`의 `envDir`를 루트로 둔다. `frontend/.env`를 만들지 않는다. 변수 목록은 `.env.example`이 갖는다.
 - `VITE_` 접두 변수는 빌드 시 번들에 치환된다. **비밀을 넣지 않는다.** 카카오 JavaScript 키는 비밀이 아니라 도메인 등록으로 보호되는 값이라 예외다 (`kakao-map` 1장). REST API 키는 서버 것이며 프론트에서 쓰지 않는다.
-- 지금 환경 변수를 읽는 곳은 `index.html`의 `%VITE_KAKAO_MAP_KEY%`(Vite HTML 치환) 하나다. 두 번째 변수부터는 `src/env.ts` 하나에서 읽는다 — 컴포넌트가 `import.meta.env`를 직접 읽지 않는다.
+- 지금 환경 변수를 읽는 곳은 `features/property/map/loader.ts`의 `import.meta.env.VITE_KAKAO_MAP_KEY` 하나다. 두 번째 변수부터는 `src/env.ts` 하나에서 읽는다 — 컴포넌트가 `import.meta.env`를 직접 읽지 않는다.
 
 ---
 
