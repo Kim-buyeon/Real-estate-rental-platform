@@ -68,6 +68,13 @@ public class UserAuth extends CreatedAtEntity {
     }
 
     /**
+     * 비밀번호를 바꾼다(USER-06 재설정). 가입과 같이 이미 해싱된 값을 받는다.
+     */
+    public void changePassword(String hashedPassword) {
+        this.passwordHash = hashedPassword;
+    }
+
+    /**
      * 최종 로그인 시각을 갱신한다.
      *
      * <p>시각을 호출자에게서 받는다. 이 메서드 안에서 {@code LocalDateTime.now()}를 부르면 테스트가
