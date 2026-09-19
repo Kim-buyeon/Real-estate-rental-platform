@@ -374,7 +374,7 @@ export function Button({ variant = 'primary', size = 'md', isLoading = false, ty
 
 | 경로 | 화면 | 기능 | 인증 |
 | --- | --- | --- | --- |
-| `/` | 메인 | 서비스 소개 · 위험 등급 3단계 안내 · 최근 등록 매물 | 공개 |
+| `/` | 메인 | 서비스 소개 · 위험 등급 3단계 안내 · 최근 등록 매물 — 기능 ID 없음. 정의는 「매물 기능 정의서」의 메인 화면 절 | 공개 |
 | `/map` · `/map?propertyId=` | 지도 탐색 + 상세 패널 | PROP-08 · 02 · 03 · 04 · RISK-01 · 07 표시 · RISK-08 재분석 · LOAN-01 표시 | 선택 |
 | `/login` · `/signup` | 로그인 · 가입 | USER-02 · 01 | 공개 |
 | `/me/profile` | 계정 · 자격 정보 | USER-03 | 필수 |
@@ -383,6 +383,8 @@ export function Button({ variant = 'primary', size = 'md', isLoading = false, ty
 | `/me/notification-subscriptions` | 알림 구독 설정 | NOTI-01 | 필수 |
 
 매물 목록(PROP-01)은 별도 화면을 두지 않고 `/map`의 상세 패널 자리에 탭으로 둔다 (PROP-02 계획 승인). 필터와 지도 상태를 화면 간에 다시 맞추지 않기 위함이다.
+
+**경로 문자열의 자리.** 라우트 표의 정본은 `app/router.tsx`다. 링크 · 이동은 경로를 **리터럴로** 쓴다(`'/login'` · `'/me/wishlist'`). `lib/routes.ts`에는 **검색 파라미터를 싣는 경로만** 둔다 — 조립하는 쪽과 읽는 쪽이 여럿이라 파라미터 이름이 갈리면 조용히 깨지기 때문이다. 지금은 `/map?propertyId=` 하나이고, `MAP_PATH`는 그 조립에 쓰려고 있는 상수다. 파라미터 없는 경로를 전부 상수로 올리지 않는다 — 한 경로만 올리면 규칙이 둘이 되고, 전부 올리면 라우트 표와 상수 파일이 같은 목록을 두 번 갖는다 (이슈 #130).
 
 ---
 
