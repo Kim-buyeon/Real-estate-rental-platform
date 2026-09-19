@@ -2,11 +2,10 @@ import { Link } from 'react-router';
 import { buttonClassName } from '../components/ui';
 import { RecentProperties } from '../features/property';
 import { RiskGradeGuide } from '../features/risk';
-import { MAP_PATH } from '../lib/routes';
 import styles from './MainPage.module.css';
 
-// 지도 탐색 경로(히어로 버튼 · 「전체 보기」가 같은 곳으로 간다)는 lib/routes.ts 하나가 갖는다 —
-// 최근 등록 매물 카드가 같은 경로에 매물 번호를 붙여 상세로 가므로 두 곳에 적지 않는다 (이슈 104)
+// 파라미터 없는 링크는 경로를 리터럴로 쓴다. 매물 번호를 싣는 상세 경로만 lib/routes.ts가 조립한다 —
+// frontend/CLAUDE.md 「경로 문자열의 자리」 (이슈 130)
 
 /**
  * `/` 메인 화면. 조합만 한다 — 쿼리는 RecentProperties 가, 등급 설명은 RiskGradeGuide 가 갖는다.
@@ -28,7 +27,7 @@ export default function MainPage() {
             서울시 전월세 매물을 등기 · 건축물대장 · 시세 · 보증보험 기준으로 대조해 위험도를 3단계로 보여 주는
             참고 서비스입니다.
           </p>
-          <Link to={MAP_PATH} className={buttonClassName('primary', 'md')}>
+          <Link to="/map" className={buttonClassName('primary', 'md')}>
             지도에서 매물 찾기
           </Link>
         </div>
@@ -52,7 +51,7 @@ export default function MainPage() {
               최근 등록 매물
             </h2>
             {/* 푸터 사이트맵 링크와 같은 어휘다 — 이동은 라우터 Link, 글자는 type-link */}
-            <Link to={MAP_PATH} className={`${styles.moreLink} type-link`}>
+            <Link to="/map" className={`${styles.moreLink} type-link`}>
               전체 보기
             </Link>
           </div>
