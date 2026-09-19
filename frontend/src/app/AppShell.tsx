@@ -1,13 +1,14 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Link, NavLink, Outlet, useMatches } from 'react-router';
+import { Link, NavLink, Outlet, useLocation, useMatches } from 'react-router';
 import { Badge, Button, buttonClassName } from '../components/ui';
 import { formatCount } from '../lib/format';
+import { loginPath } from '../lib/routes';
 import { notificationQueries } from '../queries/notification';
 import { useLogout } from '../queries/user';
 import { useSession } from '../session/useSession';
 import { AppFooter } from './AppFooter';
 import { NotificationStream } from './NotificationStream';
-import { hidesFooter } from './routeHandle';
+import { hidesFooter, isAuthEntryRoute } from './routeHandle';
 import styles from './AppShell.module.css';
 
 /**
@@ -23,7 +24,14 @@ export function AppShell() {
   const logoutMutation = useLogout();
 
   // 푸터를 붙일지는 라우트 표의 handle이 정한다 — 경로 문자열 비교를 여기 두지 않는다
-  const isFooterHidden = useMatches().some((match) => hidesFooter(match.handle));
+  const matches = useMatches();
+  const isFooterHidden = matches.some((match) => hidesFooter(match.handle));
+
+  // 헤더 「로그인」은 지금 위치를 redirect로 싣는다 — 로그인 뒤 보던 화면으로 돌아온다 (이슈 140).
+  // 로그인 · 가입 화면 자신은 싣지 않는다: 로그인 뒤 다시 로그인 화면으로 오는 루프가 된다
+  const location = useLocation();
+  const isOnAuthEntry = matches.some((match) => isAuthEntryRoute(match.handle));
+  const loginTo = isOnAuthEntry ? '/login' : loginPath(`${location.pathname}${location.search}`);
 
   // 헤더의 읽지 않은 수. 알림 목록과 같은 쿼리 정의를 써 요청과 캐시가 하나다 — 읽지 않은 수만 주는
   // 엔드포인트가 없고, 목록 응답의 unreadCount가 페이지와 무관한 전체 수다 (알림 명세 1.3).
@@ -83,7 +91,7 @@ export function AppShell() {
                 </Button>
               ) : (
                 <>
-                  <Link to="/login" className={buttonClassName('ghost', 'sm')}>
+                  <Link to={loginTo} className={buttonClassName('ghost', 'sm')}>
                     로그인
                   </Link>
                   <Link to="/signup" className={buttonClassName('primary', 'sm')}>

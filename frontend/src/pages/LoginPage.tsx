@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Alert, CardForm } from '../components/ui';
 import { LoginForm } from '../features/user';
+import { LOGIN_REDIRECT_PARAM } from '../lib/routes';
 import { useSession } from '../session/useSession';
 import styles from './LoginPage.module.css';
 
@@ -23,7 +24,7 @@ export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const { isAuthenticated } = useSession();
   const navigate = useNavigate();
-  const redirectTo = safeRedirect(searchParams.get('redirect'));
+  const redirectTo = safeRedirect(searchParams.get(LOGIN_REDIRECT_PARAM));
   const isSignedUp = searchParams.get('signedUp') === '1';
 
   useEffect(() => {

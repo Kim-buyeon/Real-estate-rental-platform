@@ -40,3 +40,13 @@ export function withDetailPropertyId(params: URLSearchParams, propertyId: number
   next.set(DETAIL_PROPERTY_PARAM, String(propertyId));
   return next;
 }
+
+/** 로그인 화면이 로그인 뒤 돌려보낼 경로를 읽는 파라미터. 싣는 쪽은 인증 가드와 헤더 로그인 링크다 */
+export const LOGIN_REDIRECT_PARAM = 'redirect';
+
+/**
+ * 로그인 뒤 returnTo(경로 + 검색 파라미터)로 돌아오는 로그인 화면 경로. 받는 쪽(LoginPage)이
+ * 같은 오리진 경로인지 다시 거른다 — 여기서 거르지 않는다.
+ */
+export const loginPath = (returnTo: string): string =>
+  `/login?${LOGIN_REDIRECT_PARAM}=${encodeURIComponent(returnTo)}`;

@@ -5,9 +5,16 @@
 export interface RouteHandle {
   /** 이 라우트에서는 공통 푸터를 렌더하지 않는다. 지도 화면은 남은 높이를 전부 쓴다 */
   hideFooter?: boolean;
+  /** 로그인 · 가입 화면. 헤더 「로그인」 링크가 이 화면을 redirect로 싣지 않는다 — 로그인 뒤 다시 로그인으로 오는 루프를 막는다 */
+  isAuthEntry?: boolean;
 }
 
 /** `useMatches()` 가 주는 `handle` 은 `unknown` 이다. 단언 없이 좁혀서 읽는다 */
 export function hidesFooter(handle: unknown): boolean {
   return typeof handle === 'object' && handle !== null && 'hideFooter' in handle && handle.hideFooter === true;
+}
+
+/** 로그인 · 가입 화면인가. hidesFooter와 같은 방식으로 좁혀 읽는다 */
+export function isAuthEntryRoute(handle: unknown): boolean {
+  return typeof handle === 'object' && handle !== null && 'isAuthEntry' in handle && handle.isAuthEntry === true;
 }
