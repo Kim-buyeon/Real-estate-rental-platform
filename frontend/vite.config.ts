@@ -32,8 +32,26 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
     /*
+     * 기본 풀에서 environment가 전체 시간의 57~59%였다(이슈 #126). vmThreads도 jsdom은 파일마다 새로 만든다
+     * (vitest 5.0.0 설치본 — runVmTests가 파일마다 environment.setupVM()을 부르고 그것이 new JSDOM을 만든다).
+     * 빨라지는 것은 워커를 다시 쓰고, 외부 모듈을 파일마다 다시 읽고 컴파일하지 않는 모듈 캐시를 워커 안에서 공유하기
+     * 때문이다. 파일 사이 격리는 유지된다(isolate: false와 다르다). 측정은 같은 기계에서 기본 풀과 번갈아 3회씩,
+     * 169건 전부 통과:
+     *
+     *   기본(forks)  70.6s · 60.0s · 60.4s
+     *   vmThreads    26.3s · 20.1s · 16.6s
+     *
+     * 측정 중 다른 작업이 돌아 절대값은 흔들렸다(한가할 때 기본 30~33s). 번갈아 쟀으므로 같은 회차끼리의 비교가
+     * 근거다. vm 컨텍스트에는 Node 웹 스트림 전역이 없어 vitest.webStreams.ts가 먼저 채운다.
+     */
+    pool: 'vmThreads',
+    setupFiles: ['./vitest.webStreams.ts', './src/test/setup.ts'],
+    /*
+     * **아래 계측은 전부 이전 기본 풀(forks)에서 잰 것이다.** vmThreads로 바꾼 뒤(이슈 #126) 15와 4를 쟀으나
+     * 두 값(41s · 58s)이 기계 부하 변동에 묻혀 판정하지 못했다. 상한은 그대로 둔다 — 4코어 러너에서는 기본값과
+     * 같아 손해가 없다.
+     *
      * 4인 근거는 계측이다. 161건 전체를 두 묶음으로 쟀고 **묶음 사이에 기계 부하가 달라져
      * 절대 시간을 서로 비교하지 않는다.** 각 칸은 1~2회뿐이다.
      *
