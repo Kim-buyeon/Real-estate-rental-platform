@@ -30,7 +30,7 @@
 │   ├── architecture/       구현 방침. 어떻게 만드는가
 │   ├── features/           영역별 기능 정의. 무엇을 만드는가
 │   ├── git/                브랜치 · 커밋 · 이슈 · PR 규칙
-│   ├── infra/              노드 구성 · 관측 · 부하 · 시험 · 운영 절차
+│   ├── infra/              노드 구성 · 운영 절차. 관측 · 부하 · 시험 문서는 차기 범위
 │   ├── business-logic.md   판정 산식과 임계값
 │   ├── conventions.md      네이밍 · 도메인 용어 · 코딩 규칙
 │   ├── roadmap.md          주차별 일정과 판정 지점
@@ -39,13 +39,10 @@
 │   └── workflow.md         작업 순서와 각 단계의 수단
 │
 ├── infra/                운영 구성. 서버에 반영되는 설정과 스크립트 — 미작성
-│   ├── nginx/              요청 분산 · 점검 모드 · TLS
-│   ├── prometheus/         스크레이프 설정 · 알림 규칙
-│   ├── alertmanager/       라우팅 · 수신자
-│   ├── promtail/           로그 수집
-│   └── grafana/            대시보드 정의
+│   ├── nginx/              요청 분산 · 점검 모드
+│   └── prometheus/ · alertmanager/ · promtail/ · grafana/   관측 — 차기 범위
 │
-├── chaos-harness/        시험 실행. 부하 생성 노드에서 구동 — 미작성
+├── chaos-harness/        시험 실행 — 차기 범위
 │   ├── load/               k6 프로파일과 토큰 풀
 │   ├── scenarios/          장애 주입·복구 스크립트
 │   └── report/             지표 수집과 결과서 생성
@@ -63,7 +60,7 @@
 │   │   └── *.md              갈래를 넘는 것 — 검토 · 테스트
 │   └── skills/             반복 작업 절차
 │
-├── docker-compose.yml    로컬 구성. PostgreSQL · Redis · 관측 스택 — 미작성
+├── docker-compose.yml    로컬 구성. PostgreSQL · Redis — 미작성
 ├── .env.example          환경 변수 목록. 값 없음, 커밋 대상
 ├── .env                  실제 값. 커밋하지 않음
 ├── .gitignore

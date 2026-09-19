@@ -1,7 +1,7 @@
 # 전월세 부동산 금융 플랫폼 — 인프라 기술 스택 정의서
 
 > 인프라 기술 선정 결과 및 선정 사유
-> Docker Compose · Nginx · PostgreSQL 복제 · Prometheus · k6
+> Docker Compose · Nginx · PostgreSQL 복제 · AWS EC2 · Rocky Linux
 > ※ 본 문서는 인프라 기술의 선정 결과만을 다룬다. 구성과 절차는 `docs/infra/system.md`·`docs/infra/runbook.md`를 따른다.
 > 작성 기준일 : 2026년 8월
 
@@ -25,24 +25,16 @@
 
 | 계층 | 채택 기술 | 핵심 근거 |
 |---|---|---|
+| 서버 | AWS EC2 — Amazon Linux 2023 → Rocky Linux 9 | 먼저 EC2 기본 OS에 배포하고 Rocky Linux로 옮긴다. 시스템 구성서 2.1절 |
 | 컨테이너 실행 | Docker · Docker Compose | 노드 3개 규모에서 오케스트레이터 도입은 과잉 |
 | 리버스 프록시 | Nginx | TLS 종단, 요청 분산, 무중단 배포의 실행 주체 |
 | CI | GitHub Actions | 푸시 시 빌드·테스트·이미지 생성 |
 | 이미지 저장소 | GitHub Container Registry | CI와 같은 곳이라 인증이 추가로 필요 없다 |
 | 이미지 검사 | Trivy | 배포 전 CRITICAL 취약점 차단 |
-| TLS 인증서 | Let's Encrypt | 자동 갱신. 비용 없음 |
 | DB 복제 | PostgreSQL 17 스트리밍 복제 | 내장 기능. 외부 클러스터 관리 도구 불필요 |
 | 백업 | `pg_basebackup` + WAL 연속 아카이빙 | RPO 5분. 논리적 손상은 PITR로 복구 |
 | 백업 저장소 | S3 호환 오브젝트 스토리지 | 온프레미스에서는 MinIO로 대체 |
 | 공유 저장소 | Redis 7 | 두 인스턴스가 같은 상태를 보게 한다 |
-| 지표 수집 | Prometheus | 15초 주기 스크레이프, 보존 15일 |
-| 지표 노출 | node · postgres · redis · nginx exporter | 노드·저장소·프록시 지표 |
-| 로그 수집 | Promtail → Loki | Grafana에서 지표와 한 화면 대조 |
-| 시각화 | Grafana | 대시보드 3종 |
-| 내부 경로 감시 | Blackbox exporter | 앱 밖에서 실제 API 경로 호출 |
-| 외부 경로 감시 | HetrixTools | 노드 밖에서 도달 확인. 관측 스택과 독립 |
-| 알림 | Alertmanager + Slack | 심각도별 채널 분리 |
-| 부하 생성 | k6 | arrival-rate executor로 포화점 실측 |
 
 ---
 
@@ -56,7 +48,7 @@
 | GitHub Actions | — | 푸시 시 빌드·테스트·이미지 빌드. 1인 개발에서 회귀 검출 수단이 CI뿐이다. 이미지 빌드·푸시까지 담당한다 |
 | Trivy | 최신 안정 | 컨테이너 이미지의 OS 패키지와 Java 의존성 취약점을 한 번에 검사한다. CRITICAL은 배포 중단, HIGH는 기록만 남긴다 |
 | GitHub Container Registry | — | 이미지 저장소. CI가 GitHub Actions이므로 `GITHUB_TOKEN`으로 인증이 끝나 별도 계정·시크릿이 필요 없다. 소스와 이미지가 같은 곳에 있어 커밋 해시 태그가 소스 이력과 1:1로 대응하며, **공개 저장소는 용량·전송 제한이 없다** |
-| Let's Encrypt | — | TLS 인증서. 자동 갱신되며 비용이 없다. 만료는 내부 경로 감시가 잡는다 |
+| Let's Encrypt | — | TLS 인증서. **지금은 쓰지 않는다** — 공인 IP + HTTP로 접속한다(시스템 구성서 2.1절). 도메인을 붙일 때 되살린다 |
 
 **Docker Hub를 쓰지 않는 이유는 pull 한도다.** 무료 계정은 6시간당 200회로 제한되고 비공개 저장소는 1개만 허용된다. 배포 1회에 슬롯 2개를 당기고 롤백까지 겹치면 한도를 의식해야 하는 구조가 된다. AWS ECR은 비공개 이미지가 GB당 과금이라 월 비용 상한에 항목이 하나 늘어난다.
 
@@ -83,7 +75,9 @@
 
 ---
 
-## 4. 관측 계층
+## 4. 관측 계층 — 차기 범위
+
+> **2026-09-19 결정으로 인프라 범위에서 뺐다**(INF-05). 차기 착수 때 쓰려고 보존한다. 지금 작업의 근거로 쓰지 않는다.
 
 | 기술 | 버전 | 선정 사유 |
 |---|---|---|
@@ -103,7 +97,9 @@
 
 ---
 
-## 5. 시험 계층
+## 5. 시험 계층 — 차기 범위
+
+> **2026-09-19 결정으로 인프라 범위에서 뺐다**(INF-06). 차기 착수 때 쓰려고 보존한다.
 
 | 기술 | 버전 | 선정 사유 |
 |---|---|---|
@@ -119,12 +115,13 @@
 
 | 항목 | 고정 버전 | 비고 |
 |---|---|---|
+| Rocky Linux | 9 | 부 버전은 AMI 수령 시 확정 — 시스템 구성서 2.1절 |
 | PostgreSQL | 17 | 애플리케이션 스택과 동일 |
 | Redis | 7 | 애플리케이션 스택과 동일 |
 | Docker 이미지 | `postgres:17-alpine`, `redis:7-alpine` | 로컬·CI·운영 공통 고정 |
 | Nginx | 1.26 이상 | `worker_shutdown_timeout` 사용 |
-| Prometheus · Grafana · Loki | 최신 안정 | Compose 파일에 태그로 고정 |
-| Blackbox exporter | 최신 안정 | — |
-| k6 | 최신 안정 | `docs/tech-stack.md`와 동일 |
+| Prometheus · Grafana · Loki | 최신 안정 | 차기 범위 — Compose 파일에 태그로 고정 |
+| Blackbox exporter | 최신 안정 | 차기 범위 |
+| k6 | 최신 안정 | 차기 범위 — `docs/tech-stack.md`와 동일 |
 | Trivy | 최신 안정 | — |
 | 애플리케이션 이미지 | 커밋 해시 | 최근 3개 보존 |
