@@ -211,6 +211,8 @@ nginx:
 
 ### 4.2 서버 블록
 
+> **지금은 공인 IP + HTTP다**(시스템 구성서 2.1절, 2026-09-19). 아래 `listen 443 ssl` · 인증서 마운트는 도메인을 붙일 때의 설계이며, 이번 구간은 같은 블록을 `listen 80`으로 쓰고 인증서 줄을 두지 않는다. INF-01 Nginx 작업에서 이 절을 그에 맞춰 고친다.
+
 ```nginx
 worker_shutdown_timeout 30s;   # SSE로 인한 old worker 누적 방지
 

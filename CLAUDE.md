@@ -39,7 +39,7 @@
 │   └── workflow.md         작업 순서와 각 단계의 수단
 │
 ├── infra/                운영 구성. 서버에 반영되는 설정과 스크립트 — 미작성
-│   ├── nginx/              요청 분산 · 점검 모드 · TLS
+│   ├── nginx/              요청 분산 · 점검 모드
 │   └── prometheus/ · alertmanager/ · promtail/ · grafana/   관측 — 차기 범위
 │
 ├── chaos-harness/        시험 실행 — 차기 범위
