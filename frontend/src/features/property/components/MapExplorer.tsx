@@ -185,6 +185,9 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     return () => {
       cancelled = true;
     };
+    // deps가 단계 「객체」(참조 비교)라서, 같은 자치구에 머무를 때는 단계 쪽이 같은 객체를 넘겨야 이 효과가 다시 돌지 않고
+    // 지도가 중심으로 튀지 않는다. useMapStage.showDistrict가 같은 자치구면 같은 객체를 돌려주는 것이 그 절반이다.
+    // 새 객체를 만들어 넘기는 소비자가 생기면 튄다. stageKey 문자열로 걸면 소비자와 무관해진다 (이슈 #122 1번)
   }, [stage]);
 
   const isSeoul = stage.type === 'seoul';
