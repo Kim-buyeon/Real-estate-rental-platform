@@ -3,7 +3,7 @@ import type { SignupForm as SignupFormValues } from '../../../api/user';
 import { Alert, Button, Field, Input } from '../../../components/ui';
 import { EMAIL_MAX_LENGTH, NAME_MAX_LENGTH, PHONE_MAX_LENGTH } from '../../../domain/user';
 import { useSignup } from '../../../queries/user';
-import styles from './SignupForm.module.css';
+import styles from './authForm.module.css';
 
 type FieldName = keyof SignupFormValues;
 

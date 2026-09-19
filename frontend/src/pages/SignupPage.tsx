@@ -2,10 +2,8 @@ import { useCallback } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { CardForm } from '../components/ui';
 import { SignupForm } from '../features/user';
+import { loginAfterSignupPath } from '../lib/routes';
 import styles from './SignupPage.module.css';
-
-/** 가입 응답에 토큰이 없다(명세 1.2) — 로그인 화면으로 보내 안내한다 (이슈 #83 계획) */
-const LOGIN_AFTER_SIGNUP_PATH = '/login?signedUp=1';
 
 /**
  * `/signup` — USER-01 이메일 가입.
@@ -14,7 +12,8 @@ const LOGIN_AFTER_SIGNUP_PATH = '/login?signedUp=1';
 export default function SignupPage() {
   const navigate = useNavigate();
   const handleSignedUp = useCallback(() => {
-    void navigate(LOGIN_AFTER_SIGNUP_PATH, { replace: true });
+    // 가입 응답에 토큰이 없다(명세 1.2) — 로그인 화면으로 보내 안내한다 (이슈 #83 계획)
+    void navigate(loginAfterSignupPath(), { replace: true });
   }, [navigate]);
 
   return (

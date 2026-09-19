@@ -50,3 +50,39 @@ export const LOGIN_REDIRECT_PARAM = 'redirect';
  */
 export const loginPath = (returnTo: string): string =>
   `/login?${LOGIN_REDIRECT_PARAM}=${encodeURIComponent(returnTo)}`;
+
+/** 로그인 화면이 「가입 완료」 안내를 띄우는 파라미터. 싣는 쪽은 가입 화면이다 — 가입 응답에 토큰이 없다(명세 1.2) */
+export const LOGIN_SIGNED_UP_PARAM = 'signedUp';
+
+/** 로그인 화면이 「비밀번호 변경 완료」 안내를 띄우는 파라미터. 싣는 쪽은 재설정 확정 화면이다 — 재설정은 로그인을 대신하지 않는다(명세 1.3) */
+export const LOGIN_PASSWORD_RESET_PARAM = 'passwordReset';
+
+/** 안내 파라미터의 값. 켜짐 하나뿐이다 */
+const LOGIN_NOTICE_ON = '1';
+
+/** 가입 뒤 보내는 로그인 화면 경로 */
+export const loginAfterSignupPath = (): string => `/login?${LOGIN_SIGNED_UP_PARAM}=${LOGIN_NOTICE_ON}`;
+
+/** 비밀번호 재설정 뒤 보내는 로그인 화면 경로 */
+export const loginAfterPasswordResetPath = (): string =>
+  `/login?${LOGIN_PASSWORD_RESET_PARAM}=${LOGIN_NOTICE_ON}`;
+
+/** 가입 뒤 들어온 로그인 화면인가 */
+export const isLoginAfterSignup = (params: URLSearchParams): boolean =>
+  params.get(LOGIN_SIGNED_UP_PARAM) === LOGIN_NOTICE_ON;
+
+/** 비밀번호 재설정 뒤 들어온 로그인 화면인가 */
+export const isLoginAfterPasswordReset = (params: URLSearchParams): boolean =>
+  params.get(LOGIN_PASSWORD_RESET_PARAM) === LOGIN_NOTICE_ON;
+
+/**
+ * 재설정 확정 화면이 토큰을 읽는 파라미터. 싣는 쪽은 서버가 보내는 메일의 링크다 —
+ * 명세 1.3 「본문의 링크는 화면 경로 /password-reset/confirm?token=<토큰>」
+ */
+export const PASSWORD_RESET_TOKEN_PARAM = 'token';
+
+/** 검색 파라미터에서 재설정 토큰을 읽는다. 없거나 공백뿐이면 null */
+export function readPasswordResetToken(params: URLSearchParams): string | null {
+  const token = params.get(PASSWORD_RESET_TOKEN_PARAM)?.trim();
+  return token ? token : null;
+}

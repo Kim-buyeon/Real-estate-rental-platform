@@ -34,6 +34,17 @@ export const routes: RouteObject[] = [
         lazy: async () => ({ Component: (await import('../pages/SignupPage')).default }),
         handle: { isAuthEntry: true } satisfies RouteHandle,
       },
+      // 비밀번호 찾기 · 재설정(USER-06)도 로그인 전에 쓰는 인증 진입 화면이다 — 헤더 로그인 링크가 redirect로 싣지 않는다 (이슈 148)
+      {
+        path: '/password-reset',
+        lazy: async () => ({ Component: (await import('../pages/PasswordResetRequestPage')).default }),
+        handle: { isAuthEntry: true } satisfies RouteHandle,
+      },
+      {
+        path: '/password-reset/confirm',
+        lazy: async () => ({ Component: (await import('../pages/PasswordResetConfirmPage')).default }),
+        handle: { isAuthEntry: true } satisfies RouteHandle,
+      },
       {
         element: <RequireAuth />,
         children: [

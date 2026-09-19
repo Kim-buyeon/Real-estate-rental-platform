@@ -1,8 +1,10 @@
 /*
- * /login — 정본은 레이아웃 맵 design/examples/login/layout.md 다.
+ * 로그인 골격의 폼 카드 화면 공용 — /login · /password-reset · /password-reset/confirm.
+ * 정본은 레이아웃 맵 design/examples/login/layout.md 다. 계측값을 화면마다 옮겨 적지 않게 여기 한 곳에 둔다
+ * (이슈 148). /signup 은 nav ↔ 카드 간격(117)이 달라 자기 모듈을 쓴다.
  *
  * 카드 면(540 · 패딩 · 보더 · 모바일 붕괴)은 공용 UI 의 CardForm 이 갖는다 — 정의서 7절
- * {components.card-form}. 여기에는 이 화면 고유의 배치만 남긴다.
+ * {components.card-form}. 여기에는 이 화면들의 배치만 남긴다.
  *
  * px 리터럴은 셋이다 —
  *   1) 미디어 쿼리 조건 768 (global.css 머리말이 정본. 맵이 「태블릿에서 붕괴 없음」이라 1024 조건이 없다)
@@ -37,7 +39,8 @@
   border-top: 1px solid var(--color-border);
 }
 
-.alert {
+/* 구분선 아래 안내 블록 — 완료 안내 Alert · 링크 무효 안내. 안내문과 같은 리듬이다 */
+.notice {
   margin-top: var(--card-rhythm);
 }
 
@@ -61,6 +64,11 @@
   text-decoration: underline;
 }
 
+/* 레이아웃 맵 — 구분자 좌우 24, 모바일 16 (제안) */
+.separator {
+  margin: 0 var(--spacing-md);
+}
+
 @media (min-width: 768px) {
   .page {
     --card-top-gap: 131px;
@@ -70,5 +78,9 @@
 
   .divider {
     margin-top: var(--spacing-3xl);
+  }
+
+  .separator {
+    margin: 0 var(--spacing-xl);
   }
 }

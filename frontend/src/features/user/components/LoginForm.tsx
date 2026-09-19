@@ -3,7 +3,7 @@ import type { LoginForm as LoginFormValues } from '../../../api/user';
 import { Alert, Button, Field, Input } from '../../../components/ui';
 import { EMAIL_MAX_LENGTH } from '../../../domain/user';
 import { useLogin } from '../../../queries/user';
-import styles from './LoginForm.module.css';
+import styles from './authForm.module.css';
 
 type FieldName = keyof LoginFormValues;
 

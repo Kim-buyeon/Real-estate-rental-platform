@@ -1,5 +1,7 @@
 /*
- * 가입 폼의 여백. 정본은 레이아웃 맵 design/examples/signup/layout.md 다 — login 과 같은 골격이다.
+ * 이메일 · 비밀번호 폼 공용 여백 — 로그인 · 가입 · 비밀번호 찾기 · 재설정. 정본은 레이아웃 맵
+ * design/examples/login/layout.md 다(signup 맵도 같은 골격). 네 폼이 같은 값이라 여기 한 곳에 둔다 (이슈 148).
+ * 입력이 하나인 폼(비밀번호 찾기)은 .fields 를 쓰지 않는다.
  *
  * px 리터럴은 둘이다 — 미디어 쿼리 조건 768(global.css 머리말) 과, spacing 격자에 없는 계측값
  * field ↔ field 44 (아래 .form 의 지역 변수). 라벨 ↔ 입력 12 는 {components.field} 의 값이라
