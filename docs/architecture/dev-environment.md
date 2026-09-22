@@ -30,7 +30,7 @@
 - 실행 방법은 셋이다.
   - 전체: `docker compose up -d` → `http://localhost:5173`
   - 백엔드 IDE 개발: `docker compose up -d postgres redis` 뒤 IDE · bootRun으로 앱을 띄운다(호스트 8080)
-  - 화면 개발: `docker compose stop nginx web` 뒤 `npm run dev`. 앞단 Nginx와 Vite 개발 서버가 둘 다 5173이라 동시에 켜지 않는다
+  - 화면 개발: `docker compose stop nginx web` 뒤 `npm run dev`. 앞단 Nginx와 Vite 개발 서버가 둘 다 5173이라 동시에 켜지 않는다. Vite는 `/api`를 호스트 8080으로 넘기는데 Compose 앱은 호스트 포트가 없으므로, 백엔드도 IDE · bootRun으로 함께 띄운다(백엔드 IDE 개발과 같은 조합)
 
 ### 1.2 구현 리스크와 대응
 
