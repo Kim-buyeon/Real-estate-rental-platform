@@ -66,13 +66,15 @@ services:
     image: rental-frontend:local
     # 정적 파일만 서빙한다. 호스트 포트 없이 앞단 nginx 뒤에 둔다
 
-  # 앞단 — 운영과 같은 이미지 · nginx.conf(main · http 문맥), 서버 블록만 로컬용(infra/nginx/local/)
+  # 앞단 — 운영과 같은 이미지 · 진입 파일(infra/nginx/entry.conf)과 설정 본문(infra/nginx/main/nginx.conf — main · http 문맥),
+  # 서버 블록만 로컬용(infra/nginx/local/)
   nginx:
     image: nginx:1.30-alpine
     ports:
       - "127.0.0.1:5173:80"
     volumes:
-      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/entry.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/main:/etc/nginx/main:ro
       - ./infra/nginx/local:/etc/nginx/conf.d:ro
     depends_on:
       - app

@@ -18,7 +18,7 @@
 | Redis | redis:7-alpine | 캐시 및 토큰 저장 |
 | 앱 | 로컬 빌드(`backend/`) | 앱 하나. 호스트 포트를 열지 않고 앞단 Nginx가 Compose 네트워크로 닿는다 |
 | 화면 | 로컬 빌드(`frontend/`) | 정적 파일만 서빙한다. 호스트 포트 없이 앞단 Nginx 뒤에 둔다 |
-| 앞단 Nginx | nginx:1.30-alpine | `localhost:5173` 하나로 받는다. 운영과 같은 `nginx.conf`, 서버 블록만 로컬용(`infra/nginx/local/` — 점검 모드 · 두 슬롯 없음) |
+| 앞단 Nginx | nginx:1.30-alpine | `localhost:5173` 하나로 받는다. 운영과 같은 진입 파일 · 설정 본문(`infra/nginx/entry.conf` · `infra/nginx/main/nginx.conf`), 서버 블록만 로컬용(`infra/nginx/local/` — 점검 모드 · 두 슬롯 없음) |
 | DB 클라이언트 | 호스트에 설치 | DBeaver 등으로 컨테이너에 접속. 컨테이너 내부에 별도 관리 도구를 두지 않는다 |
 
 운용 규칙

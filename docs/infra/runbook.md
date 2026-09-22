@@ -46,6 +46,7 @@
 |---|---|
 | **reload만 사용한다. restart 금지** | restart는 모든 연결을 끊는다. SSE 알림 연결이 전 사용자에게서 동시에 끊긴다 |
 | **`nginx -t`를 reload 전에 항상 실행** | 설정을 스크립트로 수정하므로 치환 실패 가능성이 있다 |
+| **Nginx 설정 변경은 체크아웃 → `nginx -t` → reload로 반영한다. 진입 파일(`infra/nginx/entry.conf`)만 예외다** | `conf.d/` · `main/`은 폴더째 마운트해 `git checkout`이 파일을 새로 만들어도 이름으로 다시 찾는다. 진입 파일은 파일 단위 마운트라 바꾸면 컨테이너가 옛 파일을 계속 보므로 재생성이 필요하다(4.1) |
 | **`down` 플래그만 토글한다** | 서버 목록 자체를 바꾸면 실패 시 설정과 컨테이너 상태가 어긋난다 |
 | **제외 → drain → 교체 → 확인 → 복귀 순서 고정** | 컨테이너를 먼저 정지하면 그 사이 요청이 전부 실패한다 |
 | **실패 시 해당 슬롯을 down으로 유지하고 중단** | 남은 슬롯이 구버전으로 계속 서비스하므로 별도 롤백이 불필요하다 |
@@ -125,11 +126,11 @@ bash smoke.sh <포트>    # 통과 0, 이상 1
 
 **Nginx 컨테이너는 `network_mode: host`로 기동한다.** 브리지 네트워크에 두면 컨테이너 안의 `127.0.0.1`이 호스트가 아니라 컨테이너 자신을 가리켜 위 설정이 동작하지 않는다. 호스트 네트워크를 쓰면 애플리케이션이 노출한 루프백 포트에 그대로 접근할 수 있고, 컨테이너 이름 해석에 의존하지 않으므로 DNS 캐싱 문제도 발생하지 않는다.
 
-Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스크립트가 `infra/`에서 `-f` 없이 부르므로 이 이름이다). `nginx.conf`와 `conf.d/`를 마운트한다 — main 문맥 지시어(`worker_shutdown_timeout`)를 두려고 `nginx.conf`도 이미지 기본값 대신 마운트한다. 인증서 마운트는 도메인을 붙일 때 더한다.
+Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스크립트가 `infra/`에서 `-f` 없이 부르므로 이 이름이다). 진입 파일(`entry.conf` → 컨테이너의 `/etc/nginx/nginx.conf`, 파일 단위)과 `main/` · `conf.d/` 폴더를 마운트한다 — main 문맥 지시어(`worker_shutdown_timeout`)를 두려고 이미지 기본 설정 대신 `main/nginx.conf`를 쓰고, 진입 파일은 그것을 `include`만 한다. 본문을 폴더로 마운트하는 이유는 폴더는 새로 만들어진 파일도 이름으로 다시 찾기 때문이다 — 파일 단위 마운트는 `git checkout`이 파일을 새로 만들면 옛 파일을 계속 본다. 그래서 진입 파일은 바꾸지 않는다(바꾸면 재생성). 인증서 마운트는 도메인을 붙일 때 더한다.
 
 ### 4.2 서버 블록
 
-설정 파일은 `infra/nginx/conf.d/default.conf`(서버 블록)와 `infra/nginx/nginx.conf`(main · http 문맥)다. **공인 IP + HTTP이므로 `listen 80`이다**(시스템 구성서 2.1절). 도메인을 붙이면 443 블록과 80 → 443 리다이렉트를 더한다.
+설정 파일은 `infra/nginx/conf.d/default.conf`(서버 블록)와 `infra/nginx/main/nginx.conf`(main · http 문맥)다. **공인 IP + HTTP이므로 `listen 80`이다**(시스템 구성서 2.1절). 도메인을 붙이면 443 블록과 80 → 443 리다이렉트를 더한다.
 
 | 경로 | 전달 | 요점 |
 |---|---|---|
@@ -138,7 +139,7 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 | `= /api/notifications/stream` | `app` | SSE — `proxy_buffering off` · `proxy_read_timeout 3600s`. 접근 로그를 쿼리 없는 형식으로 남겨 일회용 티켓이 로그에 남지 않게 한다 |
 | `/` | `web` | 정적 화면. 클라이언트 라우팅 fallback은 프론트 이미지가 한다 |
 
-`worker_shutdown_timeout 30s`는 `nginx.conf`에 있다 — SSE로 인한 옛 worker 누적 방지. 응답 압축(gzip — JSON · JS · CSS · SVG, 1KB 이상)도 `nginx.conf` http 문맥에 있고 SSE(`text/event-stream`)는 대상이 아니다. 점검 모드(6장 2단계)는 `bash maintenance.sh on` · `off`다. 표시 파일(`nginx/maintenance/on`)이 있으면 서버 블록이 **location 매칭보다 먼저** 전 경로에 503을 돌려준다 — `/`만 막으면 더 긴 접두사인 `/api/`가 우선해 쓰기가 계속 들어온다. 파일 유무는 요청마다 보므로 reload가 필요 없다.
+`worker_shutdown_timeout 30s`는 설정 본문 `main/nginx.conf`에 있다 — SSE로 인한 옛 worker 누적 방지. 응답 압축(gzip — JSON · JS · CSS · SVG, 1KB 이상)도 `main/nginx.conf` http 문맥에 있고 SSE(`text/event-stream`)는 대상이 아니다. 점검 모드(6장 2단계)는 `bash maintenance.sh on` · `off`다. 표시 파일(`nginx/maintenance/on`)이 있으면 서버 블록이 **location 매칭보다 먼저** 전 경로에 503을 돌려준다 — `/`만 막으면 더 긴 접두사인 `/api/`가 우선해 쓰기가 계속 들어온다. 파일 유무는 요청마다 보므로 reload가 필요 없다.
 
 `proxy_next_upstream`이 실질적인 무손실 장치다. 한 슬롯이 죽어 502를 반환하면 Nginx가 동일 요청을 다른 슬롯으로 재시도한다. **다만 POST 등 비멱등 요청은 기본적으로 재시도하지 않는다**(중복 처리 방지). 따라서 "요청 손실 0건"은 조회 요청에 대한 서술이며, 쓰기 요청은 극소수 실패할 수 있다. 장애 시험 결과서에는 이 구분을 그대로 기록한다.
 
