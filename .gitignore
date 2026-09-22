@@ -19,3 +19,7 @@ replay_pid*.log
 
 # 점검 모드 표시 파일 — 서버 상태이지 구성이 아니다(infra/maintenance.sh)
 infra/nginx/maintenance/on
+
+# 배포용 로컬 메모와 SSH 키 — 계정 비밀번호 · 앱 비밀번호 · 프라이빗 키가 들어 있다
+aws.txt
+*.pem
