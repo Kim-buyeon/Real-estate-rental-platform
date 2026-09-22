@@ -16,6 +16,16 @@
   min-height: 100vh;
 }
 
+/*
+ * 화면 높이 고정 — 라우트 handle 의 fillsViewport (이슈 158). 페이지 전체가 스크롤하지 않고 각 패널이
+ * 제 안에서 스크롤한다 (레이아웃 맵 map-search 「그리드 / 컨테이너」). dvh 는 모바일 주소창 높이를
+ * 반영하고, 지원하지 않는 브라우저에서는 선언이 무시되어 앞의 100vh 가 남는다.
+ */
+.shellFilled {
+  height: 100vh;
+  height: 100dvh;
+}
+
 .header {
   /* 모바일 기본값. 내비 4 + 계정 액션이 한 줄에 들어가지 않아 .rail 이 가로로 스크롤된다 */
   --nav-height: 56px;
@@ -115,6 +125,8 @@
   display: flex;
   flex: 1;
   flex-direction: column;
+  /* 셸 높이가 고정일 때 내용 높이로 늘지 않는다 — 넘치는 쪽은 안쪽 패널이 스크롤한다 */
+  min-height: 0;
 }
 
 @media (min-width: 768px) {

@@ -16,11 +16,12 @@ export const routes: RouteObject[] = [
     children: [
       // 메인은 첫 화면이라 정적 import다. 푸터가 붙는다 — 데이터 출처 · 면책이 여기 있다
       { path: '/', element: <MainPage /> },
-      // 지도는 뷰포트의 남은 높이를 전부 쓰는 유동 아키타입이라 푸터를 붙이지 않는다 (이슈 112)
+      // 지도는 뷰포트의 남은 높이를 전부 쓰는 유동 아키타입이라 푸터를 붙이지 않는다 (이슈 112).
+      // 셸도 화면 높이에 고정한다 — 목록이 길어도 지도 높이가 늘지 않아 서울이 화면 가운데에 맞는다 (이슈 158)
       {
         path: '/map',
         lazy: async () => ({ Component: (await import('../pages/MapPage')).default }),
-        handle: { hideFooter: true } satisfies RouteHandle,
+        handle: { hideFooter: true, fillsViewport: true } satisfies RouteHandle,
       },
       // 공개. 로그인 상태로 /login에 오면 LoginPage가 redirect 경로(없으면 /)로 보낸다
       // 로그인 · 가입은 헤더 로그인 링크가 redirect로 싣지 않는 화면이다 (이슈 140)

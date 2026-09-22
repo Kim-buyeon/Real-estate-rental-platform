@@ -83,6 +83,68 @@ describe('MapPage', () => {
     tracker.stop();
   });
 
+  // ── 자치구 단계 → 목록 조건(이슈 158) ───────────────────────────────────
+
+  it('자치구를 고르면 목록 요청에 그 구가 실리고, 자치구 집계 요청에는 실리지 않는다', async () => {
+    server.use(...propertyHandlers);
+    const tracker = trackRequestedUrls();
+
+    renderMapPage();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
+    // 서울 전체 단계의 첫 목록 요청에는 district가 없다
+    const [firstListUrl] = tracker.listUrls();
+    expect(firstListUrl).toBeDefined();
+    expect(new URL(firstListUrl!).searchParams.has('district')).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('자치구'), { target: { value: '강서구' } });
+
+    await waitFor(() => {
+      const urls = tracker.listUrls();
+      const lastUrl = urls[urls.length - 1];
+      expect(lastUrl).toBeDefined();
+      expect(new URL(lastUrl!).searchParams.get('district')).toBe('강서구');
+    });
+
+    // 자치구 집계(PROP-08)는 filter 상태를 그대로 본다 — 구를 골라도 district가 붙지 않는다.
+    // 붙으면 집계가 이미 좁혀진 구 하나로만 와 「전체 자치구 대비 이 구」 비교가 깨진다
+    const districtCountUrls = tracker.urls.filter((url) => new URL(url).pathname === '/api/properties/district-counts');
+    expect(districtCountUrls.length).toBeGreaterThan(0);
+    for (const url of districtCountUrls) {
+      expect(new URL(url).searchParams.has('district')).toBe(false);
+    }
+
+    tracker.stop();
+  });
+
+  it('「← 서울 전체」로 돌아가면 이후 목록 요청에서 district가 빠진다', async () => {
+    server.use(...propertyHandlers);
+    const tracker = trackRequestedUrls();
+
+    renderMapPage();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('자치구'), { target: { value: '강서구' } });
+
+    await waitFor(() => {
+      const urls = tracker.listUrls();
+      const lastUrl = urls[urls.length - 1];
+      expect(lastUrl).toBeDefined();
+      expect(new URL(lastUrl!).searchParams.get('district')).toBe('강서구');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '← 서울 전체' }));
+
+    await waitFor(() => {
+      const urls = tracker.listUrls();
+      const lastUrl = urls[urls.length - 1];
+      expect(lastUrl).toBeDefined();
+      expect(new URL(lastUrl!).searchParams.has('district')).toBe(false);
+    });
+
+    tracker.stop();
+  });
+
   it('목록 항목을 고르면 상세 탭이 활성이 되고 그 매물의 상세가 열린다', async () => {
     server.use(...propertyHandlers, ...riskHandlers);
 

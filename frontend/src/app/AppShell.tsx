@@ -8,7 +8,7 @@ import { useLogout } from '../queries/user';
 import { useSession } from '../session/useSession';
 import { AppFooter } from './AppFooter';
 import { NotificationStream } from './NotificationStream';
-import { hidesFooter, isAuthEntryRoute } from './routeHandle';
+import { fillsViewport, hidesFooter, isAuthEntryRoute } from './routeHandle';
 import styles from './AppShell.module.css';
 
 /**
@@ -26,6 +26,8 @@ export function AppShell() {
   // 푸터를 붙일지는 라우트 표의 handle이 정한다 — 경로 문자열 비교를 여기 두지 않는다
   const matches = useMatches();
   const isFooterHidden = matches.some((match) => hidesFooter(match.handle));
+  // 화면 높이 고정도 handle이 정한다. 고정하지 않으면 긴 목록이 셸 · 지도 높이를 늘린다 (이슈 158)
+  const isViewportFilled = matches.some((match) => fillsViewport(match.handle));
 
   // 헤더 「로그인」은 지금 위치를 redirect로 싣는다 — 로그인 뒤 보던 화면으로 돌아온다 (이슈 140).
   // 로그인 · 가입 화면 자신은 싣지 않는다: 로그인 뒤 다시 로그인 화면으로 오는 루프가 된다
@@ -40,7 +42,7 @@ export function AppShell() {
   const unreadCount = notificationsQuery.data?.pages.at(-1)?.unreadCount ?? 0;
 
   return (
-    <div className={styles.shell}>
+    <div className={isViewportFilled ? `${styles.shell} ${styles.shellFilled}` : styles.shell}>
       {/* 실시간 수신(NOTI-03) 연결은 애플리케이션 전역에 하나다. 화면을 그리지 않는다 */}
       {isAuthenticated && <NotificationStream />}
       <header className={styles.header}>
