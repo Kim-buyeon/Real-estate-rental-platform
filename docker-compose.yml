@@ -1,11 +1,11 @@
 # 로컬 구성 — 개발 환경 설계서 1.1. 저장소 루트에서 실행한다.
 #
-#   docker compose up -d                    PostgreSQL · Redis 만 (앱은 IDE · bootRun · npm run dev 로)
-#   docker compose --profile app up -d      앱 · 웹 이미지까지 빌드해 함께
-#     web(:8090)은 정적 파일만 서빙한다 — /api 전달은 앞단 Nginx(INF-01)가 맡으므로 이 조합에서 화면의 API 호출은 되지 않는다.
-#     이미지가 뜨는지 확인하는 용도다. 화면 개발은 npm run dev(프록시 있음)로 한다.
+#   docker compose up -d                    전부(PostgreSQL · Redis · 앱 · 화면 · 앞단 Nginx) → http://localhost:5173
+#   docker compose up -d postgres redis     PostgreSQL · Redis 만 — 백엔드를 IDE · bootRun 으로 띄울 때
+#   docker compose stop nginx web           화면 개발 — 멈춘 뒤 npm run dev(Vite 프록시 → 호스트 8080)
+#     nginx 와 npm run dev 는 둘 다 5173 이라 동시에 켜지 않는다.
 #
-# 값은 루트 .env 에서 읽는다(.env.example). 운영 구성(2슬롯 · Nginx)은 이 파일이 아니다 — INF-01.
+# 값은 루트 .env 에서 읽는다(.env.example). 운영 구성(2슬롯 · 점검 모드)은 이 파일이 아니다 — infra/docker-compose.yml.
 name: rental
 
 services:
@@ -41,7 +41,6 @@ services:
       retries: 10
 
   app:
-    profiles: [app]
     build: ./backend
     image: rental-backend:local
     env_file: .env
@@ -51,8 +50,7 @@ services:
       DB_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
-    ports:
-      - "127.0.0.1:8080:8080"
+    # 호스트 포트를 열지 않는다 — 앞단 nginx 가 Compose 네트워크로 닿는다. 호스트 8080 은 IDE 백엔드 자리다
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,14 +58,24 @@ services:
         condition: service_healthy
 
   web:
-    profiles: [app]
     build:
       context: ./frontend
       args:
         VITE_KAKAO_MAP_KEY: ${VITE_KAKAO_MAP_KEY}
     image: rental-frontend:local
+    # 정적 파일만 서빙한다. 호스트 포트 없이 앞단 nginx 뒤에 둔다
+
+  # 앞단 — 운영과 같은 이미지 · nginx.conf(main · http 문맥), 서버 블록만 로컬용(infra/nginx/local/)
+  nginx:
+    image: nginx:1.30-alpine
     ports:
-      - "127.0.0.1:8090:80"
+      - "127.0.0.1:5173:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/local:/etc/nginx/conf.d:ro
+    depends_on:
+      - app
+      - web
 
 volumes:
   pgdata:
