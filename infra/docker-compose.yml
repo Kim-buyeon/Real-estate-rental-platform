@@ -33,8 +33,15 @@ services:
     image: nginx:1.30-alpine
     network_mode: host
     restart: unless-stopped
+    # 재생성 · 정지 때 새 연결을 받지 않는 구간을 줄인다. 배포 중 최대 응답 2.496초(배포 검증 2026-09-22)라 3초면
+    # 진행 중 요청이 끝나고, SSE 는 끝나지 않는 연결이라 기다려 얻는 것이 없다(화면이 재연결한다).
+    # Docker 기본 10초로는 재생성 때 약 11초 끊겼다 — 이슈 164
+    stop_grace_period: 3s
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # 진입 파일은 파일 단위(바꾸지 않는다), 설정 본문은 main/ 폴더째 — 폴더는 새로 만들어진 파일도 이름으로 다시 찾으므로
+      # git checkout 뒤에도 nginx -t → reload 로 반영된다(운영 절차서 4.1 · 이슈 164)
+      - ./nginx/entry.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/main:/etc/nginx/main:ro
       - ./nginx/conf.d:/etc/nginx/conf.d
       # 점검 모드 표시 파일 — maintenance.sh
       - ./nginx/maintenance:/etc/nginx/maintenance:ro
