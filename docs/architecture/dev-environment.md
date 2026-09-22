@@ -16,6 +16,9 @@
 | --- | --- | --- |
 | PostgreSQL | postgres:17-alpine | 명명 볼륨에 데이터 보존. 헬스체크 설정으로 기동 완료 여부 확인 |
 | Redis | redis:7-alpine | 캐시 및 토큰 저장 |
+| 앱 | 로컬 빌드(`backend/`) | 앱 하나. 호스트 포트를 열지 않고 앞단 Nginx가 Compose 네트워크로 닿는다 |
+| 화면 | 로컬 빌드(`frontend/`) | 정적 파일만 서빙한다. 호스트 포트 없이 앞단 Nginx 뒤에 둔다 |
+| 앞단 Nginx | nginx:1.30-alpine | `localhost:5173` 하나로 받는다. 운영과 같은 `nginx.conf`, 서버 블록만 로컬용(`infra/nginx/local/` — 점검 모드 · 두 슬롯 없음) |
 | DB 클라이언트 | 호스트에 설치 | DBeaver 등으로 컨테이너에 접속. 컨테이너 내부에 별도 관리 도구를 두지 않는다 |
 
 운용 규칙
@@ -24,6 +27,10 @@
 - 스키마를 초기 상태로 되돌릴 때는 볼륨까지 삭제 후 재기동한다. 초기 개발 단계에서는 이 절차가 가장 빠르고 안전하다.
 - 접속 정보는 환경 변수로 주입한다. 배포 환경 전환 시 애플리케이션 코드 변경이 발생하지 않도록 한다.
 - docker-compose.yml은 저장소 루트에 두고 형상 관리한다.
+- 실행 방법은 셋이다.
+  - 전체: `docker compose up -d` → `http://localhost:5173`
+  - 백엔드 IDE 개발: `docker compose up -d postgres redis` 뒤 IDE · bootRun으로 앱을 띄운다(호스트 8080)
+  - 화면 개발: `docker compose stop nginx web` 뒤 `npm run dev`. 앞단 Nginx와 Vite 개발 서버가 둘 다 5173이라 동시에 켜지 않는다
 
 ### 1.2 구현 리스크와 대응
 
