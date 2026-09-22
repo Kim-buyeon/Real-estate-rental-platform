@@ -3,7 +3,8 @@
 #   docker compose up -d                    전부(PostgreSQL · Redis · 앱 · 화면 · 앞단 Nginx) → http://localhost:5173
 #   docker compose up -d postgres redis     PostgreSQL · Redis 만 — 백엔드를 IDE · bootRun 으로 띄울 때
 #   docker compose stop nginx web           화면 개발 — 멈춘 뒤 npm run dev(Vite 프록시 → 호스트 8080)
-#     nginx 와 npm run dev 는 둘 다 5173 이라 동시에 켜지 않는다.
+#     nginx 와 npm run dev 는 둘 다 5173 이라 동시에 켜지 않는다. app 은 호스트 포트가 없으므로 이때 백엔드도
+#     IDE · bootRun(호스트 8080)으로 띄운다.
 #
 # 값은 루트 .env 에서 읽는다(.env.example). 운영 구성(2슬롯 · 점검 모드)은 이 파일이 아니다 — infra/docker-compose.yml.
 name: rental
