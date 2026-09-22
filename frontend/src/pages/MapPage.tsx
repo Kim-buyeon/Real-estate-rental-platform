@@ -171,6 +171,16 @@ export default function MapPage() {
     [detailPropertyId],
   );
 
+  /**
+   * 목록(PROP-01)의 조건. 자치구 단계면 그 구로 좁힌다 — 명세 1.1의 공통 필터 `district` 이고 목록
+   * 전용 조건을 따로 두지 않는다. 필터 상태 자체에는 넣지 않는다: 자치구 집계(PROP-08)까지 한 구로
+   * 좁혀지고, 필터는 지도 단계와 분리된 상태다 (이슈 158)
+   */
+  const listFilter = useMemo<PropertyFilter>(
+    () => (stage.type === 'district' ? { ...filter, district: stage.district } : filter),
+    [filter, stage],
+  );
+
   const isMapShown = narrowView === MAP_VIEW;
 
   return (
@@ -212,7 +222,7 @@ export default function MapPage() {
         <div className={styles.panel}>
           <Tabs label="매물 보기" items={tabs} selectedId={panelTab} onSelect={handleSelectTab}>
             {panelTab === LIST_TAB ? (
-              <PropertyList filter={filter} onSelect={handleOpenDetail} />
+              <PropertyList filter={listFilter} onSelect={handleOpenDetail} />
             ) : (
               detailPropertyId !== null && (
                 <PropertyDetailPanel propertyId={detailPropertyId} onClose={handleCloseDetail} />
