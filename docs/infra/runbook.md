@@ -139,7 +139,7 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 | `= /api/notifications/stream` | `app` | SSE — `proxy_buffering off` · `proxy_read_timeout 3600s`. 접근 로그를 쿼리 없는 형식으로 남겨 일회용 티켓이 로그에 남지 않게 한다 |
 | `/` | `web` | 정적 화면. 클라이언트 라우팅 fallback은 프론트 이미지가 한다 |
 
-`worker_shutdown_timeout 30s`는 `nginx.conf`에 있다 — SSE로 인한 옛 worker 누적 방지. 응답 압축(gzip — JSON · JS · CSS · SVG, 1KB 이상)도 `nginx.conf` http 문맥에 있고 SSE(`text/event-stream`)는 대상이 아니다. 점검 모드(6장 2단계)는 `bash maintenance.sh on` · `off`다. 표시 파일(`nginx/maintenance/on`)이 있으면 서버 블록이 **location 매칭보다 먼저** 전 경로에 503을 돌려준다 — `/`만 막으면 더 긴 접두사인 `/api/`가 우선해 쓰기가 계속 들어온다. 파일 유무는 요청마다 보므로 reload가 필요 없다.
+`worker_shutdown_timeout 30s`는 설정 본문 `main/nginx.conf`에 있다 — SSE로 인한 옛 worker 누적 방지. 응답 압축(gzip — JSON · JS · CSS · SVG, 1KB 이상)도 `main/nginx.conf` http 문맥에 있고 SSE(`text/event-stream`)는 대상이 아니다. 점검 모드(6장 2단계)는 `bash maintenance.sh on` · `off`다. 표시 파일(`nginx/maintenance/on`)이 있으면 서버 블록이 **location 매칭보다 먼저** 전 경로에 503을 돌려준다 — `/`만 막으면 더 긴 접두사인 `/api/`가 우선해 쓰기가 계속 들어온다. 파일 유무는 요청마다 보므로 reload가 필요 없다.
 
 `proxy_next_upstream`이 실질적인 무손실 장치다. 한 슬롯이 죽어 502를 반환하면 Nginx가 동일 요청을 다른 슬롯으로 재시도한다. **다만 POST 등 비멱등 요청은 기본적으로 재시도하지 않는다**(중복 처리 방지). 따라서 "요청 손실 0건"은 조회 요청에 대한 서술이며, 쓰기 요청은 극소수 실패할 수 있다. 장애 시험 결과서에는 이 구분을 그대로 기록한다.
 
