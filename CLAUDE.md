@@ -39,7 +39,7 @@
 │   └── workflow.md         작업 순서와 각 단계의 수단
 │
 ├── infra/                운영 구성. 서버에 반영되는 Compose · 설정 · 배포 스크립트
-│   ├── nginx/              요청 분산 · 점검 모드
+│   ├── nginx/              요청 분산 · 점검 모드. local/ 은 로컬 구성의 앞단 서버 블록
 │   ├── os/                 Rocky Linux 노드 설정 — firewalld · NFS 공유 · systemd timer · sshd — 미작성
 │   └── prometheus/ · alertmanager/ · promtail/ · grafana/   관측 — 차기 범위
 │
@@ -61,7 +61,7 @@
 │   │   └── *.md              갈래를 넘는 것 — 검토 · 테스트
 │   └── skills/             반복 작업 절차
 │
-├── docker-compose.yml    로컬 구성. PostgreSQL · Redis + 앱 · 웹 이미지(프로파일)
+├── docker-compose.yml    로컬 구성. PostgreSQL · Redis · 앱 · 화면 · 앞단 Nginx(localhost:5173)
 ├── .env.example          환경 변수 목록. 값 없음, 커밋 대상
 ├── .env                  실제 값. 커밋하지 않음
 ├── .gitattributes        서버에서 실행 · 마운트하는 파일의 LF 고정
