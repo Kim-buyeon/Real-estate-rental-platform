@@ -10,6 +10,31 @@ spring:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${POSTGRES_DB:rental}
     username: ${POSTGRES_USER:rental}
     password: ${POSTGRES_PASSWORD:rental}
+    # 커넥션 풀. 아래 값은 전부 미확정 잠정치다 — 부하 시험이 차기 범위라 실측 근거가 없다.
+    # 부하 시험이 들어오면 그때 확정하고, 확정값은 설계 문서에 먼저 적는다.
+    hikari:
+      # 2 vCPU 노드에 앱 슬롯이 둘이므로 노드 합계는 16 이다. PostgreSQL 이 max_connections=40 이라
+      # 운영자 psql · 관리 접속에 여유가 남는다. Flyway · 배치는 이 풀에서 빌리므로 따로 세지 않는다.
+      # 풀을 키운다고 처리량이 늘지 않는다 — vCPU 가 둘이라 DB 쪽 경합만 커진다.
+      maximum-pool-size: 8
+      # 유휴 시 유지할 최소 커넥션. 0 으로 두면 유휴 뒤 첫 요청이 접속 비용을 문다.
+      minimum-idle: 2
+      # 밀리초. 풀에서 커넥션을 얻기까지 기다리는 상한. Boot(HikariCP) 기본 30초는 DB 가 느려질 때
+      # 사용자 요청이 30초를 기다린 뒤에야 실패한다는 뜻이고, 그동안 Tomcat 스레드가 차서 전면 정지로 번진다.
+      # 빨리 실패해야 스레드 점유가 짧아지고 사용자가 30초를 기다리지 않는다.
+      # 앞단이 다른 슬롯으로 넘겨 주지는 않는다 — 풀 고갈은 500 으로 나가고 운영 절차서 4.2 의
+      # proxy_next_upstream 은 502 · 503 · 연결 오류만 재시도한다.
+      connection-timeout: 5000
+      # 밀리초. 빌려주기 전 커넥션 생존 확인의 상한. connection-timeout 보다 짧아야 한다.
+      validation-timeout: 3000
+      # 밀리초(30분). 커넥션을 주기적으로 새로 만든다. 오래 붙어 있던 커넥션이 DB · 방화벽 쪽에서
+      # 조용히 끊긴 채 풀에 남는 것을 막는다.
+      max-lifetime: 1800000
+      # 밀리초(5분). 유휴 커넥션을 주기적으로 찔러 살아 있는지 확인한다.
+      keepalive-time: 300000
+      # 밀리초(30초). 이 시간이 지나도 반납되지 않은 커넥션을 로그로 드러낸다. 반납 누락은 풀 고갈로만
+      # 드러나면 원인을 찾기 어렵다.
+      leak-detection-threshold: 30000
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -67,6 +92,23 @@ server:
   shutdown: graceful
   # 슬롯 번호별 포트(8081 · 8082)는 컨테이너 환경 변수 SERVER_PORT 로 덮는다 — 시스템 구성서 4장. 기본은 로컬 개발 포트다.
   port: 8080
+  # 내장 Tomcat. 아래 값은 전부 미확정 잠정치다 — 부하 시험이 차기 범위라 실측 근거가 없다.
+  tomcat:
+    threads:
+      # 요청 처리 스레드 상한. 기본 200 은 2 vCPU · DB 풀 8 인 노드에서 의미가 없다. 동시에 일할 수 있는
+      # 것은 vCPU 둘이고 DB 를 쓰는 요청은 어차피 8 개에서 막히므로, 스레드를 늘리면 컨텍스트 전환만 늘고
+      # 스레드마다 스택 메모리를 문다(노드가 2 GiB 이고 앱 슬롯이 둘이다).
+      # SSE 는 Spring MVC 비동기라 요청 스레드를 붙들지 않는다 — 이 값이 동시 SSE 연결 수를 제한하지 않는다.
+      max: 50
+      # 유휴 시 유지할 스레드. 갑작스러운 요청에 스레드 생성 비용을 물지 않게 한다.
+      min-spare: 10
+    # 동시에 열어 둘 수 있는 연결 수. 처리 스레드보다 훨씬 크게 둔다 — SSE 처럼 오래 열려 있으나 스레드를
+    # 쓰지 않는 연결이 여기에 포함된다.
+    max-connections: 2000
+    # 연결이 가득 찼을 때 OS 백로그에 쌓아 두는 수. 넘으면 연결이 거절되고 앞단이 다른 슬롯으로 넘긴다.
+    accept-count: 100
+    # 연결을 맺은 뒤 요청 라인이 도착하기까지 기다리는 상한. 열어만 두고 보내지 않는 연결이 자리를 차지하지 않게 한다.
+    connection-timeout: 5s
 
 # 준비 상태 확인 — 인프라 API 명세 1.1. 노출은 health 하나뿐이다. 지표(Prometheus)는 관측(INF-05)이 차기 범위라 열지 않는다.
 management:
