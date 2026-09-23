@@ -175,7 +175,7 @@ services:
     # 실행 이미지가 eclipse-temurin:21-jre 라 curl · wget 이 없다. bash 의 /dev/tcp 로 TCP 를 직접 열어 확인한다.
     # CMD-SHELL 은 /bin/sh(dash)로 실행돼 /dev/tcp 를 모르므로 반드시 CMD + bash -c 형태여야 한다.
     # Compose 는 unhealthy 컨테이너를 재시작하지 않는다(그건 Swarm 기능). 이 확인은 docker compose ps 에 상태를 드러내는
-    # 데까지이고, 자동 복구는 관측(INF-05, 차기 범위)의 몫이다.
+    # 데까지이고, 자동 복구는 관측(INF-05) — 미구현 — 의 몫이다.
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8081 && printf 'GET /actuator/health/liveness HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"]
       interval: 15s
