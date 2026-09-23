@@ -38,7 +38,7 @@ description: 바꾼 것과 문서가 어긋나지 않았는지 확인한다. 변
 | 판정 로직 | `docs/business-logic.md` · `docs/architecture/testing.md` | 산식 · 임계값 · 의사코드의 컬럼명. 기준을 코드 상수로 박지 않았는가 |
 | 알림 생성 · SSE | `docs/architecture/notification.md` | 커밋 이후 발행 · 전 인스턴스 팬아웃 · 이벤트 본문 범위 |
 | 외부 연동 어댑터 | `docs/tech-stack.md` · `docs/architecture/data-loading.md` | 연동 대상 · 1단계와 차기 구분 · Mock/Real/Fault 세 구현 |
-| 커스텀 지표 이름 | `docs/infra/observability.md` | 관측 문서가 지표 카탈로그를 담으면 그것과 대조한다. **그 문서는 아직 지표 카탈로그를 담고 있지 않고 차기 범위 배너가 붙어 있다** — 관측 작업에서 쓴다 |
+| 커스텀 지표 이름 | `docs/infra/observability.md` | 관측 문서가 지표 카탈로그를 담으면 그것과 대조한다. **그 문서는 아직 지표 카탈로그를 담고 있지 않고 미작성 배너가 붙어 있다** — 관측 작업에서 쓴다 |
 | Actuator · Security 설정 | `docs/api/infra.md` | 노출 엔드포인트 · Nginx 차단 대상 |
 | `build.gradle` · `package.json` | `docs/tech-stack.md` | 버전 · 표에 없는 라이브러리 · 차기 범위로 표시된 것 |
 | 테스트 구성 | `docs/architecture/testing.md` | Testcontainers 전제 · 계층별 범위 |
