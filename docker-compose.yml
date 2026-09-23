@@ -7,15 +7,31 @@
 #     IDE · bootRun(호스트 8080)으로 띄운다.
 #
 # 값은 루트 .env 에서 읽는다(.env.example). 운영 구성(2슬롯 · 점검 모드)은 이 파일이 아니다 — infra/docker-compose.yml.
+#
+# 운영 구성의 자원 항목 가운데 로그 회전 · 시간대 · 건강 확인만 여기에도 둔다. 셋은 개발 머신에서도 같은 값이 맞다 —
+# 로그는 켜 둔 채 잊으면 개발 머신 디스크도 차고, 시간대가 다르면 로그 대조 습관이 운영과 달라지고,
+# 건강 확인은 docker compose ps 에서 기동 실패를 바로 보이게 한다.
+# 메모리 상한 · PostgreSQL 자원 상한 · Redis 지속성은 두지 않는다. 그 값들은 운영 노드 사양(t3.small 2 GiB)에서 나온 것이고
+# 개발 머신은 자원이 다르다. 여기서 상한을 흉내 내면 운영 값이 두 파일에 갈라진다.
 name: rental
+
+# 로그 회전 — json-file 기본값은 무제한이다
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   postgres:
     image: postgres:17-alpine
+    logging: *logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # 컨테이너는 호스트 /etc/localtime 을 따르지 않는다 — 주지 않으면 로그가 UTC 로 남아 앱 로그(KST)와 어긋난다
+      TZ: Asia/Seoul
     # 호스트 루프백에만 연다 — 호스트의 DB 클라이언트 · bootRun 이 쓴다
     ports:
       - "127.0.0.1:${DB_PORT:-5432}:5432"
@@ -29,10 +45,12 @@ services:
 
   redis:
     image: redis:7-alpine
+    logging: *logging
     # 비밀번호가 비어 있으면 인증 없이 뜬다(로컬). 값이 있으면 requirepass 로 건다
     command: ["sh", "-c", "exec redis-server $${REDIS_PASSWORD:+--requirepass $$REDIS_PASSWORD}"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      TZ: Asia/Seoul
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
@@ -45,18 +63,30 @@ services:
     build: ./backend
     image: rental-backend:local
     env_file: .env
+    logging: *logging
     # .env 의 DB_HOST · REDIS_HOST 는 호스트 기준(localhost)이다. 컨테이너 안에서는 서비스 이름으로 덮는다
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      TZ: Asia/Seoul
     # 호스트 포트를 열지 않는다 — 앞단 nginx 가 Compose 네트워크로 닿는다. 호스트 8080 은 IDE 백엔드 자리다
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # 포트는 컨테이너 안의 값이다. 로컬은 슬롯이 없어 SERVER_PORT 를 덮지 않으므로 application.yml 기본 8080 이다.
+    # 실행 이미지가 eclipse-temurin:21-jre 라 curl · wget 이 없다. bash 의 /dev/tcp 로 TCP 를 직접 연다.
+    # CMD-SHELL 은 /bin/sh(dash)로 실행돼 /dev/tcp 를 모르므로 CMD + bash -c 형태여야 한다.
+    # Compose 는 unhealthy 컨테이너를 재시작하지 않는다(Swarm 기능) — 상태 가시화까지다.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /actuator/health/liveness HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 90s
 
   web:
     build:
@@ -64,12 +94,25 @@ services:
       args:
         VITE_KAKAO_MAP_KEY: ${VITE_KAKAO_MAP_KEY}
     image: rental-frontend:local
+    logging: *logging
+    environment:
+      TZ: Asia/Seoul
     # 정적 파일만 서빙한다. 호스트 포트 없이 앞단 nginx 뒤에 둔다
+    # 이미지가 nginx:1.30-alpine 기반이라 busybox wget 이 있다
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   # 앞단 — 운영과 같은 이미지 · 진입 파일(infra/nginx/entry.conf)과 설정 본문(infra/nginx/main/nginx.conf — main · http 문맥),
   # 서버 블록만 로컬용(infra/nginx/local/)
   nginx:
     image: nginx:1.30-alpine
+    logging: *logging
+    environment:
+      TZ: Asia/Seoul
     ports:
       - "127.0.0.1:5173:80"
     volumes:

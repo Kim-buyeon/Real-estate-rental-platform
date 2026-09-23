@@ -272,7 +272,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 4 | sshd — 공개키만 · root 금지 | 비밀번호 로그인 시도가 거부된다 |
 | 5 | 시간대 `Asia/Seoul`, chrony에 169.254.169.123 | `chronyc sources`에 그 주소가 선택됨 |
 | 6 | firewalld 노드별 포트 · SELinux enforcing 확인 | `getenforce` → Enforcing |
-| 7 | Docker CE 설치(공식 RHEL 저장소) · 로그 상한 | `docker compose version` |
+| 7 | Docker CE 설치(공식 RHEL 저장소) | `docker compose version`. 컨테이너 로그 상한은 노드가 아니라 Compose가 갖는다(설계서 8장) — 이 단계에서 할 일이 없다 |
 | 8 | `dnf-automatic`(보안 갱신만 · 자동 재부팅 없음) timer 활성 | `systemctl list-timers` |
 | 9 | NFS 클라이언트 마운트(해당 노드) | 9.3 |
 

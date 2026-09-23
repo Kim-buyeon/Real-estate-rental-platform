@@ -14,12 +14,52 @@
 # 로컬 구성(루트, name: rental)과 컨테이너 · 볼륨 이름이 겹치지 않게 한다
 name: rental-prod
 
+# 컨테이너 로그 회전 — 서버 운영 기반 설계서 8장이 「컨테이너 로그 — 크기·개수 상한」을 요구하는데 값이 10장에서 미확정이라
+# 지금까지 상한이 없었다. json-file 기본값은 무제한이라 로그만으로 노드 디스크(30 GiB)가 찬다.
+# 서비스 6개(nginx · app-1 · app-2 · web · redis · postgres) × 10m × 3개 = 약 180 MB 가 컨테이너 로그 전체의 상한이다.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# 메모리 상한 — 노드는 t3.small(2 vCPU · 2 GiB)이고 앱 2슬롯 · PostgreSQL · Redis · web · nginx 가 한 노드에 모두 올라간다.
+# 상한이 없으면 커널 OOM Killer 가 가장 큰 RSS(=PostgreSQL 또는 JVM)를 골라 죽인다. 서비스마다 상한을 주어
+# 초과하는 쪽만 죽게 한다.
+#
+#   서비스            mem_limit   비고
+#   app-1             520m        JVM 힙 65% ≈ 338m + 메타스페이스 · 스레드 스택 · 다이렉트 버퍼
+#   app-2             520m        위와 같음
+#   postgres          288m        shared_buffers 64MB + 커넥션별 work_mem
+#   redis             160m        maxmemory 96mb + AOF 버퍼 · 오버헤드
+#   web               32m         정적 파일 서빙 nginx
+#   nginx             64m         앞단 — 요청 분산 · SSE 전달
+#   ─────────────────────────────
+#   합계              1584m
+#
+#   2048 − 1584 = 464 MiB 를 OS · dockerd · sshd 몫으로 남긴다.
+#
+# Compose v2 스펙에서 메모리 상한은 최상위 서비스 키 mem_limit 다. deploy.resources.limits 는 Swarm 전용이라
+# docker compose up 에서는 조용히 무시된다.
+
 x-app: &app
   image: ${APP_IMAGE:-rental-backend:local}
   env_file: .env
   restart: unless-stopped
+  logging: *logging
+  mem_limit: 520m
   # graceful 종료 대기(application.yml 30초)보다 길게 준다. Compose 기본 10초면 30초를 채우기 전에 SIGKILL 된다.
   stop_grace_period: 40s
+  # 슬롯 공통 환경 변수. YAML 병합 키(<<)는 최상위 키만 병합하므로, 서비스가 자기 environment 를 쓰면 앵커의 environment 가
+  # 통째로 덮인다. 그래서 이 매핑에 따로 앵커를 걸어 각 슬롯이 environment 안에서 다시 병합한다.
+  environment: &app-env
+    # 컨테이너는 호스트 /etc/localtime 을 따르지 않는다. 호스트 시간대만 KST 로 맞춰도 컨테이너 안은 UTC 라
+    # 앱 로그(KST)와 9시간 어긋나 대조가 되지 않는다.
+    TZ: Asia/Seoul
+    # 컨테이너 메모리 제한이 없으면 JVM 은 호스트 전체(2 GiB) 기준 기본 25% 를 힙으로 잡는다. mem_limit 520m 을 기준으로
+    # 65% ≈ 338m 이 힙이고 나머지가 메타스페이스 · 스레드 스택 · 다이렉트 버퍼 몫이다.
+    # ExitOnOutOfMemoryError 는 OOM 뒤 좀비 상태로 남지 않고 죽어서 restart: unless-stopped 가 받게 한다.
+    JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65.0 -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp"
   depends_on:
     postgres:
       condition: service_healthy
@@ -33,6 +73,14 @@ services:
     image: nginx:1.30-alpine
     network_mode: host
     restart: unless-stopped
+    logging: *logging
+    mem_limit: 64m
+    # 이 서비스에는 healthcheck 를 두지 않는다 — network_mode: host 라 컨테이너 안에서 자기를 찔러도 호스트 포트와 구분되지 않고,
+    # 앞단 nginx 자신이 뒤쪽 슬롯의 생사를 판정하는 주체다. 밖에서 보는 확인은 smoke.sh 와 운영 절차서 2장 일상 점검이 맡는다.
+    environment:
+      # 컨테이너는 호스트 /etc/localtime 을 따르지 않는다 — 시간대를 주지 않으면 access · error 로그가 UTC 로 남아
+      # 앱 로그(KST)와 대조되지 않는다
+      TZ: Asia/Seoul
     # 재생성 · 정지 때 새 연결을 받지 않는 구간을 줄인다. 배포 중 최대 응답 2.496초(배포 검증 2026-09-22 — 순차 요청 API 527건 중 최대, 슬롯 교체 중)라 3초면
     # 진행 중 요청이 끝나고, SSE 는 끝나지 않는 연결이라 기다려 얻는 것이 없다(화면이 재연결한다).
     # Docker 기본 10초로는 재생성 때 약 11초 끊겼다 — 이슈 164
@@ -54,6 +102,7 @@ services:
   app-1:
     <<: *app
     environment:
+      <<: *app-env
       SERVER_PORT: 8081
       DB_HOST: postgres
       DB_PORT: 5432
@@ -61,10 +110,23 @@ services:
       REDIS_PORT: 6379
     ports:
       - "127.0.0.1:8081:8081"
+    # 슬롯 생사 가시화. 포트는 컨테이너 안의 SERVER_PORT 값이다(호스트 포트가 아니다).
+    # 실행 이미지가 eclipse-temurin:21-jre 라 curl · wget 이 없다. bash 의 /dev/tcp 로 TCP 를 직접 열어 확인한다.
+    # CMD-SHELL 은 /bin/sh(dash)로 실행돼 /dev/tcp 를 모르므로 반드시 CMD + bash -c 형태여야 한다.
+    # Compose 는 unhealthy 컨테이너를 재시작하지 않는다(그건 Swarm 기능). 이 확인은 docker compose ps 에 상태를 드러내는
+    # 데까지이고, 자동 복구는 관측(INF-05, 차기 범위)의 몫이다.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8081 && printf 'GET /actuator/health/liveness HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      # 기동에 시간이 걸린다 — 이 구간의 실패는 재시도 횟수로 세지 않는다
+      start_period: 90s
 
   app-2:
     <<: *app
     environment:
+      <<: *app-env
       SERVER_PORT: 8082
       DB_HOST: postgres
       DB_PORT: 5432
@@ -72,21 +134,52 @@ services:
       REDIS_PORT: 6379
     ports:
       - "127.0.0.1:8082:8082"
+    # app-1 과 같다. 포트만 이 슬롯의 SERVER_PORT 다
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8082 && printf 'GET /actuator/health/liveness HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 90s
 
   web:
     image: ${WEB_IMAGE:-rental-frontend:local}
     restart: unless-stopped
+    logging: *logging
+    mem_limit: 32m
+    environment:
+      TZ: Asia/Seoul
     ports:
       - "127.0.0.1:8090:80"
+    # 이미지가 nginx:1.30-alpine 기반이라 busybox wget 이 있다. 정적 파일이 실제로 나오는지까지 본다
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    # 상한과 축출 정책 — 시스템 구성서 3장. 상한 값은 미확정이라 잠정 256MB(1차 배포에서 사용량을 보고 확정한다).
+    logging: *logging
+    mem_limit: 160m
+    # 상한과 축출 정책 — 시스템 구성서 3장. 상한 값은 미확정이라 잠정 96MB(1차 배포에서 사용량을 보고 확정한다).
+    # 잠정값을 256mb 에서 96mb 로 내린 근거는 위 메모리 표의 mem_limit 160m 이다 — maxmemory 가 컨테이너 상한보다 크면
+    # 축출이 시작되기 전에 컨테이너가 OOM 으로 죽는다. 나머지 64m 은 AOF 버퍼 · 복사-쓰기 · 할당기 오버헤드 몫이다.
     # 토큰 · 티켓 · 락은 만료가 있는 키라 volatile-lru 로 만료 키부터 내보낸다.
-    command: ["sh", "-c", "exec redis-server --maxmemory 256mb --maxmemory-policy volatile-lru $${REDIS_PASSWORD:+--requirepass $$REDIS_PASSWORD}"]
+    #
+    # AOF 를 켠다. 시스템 구성서 3장은 「Redis 에는 복제도 백업도 두지 않는다. 정지하면 내용이 사라지므로 재생성 가능한
+    # 데이터만 보관한다」고 정했는데, 그것은 내구성(백업) 방침이다. 여기서 켜는 것은 재시작 생존(persistence)이고 둘은 다르다 —
+    # 리프레시 토큰이 Redis 에 있어 배포로 컨테이너를 재생성하기만 해도 전 사용자가 로그아웃된다. 노드가 사라지면
+    # 데이터도 사라진다는 방침은 그대로다(볼륨은 이 노드 안에 있고 백업 대상이 아니다).
+    # everysec 은 최대 1초치 손실을 받아들이는 대신 요청 경로에 fsync 를 두지 않는다.
+    command: ["sh", "-c", "exec redis-server --maxmemory 96mb --maxmemory-policy volatile-lru --appendonly yes --appendfsync everysec $${REDIS_PASSWORD:+--requirepass $$REDIS_PASSWORD}"]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      TZ: Asia/Seoul
+    volumes:
+      - redisdata:/data
     # 외부 바인딩 금지 — 앱은 Compose 네트워크로 닿는다. 호스트 포트를 열지 않는다
     healthcheck:
       test: ["CMD-SHELL", "redis-cli $${REDIS_PASSWORD:+-a $$REDIS_PASSWORD} ping | grep -q PONG"]
@@ -97,10 +190,29 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *logging
+    mem_limit: 288m
+    # 저장소 자원 상한 — 시스템 구성서 3장이 shared_buffers 와 최대 커넥션 상한을 요구하는데 지금까지 적용돼 있지 않았다.
+    # 이미지 기본값은 shared_buffers 128MB · max_connections 100 이라 mem_limit 288m 안에 들어오지 않는다.
+    # max_connections 40 — 슬롯 2개가 각자 커넥션 풀을 갖는다. 앱이 풀 크기를 명시하기 전까지는
+    # HikariCP 기본값 10 이 적용되므로 2 × 10 = 20 이고, 여기에 Flyway · 배치 · 운영자 접속 여유를 더했다.
+    # 앱 쪽 풀 명시는 별도 작업이다 — 그 값이 정해져도 합이 이 상한 아래여야 한다.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - max_connections=40
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # 컨테이너는 호스트 /etc/localtime 을 따르지 않는다. 로그 타임스탬프를 앱 로그(KST)와 맞춘다
+      TZ: Asia/Seoul
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -111,3 +223,5 @@ services:
 
 volumes:
   pgdata:
+  # Redis 재시작 생존용 AOF 자리. 백업 대상이 아니다 — 위 redis 서비스 주석 참고
+  redisdata:
