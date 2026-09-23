@@ -10,7 +10,7 @@ import { propertyQueries, wishlistQueries } from '../queries/property';
 import { riskQueries } from '../queries/risk';
 import { getAccessToken } from '../session/store';
 
-/** 재연결 백오프 — 1초에서 시작해 두 배씩, 30초에서 멈춘다 */
+/** 재연결 백오프의 상한 — 1초에서 시작해 두 배씩, 30초에서 멈춘다. 실제 지연은 backoffDelay가 정한다 */
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
 
@@ -77,9 +77,10 @@ export function NotificationStream() {
      * 재발급을 이미 한 번 시도한 뒤다) 이 상태로 다시 발급받을 수는 없다. 다시 로그인하면 이
      * 컴포넌트가 새로 마운트되며 연결한다.
      *
-     * **그 밖의 실패(500 · 네트워크)는 30초 간격으로 계속 시도한다.** 서버가 복구되면 붙어야
-     * 하기 때문이다. 요청이 몰아치지는 않는다 — 재시도는 항상 백오프 타이머를 거쳐 1s · 2s ·
-     * 4s … 30s로 벌어지고 즉시 다시 부르는 경로가 없다.
+     * **그 밖의 실패(500 · 네트워크)는 멈추지 않고 계속 시도한다.** 서버가 복구되면 붙어야
+     * 하기 때문이다. 요청이 몰아치지는 않는다 — 재시도는 항상 백오프 타이머를 거치고, 상한이
+     * 1s · 2s · 4s … 30s로 벌어진 뒤 그 상한의 절반~상한 사이에서 흩어진다(backoffDelay).
+     * 즉시 다시 부르는 경로가 없다.
      */
     const handleIssueFailure = (error: unknown) => {
       const status = error instanceof ApiError ? error.status : null;
@@ -157,9 +158,22 @@ export function NotificationStream() {
   return null;
 }
 
-/** 1s · 2s · 4s … 30s에서 멈춘다 */
+/**
+ * 재연결 지연. 지수 백오프로 구한 상한(1s · 2s · 4s … 30s)의 **절반은 고정, 나머지 절반이 난수**인
+ * equal jitter다 — 반환값은 [상한/2, 상한) 구간에 퍼진다.
+ *
+ * **결정론적이면 안 되는 이유는 복구 시점의 동시 접속이다.** 지연이 정확히 1s · 2s · 4s면 같은 순간에
+ * 끊긴 클라이언트들의 재시도 시각이 한 점으로 수렴해, 앱이 다시 뜨는 가장 약한 순간(JIT 미완 · 커넥션
+ * 풀이 빈 상태)에 티켓 발급 POST(인증 + Redis 쓰기)와 연결이 한꺼번에 몰린다. 복구가 다시 무너진다.
+ *
+ * full jitter(0부터 상한까지 전부 난수)를 쓰지 않는다 — 첫 재시도가 0에 가까워질 수 있어 끊기자마자
+ * 되치는 경로가 생긴다. 난수원은 Math.random이다. 재시도 시각을 흩는 값이지 예측 불가성이 필요한
+ * 값이 아니다.
+ */
 function backoffDelay(retryCount: number): number {
-  return Math.min(RECONNECT_BASE_DELAY_MS * 2 ** retryCount, RECONNECT_MAX_DELAY_MS);
+  const ceiling = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** retryCount, RECONNECT_MAX_DELAY_MS);
+  const half = ceiling / 2;
+  return half + Math.random() * half;
 }
 
 /**
