@@ -1,0 +1,89 @@
+<!doctype html>
+<!--
+  점검 안내 화면 — 운영 절차서 4.2. 표시 파일(on)이 있을 때 앞단이 503 과 함께 이 본문을 준다.
+  점검 중에는 web 슬롯도 신뢰할 수 없으므로 외부 폰트 · 스크립트 · 이미지를 쓰지 않는다. 인라인 CSS 만 둔다.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>서비스 점검 중입니다</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --line: #e2e5ea;
+    --text: #1f2328;
+    --muted: #5b6270;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --card: #1e2128;
+      --line: #2e323b;
+      --text: #e8eaed;
+      --muted: #a2a9b5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    line-height: 1.7;
+    -webkit-text-size-adjust: 100%;
+  }
+  main {
+    width: 100%;
+    max-width: 480px;
+    padding: 40px 28px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    text-align: center;
+  }
+  h1 {
+    margin: 0 0 16px;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  p {
+    margin: 0 0 12px;
+    font-size: 15px;
+    color: var(--muted);
+  }
+  p:last-of-type { margin-bottom: 0; }
+  hr {
+    margin: 28px 0 16px;
+    border: 0;
+    border-top: 1px solid var(--line);
+  }
+  small {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  @media (max-width: 420px) {
+    main { padding: 32px 20px; }
+    h1 { font-size: 20px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>서비스 점검 중입니다</h1>
+  <p>더 안정적인 서비스를 위해 시스템을 점검하고 있습니다.</p>
+  <p>점검이 끝나면 자동으로 정상 이용하실 수 있습니다.<br>잠시 뒤에 다시 시도해 주세요.</p>
+  <hr>
+  <small>이 화면이 오래 이어지면 잠시 후 새로 고침해 주세요.</small>
+</main>
+</body>
+</html>
