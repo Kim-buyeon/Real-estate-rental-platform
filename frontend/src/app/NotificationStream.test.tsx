@@ -9,7 +9,7 @@
 import { QueryClient, QueryClientProvider, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { render, waitFor } from '@testing-library/react';
 import { HttpResponse, http } from 'msw';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { notificationQueries } from '../queries/notification';
 import { propertyQueries, wishlistQueries } from '../queries/property';
 import { riskQueries } from '../queries/risk';
@@ -64,6 +64,70 @@ function trackRequestPaths() {
     paths,
     countOf: (path: string) => paths.filter((p) => p === path).length,
     stop: () => server.events.removeListener('request:start', onRequestStart),
+  };
+}
+
+/** setTimeout 가로채기가 쓰는 호출 형태. 표준 선언은 환경(jsdom · @types/node)마다 달라 여기서
+ * 필요한 만큼만 다시 적고, 전역에 넣을 때는 test/eventSource.ts와 같이 unknown을 거쳐 캐스팅한다 */
+type TimerCallback = (...callbackArgs: unknown[]) => void;
+type SetTimeoutLike = (handler: TimerCallback, ms?: number, ...args: unknown[]) => number;
+
+/**
+ * 백오프 상한 — app/NotificationStream.tsx의 RECONNECT_BASE_DELAY_MS(1s) · RECONNECT_MAX_DELAY_MS(30s)로
+ * 만들어지는 지수 수열이다. 구현이 내보내지 않는 값이라 여기서 같은 식으로 다시 세운다. 지터가 붙은
+ * 실제 지연은 이 상한의 절반과 상한 사이에 놓인다(equal jitter).
+ */
+const BASE_BACKOFF_DELAY_MS = 1_000;
+const MAX_BACKOFF_DELAY_MS = 30_000;
+/** 가능한 가장 짧은 백오프 = 첫 상한의 절반. 관측에서 다른 타이머와 갈라내는 하한이다 */
+const MIN_BACKOFF_DELAY_MS = BASE_BACKOFF_DELAY_MS / 2;
+const backoffCeiling = (retryCount: number) =>
+  Math.min(BASE_BACKOFF_DELAY_MS * 2 ** retryCount, MAX_BACKOFF_DELAY_MS);
+
+/**
+ * 재연결 타이머가 잡은 지연을 관찰하는 수단.
+ *
+ * **backoffDelay를 직접 부르지 않는다.** app/은 main.tsx 외에 아무도 import하지 않는 조합 루트라
+ * 테스트만 쓰는 export를 늘릴 자리가 아니고, 실제로 이 파일에 함수 export를 더하면
+ * react-refresh/only-export-components가 막는다 — eslint.config.js의 reactRefresh.configs.vite가
+ * 이 규칙을 error로 둔다(「Use a new file to share constants or functions between components」).
+ * 그래서 계산값이 아니라 **재연결을 몇 ms 뒤로 잡았는가**를 본다. 관측 대상은 구현의 관측 가능한
+ * 동작이므로 이쪽이 더 정확하기도 하다.
+ *
+ * 가로챈 백오프 타이머는 0ms로 바꿔 곧바로 실행한다 — 실제로 1s · 2s · 4s를 기다리면 상한(30s)에
+ * 이르는 회차까지 볼 수 없다. 그보다 짧은 타이머(React · MSW)는 지연을 바꾸지 않고 흘려보낸다.
+ */
+function captureBackoffDelays() {
+  const delays: number[] = [];
+  const original = globalThis.setTimeout;
+  const realSetTimeout = original as unknown as SetTimeoutLike;
+
+  globalThis.setTimeout = ((handler: TimerCallback, ms?: number, ...args: unknown[]) => {
+    if (typeof ms === 'number' && ms >= MIN_BACKOFF_DELAY_MS && ms <= MAX_BACKOFF_DELAY_MS) {
+      delays.push(ms);
+      return realSetTimeout(handler, 0, ...args);
+    }
+    return realSetTimeout(handler, ms, ...args);
+  }) as unknown as typeof globalThis.setTimeout;
+
+  return {
+    delays,
+    /**
+     * waitFor를 쓰지 않는다 — RTL의 대기는 자기 시계를 1초짜리 setTimeout으로 걸어 관측 대상과
+     * 섞인다. 이 대기는 가로채기 전의 setTimeout을 직접 써서 관측에 잡히지 않는다.
+     */
+    waitForDelays: async (count: number) => {
+      const deadline = Date.now() + 8_000;
+      while (delays.length < count) {
+        if (Date.now() > deadline) {
+          throw new Error(`백오프 지연 ${count}건을 기다리다 시간이 지났다 (관측 ${delays.length}건)`);
+        }
+        await new Promise((resolve) => realSetTimeout(resolve as TimerCallback, 5));
+      }
+    },
+    restore: () => {
+      globalThis.setTimeout = original;
+    },
   };
 }
 
@@ -373,6 +437,112 @@ describe('NotificationStream', () => {
       expect(getEventSourceInstances()).toHaveLength(0);
       tracker.stop();
     });
+  });
+
+  /**
+   * 재연결 지연에 지터가 없으면 모든 브라우저의 재시도 시각이 한 점으로 수렴한다 — 앱이 죽었다
+   * 살아나는 가장 약한 순간에 티켓 발급 POST와 연결이 한꺼번에 몰린다(이슈 168). equal jitter를
+   * 썼으므로 지연은 지수 백오프 상한의 **절반과 상한 사이**에 흩어져야 한다.
+   *
+   * 관측은 티켓 발급을 계속 실패시켜 얻는다 — 500은 401 · 403이 아니라 멈추지 않고(handleIssueFailure)
+   * 매번 백오프 타이머를 새로 잡으므로, 한 번의 마운트에서 회차별 지연을 차례로 볼 수 있다.
+   */
+  describe('재연결 백오프 지터', () => {
+    let restoreTimers: (() => void) | undefined;
+
+    afterEach(() => {
+      restoreTimers?.();
+      restoreTimers = undefined;
+      vi.restoreAllMocks();
+    });
+
+    /** 티켓 발급이 계속 실패하는 동안 잡힌 백오프 지연을 회차 순서대로 모은다 */
+    async function collectBackoffDelays(count: number): Promise<number[]> {
+      // 구현은 EventSource가 없으면 티켓을 발급받기도 전에 돌아선다 — 재연결 경로를 태우려면 필요하다.
+      // 발급이 늘 실패하므로 연결 자체는 한 번도 열리지 않는다
+      restoreEventSource = installFakeEventSource();
+      setTokens({ accessToken: 'access-token', refreshToken: 'refresh-token' });
+      server.use(
+        http.post('/api/notifications/stream-ticket', () =>
+          HttpResponse.json({ success: false, error: { code: 'INTERNAL_ERROR', message: '오류' } }, { status: 500 }),
+        ),
+      );
+      const timers = captureBackoffDelays();
+      restoreTimers = timers.restore;
+
+      const { unmount } = render(
+        <QueryClientProvider client={createQueryClient()}>
+          <NotificationStream />
+        </QueryClientProvider>,
+      );
+
+      try {
+        await timers.waitForDelays(count);
+      } finally {
+        // 재시도는 상한 횟수가 없다(서버가 복구되면 붙어야 한다) — 멈추는 것은 언마운트뿐이다
+        unmount();
+      }
+      expect(getEventSourceInstances()).toHaveLength(0);
+      // 기다림이 풀린 뒤 언마운트까지 한 회차가 더 돌 수 있다 — 관측은 요청한 회차까지만 본다
+      return timers.delays.slice(0, count);
+    }
+
+    /** 회차를 모으는 테스트의 상한. 회차마다 티켓 발급 왕복이 한 번씩이라 기본 5초보다 넉넉히 둔다 —
+     * 관측이 서지 않을 때 vitest의 기본 시계보다 waitForDelays의 안내가 먼저 나오게 하려는 것이기도 하다 */
+    const COLLECT_TIMEOUT_MS = 15_000;
+
+    it('난수가 0이면 지연이 상한의 절반이다 — 고정분은 항상 남는다', async () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+
+      const delays = await collectBackoffDelays(3);
+
+      // full jitter였다면 여기가 0에 가까워져 끊기자마자 되치는 경로가 생긴다
+      expect(delays).toEqual([500, 1_000, 2_000]);
+    }, COLLECT_TIMEOUT_MS);
+
+    it('난수가 0.5면 지연이 상한의 4분의 3이다', async () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
+      const delays = await collectBackoffDelays(3);
+
+      expect(delays).toEqual([750, 1_500, 3_000]);
+    }, COLLECT_TIMEOUT_MS);
+
+    it('난수가 1에 가까워도 상한(30초)을 넘지 않고, 회차가 커지면 상한에서 멈춘다', async () => {
+      // Math.random()은 [0, 1)이라 1은 나오지 않는다 — 경계 바로 아래를 넣는다
+      vi.spyOn(Math, 'random').mockReturnValue(0.999_999);
+
+      const delays = await collectBackoffDelays(8);
+
+      delays.forEach((delay, retryCount) => {
+        const ceiling = backoffCeiling(retryCount);
+        expect(delay).toBeLessThan(ceiling);
+        expect(delay).toBeGreaterThan(ceiling * 0.99);
+      });
+      // 상한에서 멈춘다 — retryCount 5부터 상한이 30초라 회차가 더 커져도 지연이 자라지 않는다
+      expect(Math.max(...delays)).toBeLessThanOrEqual(MAX_BACKOFF_DELAY_MS);
+      expect(delays.slice(5)).toHaveLength(3);
+      delays.slice(5).forEach((delay) => expect(delay).toBeGreaterThan(29_000));
+    }, COLLECT_TIMEOUT_MS);
+
+    it('난수를 그대로 두면 지연이 회차마다 [상한/2, 상한] 구간 안에 있다', async () => {
+      const delays = await collectBackoffDelays(8);
+
+      delays.forEach((delay, retryCount) => {
+        const ceiling = backoffCeiling(retryCount);
+        expect(delay).toBeGreaterThanOrEqual(ceiling / 2);
+        expect(delay).toBeLessThanOrEqual(ceiling);
+      });
+    }, COLLECT_TIMEOUT_MS);
+
+    it('같은 회차에서도 값이 갈린다 — 결정론적이 아니다', async () => {
+      const delays = await collectBackoffDelays(8);
+
+      // retryCount 5 · 6 · 7은 상한이 모두 30초로 같다. 지터가 없으면 셋이 같은 값이었을 자리다
+      const atCeiling = delays.slice(5);
+      expect(atCeiling).toHaveLength(3);
+      expect(new Set(atCeiling).size).toBeGreaterThan(1);
+    }, COLLECT_TIMEOUT_MS);
   });
 
   describe('실시간 실패가 기능 실패가 아니다', () => {
