@@ -321,6 +321,13 @@ services:
       TZ: Asia/Seoul
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # 호스트 루프백 게시 — 논리 백업(infra/backup/pg-dump.sh)이 호스트의 pg_dump 로 TCP 접속한다. 정기 작업은 backup 계정으로
+    # 도는데 그 계정은 docker 그룹이 아니라 docker compose exec 를 쓸 수 없다(서버 운영 기반 설계서 6.2).
+    # 루프백인 이유 — Docker 게시 포트는 호스트 방화벽을 우회하므로(설계서 3.3) 막는 수단이 바인딩 주소뿐이다.
+    # 다른 게시 포트와 같은 셋째 겹(컨테이너 포트 루프백 바인딩)이라 새 접근면이 생기지 않는다. 앱은 여전히 Compose 네트워크로 닿는다.
+    # DB 가 DB-01 로 옮겨 가면(INF-03) 이 게시는 서비스와 함께 사라지고 백업 쪽은 PGHOST 만 바뀐다.
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
