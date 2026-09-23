@@ -135,11 +135,17 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 | 경로 | 전달 | 요점 |
 |---|---|---|
 | `/actuator` | 404 | 관리 경로는 밖으로 열지 않는다. readiness는 배포 스크립트가 슬롯 포트로 직접 본다 |
-| `/api/` | `app` | `proxy_connect_timeout 2s` · `proxy_next_upstream error timeout http_502 http_503` |
-| `= /api/notifications/stream` | `app` | SSE — `proxy_buffering off` · `proxy_read_timeout 3600s`. 접근 로그를 쿼리 없는 형식으로 남겨 일회용 티켓이 로그에 남지 않게 한다 |
+| `/api/` | `app` | 연결 · 읽기 · 쓰기에 상한을 두고, 슬롯 하나가 죽으면 남은 슬롯으로 재시도하되 **재시도 횟수에도 상한**을 둔다 — 상한이 없으면 재시도가 요청 시간을 곱한다 |
+| `= /api/notifications/stream` | `app` | SSE — 버퍼링을 끄고 **읽기 타임아웃만** 길게 둔다. 연결이 오래 열려 있는 것과 응답이 느린 것은 다르다. 접근 로그를 쿼리 없는 형식으로 남겨 일회용 티켓이 로그에 남지 않게 한다 |
 | `/` | `web` | 정적 화면. 클라이언트 라우팅 fallback은 프론트 이미지가 한다 |
 
+**값은 설정 파일이 갖는다.** 여기에 옮겨 적지 않는다 — 두 곳에 적으면 한쪽만 고쳐진다. 서버 문맥에는 이 밖에 요청 본문 크기 상한과 헤더 · 본문 수신 타임아웃이 있고, 업스트림으로 **요청 추적 ID를 전달**한다(접근 로그의 `rid`와 같은 값이며, 앱은 이것을 로그의 `traceId`로 쓴다). 슬롯이 둘이라 이 키가 없으면 접근 로그와 앱 로그를 이을 수단이 없다.
+
 `worker_shutdown_timeout 30s`는 설정 본문 `main/nginx.conf`에 있다 — SSE로 인한 옛 worker 누적 방지. 응답 압축(gzip — JSON · JS · CSS · SVG, 1KB 이상)도 `main/nginx.conf` http 문맥에 있고 SSE(`text/event-stream`)는 대상이 아니다. 점검 모드(6장 2단계)는 `bash maintenance.sh on` · `off`다. 표시 파일(`nginx/maintenance/on`)이 있으면 서버 블록이 **location 매칭보다 먼저** 전 경로에 503을 돌려준다 — `/`만 막으면 더 긴 접두사인 `/api/`가 우선해 쓰기가 계속 들어온다. 파일 유무는 요청마다 보므로 reload가 필요 없다.
+
+**점검 중 사용자가 보는 것**은 안내 화면이다. 503에 `Retry-After`와 `Cache-Control: no-store`가 함께 나간다 — 점검인지 장애인지 구분되지 않으면 사용자가 같은 요청을 반복한다. 화면은 외부 폰트 · 스크립트 · 이미지를 쓰지 않는다. 점검 중에는 화면(web) 슬롯도 신뢰할 수 없기 때문이다. **쓰기 요청(GET · HEAD 외)은 본문 없는 503을 받는다** — Nginx의 정적 파일 핸들러가 그 메서드를 거부해 안내 화면을 주려 하면 405가 되고, 그러면 「전 경로 503」이 깨진다.
+
+**업스트림이 낸 503은 이 화면으로 바뀌지 않는다.** 점검과 장애를 섞지 않기 위해서다. 두 슬롯이 모두 죽으면 Nginx는 502를 내므로 이 경우도 점검 화면이 아니다 — 점검 화면이 보이면 그것은 사람이 켠 것이다.
 
 `proxy_next_upstream`이 실질적인 무손실 장치다. 한 슬롯이 죽어 502를 반환하면 Nginx가 동일 요청을 다른 슬롯으로 재시도한다. **다만 POST 등 비멱등 요청은 기본적으로 재시도하지 않는다**(중복 처리 방지). 따라서 "요청 손실 0건"은 조회 요청에 대한 서술이며, 쓰기 요청은 극소수 실패할 수 있다. 장애 시험 결과서에는 이 구분을 그대로 기록한다.
 
@@ -272,7 +278,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 4 | sshd — 공개키만 · root 금지 | 비밀번호 로그인 시도가 거부된다 |
 | 5 | 시간대 `Asia/Seoul`, chrony에 169.254.169.123 | `chronyc sources`에 그 주소가 선택됨 |
 | 6 | firewalld 노드별 포트 · SELinux enforcing 확인 | `getenforce` → Enforcing |
-| 7 | Docker CE 설치(공식 RHEL 저장소) · 로그 상한 | `docker compose version` |
+| 7 | Docker CE 설치(공식 RHEL 저장소) | `docker compose version`. 컨테이너 로그 상한은 노드가 아니라 Compose가 갖는다(설계서 8장) — 이 단계에서 할 일이 없다 |
 | 8 | `dnf-automatic`(보안 갱신만 · 자동 재부팅 없음) timer 활성 | `systemctl list-timers` |
 | 9 | NFS 클라이언트 마운트(해당 노드) | 9.3 |
 
