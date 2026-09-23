@@ -17,7 +17,7 @@ closes #
 
 ## 🏷️ 관련 기능ID
 
-`USER-01` · `PROP-02` · `RISK-05` · `LOAN-01` · `NOTI-02` · `ADMIN-01` (`docs/features/`) · `INF-01`~`04` · `07`~`09` (`docs/features/infra.md`). 기능에 속하지 않는 변경(설정 · 문서 · 공통 리팩토링)이면 「없음」.
+`USER-01` · `PROP-02` · `RISK-05` · `LOAN-01` · `NOTI-02` · `ADMIN-01` (`docs/features/`) · `INF-01`~`05` · `07`~`09` (`docs/features/infra.md`). 기능에 속하지 않는 변경(설정 · 문서 · 공통 리팩토링)이면 「없음」.
 
 -
 

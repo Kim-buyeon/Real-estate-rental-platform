@@ -133,7 +133,7 @@ feature/infra/INF-07-network-isolation   네트워크 격리 · 접근 통제
 feature/infra/INF-08-backup-nas          백업 저장소(NAS)
 feature/infra/INF-09-server-baseline     서버 운영 기반
 feature/infra/INF-06-load-harness        부하·장애 주입 환경
-feature/infra/INF-05-observability       관측 스택 기동
+feature/infra/INF-05-observability       관측 — exporter · 수집기 구성
 ```
 
 스키마 작업은 기능ID가 없으므로 `chore/be/init-schema` 형태를 쓴다.
