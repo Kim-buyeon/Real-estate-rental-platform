@@ -2,7 +2,7 @@
 
 > 배포 · 복구 · 점검 절차
 > Runbook · Nginx 설정 · 배포 스크립트
-> ※ 설계 근거는 `docs/features/infra.md`를, 서버 · 네트워크 · 계정 · 정기 작업의 설계는 `docs/infra/platform.md`를 따른다. 지표와 알림(`docs/infra/observability.md`)은 차기 범위다.
+> ※ 설계 근거는 `docs/features/infra.md`를, 서버 · 네트워크 · 계정 · 정기 작업의 설계는 `docs/infra/platform.md`를 따른다. 지표와 알림은 `docs/infra/observability.md`를 따른다 — 미작성, 관측 작업에서 쓴다.
 > 작성 기준일 : 2026년 8월
 
 ## 1. 문서 목적
