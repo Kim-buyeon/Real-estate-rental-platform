@@ -291,6 +291,28 @@ services:
       - maintenance_work_mem=16MB
       - -c
       - autovacuum_max_workers=2
+      # 페일백에서 pg_rewind 를 쓰려면 이 설정이 **장애 전에** 켜져 있어야 한다 — 운영 절차서 6.2 의
+      # 재구축 수단 판정표가 「wal_log_hints = on 또는 데이터 체크섬 활성」을 조건으로 두고, 인프라 기술
+      # 스택 3장이 「장애 발생 후에는 선택할 수 없다」고 못 박았다. 꺼져 있으면 구 primary 를 되돌리는 데
+      # pg_basebackup 전체 재구축을 강요당하고 소요가 데이터 크기에 비례한다.
+      #
+      # 지금 켜는 이유는 **서버 기동 시점에만 정할 수 있기 때문**이다. 복제를 붙인 뒤에 켜려면 standby 가
+      # 붙어 있는 상태에서 primary 를 재기동해야 하고 그때는 계획 정지가 필요하다. 복제 전인 지금은
+      # 컨테이너 재생성만으로 끝난다.
+      #
+      # 판정 조건의 다른 한쪽인 data_checksums 도 나중에 켤 수 있다 — initdb 말고 pg_checksums --enable 로,
+      # 다만 **정상 종료된 클러스터에서만** 돈다(이미지 안에 그 바이너리가 있다). 그래서 대가는
+      # 「재생성」이 아니라 **정지 창 + 전 페이지 재기록**이고, 복제가 붙은 뒤에는 전 노드를 일관되게
+      # 멈춰야 한다(PostgreSQL 문서가 pg_rewind 를 그 위험 사례로 든다). 조건은 둘 중 하나면 성립하므로
+      # 지금은 재기동 한 번으로 끝나는 쪽을 고른다.
+      #
+      # 조건에는 full_page_writes = on 도 있는데 이것은 기본값이라 따로 적지 않는다 — **기본값에 기대고
+      # 있다는 사실만 남긴다.** 끄는 변경이 들어오면 pg_rewind 조건이 함께 깨진다.
+      #
+      # 대가는 WAL 이 약간 느는 것이다. full_page_writes 가 이미 체크포인트 후 첫 수정에서 전체 페이지를
+      # 기록하는데, 이 설정은 그 대상에 **힌트 비트만 바뀐 페이지**까지 넣는다. DB 가 36 MB 라 작다.
+      - -c
+      - wal_log_hints=on
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
