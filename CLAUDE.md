@@ -40,7 +40,8 @@
 │
 ├── infra/                운영 구성. 서버에 반영되는 Compose · 설정 · 배포 스크립트
 │   ├── nginx/              요청 분산 · 점검 모드. local/ 은 로컬 구성의 앞단 서버 블록
-│   ├── os/                 Rocky Linux 노드 설정 — firewalld · NFS 공유 · systemd timer · sshd — 미작성
+│   ├── backup/             데이터 백업 작업 — 스크립트와 그것을 거는 systemd 유닛
+│   ├── os/                 Rocky Linux 노드 설정 — firewalld · NFS 공유 · 노드 정기 작업 · sshd — 미작성
 │   └── prometheus/ · alertmanager/ · promtail/ · grafana/   관측 — 차기 범위
 │
 ├── chaos-harness/        시험 실행 — 차기 범위

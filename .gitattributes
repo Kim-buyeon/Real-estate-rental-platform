@@ -1,3 +1,8 @@
 # 서버(Linux)에서 실행 · 마운트하는 파일은 작업 트리에서도 LF 로 둔다. CRLF 면 bash 가 줄 끝의 \r 때문에 멈춘다.
 *.sh text eol=lf
 infra/nginx/** text eol=lf
+# Compose 파일도 서버에서 그대로 읽힌다 — 컨테이너 안으로 들어가는 command · healthcheck 문자열에 \r 가 섞인다.
+/docker-compose.yml text eol=lf
+infra/docker-compose.yml text eol=lf
+# 정기 작업 — systemd 는 값 끝의 \r 를 값의 일부로 읽어 유닛이 기동에 실패한다(.service · .timer 는 *.sh 에 걸리지 않는다).
+infra/backup/** text eol=lf

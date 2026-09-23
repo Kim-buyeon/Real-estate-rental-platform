@@ -49,3 +49,50 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  # 인프라 파일은 컴파일도 테스트도 되지 않는다 — 틀려도 커밋 시점에 아무 일이 없고 배포 도중에 드러난다.
+  # 커밋 규약의 「인프라 커밋은 동작 확인 방법을 적는다」가 정한 확인 명령을 여기서 그대로 돌린다.
+  #
+  # paths 필터를 두지 않는다. 이 잡은 아직 필수 status check 가 아니지만(현재 필수는 backend · frontend 둘),
+  # 브랜치 전략 「브랜치 보호 규칙」이 CI 를 유일한 게이트로 두므로 필수로 올리는 것을 전제한다.
+  # 그때 필터가 있으면 필터에 걸리지 않은 PR 에서 잡이 아예 생성되지 않아 필수 체크가 영원히 pending 으로 남는다.
+  # 인프라 파일을 건드리지 않은 PR 에서 도는 비용은 1분 미만이라 필터로 아낄 것보다 멈춘 PR 의 손해가 크다.
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # 두 Compose 파일 모두 env_file 로 .env 를 읽는다. 러너에는 .env 가 없어 파일이 없다는 이유로 config 가 실패한다.
+      # 값이 아니라 문법을 보는 잡이므로 이름만 있는 .env.example 을 그대로 복사해 쓴다 — 값은 비어 있다.
+      - name: Prepare placeholder env files
+        run: |
+          cp .env.example .env
+          cp .env.example infra/.env
+      - name: Validate Compose files
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f infra/docker-compose.yml config --quiet
+      # 운영 구성과 같은 마운트 형태로 검사한다 — 진입 파일은 파일 단위, 설정 본문은 폴더째(운영 절차서 4.1)
+      - name: Validate Nginx config
+        run: |
+          docker run --rm \
+            -v "$PWD/infra/nginx/entry.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/infra/nginx/main:/etc/nginx/main:ro" \
+            -v "$PWD/infra/nginx/conf.d:/etc/nginx/conf.d:ro" \
+            -v "$PWD/infra/nginx/maintenance:/etc/nginx/maintenance:ro" \
+            nginx:1.30-alpine nginx -t
+      - name: Shell syntax check
+        run: |
+          for f in infra/*.sh infra/backup/*.sh; do
+            bash -n "$f"
+          done
+      # 러너 이미지에 ShellCheck 가 이미 있다. 빠진 러너에서도 돌게 없을 때만 설치하고, 설치 실패는 그대로 잡 실패로 둔다.
+      # 기준은 warning 이상 — error · warning 은 인용 누락 · 단어 분리 · 모호한 확장 같은 동작이 달라지는 지적이고,
+      # info · style 은 취향에 가까워 인프라와 무관한 PR 까지 막는다. 현재 네 스크립트는 style 기준으로도 지적이 없다.
+      - name: ShellCheck
+        run: |
+          if ! command -v shellcheck > /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
+          shellcheck --version
+          shellcheck --severity=warning infra/*.sh infra/backup/*.sh
