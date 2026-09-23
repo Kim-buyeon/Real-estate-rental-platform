@@ -55,10 +55,7 @@ report_down_slots() {
 
 # 루프 시작 전 한 번만 부른다. 어긋났으면 중단한다
 check_upstream_drift() {
-  if [ "${SKIP_DRIFT_CHECK:-0}" = "1" ]; then
-    log "드리프트 가드 건너뜀 — SKIP_DRIFT_CHECK=1 로 껐다. upstream 설정을 눈으로 확인하고 진행한다"
-    return 0
-  fi
+  # 저장소 위치를 먼저 푼다 — 건너뛰는 경우에도 종료 시점 확인(warn_if_drift_left)은 할 수 있어야 한다
   if ! command -v git > /dev/null 2>&1; then
     log "드리프트 가드 건너뜀 — git 이 없다. upstream 설정을 눈으로 확인하고 진행한다"
     return 0
@@ -69,6 +66,18 @@ check_upstream_drift() {
     return 0
   fi
   UP_REL="${PWD#"$REPO_ROOT"/}/nginx/conf.d/upstream.conf"
+
+  # 롤백은 이 가드가 잡아내는 상태 — 배포가 실패해 슬롯이 down 으로 남은 상태 — 를 푸는 수단이다.
+  # 여기서 막으면 운영 절차서 3.1 이 정한 복구 경로가 자기 자신에게 차단된다. 롤백은 그대로 진행하고,
+  # 끝난 뒤 warn_if_drift_left 가 down 이 다 풀렸는지 본다.
+  if [ "$MODE" = "--rollback" ]; then
+    log "드리프트 가드 건너뜀 — 롤백이다. 실패로 남은 down 슬롯을 되살리는 것이 이 실행의 목적이다"
+    return 0
+  fi
+  if [ "${SKIP_DRIFT_CHECK:-0}" = "1" ]; then
+    log "드리프트 가드 건너뜀 — SKIP_DRIFT_CHECK=1 로 껐다. upstream 설정을 눈으로 확인하고 진행한다"
+    return 0
+  fi
 
   local drift
   if ! drift=$(git -C "$REPO_ROOT" status --porcelain -- "$UP_REL" 2>/dev/null); then
