@@ -17,8 +17,8 @@ model: opus
 | --- | --- |
 | 운영 Compose · 앞단 Nginx | `infra/docker-compose.yml` · `infra/nginx/` |
 | 배포 · 판정 · 점검 모드 스크립트 | `infra/*.sh` |
-| Rocky Linux 노드 설정 | `infra/os/` — firewalld 영역 · NFS 공유(`exports` · `nfs.conf`) · systemd service/timer · sshd 설정 조각 · chrony · `dnf-automatic` |
-| 정기 작업이 부르는 스크립트 | `infra/os/`(timer 유닛과 같은 자리) — 논리 백업 · NAS → S3 사본 · 설정 사본 · 이미지 정리. `infra/*.sh`는 배포 · 점검 모드 스크립트 자리라 섞지 않는다 |
+| Rocky Linux 노드 설정 | `infra/os/` — firewalld 영역 · NFS 공유(`exports` · `nfs.conf`) · 노드 자체를 돌보는 systemd service/timer(이미지 정리 같은 것) · sshd 설정 조각 · chrony · `dnf-automatic` |
+| 데이터 백업 작업 | `infra/backup/` — 백업 스크립트와 그것을 거는 systemd 유닛을 한자리에 둔다. 논리 백업 · NAS → S3 사본 · 설정 사본처럼 **지켜야 할 데이터를 옮기는** 작업이 여기다. 노드 설정 · 배포 스크립트와 섞지 않는 이유는 복구 절차를 밟을 때 한 폴더만 보면 되기 때문이다 |
 
 ## 2. 순서
 

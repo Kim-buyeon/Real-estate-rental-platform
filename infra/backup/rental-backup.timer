@@ -1,0 +1,16 @@
+[Unit]
+# 논리 백업 타이머 — 서버 운영 기반 설계서 7.1(cron 대신 timer) · 7.2(매일 02:00).
+# **DB-01 · DB-02 양쪽에 둔다.** standby 에서는 서비스가 pg_is_in_recovery() 를 보고 아무것도 하지 않고 끝나므로,
+# 승격 뒤 새 primary 가 백업을 그대로 이어받는다 — 페일오버 절차에 timer 전환 단계를 넣지 않는다(설계서 7.2)
+Description=Rental logical backup timer (daily 02:00 KST)
+
+[Timer]
+# 서버 시간대가 Asia/Seoul 이라는 전제다(설계서 7.2). 03:00 은 등기 재조회 배치(RISK-08) 자리라 비워 둔다
+OnCalendar=*-*-* 02:00:00
+# 그 시각에 서버가 꺼져 있었으면 다음 부팅 때 한 번 돌린다 — timer 를 고른 이유다(설계서 7.1)
+Persistent=true
+AccuracySec=1min
+Unit=rental-backup.service
+
+[Install]
+WantedBy=timers.target
