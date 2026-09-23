@@ -11,9 +11,10 @@
 #    docker 그룹은 root 와 같은 권한이라 백업을 위해 줄 수 없다(같은 절). docker compose exec 는 이 계정으로 불가능하다.
 #  - 접속 정보를 libpq 표준 변수(PGHOST · PGPORT · PGUSER · PGDATABASE)로만 받으므로, 6주차에 DB 노드가 분리되면
 #    PGHOST 만 DB-01 사설 IP 로 바뀐다. 컨테이너 이름 · Compose 프로젝트 이름에 묶이지 않는다.
-#  - 전제 두 가지. 호스트에 서버와 같거나 높은 버전(현재 17)의 클라이언트가 있어야 하고, DB 가 컨테이너로 도는 동안에는
-#    그 포트가 호스트 루프백에 게시되어 있어야 한다. 지금 운영 Compose 의 postgres 는 호스트 포트를 열지 않는다 —
-#    **선행 조건이며 미확정이다**(설계서 10장 「5432 호스트 규칙(DOCKER-USER)」 — 첫 노드 준비 때 정한다).
+#  - 전제 두 가지. 호스트에 서버와 같거나 높은 버전(현재 17)의 클라이언트가 있어야 한다 — Amazon Linux 기본 저장소의
+#    postgresql17 이 서버와 같은 17.x 다. Rocky 노드로 옮기면 거기서도 같은 주 버전의 클라이언트 패키지를 깐다.
+#    DB 가 컨테이너로 도는 동안에는 그 포트가 호스트 루프백에 게시되어 있어야 한다 — 운영 Compose 가 postgres 를
+#    127.0.0.1:5432 에 게시한다(DOCKER-USER 규칙 대신 루프백 바인딩 — 설계서 3.3).
 #
 # ── 비밀번호 ──
 #  명령줄 인자로 넘기지 않는다 — ps 에 그대로 보인다. libpq 가 스스로 읽는 두 경로만 쓴다:
@@ -27,19 +28,22 @@ log() { printf '%s >>> %s\n' "$(date '+%F %T')" "$*"; }
 # ── 접속 — 값이 없으면 지어내지 않고 실패한다. 값은 노드의 EnvironmentFile 에 둔다 ──
 PGHOST=${PGHOST:-127.0.0.1}
 PGPORT=${PGPORT:-5432}
-: "${PGUSER:?PGUSER 가 필요하다 — infra/.env 의 POSTGRES_USER 와 같은 값을 EnvironmentFile 에 둔다}"
+# 접속 역할은 앱의 소유자 역할이 아니라 백업 전용 읽기 역할(rental_backup, pg_read_all_data)이다 — 운영 절차서 9.3.
+# 정기 작업이 쓰기 권한과 최고 권한 비밀번호를 쥐지 않게 한다.
+: "${PGUSER:?PGUSER 가 필요하다 — 백업 전용 역할 이름을 EnvironmentFile 에 둔다(운영 절차서 9.3)}"
 : "${PGDATABASE:?PGDATABASE 가 필요하다 — infra/.env 의 POSTGRES_DB 와 같은 값을 EnvironmentFile 에 둔다}"
 export PGHOST PGPORT PGUSER PGDATABASE
 PSQL=${PSQL:-psql}
 PG_DUMP=${PG_DUMP:-pg_dump}
 
 # ── 목적지 ──
-# 기본은 로컬 경로다. NAS(설계서 5.1 · 공유 경로 예 /srv/nfs/backup)는 7주차라 아직 없다 — 구축 뒤 이 값만 바꾼다.
-# 아래 기본값은 **잠정**이며 첫 노드 준비 때 확정한다.
+# 로컬 경로로 고정한다. NAS(설계서 5.1 · 공유 경로 예 /srv/nfs/backup)는 7주차라 아직 없다 — 구축 뒤 이 값만 바꾼다.
+# 로컬이라 노드 소실은 막지 못한다. 그것을 막을 오프사이트 사본(아래 BACKUP_S3_URI)은 이 계정에 S3 쓰기 권한이 없어 비워 둔다.
 BACKUP_DEST=${BACKUP_DEST:-/var/backups/rental}
 # 덤프를 만들고 암호화하는 자리. 목적지가 NFS 여도 암호화는 노드 안에서 끝난다(기술 스택 3장 · 설계서 5.1)
 BACKUP_WORK_DIR=${BACKUP_WORK_DIR:-/var/tmp}
 # 오프사이트 사본은 선택이다. 값이 있으면 그 자리로도 한 벌 올린다. 권한은 인스턴스 역할로 준다 — 키 파일을 두지 않는다(설계서 6.1)
+# 지금은 비어 있다(S3 쓰기 권한 없음). 권한이 생기면 EnvironmentFile 에 이 값만 넣는다 — 스크립트는 바꾸지 않는다
 BACKUP_S3_URI=${BACKUP_S3_URI:-}
 AWS=${AWS:-aws}
 
@@ -49,9 +53,11 @@ AWS=${AWS:-aws}
 BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
 
 # ── 암호화 ──
-# **도구는 미확정이다**(설계서 5.1 · 10장 「논리 백업 암호화 도구 — 첫 노드 준비」). 그래서 고정하지 않고 바꿔 끼운다.
-# BACKUP_ENCRYPT_CMD 는 표준입력을 받아 표준출력으로 내보내는 필터여야 한다. 공백이 든 인자는 쓸 수 없다(공백으로 나눈다).
-# 값을 주지 않으면 Rocky 기본 패키지의 gpg 대칭 암호화를 쓰되, 키 파일 경로는 지어내지 않고 반드시 받는다.
+# **도구는 gpg 대칭 암호화(AES256, --passphrase-file)로 정했다**(설계서 5.1 · 10장). gpg 는 Amazon Linux · Rocky 기본 설치다.
+# openssl enc 를 쓰지 않는 이유 — 인증 암호 모드(CCM · GCM)를 지원하지 않아 변조 · 손상된 백업을 복호화 단계에서 잡지 못한다
+# (openssl-enc(1) 공식 문서).
+# 바꿔 끼울 자리는 남겨 둔다 — BACKUP_ENCRYPT_CMD 는 표준입력을 받아 표준출력으로 내보내는 필터여야 한다.
+# 공백이 든 인자는 쓸 수 없다(공백으로 나눈다). 값을 주지 않으면 아래 gpg 기본값을 쓰되, 키 파일 경로는 지어내지 않고 반드시 받는다.
 BACKUP_ENCRYPT_CMD=${BACKUP_ENCRYPT_CMD:-}
 if [ -z "$BACKUP_ENCRYPT_CMD" ]; then
   : "${BACKUP_KEY_FILE:?BACKUP_KEY_FILE 이 필요하다 — 복호화 키는 저장소가 아니라 노드에 두고 NAS 와 분리 보관한다(기술 스택 3장)}"
