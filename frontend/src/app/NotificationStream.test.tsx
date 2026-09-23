@@ -73,6 +73,18 @@ type TimerCallback = (...callbackArgs: unknown[]) => void;
 type SetTimeoutLike = (handler: TimerCallback, ms?: number, ...args: unknown[]) => number;
 
 /**
+ * 백오프 상한 — app/NotificationStream.tsx의 RECONNECT_BASE_DELAY_MS(1s) · RECONNECT_MAX_DELAY_MS(30s)로
+ * 만들어지는 지수 수열이다. 구현이 내보내지 않는 값이라 여기서 같은 식으로 다시 세운다. 지터가 붙은
+ * 실제 지연은 이 상한의 절반과 상한 사이에 놓인다(equal jitter).
+ */
+const BASE_BACKOFF_DELAY_MS = 1_000;
+const MAX_BACKOFF_DELAY_MS = 30_000;
+/** 가능한 가장 짧은 백오프 = 첫 상한의 절반. 관측에서 다른 타이머와 갈라내는 하한이다 */
+const MIN_BACKOFF_DELAY_MS = BASE_BACKOFF_DELAY_MS / 2;
+const backoffCeiling = (retryCount: number) =>
+  Math.min(BASE_BACKOFF_DELAY_MS * 2 ** retryCount, MAX_BACKOFF_DELAY_MS);
+
+/**
  * 재연결 타이머가 잡은 지연을 관찰하는 수단.
  *
  * **backoffDelay를 직접 부르지 않는다.** app/은 main.tsx 외에 아무도 import하지 않는 조합 루트라
@@ -118,16 +130,6 @@ function captureBackoffDelays() {
     },
   };
 }
-
-/**
- * 백오프 상한 — app/NotificationStream.tsx의 RECONNECT_BASE_DELAY_MS(1s) · RECONNECT_MAX_DELAY_MS(30s)로
- * 만들어지는 지수 수열이다. 구현이 내보내지 않는 값이라 여기서 같은 식으로 다시 세운다. 지터가 붙은
- * 실제 지연은 이 상한의 절반과 상한 사이에 놓인다(equal jitter).
- */
-const MAX_BACKOFF_DELAY_MS = 30_000;
-/** 가능한 가장 짧은 백오프 = 첫 상한(1s)의 절반. 관측에서 다른 타이머와 갈라내는 하한이다 */
-const MIN_BACKOFF_DELAY_MS = 500;
-const backoffCeiling = (retryCount: number) => Math.min(1_000 * 2 ** retryCount, MAX_BACKOFF_DELAY_MS);
 
 const PATH = {
   streamTicket: '/api/notifications/stream-ticket',
