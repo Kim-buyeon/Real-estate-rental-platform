@@ -132,7 +132,7 @@
 | node_exporter | — | CPU·메모리·디스크 사용률. 디스크 소진 예측(`predict_linear`)의 원천 |
 | postgres_exporter | — | 커넥션 수, 복제 지연, 슬로우 쿼리, 복제 슬롯 상태 |
 | redis_exporter | — | 메모리 사용량과 축출 건수 |
-| nginx_exporter | — | 활성 연결과 upstream 상태 |
+| nginx_exporter | — | 활성 연결과 요청 수. upstream 상태는 오픈소스 `stub_status`에 없다(인프라 API 명세 1장) |
 | Promtail → Loki | 최신 안정 | 로그 수집·보존 15일. ELK는 동일 목적에 자원 소모가 크다. **Promtail은 2026-03-02 EOL이다**(4.1) — 되돌릴 때도 수집 쪽은 4.1의 선택을 쓴다 |
 | Grafana | 최신 안정 | 대시보드 3종. 지표와 로그를 한 화면에서 대조한다 |
 | Blackbox exporter | 최신 안정 | 앱 밖에서 실제 API 경로를 호출한다. 애플리케이션이 정지하면 애플리케이션 지표는 오류를 0으로 보고하므로 별도 계열이 필요하다 |
@@ -150,7 +150,7 @@
 |---|---|---|---|
 | 지표 수집 · 전송 | **Prometheus agent 모드**(`--agent`) | 스크레이프 · `remote_write`만 하고 로컬 저장 · 질의 · 규칙 평가를 끈다 — 그 일은 밖에서 한다. exporter 설정이 Prometheus 표준 그대로라 자체 호스팅으로 되돌릴 때 수집 설정을 다시 쓰지 않는다(1.1 예외의 이식성 논거). 노드 실측 27 ~ 47 MiB(2026-09-23 ~ 24) | Prometheus 서버 모드 — 로컬 TSDB가 노드 메모리 · 디스크를 쓰는데 볼 곳이 밖이다 |
 | 로그 수집 · 전송 | **Vector** | Docker 로그를 컨테이너 · Compose 서비스 라벨과 함께 Loki 형식으로 보낸다. 노드 실측 10 ~ 14.5 MiB | **Promtail** — 2025-02-13 LTS 진입, **2026-03-02 EOL**([Grafana 공지](https://community.grafana.com/t/promtail-end-of-life-eol-march-2026-how-to-migrate-to-grafana-alloy-for-existing-loki-server-deployments/159636)). **Grafana Alloy** — Promtail의 후계이고 지표 · 로그를 하나로 모으지만 노드 여유(`free -m` available 359 MiB — 2026-09-24 15:04 실측, 임시 수집기가 돌던 상태)에 비해 무겁다는 보고가 있다. **실측하지 않았다** — 실측으로 들어간다고 확인된 조합을 고른 것이고, Alloy가 들어가지 않는다고 확인한 것은 아니다 |
-| 지표 원천 | node · postgres · redis exporter | 위 표와 같다. nginx · Blackbox exporter와 앱 지표(`/actuator/prometheus`)는 아직 없다 — 앱 지표는 인증 경로 변경이 필요하다 | — |
+| 지표 원천 | node · nginx · postgres · redis exporter | 위 표와 같다. nginx exporter는 루프백 전용 `stub_status` 서버 블록을 읽는다. Blackbox exporter와 앱 지표(`/actuator/prometheus`)는 아직 없다 — 앱 지표는 인증 경로 변경이 필요하다 | — |
 
 **exporter는 루프백에만 게시하고 agent는 호스트 네트워크에서 `127.0.0.1`로 긁는다.** 컨테이너 IP로 긁으면 재생성마다 대상이 바뀐다. 루프백 게시는 접근 통제의 셋째 겹과 같은 방식이다(시스템 구성서 4장).
 
