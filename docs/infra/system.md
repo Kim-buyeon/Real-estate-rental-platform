@@ -122,7 +122,8 @@ APP-01 단일 노드에 두 프로세스를 두는 구성은 노드 자체의 �
 | App → PostgreSQL | 5432 | APP-01 사설 IP만 |
 | 논리 백업 정기 작업(호스트) → PostgreSQL 컨테이너 | 5432 | **동일 노드 루프백.** 1차 배포에서 PostgreSQL이 APP-01의 컨테이너인 동안만 — 정기 작업이 `docker` 그룹 없이 호스트 클라이언트로 붙는 자리다(서버 운영 기반 설계서 6.2). DB 노드를 분리하면 위 행으로 흡수된다 |
 | App → Redis | 6379 | 동일 노드 루프백. 외부 바인딩 금지 |
-| 지표 수집기(Prometheus agent) → exporter | 9100 · 9121 · 9187 | **동일 노드 루프백.** node exporter는 호스트 네트워크에서 루프백에 바인딩하고, redis · postgres exporter는 루프백에 게시한다. 수집기의 자체 포트(9090)도 루프백만 — 인프라 기술 스택 4.1 |
+| 지표 수집기(Prometheus agent) → exporter | 9100 · 9113 · 9121 · 9187 | **동일 노드 루프백.** node · nginx exporter는 호스트 네트워크에서 루프백에 바인딩하고, redis · postgres exporter는 루프백에 게시한다. 수집기의 자체 포트(9090)도 루프백만 — 인프라 기술 스택 4.1 |
+| nginx exporter → Nginx `stub_status` | 8088 | **동일 노드 루프백.** 공개 80 서버와 분리한 내부 서버 블록(`infra/nginx/conf.d/status.conf`) |
 | 수집기 → Grafana Cloud | 443(나가는 방향) | 아래 「APP-01 → 인터넷」 행에 포함된다. 들어오는 길은 없다 |
 | Primary → Standby | 5432 | DB-01 사설 IP만 |
 | Standby → Primary 복제(같은 노드 — 지금 구성) | 5432 | **Compose 네트워크 안에서만.** standby 컨테이너는 포트를 게시하지 않고 primary의 5432에 Compose 네트워크로 붙는다. 복제 접속은 `pg_hba.conf`의 복제 줄 하나(복제 역할 · 같은 서브넷 · scram)만 받는다 — `infra/postgres/pg_hba.conf` |

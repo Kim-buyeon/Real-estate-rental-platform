@@ -10,7 +10,7 @@
 
 ## 1. 노출 엔드포인트
 
-**INF-05 행은 일부만 구현됐다**(#192). 지금 노드에 있는 것은 **node · postgres · redis exporter 셋**이고, 호출 주체는 노드의 Prometheus agent다 — 긁은 지표와 로그는 Grafana Cloud로 보낸다(인프라 기술 스택 4.1). 표의 「호출 주체」 열 중 Prometheus는 agent를, Loki 행은 자체 호스팅을 전제한 것이다 — 지금 로그는 Vector가 Grafana Cloud의 Loki로 보내고 노드에 3100이 없다. 앱 · nginx · Blackbox 행은 미구현이다.
+**INF-05 행은 일부만 구현됐다**(#192). 지금 노드에 있는 것은 **node · nginx · postgres · redis exporter 넷**이고(nginx exporter는 루프백 8088의 `stub_status`를 읽는다 — #209), 호출 주체는 노드의 Prometheus agent다 — 긁은 지표와 로그는 Grafana Cloud로 보낸다(인프라 기술 스택 4.1). 표의 「호출 주체」 열 중 Prometheus는 agent를, Loki 행은 자체 호스팅을 전제한 것이다 — 지금 로그는 Vector가 Grafana Cloud의 Loki로 보내고 노드에 3100이 없다. 앱 · Blackbox 행은 미구현이다.
 
 | 기능 | 대상 | 노드 | 포트 | 경로 | 호출 주체 | 내용 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -19,7 +19,7 @@
 | INF-05 | node exporter | **APP-01 · DB-01 · DB-02** | 9100 | /metrics | Prometheus | CPU · 메모리 · 디스크 · 네트워크 |
 | INF-05 | postgres exporter | APP-01 | 9187 | /metrics | Prometheus | 커넥션 수, 복제 지연, 슬로우 쿼리, 캐시 적중률 |
 | INF-05 | redis exporter | APP-01 | 9121 | /metrics | Prometheus | 메모리, 축출 건수, 연결 수 |
-| INF-05 | nginx exporter | APP-01 | 9113 | /metrics | Prometheus | 활성 연결, upstream 상태 |
+| INF-05 | nginx exporter | APP-01 | 9113 | /metrics | Prometheus | 활성 · 대기 연결, 수락 · 처리 연결 수, 누적 요청 수. **upstream 상태는 없다** — 오픈소스 Nginx `stub_status`가 내는 값은 이것뿐이다([ngx_http_stub_status_module](https://nginx.org/en/docs/http/ngx_http_stub_status_module.html)). 슬롯별 상태는 액세스 로그의 `upstream=`(Vector → Loki)로 본다 |
 | INF-05 | Blackbox exporter | APP-01 | 9115 | /probe | Prometheus | 경로 도달 여부, 응답 시간 |
 | INF-05 | Loki | APP-01 | 3100 | /loki/api/v1/push | Promtail | 애플리케이션 · Nginx · PostgreSQL 로그 |
 
