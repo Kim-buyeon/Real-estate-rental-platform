@@ -207,13 +207,15 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 |---|---|
 | 아카이빙이 도는가 | primary에서 `SELECT archived_count, failed_count, last_archived_wal, last_failed_wal FROM pg_stat_archiver` — `failed_count`가 늘지 않는다 |
 | 디렉터리 권한 | `/var/backups/rental/wal`은 `70:backup` `2770` — 컨테이너(uid 70)가 쓰고 `backup` 계정이 정리한다(삭제는 디렉터리 쓰기 권한만 필요). 세그먼트는 `0600` uid 70이라 `backup` 계정은 읽지 못한다 — PITR은 같은 uid로 도는 컨테이너가 읽는다. **디렉터리가 없으면 Docker가 root 소유로 만들어 아카이빙이 실패한다** — 먼저 만든다 |
-| 실패하면 | `archive_command`가 실패한 세그먼트는 `pg_wal`에서 지워지지 않고 쌓인다. 디스크를 먼저 본다 |
+| 실패하면 | `archive_command`가 실패한 세그먼트는 `pg_wal`에서 지워지지 않고 쌓인다. 디스크를 먼저 본다. **같은 이름이 이미 있고 내용이 다르면 스크립트가 1을 돌려 그 세그먼트에서 영구히 멈춘다** — PostgreSQL 로그에 `rental-archive-wal: … 가 이미 있고 내용이 다르다`. 두 서버가 같은 아카이브에 쓰고 있다는 뜻이다(리허설 컨테이너를 운영 인자로 띄운 경우 등). 덮어쓰지 말고 어느 쪽 파일인지 먼저 가린다 |
 
 **물리 백업 정기 작업** — `infra/backup/pg-basebackup.sh`를 `rental-basebackup.timer`가 주 1회 부른다(시각은 서버 운영 기반 설계서 7.2). 순서는 primary 확인 → `pg_basebackup -Ft -z`(WAL 포함) → 최신 4개 보존 → 가장 오래 남긴 백업의 시작 WAL보다 앞선 아카이브를 `pg_archivecleanup`으로 정리. 접속 · 비밀번호 규칙은 위 논리 백업 표와 같고 역할만 다르다 — 복제 권한을 가진 전용 역할 `rental_basebackup`(`EnvironmentFile`은 `/etc/rental/basebackup.env`). 호스트 도구는 AL2023에서 `postgresql17-server`(`pg_basebackup`) · `postgresql17-contrib`(`pg_archivecleanup`)에 있다 — 설치해도 호스트의 `postgresql.service`는 켜지 않는다.
 
 **로컬 단계에서는 암호화하지 않는다.** 데이터 볼륨과 같은 디스크 · 같은 노출이다. 노드 밖으로 내보낼 때 암호화한다 — 인프라 기술 스택 3장의 기준이 「전송 전 암호화」다(서버 운영 기반 설계서 7.2 「NAS → S3」 행도 같다). 논리 백업이 암호화하는 것은 목적지가 다른 노드(NAS)이기 때문이다.
 
-**PITR 리허설** — 위 순서(1 ~ 4)를 운영 DB가 아닌 일회용 컨테이너에서 밟는다. 표식 행 A를 넣고 시각 T를 적은 뒤 표식 행 B를 넣고, 물리 백업을 새 데이터 디렉터리에 풀어 `restore_command = 'cp /archive/wal/%f %p'` · `recovery_target_time = T` · `recovery.signal`로 기동한다. A가 있고 B가 없으면 성공이다. **아카이브는 읽기 전용(`:ro`)으로 붙이고 `archive_mode`는 기본값(`off`)으로 띄운다** — 운영 인자 그대로 띄워 승격하면 새 타임라인의 `.history` · 세그먼트가 운영 아카이브에 섞이고, 나중에 운영 standby가 같은 타임라인 번호를 고르면 아카이빙이 영구 실패한다. 실측은 #214 노드 반영에서 채운다.
+**PITR 리허설** — 위 순서(1 ~ 4)를 운영 DB가 아닌 일회용 컨테이너에서 밟는다. 표식 행 A를 넣고 시각 T를 적은 뒤 표식 행 B를 넣고, 물리 백업을 새 데이터 디렉터리에 풀어 `restore_command = 'cp /archive/wal/%f %p'` · `recovery_target_time = T` · `recovery.signal`로 기동한다. A가 있고 B가 없으면 성공이다. **아카이브는 읽기 전용(`:ro`)으로 붙이고 `archive_mode`는 기본값(`off`)으로 띄운다** — 운영 인자 그대로 띄워 승격하면 새 타임라인의 `.history` · 세그먼트가 운영 아카이브에 섞이고, 나중에 운영 standby가 같은 타임라인 번호를 고르면 아카이빙이 영구 실패한다.
+
+**리허설 실측**(APP-01 · t3.small · 2026-09-24 23:08 ~ 23:10, 트래픽 없는 시간, 표본 1회 · DB 36 MB) — 물리 백업 **3초 · 9,040 KiB**. 표식 A(23:09:15) → T(23:09:17.78) → 표식 B(23:09:19) 뒤 `pg_switch_wal()`로 B가 든 세그먼트를 아카이브에 넘기고, 같은 이미지의 일회용 컨테이너(`--memory 150m`)에 백업을 풀어 `recovery_target_action=pause`로 띄웠다. **풀기 + 재생 2.55초**, 로그 `recovery stopping before commit … 14:09:19.96+00` · `pausing at the end of recovery`. 판정 **리허설 `A` / 운영 `A,B`**, `property` 67,183건 양쪽 같음. 리허설 뒤 아카이브에 새 파일 없음. `pause`로 두면 승격하지 않아 새 타임라인이 생기지 않는다 — 확인만 하는 리허설은 이것으로 충분하다. **점검 구간**(`archive_mode`를 켜려고 primary 재생성) **7.03초**(#214).
 
 ---
 
@@ -452,13 +454,15 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 |---|---|---|
 | 1 | `sudo dnf install -y postgresql17-server postgresql17-contrib` — AL2023에서 `pg_basebackup`은 server, `pg_archivecleanup`은 contrib 패키지에 있다. **호스트 서비스는 켜지 않는다** | `pg_basebackup --version` 17.x · `systemctl is-enabled postgresql` → `disabled` |
 | 2 | 디렉터리 — `sudo install -d -o 70 -g backup -m 2770 /var/backups/rental/wal` · `sudo install -d -o backup -g backup -m 700 /var/backups/rental/physical`. **컨테이너 재생성 전에 만든다** — 없으면 Docker가 root 소유로 만든다 | `stat -c '%u:%G %a'` → `70:backup 2770` |
-| 3 | 역할 — `CREATE ROLE rental_basebackup LOGIN REPLICATION` → `\password rental_basebackup`. 평문 비밀번호를 SQL에 쓰지 않는다(위 5단계와 같은 이유). 대화형 터미널이 없으면 호스트에서 SCRAM-SHA-256 검증자를 만들어 `ALTER ROLE rental_basebackup PASSWORD 'SCRAM-SHA-256$…'`로 **검증자만** 보낸다 — `\password`가 보내는 것과 같은 형태다 | `SELECT rolreplication, rolsuper FROM pg_roles WHERE rolname='rental_basebackup'` → `t` · `f` |
+| 3 | 역할 — `CREATE ROLE rental_basebackup LOGIN REPLICATION` → `\password rental_basebackup`. 평문 비밀번호를 SQL에 쓰지 않는다(위 5단계와 같은 이유). 대화형 터미널이 없으면 호스트에서 SCRAM-SHA-256 검증자를 만들어 `CREATE ROLE … PASSWORD 'SCRAM-SHA-256$…'`(이미 있으면 `ALTER ROLE`)로 **검증자만** 보낸다 — `\password`가 보내는 것과 같은 형태다. 형식은 `SCRAM-SHA-256$<반복>:<솔트>$<StoredKey>:<ServerKey>`(각 Base64) — 솔트 16바이트, 반복 4096(PostgreSQL 기본 `scram_iterations`), `SaltedPassword = PBKDF2-HMAC-SHA-256(비밀번호, 솔트, 반복)`, `StoredKey = SHA-256(HMAC(SaltedPassword, "Client Key"))`, `ServerKey = HMAC(SaltedPassword, "Server Key")`(RFC 5802 · SHA-256판은 RFC 7677). PostgreSQL은 먼저 SASLprep로 정규화하므로 비밀번호를 ASCII로 만든다 — 그러면 결과가 같다. #214에서는 노드의 python3 표준 라이브러리로 만들었고, 평문은 `umask 077` 임시 디렉터리의 env 파일에만 두고 `install`로 옮긴 뒤 지웠다 — SQL · 화면 · 로그에 없다 | `SELECT rolreplication, rolsuper FROM pg_roles WHERE rolname='rental_basebackup'` → `t` · `f` |
 | 4 | `/etc/rental/basebackup.env`(`backup` 소유 0600) — `PGUSER=rental_basebackup` · `PGPASSWORD` | `stat -c '%U %a'` → `backup 600` |
 | 5 | 체크아웃 → `bash maintenance.sh on` → `docker compose up -d --no-deps --force-recreate postgres` → healthy → `bash maintenance.sh off` → `docker compose up -d --no-deps --force-recreate postgres-standby` — `archive_mode`는 재기동해야 바뀐다. 접속 규칙(`pg_hba.conf`)도 이때 함께 읽힌다 | `SHOW archive_mode` → `on`, standby `streaming` |
 | 6 | `SELECT pg_switch_wal()` | 아카이브 디렉터리에 세그먼트 · `pg_stat_archiver.failed_count` 0 |
 | 7 | 스크립트 설치 — `sudo install -D -o root -g root -m 755 ~/rental/infra/backup/pg-basebackup.sh /opt/rental/infra/backup/pg-basebackup.sh`. **스크립트가 바뀌면 다시 실행한다** | `diff`로 체크아웃과 같다 |
 | 8 | 유닛 — `systemd-analyze verify` → `/etc/systemd/system/`에 복사 → `sudo systemctl daemon-reload` | `loaded` |
 | 9 | 수동 1회 `sudo systemctl start rental-basebackup.service` → PITR 리허설(5장) → `sudo systemctl enable --now rental-basebackup.timer` | `journalctl -u rental-basebackup` 종료 0 · `list-timers`에 다음 일 01:30 |
+
+**원격으로 밟을 때 걸린 것 둘**(#214) — ① `ssh … '…'` 안의 큰따옴표 속 `$$`는 원격 셸이 PID로 푼다. SQL의 달러 인용은 표준입력으로 보낸다. ② `ssh … 'bash -s' <<EOF` 안에서 `docker compose exec -T`는 **남은 스크립트를 표준입력으로 먹는다** — 뒤 명령이 조용히 사라진다. 그 줄에 `</dev/null`을 붙인다.
 
 **NAS가 멈추면** 서비스는 영향이 없다(시스템 구성서 5.2). 물리 백업 · WAL(지금은 노드 로컬 — 5장, 설계 목표는 S3)은 계속되므로 급하게 손대지 않고, 복구 뒤 멈춘 기간의 논리 백업을 한 번 수동 실행한다.
 
