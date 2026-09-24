@@ -211,9 +211,9 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 
 **물리 백업 정기 작업** — `infra/backup/pg-basebackup.sh`를 `rental-basebackup.timer`가 주 1회 부른다(시각은 서버 운영 기반 설계서 7.2). 순서는 primary 확인 → `pg_basebackup -Ft -z`(WAL 포함) → 최신 4개 보존 → 가장 오래 남긴 백업의 시작 WAL보다 앞선 아카이브를 `pg_archivecleanup`으로 정리. 접속 · 비밀번호 규칙은 위 논리 백업 표와 같고 역할만 다르다 — 복제 권한을 가진 전용 역할 `rental_basebackup`(`EnvironmentFile`은 `/etc/rental/basebackup.env`). 호스트 도구는 AL2023에서 `postgresql17-server`(`pg_basebackup`) · `postgresql17-contrib`(`pg_archivecleanup`)에 있다 — 설치해도 호스트의 `postgresql.service`는 켜지 않는다.
 
-**로컬 단계에서는 암호화하지 않는다.** 데이터 볼륨과 같은 디스크 · 같은 노출이다. 노드 밖으로 내보낼 때 암호화한다(서버 운영 기반 설계서 7.2 「NAS → S3」 행). 논리 백업이 암호화하는 것은 목적지가 다른 노드(NAS)이기 때문이다.
+**로컬 단계에서는 암호화하지 않는다.** 데이터 볼륨과 같은 디스크 · 같은 노출이다. 노드 밖으로 내보낼 때 암호화한다 — 인프라 기술 스택 3장의 기준이 「전송 전 암호화」다(서버 운영 기반 설계서 7.2 「NAS → S3」 행도 같다). 논리 백업이 암호화하는 것은 목적지가 다른 노드(NAS)이기 때문이다.
 
-**PITR 리허설** — 위 순서(1 ~ 4)를 운영 DB가 아닌 일회용 컨테이너에서 밟는다. 표식 행 A를 넣고 시각 T를 적은 뒤 표식 행 B를 넣고, 물리 백업을 새 데이터 디렉터리에 풀어 `restore_command = 'cp /archive/wal/%f %p'` · `recovery_target_time = T` · `recovery.signal`로 기동한다. A가 있고 B가 없으면 성공이다. 실측은 #214 노드 반영에서 채운다.
+**PITR 리허설** — 위 순서(1 ~ 4)를 운영 DB가 아닌 일회용 컨테이너에서 밟는다. 표식 행 A를 넣고 시각 T를 적은 뒤 표식 행 B를 넣고, 물리 백업을 새 데이터 디렉터리에 풀어 `restore_command = 'cp /archive/wal/%f %p'` · `recovery_target_time = T` · `recovery.signal`로 기동한다. A가 있고 B가 없으면 성공이다. **아카이브는 읽기 전용(`:ro`)으로 붙이고 `archive_mode`는 기본값(`off`)으로 띄운다** — 운영 인자 그대로 띄워 승격하면 새 타임라인의 `.history` · 세그먼트가 운영 아카이브에 섞이고, 나중에 운영 standby가 같은 타임라인 번호를 고르면 아카이빙이 영구 실패한다. 실측은 #214 노드 반영에서 채운다.
 
 ---
 
@@ -446,7 +446,21 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 
 **첫 적용 실측**(APP-01 · t3.small · 2026-09-24, 트래픽 없는 시간) — 덤프 + 암호화 **2초**, 암호문 **3.1 MB**(DB 36 MB), 파일 앞부분이 gpg 패킷(`0x8c`)이고 `PGDMP` 없음. 복원 1초, **33개 테이블 전부 운영과 건수 일치**(합 103,641행 — `property` 67,183 · `risk_analysis` 6,007). 밖에서 5432 접속 불가 · 80 접속 가능. 실행 시간 상한 30분 · 보존 7일은 **잠정 그대로 둔다** — 상한은 NAS hard 마운트 정지에 대비한 값인데(유닛 주석) 목적지가 아직 로컬이라 이 실측이 그 경우를 대표하지 않는다. 확정 시점은 서버 운영 기반 설계서 10장.
 
-**NAS가 멈추면** 서비스는 영향이 없다(시스템 구성서 5.2). 물리 백업 · WAL(S3)은 계속되므로 급하게 손대지 않고, 복구 뒤 멈춘 기간의 논리 백업을 한 번 수동 실행한다.
+**물리 백업 · WAL 아카이빙(`rental-basebackup`)** — 5장. 설치 순서는 아래다(#214). 논리 백업 설치를 마친 노드를 전제한다 — `backup` 계정 · `/etc/rental` · 루프백 게시가 이미 있다.
+
+| # | 단계 | 확인 |
+|---|---|---|
+| 1 | `sudo dnf install -y postgresql17-server postgresql17-contrib` — AL2023에서 `pg_basebackup`은 server, `pg_archivecleanup`은 contrib 패키지에 있다. **호스트 서비스는 켜지 않는다** | `pg_basebackup --version` 17.x · `systemctl is-enabled postgresql` → `disabled` |
+| 2 | 디렉터리 — `sudo install -d -o 70 -g backup -m 2770 /var/backups/rental/wal` · `sudo install -d -o backup -g backup -m 700 /var/backups/rental/physical`. **컨테이너 재생성 전에 만든다** — 없으면 Docker가 root 소유로 만든다 | `stat -c '%u:%G %a'` → `70:backup 2770` |
+| 3 | 역할 — `CREATE ROLE rental_basebackup LOGIN REPLICATION` → `\password rental_basebackup`. 평문 비밀번호를 SQL에 쓰지 않는다(위 5단계와 같은 이유). 대화형 터미널이 없으면 호스트에서 SCRAM-SHA-256 검증자를 만들어 `ALTER ROLE rental_basebackup PASSWORD 'SCRAM-SHA-256$…'`로 **검증자만** 보낸다 — `\password`가 보내는 것과 같은 형태다 | `SELECT rolreplication, rolsuper FROM pg_roles WHERE rolname='rental_basebackup'` → `t` · `f` |
+| 4 | `/etc/rental/basebackup.env`(`backup` 소유 0600) — `PGUSER=rental_basebackup` · `PGPASSWORD` | `stat -c '%U %a'` → `backup 600` |
+| 5 | 체크아웃 → `bash maintenance.sh on` → `docker compose up -d --no-deps --force-recreate postgres` → healthy → `bash maintenance.sh off` → `docker compose up -d --no-deps --force-recreate postgres-standby` — `archive_mode`는 재기동해야 바뀐다. 접속 규칙(`pg_hba.conf`)도 이때 함께 읽힌다 | `SHOW archive_mode` → `on`, standby `streaming` |
+| 6 | `SELECT pg_switch_wal()` | 아카이브 디렉터리에 세그먼트 · `pg_stat_archiver.failed_count` 0 |
+| 7 | 스크립트 설치 — `sudo install -D -o root -g root -m 755 ~/rental/infra/backup/pg-basebackup.sh /opt/rental/infra/backup/pg-basebackup.sh`. **스크립트가 바뀌면 다시 실행한다** | `diff`로 체크아웃과 같다 |
+| 8 | 유닛 — `systemd-analyze verify` → `/etc/systemd/system/`에 복사 → `sudo systemctl daemon-reload` | `loaded` |
+| 9 | 수동 1회 `sudo systemctl start rental-basebackup.service` → PITR 리허설(5장) → `sudo systemctl enable --now rental-basebackup.timer` | `journalctl -u rental-basebackup` 종료 0 · `list-timers`에 다음 일 01:30 |
+
+**NAS가 멈추면** 서비스는 영향이 없다(시스템 구성서 5.2). 물리 백업 · WAL(지금은 노드 로컬 — 5장, 설계 목표는 S3)은 계속되므로 급하게 손대지 않고, 복구 뒤 멈춘 기간의 논리 백업을 한 번 수동 실행한다.
 
 ### 9.4 Amazon Linux 2023 → Rocky Linux 9 이전
 
