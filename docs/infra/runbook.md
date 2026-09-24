@@ -201,6 +201,20 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 
 **아직 정해지지 않은 것** — 보존 기간 · 실행 시간 상한. 잠정값은 스크립트와 유닛이 갖고, 확정 시점은 서버 운영 기반 설계서 5.4 · 10장이 갖는다. 암호화 도구(`gpg`)와 `backup` 계정 UID · GID는 같은 설계서 5.1 · 6.2가 정했다. 호스트 클라이언트가 닿도록 운영 Compose가 PostgreSQL을 루프백(`127.0.0.1:5432`)에 게시한다(시스템 구성서 4장).
 
+**WAL 연속 아카이빙** — 두 DB 서비스가 같은 인자로 `archive_mode=on` · `archive_timeout=300`(5분 강제 스위치)을 쓰고, 완료된 WAL 세그먼트를 호스트 `/var/backups/rental/wal`에 복사한다(#214). **1등급 RPO 5분을 지키는 것이 이 설정이다**(시스템 구성서 5.1). `archive_mode`는 재기동해야 바뀐다. standby는 복구 중에는 아카이브하지 않고 승격하면 이어서 한다 — 페일오버에 아카이빙 전환 단계가 없다.
+
+| 확인 | 내용 |
+|---|---|
+| 아카이빙이 도는가 | primary에서 `SELECT archived_count, failed_count, last_archived_wal, last_failed_wal FROM pg_stat_archiver` — `failed_count`가 늘지 않는다 |
+| 디렉터리 권한 | `/var/backups/rental/wal`은 `70:backup` `2770` — 컨테이너(uid 70)가 쓰고 `backup` 계정이 정리한다(삭제는 디렉터리 쓰기 권한만 필요). 세그먼트는 `0600` uid 70이라 `backup` 계정은 읽지 못한다 — PITR은 같은 uid로 도는 컨테이너가 읽는다. **디렉터리가 없으면 Docker가 root 소유로 만들어 아카이빙이 실패한다** — 먼저 만든다 |
+| 실패하면 | `archive_command`가 실패한 세그먼트는 `pg_wal`에서 지워지지 않고 쌓인다. 디스크를 먼저 본다 |
+
+**물리 백업 정기 작업** — `infra/backup/pg-basebackup.sh`를 `rental-basebackup.timer`가 주 1회 부른다(시각은 서버 운영 기반 설계서 7.2). 순서는 primary 확인 → `pg_basebackup -Ft -z`(WAL 포함) → 최신 4개 보존 → 가장 오래 남긴 백업의 시작 WAL보다 앞선 아카이브를 `pg_archivecleanup`으로 정리. 접속 · 비밀번호 규칙은 위 논리 백업 표와 같고 역할만 다르다 — 복제 권한을 가진 전용 역할 `rental_basebackup`(`EnvironmentFile`은 `/etc/rental/basebackup.env`). 호스트 도구는 AL2023에서 `postgresql17-server`(`pg_basebackup`) · `postgresql17-contrib`(`pg_archivecleanup`)에 있다 — 설치해도 호스트의 `postgresql.service`는 켜지 않는다.
+
+**로컬 단계에서는 암호화하지 않는다.** 데이터 볼륨과 같은 디스크 · 같은 노출이다. 노드 밖으로 내보낼 때 암호화한다(서버 운영 기반 설계서 7.2 「NAS → S3」 행). 논리 백업이 암호화하는 것은 목적지가 다른 노드(NAS)이기 때문이다.
+
+**PITR 리허설** — 위 순서(1 ~ 4)를 운영 DB가 아닌 일회용 컨테이너에서 밟는다. 표식 행 A를 넣고 시각 T를 적은 뒤 표식 행 B를 넣고, 물리 백업을 새 데이터 디렉터리에 풀어 `restore_command = 'cp /archive/wal/%f %p'` · `recovery_target_time = T` · `recovery.signal`로 기동한다. A가 있고 B가 없으면 성공이다. 실측은 #214 노드 반영에서 채운다.
+
 ---
 
 ## 6. 페일오버 · 페일백
