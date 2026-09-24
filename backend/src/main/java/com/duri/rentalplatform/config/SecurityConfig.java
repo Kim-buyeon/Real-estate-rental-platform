@@ -49,9 +49,15 @@ public class SecurityConfig {
      */
     private static final String[] TOKEN_REQUIRED_AUTH_PATHS = {"/api/auth/logout"};
 
-    /** 인증 없이 호출할 수 있는 경로. 인증 엔드포인트는 토큰을 받기 전에 호출되므로 열어 둔다. */
+    /**
+     * 인증 없이 호출할 수 있는 경로. 인증 엔드포인트는 토큰을 받기 전에 호출되므로 열어 둔다.
+     *
+     * <p>{@code /actuator/prometheus}는 노드의 지표 수집기가 긁는다 — 인프라 API 명세 1장. 인증 대신 노출 범위로
+     * 통제한다. 앱 포트는 루프백에만 게시되고 앞단 Nginx 가 {@code /actuator}를 404 로 막으므로 외부에서는 닿지
+     * 않는다.
+     */
     private static final String[] PUBLIC_PATHS = {
-        "/api/auth/**", "/actuator/health", "/actuator/health/**"
+        "/api/auth/**", "/actuator/health", "/actuator/health/**", "/actuator/prometheus"
     };
 
     /**
