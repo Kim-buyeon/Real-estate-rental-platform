@@ -18,8 +18,8 @@ name: rental-prod
 # 컨테이너 로그 회전 — 서버 운영 기반 설계서 8장이 「컨테이너 로그 — 크기·개수 상한」을 요구하는데 값이 10장에서 미확정이라
 # 지금까지 상한이 없었다. json-file 기본값은 무제한이라 로그만으로 노드 디스크가 찬다
 # (볼륨 크기는 서버 운영 기반 설계서 4.2 에서 미확정이다 — 상한을 두는 근거는 크기가 아니라 증가가 멈추지 않는다는 것).
-# 서비스 12개(nginx · app-1 · app-2 · web · redis · postgres · postgres-standby + 관측 수집기 prom-agent · vector ·
-# node-exporter · postgres-exporter · redis-exporter) × 10m × 3개 = 약 360 MB 가 컨테이너 로그 전체의 상한이다.
+# 서비스 13개(nginx · app-1 · app-2 · web · redis · postgres · postgres-standby + 관측 수집기 prom-agent · vector ·
+# node-exporter · postgres-exporter · redis-exporter · nginx-exporter) × 10m × 3개 = 약 390 MB 가 컨테이너 로그 전체의 상한이다.
 # vector 가 이 json-file 로그를 Docker API 로 읽어 밖으로 보내므로, 회전은 노드 안의 사본만 줄인다.
 x-logging: &logging
   driver: json-file
@@ -72,9 +72,16 @@ x-logging: &logging
 #   위 두 표와 더해 상한 합 2396m. 노드 실사용은 이만큼 순증한다(로컬 Docker 에서 빈 DB 로 띄운 값은 17 MiB 였다 —
 #   이 노드 · 이 DB 크기의 값이 아니다).
 #
+# nginx 지표(INF-05) — 앞단 nginx 의 stub_status 를 긁는다.
+#
+#   서비스              mem_limit   실측              상한의 근거
+#   nginx-exporter           32m   (노드 적용 뒤)    같은 Go 단일 바이너리 exporter 셋의 실측이 8.4 ~ 9.6 MiB(위 수집기 표)
+#   ──────────────────────────────────────────────
+#   위 세 표와 더해 상한 합 2428m.
+#
 # **상한의 합이 노드 가용 메모리를 넘는다. 의도한 것이고, 대가가 있다.**
 #   1909(총량) − 264(OS · dockerd 실측) = 1645 이고 상한 합 1648 은 그것을 넘는다. 수집기를 더하면 2140,
-#   standby 까지 더하면 2396 이다.
+#   standby 까지 더하면 2396, nginx exporter 까지 더하면 2428 이다.
 #   mem_limit 은 **예약이 아니라 상한**이라 쓰지 않는 몫을 붙들지 않는다. 평시 실사용 합이 913(수집기 더해 약 993,
 #   standby 실측은 노드 적용 뒤)이므로
 #   평시에는 여유가 있고, 상한의 목적은 총합을 보장하는 것이 아니라 **폭주하는 하나를 가두어 나머지를
@@ -601,6 +608,25 @@ services:
       - "127.0.0.1:9121:9121"
     depends_on:
       - redis
+
+  # nginx 지표. 앞단 nginx 의 stub_status(conf.d/status.conf — 127.0.0.1:8088)를 긁는다.
+  # nginx 가 호스트 네트워크이고 stub_status 를 루프백에만 열었으므로 이 서비스도 호스트 네트워크여야 거기 닿는다.
+  # 호스트 네트워크라 바인딩 주소가 곧 노출 범위다. 루프백에만 연다(시스템 구성서 4장, 셋째 겹)
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.5.3
+    network_mode: host
+    restart: unless-stopped
+    logging: *logging
+    # 같은 Go 단일 바이너리 exporter(node · postgres · redis)의 노드 실측이 8.4 ~ 9.6 MiB 다(파일 머리 표).
+    # 그 셋보다 하는 일이 적어(HTTP 한 번 · 지표 몇 개) 64m 의 절반으로 둔다
+    mem_limit: 32m
+    command:
+      - --nginx.scrape-uri=http://127.0.0.1:8088/stub_status
+      - --web.listen-address=127.0.0.1:9113
+    environment:
+      TZ: Asia/Seoul
+    depends_on:
+      - nginx
 
 volumes:
   pgdata:
