@@ -64,6 +64,11 @@ if [ ! -s "$PGDATA/PG_VERSION" ] && [ -n "$from" ]; then
     gosu postgres pg_basebackup -h "$from" -U "$repl_user" -w -D "$PGDATA" -S "$slot" -R -X stream -c fast
   else
     gosu postgres pg_basebackup -h "$from" -U "$repl_user" -w -D "$PGDATA" -R -X stream -c fast
+    # 원본이 옛 standby 면 받은 postgresql.auto.conf 에 원본 자신의 primary_slot_name 이 따라온다. 그 이름을 이어받으면
+    # 원본에 그 슬롯이 없을 때 붙지 못한다(2026-09-24 노드 리허설, #205 · #207). 슬롯을 지정해 받는 경우는 -S 가 적은
+    # 이름이 남으므로 여기서만 지운다. postgres 로 돌려 파일 소유를 유지한다(busybox sed -i).
+    echo "$name: 원본 설정에서 이어받은 슬롯 이름을 지운다"
+    gosu postgres sed -i '/^[[:space:]]*primary_slot_name[[:space:]]*=/d' "$PGDATA/postgresql.auto.conf"
   fi
 fi
 
