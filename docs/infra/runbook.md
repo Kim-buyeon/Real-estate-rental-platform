@@ -299,7 +299,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 ## 9. 서버 운영 절차 (Rocky Linux)
 
-서버 운영 기반(INF-07 ~ 09)의 손으로 밟는 순서다. **무엇을 왜 그렇게 두는지는 서버 운영 기반 설계서(`docs/infra/platform.md`)가 갖는다.** 명령은 첫 구축에서 실제로 실행하며 이 절에 채운다(1장 원칙) — 지금은 단계와 확인 기준만 있다.
+서버 운영 기반(INF-07 ~ 09)의 손으로 밟는 순서다. **무엇을 왜 그렇게 두는지는 서버 운영 기반 설계서(`docs/infra/platform.md`)가 갖는다.** 명령은 첫 구축에서 실제로 실행하며 이 절에 채운다(1장 원칙) — 지금 명령까지 채워진 것은 9.3의 논리 백업뿐이고 나머지는 단계와 확인 기준만 있다.
 
 ### 9.1 새 노드 준비
 
@@ -333,7 +333,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 **논리 백업(`rental-backup`)** — 유닛은 `infra/backup/`에 있다. 스크립트는 체크아웃이 아니라 설치한 사본(`/opt/rental/infra/backup/pg-dump.sh`)을, 접속 정보는 `/etc/rental/backup.env`를 유닛이 가리킨다 — 왜 그 경로인지는 유닛 주석이 갖는다.
 
-**설치 순서** — APP-01(Amazon Linux 2023, DB 컨테이너가 같은 노드)에 2026-09-24 00:35 ~ 15:01에 실제로 밟은 순서다. 1 ~ 9는 00:35 ~ 04:04에 적용했고 명령은 그 결과 상태(`id` · `stat` · `rpm` · dnf 이력 · 역할 조회)와 대조해 적었다 — 2는 01:22 첫 수동 실행이 실패한 뒤 더한 단계다. 10은 15:00 ~ 15:01. DB 노드가 분리되면 1 · 5의 호스트만 DB-01 · DB-02로 바뀐다.
+**설치 순서** — APP-01(Amazon Linux 2023, DB 컨테이너가 같은 노드)에 2026-09-24 00:35 ~ 15:01에 실제로 밟은 순서다. 1 ~ 9는 00:35 ~ 04:04에 적용했고 명령은 그 결과 상태(`id` · `stat` · `rpm` · dnf 이력 · 역할 조회)와 대조해 적었다 — 2는 01:22 첫 수동 실행이 실패한 뒤 더한 단계다. 10은 15:00 ~ 15:01. DB 노드가 분리되면 이 순서를 timer를 둘 노드(설계서 7.2)에서 다시 밟는다.
 
 | 순서 | 명령 | 확인 |
 |---|---|---|
@@ -341,11 +341,11 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 2 | `sudo dnf swap -y gnupg2-minimal gnupg2-full` — **AL2023 기본은 `gnupg2-minimal`이라 gpg-agent가 없어 대칭 암호화가 `gpg: can't connect to the gpg-agent`로 실패한다**([AL2023 사용자 안내서 GNUPG](https://docs.aws.amazon.com/linux/al2023/ug/gnupg-minimal.html)). Rocky는 전체판이 기본이라 이 단계가 없다 | `rpm -q gnupg2` 가 나오고 `gnupg2-minimal`이 없다 |
 | 3 | `sudo groupadd -g 2001 backup` · `sudo useradd -u 2001 -g 2001 -r -d /var/backups/rental -s /sbin/nologin -c 'rental logical backup' backup` — 만들기 전에 `getent passwd 2001` · `getent group 2001`이 비었는지 본다 | `id backup` → `uid=2001 gid=2001` |
 | 4 | `sudo install -d -o backup -g backup -m 700 /var/backups/rental` · `sudo install -d -m 755 /etc/rental` | 목적지가 `backup` 소유 700 |
-| 5 | DB에 백업 전용 역할 — `CREATE ROLE rental_backup LOGIN PASSWORD '<노드에서 새로 만든 값>'` · `GRANT pg_read_all_data TO rental_backup`. 앱 소유자 역할로 `docker compose exec postgres psql`에서 실행하되 **비밀번호는 명령 이력에 남지 않게** `\password rental_backup`으로 넣는다 | `SELECT rolsuper FROM pg_roles WHERE rolname='rental_backup'` → `f` · `pg_has_role('rental_backup','pg_read_all_data','member')` → `t` |
-| 6 | 키 파일 — `openssl rand -hex 32` 출력을 `/etc/rental/backup.key`에 쓰고 `backup` 소유 0400. **값을 화면에 찍지 않는다.** 노드 밖 사본은 운영자가 보관한다(설계서 5.1) | `stat -c '%U %a' /etc/rental/backup.key` → `backup 400` |
+| 5 | DB에 백업 전용 역할 — 앱 소유자 역할로 `docker compose exec postgres psql`에 들어가 `CREATE ROLE rental_backup LOGIN` → `GRANT pg_read_all_data TO rental_backup` → `\password rental_backup`. **비밀번호를 SQL 문에 쓰지 않는다** — psql 이력과 서버 로그에 남는다. `\password`는 암호화한 값만 보낸다 | `SELECT rolsuper FROM pg_roles WHERE rolname='rental_backup'` → `f` · `pg_has_role('rental_backup','pg_read_all_data','member')` → `t` |
+| 6 | 키 파일 — `openssl rand -hex 32` 출력을 `/etc/rental/backup.key`에 쓰고 `backup` 소유 0400. **값을 화면에 찍지 않는다.** 키는 NAS에 두지 않고(설계서 5.1) 노드 밖 사본은 운영자가 보관한다(인프라 기술 스택 3장 「키 분리 보관」) | `stat -c '%U %a' /etc/rental/backup.key` → `backup 400` |
 | 7 | `/etc/rental/backup.env`(`backup` 소유 0600) — `PGUSER=rental_backup` · `PGDATABASE`(`infra/.env`의 `POSTGRES_DB`) · `PGPASSWORD` · `BACKUP_KEY_FILE=/etc/rental/backup.key`. `PGHOST` · `PGPORT` · 목적지 · 보존은 스크립트 기본값을 쓴다 | `stat -c '%U %a'` → `backup 600` |
 | 8 | 스크립트 설치 — `sudo install -D -o root -g root -m 755 ~/rental/infra/backup/pg-dump.sh /opt/rental/infra/backup/pg-dump.sh`. **스크립트가 바뀌면 이 명령을 다시 실행한다** | `diff`로 체크아웃과 같다 |
-| 9 | 유닛 설치 — `sudo cp ~/rental/infra/backup/rental-backup.{service,timer} /etc/systemd/system/` → `sudo systemctl daemon-reload` | `systemd-analyze verify`(아래 표) |
+| 9 | 유닛 설치 — `systemd-analyze verify ~/rental/infra/backup/rental-backup.{service,timer}`(아래 표) → `sudo cp ~/rental/infra/backup/rental-backup.{service,timer} /etc/systemd/system/` → `sudo systemctl daemon-reload` | `systemctl status rental-backup.service`가 `loaded` |
 | 10 | 수동 1회 → 복원 확인(아래 두 표) → `sudo systemctl enable --now rental-backup.timer` | `systemctl list-timers rental-backup.timer`에 다음 02:00 |
 
 **논리 백업 복원** — 운영 DB에 복원하지 않는다. 같은 주 버전의 **일회용 컨테이너**를 띄워 거기에 푼다(노드가 하나뿐이라 「별도 인스턴스」의 자리를 컨테이너가 대신한다). **복호화 결과를 파일로 받은 뒤 `pg_restore`에 파일로 준다** — 표준입력으로 흘리면 `gpg: error writing to '-': Broken pipe`와 함께 일부만 복원되고도 오류 없이 끝나는 것을 실측했다(2026-09-24).
@@ -364,7 +364,7 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 | 확인 | 방법 |
 |---|---|
 | 유닛 문법 | `systemd-analyze verify <유닛>` — 노드에 넣기 전에 본다 |
-| 수동 1회 실행 | `systemctl start rental-backup.service` → `journalctl -u rental-backup -n 50`. 첫 실행은 이렇게 확인하고 소요 시간을 재 실행 시간 상한을 확정한다 |
+| 수동 1회 실행 | `systemctl start rental-backup.service` → `journalctl -u rental-backup -n 50`. 첫 실행은 이렇게 확인하고 소요 시간을 잰다. 실행 시간 상한은 NAS 목적지 첫 실행 소요로 확정한다(설계서 10장) |
 | primary에서만 도는가 | **DB-01 · DB-02 양쪽에 timer를 둔다.** standby의 저널에는 「standby」로 끝난 기록만 남고 파일이 생기지 않아야 한다 |
 | 암호화되어 있는가 | 최신 파일의 앞부분에 `pg_dump` 평문 헤더(`PGDMP`)가 보이면 안 된다. 보이면 암호화가 빠진 것이다 |
 | 보존이 도는가 | 보존 기간보다 오래된 파일이 남아 있지 않은가. 기간은 **잠정**이며 첫 백업 크기를 보고 조정한다(5장) |
