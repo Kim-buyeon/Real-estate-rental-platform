@@ -19,7 +19,7 @@
 | INF-05 | node exporter | **APP-01 · DB-01 · DB-02** | 9100 | /metrics | Prometheus | CPU · 메모리 · 디스크 · 네트워크 |
 | INF-05 | postgres exporter | APP-01 | 9187 | /metrics | Prometheus | 커넥션 수, 복제 지연, 슬로우 쿼리, 캐시 적중률 |
 | INF-05 | redis exporter | APP-01 | 9121 | /metrics | Prometheus | 메모리, 축출 건수, 연결 수 |
-| INF-05 | nginx exporter | APP-01 | 9113 | /metrics | Prometheus | 활성 · 대기 연결, 수락 · 처리 연결 수, 누적 요청 수. **upstream 상태는 없다** — 오픈소스 Nginx `stub_status`가 내는 값은 이것뿐이다([ngx_http_stub_status_module](https://nginx.org/en/docs/http/ngx_http_stub_status_module.html)). 슬롯별 상태는 액세스 로그의 `upstream=`(Vector → Loki)로 본다 |
+| INF-05 | nginx exporter | APP-01 | 9113 | /metrics | Prometheus | 활성 · 읽기 · 쓰기 · 대기 연결, 수락 · 처리 연결 수, 누적 요청 수. **upstream 상태는 없다** — 오픈소스 Nginx `stub_status`가 내는 값은 이 일곱 가지뿐이다([ngx_http_stub_status_module](https://nginx.org/en/docs/http/ngx_http_stub_status_module.html)). 슬롯별 상태는 액세스 로그의 `upstream=`(Vector → Loki)로 본다 |
 | INF-05 | Blackbox exporter | APP-01 | 9115 | /probe | Prometheus | 경로 도달 여부, 응답 시간 |
 | INF-05 | Loki | APP-01 | 3100 | /loki/api/v1/push | Promtail | 애플리케이션 · Nginx · PostgreSQL 로그 |
 
