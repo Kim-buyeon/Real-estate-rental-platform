@@ -162,7 +162,7 @@ x-app: &app
 #
 # 명령 목록 전체를 앵커로 둔 이유 — YAML 병합 키(<<)는 매핑만 합치고 시퀀스는 합치지 못한다. -c 인자만 떼어
 # 앵커로 두면 두 서비스가 그 앞에 postgres 를 붙일 방법이 없다. 그래서 postgres 부터 전체를 한 목록으로 두고
-# primary 는 이미지 기본 entrypoint 로, standby 는 초기화 셸이 이 목록을 "$@" 로 받아 docker-entrypoint.sh 에 넘긴다.
+# 두 서비스 모두 초기화 스크립트(infra/postgres/bootstrap.sh)가 이 목록을 "$@" 로 받아 docker-entrypoint.sh 에 넘긴다.
 #
 # max_connections 32 — 앱 풀 16 에 Flyway · 배치 · 운영자 접속 여유를 더했다(Flyway · 배치는 앱과
 # 같은 풀에서 빌리므로 따로 세지 않는다). autovacuum 은 autovacuum_work_mem 기본이 -1 이라
@@ -371,18 +371,32 @@ services:
     #   실사용이 89 MiB 다(그것도 shared_buffers 128MB · max_connections 100 인 기본값 구성에서 잰 값이다)
     # **셋 중 하나라도 바뀌면 이 산정을 다시 본다.** 트래픽 증가 · DB 증가 · 앱 풀 크기 변경이 그 신호다.
     #
+    # 초기화 — postgres-standby 와 같은 스크립트(infra/postgres/bootstrap.sh). 평시에는 받을 곳이 비어 아무것도 하지 않고
+    # 이미지 기본 동작(빈 볼륨이면 initdb, 있으면 기존 데이터로 기동) 그대로다. 페일백 때만 빈 볼륨에 postgres-standby 에서
+    # 받아 standby 로 뜬다(운영 절차서 6.2). sh 로 부른다 — 마운트한 파일의 실행 비트에 기대지 않는다
+    entrypoint: ["/bin/sh", "/usr/local/bin/rental-bootstrap.sh"]
+    tmpfs:
+      - /run/replication:size=64k,mode=0700
     # 서버 설정(-c 인자)은 standby 와 같은 목록을 쓴다 — 파일 위쪽 x-postgres-command
     command: *postgres-command
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # 받을 곳 — 운영(infra/.env)에서는 비워 둔다. 페일백 때만 postgres-standby(운영 절차서 6.2)
+      PG_BOOTSTRAP_FROM: ${PG_BOOTSTRAP_FROM:-}
+      # 복제 계정 — 페일백 때 postgres-standby 에서 받는 데 쓴다. 비밀번호는 tmpfs 의 비밀번호 파일로만 옮겨진다
+      POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER:-}
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-}
+      PGPASSFILE: /run/replication/pgpass
       # 컨테이너 안 도구(date 등)의 시간대. PostgreSQL 로그 시각은 이 값이 아니라 x-postgres-command 의 log_timezone 이 맞춘다
       TZ: Asia/Seoul
     volumes:
       - pgdata:/var/lib/postgresql/data
       # 접속 규칙 — x-postgres-command 의 hba_file. standby 와 같은 파일이다
       - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      # 초기화 스크립트 — standby 와 같은 파일이다
+      - ./postgres/bootstrap.sh:/usr/local/bin/rental-bootstrap.sh:ro
     # 호스트 루프백 게시 — 논리 백업(infra/backup/pg-dump.sh)이 호스트의 pg_dump 로 TCP 접속한다. 정기 작업은 backup 계정으로
     # 도는데 그 계정은 docker 그룹이 아니라 docker compose exec 를 쓸 수 없다(서버 운영 기반 설계서 6.2).
     # 루프백인 이유 — Docker 게시 포트는 호스트 방화벽을 우회하므로(설계서 3.3) 막는 수단이 바인딩 주소뿐이다.
@@ -406,53 +420,18 @@ services:
     logging: *logging
     # primary 와 같다 — 승격되면 primary 역할을 한다
     mem_limit: 256m
-    # 초기화 — 데이터 디렉터리가 비었을 때(PG_VERSION 이 없을 때)만 primary 에서 받는다. 재기동마다 전체를 복사하지 않는다.
-    #   - 슬롯 standby_1 은 노드 적용 때 primary 에서 **미리 만든다**(-S 는 있는 슬롯을 쓴다). pg_basebackup -C 는
-    #     슬롯이 이미 있으면 실패하므로 재구축할 때마다 걸린다.
-    #   - -R 이 standby.signal 과 postgresql.auto.conf 의 primary_conninfo · primary_slot_name 을 쓴다.
-    #   - -X stream 은 복사하는 동안의 WAL 을 따로 받아 받은 사본만으로 일관되게 한다. -c fast 는 시작 체크포인트를 바로 한다.
-    #   - 이미지(postgres:17-alpine)에 gosu · pg_basebackup 이 있다. 데이터 디렉터리는 postgres(uid 70) 소유 · 700 이어야 서버가 뜬다.
-    #   - 받는 도중 실패하면 pg_basebackup 이 받은 것을 지운다. 컨테이너가 강제로 죽어 조각이 남았는데 PG_VERSION 까지
-    #     들어왔다면 서버가 복구 시작점을 못 찾고 기동을 거부한다(조용히 뜨지 않는다) — 그때는 볼륨을 지우고 다시 올린다.
-    #   - 끝나면 명령 목록(x-postgres-command)을 "$@" 로 받아 이미지의 docker-entrypoint.sh 로 넘긴다. 데이터 디렉터리가
-    #     있으므로 그 스크립트는 initdb 를 건너뛴다.
-    #
-    # 복제 비밀번호는 **볼륨에 쓰지 않는다.** pg_basebackup -R 은 접속에 쓴 비밀번호를 primary_conninfo 에 평문으로
-    # 옮겨 적는다(PGPASSWORD 로 받았을 때 postgresql.auto.conf 에 password=… 가 남는 것을 17.11 에서 확인). 그러면
-    # 비밀번호가 데이터 디렉터리와 그것을 복사하는 모든 곳(볼륨 사본 · 재구축 원본)에 따라간다. 대신
-    #   - 기동할 때마다 이 셸이 환경 변수로 비밀번호 파일(PGPASSFILE)을 tmpfs(메모리)에 쓴다. pg_basebackup 과 이후
-    #     walreceiver 가 이 파일로 인증한다. 파일 안의 : 와 \ 는 \ 로 이스케이프한다(libpq 비밀번호 파일 형식).
-    #   - 그러면 -R 은 password 대신 passfile=<경로> 를 적는다. 경로는 재기동마다 다시 채워지므로 볼륨에 비밀이 남지 않는다.
-    #   - 비밀번호 환경 변수는 서버로 넘기기 전에 지운다 — 서버 프로세스 환경에 남기지 않는다.
-    # 비밀번호를 바꾸면 infra/.env 를 고치고 이 서비스를 재생성한다(파일이 다시 쓰인다).
-    # $$ 는 Compose 가 변수로 풀지 않게 한 것이다(컨테이너 안에서는 $).
+    # 초기화 — 데이터 디렉터리가 비었을 때만 primary(postgres)에서 슬롯 standby_1 로 받는다. 받는 방법 · 복제 비밀번호를
+    # 볼륨에 남기지 않는 이유는 초기화 스크립트(infra/postgres/bootstrap.sh) 머리 주석. postgres 와 같은 스크립트다.
     tmpfs:
       - /run/replication:size=64k,mode=0700
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        set -eu
-        : "$${POSTGRES_REPLICATION_USER:?postgres-standby: POSTGRES_REPLICATION_USER 가 비어 있다 — infra/.env}"
-        : "$${POSTGRES_REPLICATION_PASSWORD:?postgres-standby: POSTGRES_REPLICATION_PASSWORD 가 비어 있다 — infra/.env}"
-        umask 077
-        esc() { printf '%s' "$$1" | sed 's/[\\:]/\\&/g'; }
-        printf '*:*:replication:%s:%s\n' "$$(esc "$$POSTGRES_REPLICATION_USER")" "$$(esc "$$POSTGRES_REPLICATION_PASSWORD")" > "$$PGPASSFILE"
-        chown -R postgres:postgres "$${PGPASSFILE%/*}"
-        unset POSTGRES_REPLICATION_PASSWORD
-        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
-          mkdir -p "$$PGDATA"
-          find "$$PGDATA" -mindepth 1 -delete
-          chown postgres:postgres "$$PGDATA"
-          chmod 700 "$$PGDATA"
-          echo "postgres-standby: 데이터 디렉터리가 비어 있다 — primary 에서 pg_basebackup 으로 받는다"
-          gosu postgres pg_basebackup -h postgres -U "$$POSTGRES_REPLICATION_USER" -w -D "$$PGDATA" -S standby_1 -R -X stream -c fast
-        fi
-        exec docker-entrypoint.sh "$$@"
-      - postgres-standby
+    # sh 로 부른다 — 마운트한 파일의 실행 비트에 기대지 않는다
+    entrypoint: ["/bin/sh", "/usr/local/bin/rental-bootstrap.sh"]
     command: *postgres-command
     environment:
-      # 복제 계정은 이 서비스에만 넘긴다. primary 는 이 비밀번호를 쓰지 않는다(역할은 노드 적용 때 만든다)
+      # 받을 곳과 슬롯 — 초기화 스크립트. 슬롯은 primary 에 노드 적용 때 미리 만든다
+      PG_BOOTSTRAP_FROM: postgres
+      PG_BOOTSTRAP_SLOT: standby_1
+      # 복제 계정 — 역할은 노드 적용 때 primary 에서 만든다. postgres 에도 같은 값을 넘긴다(페일백 때 이쪽에서 받는다)
       POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER:-}
       POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-}
       # 위 tmpfs 안. libpq 가 이 변수로 비밀번호 파일을 찾는다 — pg_basebackup 과 서버의 walreceiver 모두
@@ -465,6 +444,7 @@ services:
     volumes:
       - pgdata-standby:/var/lib/postgresql/data
       - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./postgres/bootstrap.sh:/usr/local/bin/rental-bootstrap.sh:ro
     # 복구 중 일관된 지점에 닿기 전에는 pg_isready 가 거부(1)를 돌려준다 — 받은 뒤 읽기 연결을 받을 때 healthy 다.
     # start_period 는 첫 기동의 pg_basebackup 몫이다(DB 36 MB — 2026-09-23 실측).
     healthcheck:
@@ -596,7 +576,8 @@ services:
     logging: *logging
     mem_limit: 64m
     environment:
-      DATA_SOURCE_URI: postgres:5432/${POSTGRES_DB}?sslmode=disable
+      # 호스트는 앱과 같은 DB_HOST — 페일오버(운영 절차서 6.1) 뒤에도 현재 primary 를 본다
+      DATA_SOURCE_URI: ${DB_HOST:-postgres}:5432/${POSTGRES_DB}?sslmode=disable
       DATA_SOURCE_USER: ${POSTGRES_MONITOR_USER:-}
       DATA_SOURCE_PASS: ${POSTGRES_MONITOR_PASSWORD:-}
       TZ: Asia/Seoul
