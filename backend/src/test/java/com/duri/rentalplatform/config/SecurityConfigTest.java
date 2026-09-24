@@ -68,6 +68,9 @@ class SecurityConfigTest {
     private static final String PROTECTED_PATH = "/api/me/probe";
     private static final String AUTHORITIES_PATH = "/api/me/probe/authorities";
 
+    /** 지표 수집 경로. 슬라이스에는 Actuator 가 없으므로 같은 경로의 시험용 엔드포인트로 인가만 본다. */
+    private static final String PROMETHEUS_PATH = "/actuator/prometheus";
+
     /** 실시간 수신 티켓을 소비하는 보안 체인의 의존. 이 슬라이스는 쓰지 않는다. */
     @MockitoBean
     StreamTicketStore streamTicketStore;
@@ -178,6 +181,20 @@ class SecurityConfigTest {
     }
 
     @Test
+    @DisplayName("지표 경로 /actuator/prometheus는 토큰 없이 통과한다 — 수집기는 토큰을 들고 오지 않는다")
+    void prometheusPathWithoutToken() throws Exception {
+        mockMvc.perform(get(PROMETHEUS_PATH))
+                .andExpect(status().is(200));
+    }
+
+    @Test
+    @DisplayName("지표 경로 밖의 관리 경로는 토큰 없이 401이다 — 공개는 /actuator/prometheus 하나로 좁혀 둔다")
+    void otherActuatorPathWithoutToken() throws Exception {
+        mockMvc.perform(get("/actuator/env"))
+                .andExpect(status().is(401));
+    }
+
+    @Test
     @DisplayName("PasswordEncoder는 같은 평문을 매번 다르게 인코딩하고 대조는 통과시킨다")
     void passwordEncoderUsesSalt() {
         String raw = "duri-Password-1234";
@@ -222,6 +239,12 @@ class SecurityConfigTest {
         @GetMapping(PROTECTED_PATH)
         ApiResponse<Long> protectedProbe(@AuthenticationPrincipal Long userId) {
             return ApiResponse.ok(userId);
+        }
+
+        /** 지표 경로 모양. 실제 응답은 Prometheus 텍스트지만 인가 규칙은 경로만 본다. */
+        @GetMapping(PROMETHEUS_PATH)
+        String prometheusProbe() {
+            return "# metrics";
         }
 
         /** 필터가 채운 권한을 그대로 돌려준다. 관리자 등급 인가가 이 문자열 위에 세워진다. */
