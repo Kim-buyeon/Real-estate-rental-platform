@@ -188,6 +188,13 @@ class SecurityConfigTest {
     }
 
     @Test
+    @DisplayName("지표 경로 밖의 관리 경로는 토큰 없이 401이다 — 공개는 /actuator/prometheus 하나로 좁혀 둔다")
+    void otherActuatorPathWithoutToken() throws Exception {
+        mockMvc.perform(get("/actuator/env"))
+                .andExpect(status().is(401));
+    }
+
+    @Test
     @DisplayName("PasswordEncoder는 같은 평문을 매번 다르게 인코딩하고 대조는 통과시킨다")
     void passwordEncoderUsesSalt() {
         String raw = "duri-Password-1234";
