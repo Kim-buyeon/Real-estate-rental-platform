@@ -42,7 +42,8 @@
 │   ├── nginx/              요청 분산 · 점검 모드. local/ 은 로컬 구성의 앞단 서버 블록
 │   ├── backup/             데이터 백업 작업 — 스크립트와 그것을 거는 systemd 유닛
 │   ├── os/                 Rocky Linux 노드 설정 — firewalld · NFS 공유 · 노드 정기 작업 · sshd — 미작성
-│   └── prometheus/ · alertmanager/ · promtail/ · grafana/   관측 — 자체 호스팅을 전제한 자리다. 지금은 노드에 exporter와 수집기만 두므로 폴더 구성은 착수 때 정한다
+│   ├── prometheus/ · vector/   관측 수집기 — 지표 · 로그를 노드 밖으로 보낸다. exporter는 Compose 서비스다
+│   └── alertmanager/ · promtail/ · grafana/   자체 호스팅으로 되돌릴 때의 자리 — 지금은 없다
 │
 ├── chaos-harness/        시험 실행 — 차기 범위
 │   ├── load/               k6 프로파일과 토큰 풀
