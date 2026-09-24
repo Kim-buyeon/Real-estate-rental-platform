@@ -234,7 +234,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 3 | 구 primary 격리 — 살아 있으면 정지한다(같은 노드: `docker compose stop postgres`). **정지만으로는 다음 `docker compose up -d`에서 다시 뜬다** — 페일백 전까지 Compose 전체를 올리는 명령(배포 포함)을 쓰지 않고 서비스를 지정해 `--no-deps`로만 다룬다 | 1분 | 스플릿 브레인 방지. 앱의 접속 대상이 바뀐 뒤에는 구 primary로 가는 쓰기가 없다 |
 | 4 | standby의 복제 지연 확인 (`pg_last_wal_receive_lsn` · `pg_last_wal_replay_lsn`) | 2분 | 받은 것과 재생한 것이 같다. 지연이 크면 WAL 아카이브 추가 재생 |
 | 5 | standby 승격 (`SELECT pg_promote(true, 60)` — `pg_ctl promote`와 같다) | 3분 | `pg_is_in_recovery()`가 `f`, 타임라인이 하나 는다 |
-| 6 | 애플리케이션의 DB 접속 대상 전환 후 재기동 | 5분 | 설정 변경 + 롤링 재기동 |
+| 6 | 애플리케이션의 DB 접속 대상 전환 후 재기동 — 같은 노드: `.env`에 `DB_HOST=postgres-standby` → `docker compose up -d --no-deps app-1 app-2 postgres-exporter`(exporter도 `DB_HOST`를 따른다) | 5분 | 설정 변경 + 롤링 재기동 |
 | 7 | 점검 모드 해제, 핵심 기능 확인 | 5분 | 로그인·매물 조회·위험도 조회 |
 | 8 | 신규 standby 재구축 | 30분 | 서비스 정상화 이후 수행. RTO에 미포함 |
 | 9 | 장애 보고서 작성 | — | 원인·조치·재발 방지 |
@@ -268,7 +268,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 3 | 복제 지연이 수렴할 때까지 대기 | `replay_lag` < 1초 |
 | 4 | 전환 시각 결정 | 트래픽이 낮은 시간대. 즉시 수행하지 않는다 |
 | 5 | 점검 모드 전환 | 6.1절과 동일. 스플릿 브레인 방지 |
-| 6 | 현재 primary의 쓰기 중단 확인 후 구 primary 승격 | 승격 전 `pg_current_wal_lsn` 일치 확인 |
+| 6 | 현재 primary의 쓰기 중단 확인 후 구 primary 승격 | 승격 전 구 primary의 replay LSN이 현재 primary의 마지막 `pg_current_wal_lsn` **이상**인지 확인(같은 노드 순서 6행) |
 | 7 | 애플리케이션 DB 접속 대상 전환 후 롤링 재기동 | 3장 배포 절차와 동일한 방식 |
 | 8 | 점검 모드 해제, 반대편을 다시 standby로 재구축 | 원래 구성 복원 완료 |
 
@@ -283,7 +283,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 **`pg_rewind`가 「no rewind required」를 내면 끝난 것이 아니다.** 구 primary가 갈라지지 않고 **뒤처져만 있다**는 뜻이다 — 승격 뒤 새 primary에 쓰인 것은 아직 구 primary에 없다. 그대로 primary로 띄우면 그 쓰기를 잃는다. **되감기를 했든 안 했든 2 · 3단계 — 새 primary의 standby로 붙여 따라잡게 하는 것 — 를 건너뛰지 않는다.**
 
-**검증은 되돌릴 수 없는 단계 앞의 멈춤 조건이다.** 6단계 승격 전 LSN 일치, 그리고 페일오버 중 새 primary에 써 둔 표식 행이 구 primary에 있는지를 본다. 하나라도 어긋나면 점검 모드를 유지한 채 멈춘다 — 서비스를 열거나 반대편 볼륨을 지우는 단계로 넘어가지 않는다.
+**검증은 되돌릴 수 없는 단계 앞의 멈춤 조건이다.** 6단계 승격 전 LSN(구 primary의 replay LSN이 현재 primary의 마지막 값 이상), 그리고 페일오버 중 새 primary에 써 둔 표식 행이 구 primary에 있는지를 본다. 하나라도 어긋나면 점검 모드를 유지한 채 멈춘다 — 서비스를 열거나 반대편 볼륨을 지우는 단계로 넘어가지 않는다.
 
 **2026-09-24 리허설에서 이 두 규칙을 어겼다**(#201). 두 DB를 정상 종료한 뒤 `pg_rewind --source-pgdata`로 구 primary를 맞추려 했는데 결과가 「no rewind required」였고, 그대로 구 primary를 primary로 띄웠다. 승격된 쪽에 써 둔 시험 표식 테이블이 사라졌고, 이어서 standby 볼륨을 지워 되살릴 곳도 없앴다. **실제 데이터 손실은 없었다** — 그 구간 Nginx로 들어온 쓰기 요청 0건(확인용 GET 1건), DB에 쓰는 정기 작업 없음, 건수가 직전과 같다. 스크립트가 표식 행을 확인하고도 멈추지 않은 것이 원인이다.
 
@@ -293,12 +293,13 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 | 순서 | 명령(`infra/`에서) | 멈춤 조건 — 어긋나면 다음으로 가지 않는다 |
 |---|---|---|
-| 2 | `docker compose rm -sf postgres` → `docker volume rm rental-prod_pgdata` → `.env`에 `PG_BOOTSTRAP_FROM=postgres-standby` → `docker compose up -d --no-deps postgres` | `postgres`에서 `pg_is_in_recovery()` = `t`. **볼륨을 지우기 전에** 페일오버 뒤 새 primary에 표식 행이 있는지 확인해 둔다 |
+| 1 | **지우기 전 확인** — 새 primary(`postgres-standby`)에 페일오버 뒤 써 둔 표식 행이 있다. 논리 백업이 멈춰 있으므로 새 primary에서 `pg_dump -Fc` 한 벌을 받아 둔다 | 표식 행이 없거나 덤프가 실패하면 **여기서 멈춘다** — 다음 행이 되돌릴 수 없다 |
+| 2 | `docker compose rm -sf postgres` → `docker volume rm rental-prod_pgdata` → `.env`에 `PG_BOOTSTRAP_FROM=postgres-standby` → `docker compose up -d --no-deps postgres` | `postgres`에서 `pg_is_in_recovery()` = `t` |
 | 3 | 따라잡기 대기 | `postgres-standby`의 `pg_stat_replication`에 `streaming`, `replay_lag` < 1초. 표식 행이 `postgres`에서 보인다 |
 | 5 | `bash maintenance.sh on` | — |
 | 6 | `postgres-standby`에서 `SELECT pg_current_wal_lsn()` 기록 → `docker compose stop postgres-standby` → `postgres`에서 `pg_last_wal_replay_lsn()` 확인 → `SELECT pg_promote(true, 60)` | replay LSN이 기록한 값 **이상**이다. **같을 수는 없다** — 정상 종료가 종료 체크포인트 레코드를 하나 더 쓰고 standby가 그것까지 받는다(로컬 실측 종료 전 `0/5000160` → replay `0/5000210`). 승격 뒤 `pg_is_in_recovery()` = `f` |
-| 7 | `.env`에서 `DB_HOST` · `PG_BOOTSTRAP_FROM` 줄 삭제 → `docker compose up -d --no-deps postgres app-1 app-2` → readiness | `postgres`가 기존 데이터로 primary로 뜬다. 두 슬롯 API 200 |
-| 8 | `bash maintenance.sh off` → `docker compose rm -sf postgres-standby` → `docker volume rm rental-prod_pgdata-standby` → 슬롯 `standby_1`이 없으면 만든다 → `docker compose up -d --no-deps postgres-standby` | `streaming` · `async` · 슬롯 active. 표식 행 삭제 |
+| 7 | `.env`에서 `DB_HOST` · `PG_BOOTSTRAP_FROM` 줄 삭제 → `docker compose up -d --no-deps postgres app-1 app-2 postgres-exporter` → readiness. 점검 모드 안이라 두 슬롯을 한꺼번에 재생성한다 | `postgres`가 기존 데이터로 primary로 뜬다. 두 슬롯 API 200 |
+| 8 | `bash maintenance.sh off` → `docker compose rm -sf postgres-standby` → `docker volume rm rental-prod_pgdata-standby` → 슬롯 `standby_1`이 없으면 만든다(6장 머리 「standby 구성 순서」 2) → `docker compose up -d --no-deps postgres-standby` → 표식 행 삭제 | `streaming` · `async` · 슬롯 active |
 
 - 2단계의 `postgres`는 슬롯 없이 받는다. 페일오버 뒤 새 primary에 만든 슬롯이 있으면 이 복제에 쓰이지 않고 WAL만 붙든다 — 8단계 뒤 새 primary가 다시 standby가 되면서 사라진다.
 - 승격 뒤에도 `postgresql.auto.conf`에 `primary_conninfo`(비밀번호 없이 passfile 경로만)가 남는다. `standby.signal`이 없으면 쓰이지 않는다 — 그 줄로 standby라고 판단하지 않는다. 판단은 `pg_is_in_recovery()`로 한다.
