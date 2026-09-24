@@ -53,7 +53,8 @@ AWS=${AWS:-aws}
 BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-7}
 
 # ── 암호화 ──
-# **도구는 gpg 대칭 암호화(AES256, --passphrase-file)로 정했다**(설계서 5.1 · 10장). gpg 는 Amazon Linux · Rocky 기본 설치다.
+# **도구는 gpg 대칭 암호화(AES256, --passphrase-file)로 정했다**(설계서 5.1 · 10장). Amazon Linux 2023 은 기본이
+# gnupg2-minimal 이라 gpg-agent 를 띄우지 못해 대칭 암호화가 실패한다 — 노드 준비에서 gnupg2-full 로 바꾼다(운영 절차서 9.3).
 # openssl enc 를 쓰지 않는 이유 — 인증 암호 모드(CCM · GCM)를 지원하지 않아 변조 · 손상된 백업을 복호화 단계에서 잡지 못한다
 # (openssl-enc(1) 공식 문서).
 # 바꿔 끼울 자리는 남겨 둔다 — BACKUP_ENCRYPT_CMD 는 표준입력을 받아 표준출력으로 내보내는 필터여야 한다.
