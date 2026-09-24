@@ -209,7 +209,7 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 
 **복제가 붙어 있는지 먼저 본다** — primary에서 `SELECT client_addr, state, sync_state, replay_lag FROM pg_stat_replication`(`streaming` · `async`), `SELECT slot_name, active, wal_status FROM pg_replication_slots`(`active = t`). standby에서 `SELECT pg_is_in_recovery()`가 `t`.
 
-**7주차 실행 전에 풀 것** — 앱의 접속 대상(`DB_HOST`)이 운영 Compose에 `postgres`로 고정돼 있다. 6단계 「접속 대상 전환」을 `.env`만으로 하려면 변수로 빼야 한다.
+**접속 대상 전환** — 앱의 접속 대상은 `infra/.env`의 `DB_HOST`다. 평시에는 두지 않는다(비우면 `postgres`). 6.1 6단계에서 `DB_HOST=postgres-standby`를 넣고 슬롯을 재생성하며, 페일백 7단계에서 그 줄을 지우고 다시 재생성한다(#199).
 
 **standby 구성 순서** — APP-01에 2026-09-24 17:49 ~ 17:51에 실제로 밟은 순서다(#194). standby를 다시 만들 때(볼륨을 지운 재구축)는 4 · 5만 밟는다 — 역할과 슬롯은 primary에 남아 있다. 슬롯을 지웠으면 2의 슬롯 생성만 다시 한다.
 
