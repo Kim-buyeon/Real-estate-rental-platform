@@ -287,7 +287,24 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 **2026-09-24 리허설에서 이 두 규칙을 어겼다**(#201). 두 DB를 정상 종료한 뒤 `pg_rewind --source-pgdata`로 구 primary를 맞추려 했는데 결과가 「no rewind required」였고, 그대로 구 primary를 primary로 띄웠다. 승격된 쪽에 써 둔 시험 표식 테이블이 사라졌고, 이어서 standby 볼륨을 지워 되살릴 곳도 없앴다. **실제 데이터 손실은 없었다** — 그 구간 Nginx로 들어온 쓰기 요청 0건(확인용 GET 1건), DB에 쓰는 정기 작업 없음, 건수가 직전과 같다. 스크립트가 표식 행을 확인하고도 멈추지 않은 것이 원인이다.
 
-**같은 노드에서 2 · 3단계를 밟을 수단이 아직 없다.** `postgres` 서비스는 primary로만 뜬다 — standby로 띄울 복제 접속 정보(`postgres-standby`의 pgpass 같은)와 `standby.signal`을 넣을 자리가 운영 Compose에 없다. 그 수단을 만들기 전에는 페일백을 다시 밟지 않는다. 그 전에 실제 페일오버가 나면 `postgres-standby`가 primary인 채로 **standby 없이** 돌고, 논리 백업도 멈춘다 — 백업은 `postgres` 서비스가 루프백에 게시한 5432로 붙는데(5장) `postgres-standby`는 게시하지 않는다. 그 상태를 오래 두지 않도록 수단을 만드는 작업을 먼저 한다.
+**페일오버가 끝난 동안 논리 백업은 멈춘다.** 백업은 `postgres` 서비스가 루프백에 게시한 5432로 붙는데(5장) `postgres-standby`는 게시하지 않는다. 그 상태를 오래 두지 않는다.
+
+**같은 노드 페일백 순서**(#203) — 두 PostgreSQL 서비스는 같은 초기화 스크립트(`infra/postgres/bootstrap.sh`)를 쓴다. 볼륨이 비어 있고 `PG_BOOTSTRAP_FROM`이 있으면 그곳에서 `pg_basebackup`으로 받아 standby로 뜬다. 구 primary는 되감지 않고 **볼륨을 비워 새로 받는다** — 위 재구축 수단 표의 둘째 행이고, DB가 작아(36 MB) 수 초다. 각 단계는 위 표의 번호를 따른다.
+
+| 순서 | 명령(`infra/`에서) | 멈춤 조건 — 어긋나면 다음으로 가지 않는다 |
+|---|---|---|
+| 2 | `docker compose rm -sf postgres` → `docker volume rm rental-prod_pgdata` → `.env`에 `PG_BOOTSTRAP_FROM=postgres-standby` → `docker compose up -d --no-deps postgres` | `postgres`에서 `pg_is_in_recovery()` = `t`. **볼륨을 지우기 전에** 페일오버 뒤 새 primary에 표식 행이 있는지 확인해 둔다 |
+| 3 | 따라잡기 대기 | `postgres-standby`의 `pg_stat_replication`에 `streaming`, `replay_lag` < 1초. 표식 행이 `postgres`에서 보인다 |
+| 5 | `bash maintenance.sh on` | — |
+| 6 | `postgres-standby`에서 `SELECT pg_current_wal_lsn()` 기록 → `docker compose stop postgres-standby` → `postgres`에서 `pg_last_wal_replay_lsn()` 확인 → `SELECT pg_promote(true, 60)` | replay LSN이 기록한 값 **이상**이다. **같을 수는 없다** — 정상 종료가 종료 체크포인트 레코드를 하나 더 쓰고 standby가 그것까지 받는다(로컬 실측 종료 전 `0/5000160` → replay `0/5000210`). 승격 뒤 `pg_is_in_recovery()` = `f` |
+| 7 | `.env`에서 `DB_HOST` · `PG_BOOTSTRAP_FROM` 줄 삭제 → `docker compose up -d --no-deps postgres app-1 app-2` → readiness | `postgres`가 기존 데이터로 primary로 뜬다. 두 슬롯 API 200 |
+| 8 | `bash maintenance.sh off` → `docker compose rm -sf postgres-standby` → `docker volume rm rental-prod_pgdata-standby` → 슬롯 `standby_1`이 없으면 만든다 → `docker compose up -d --no-deps postgres-standby` | `streaming` · `async` · 슬롯 active. 표식 행 삭제 |
+
+- 2단계의 `postgres`는 슬롯 없이 받는다. 페일오버 뒤 새 primary에 만든 슬롯이 있으면 이 복제에 쓰이지 않고 WAL만 붙든다 — 8단계 뒤 새 primary가 다시 standby가 되면서 사라진다.
+- 승격 뒤에도 `postgresql.auto.conf`에 `primary_conninfo`(비밀번호 없이 passfile 경로만)가 남는다. `standby.signal`이 없으면 쓰이지 않는다 — 그 줄로 standby라고 판단하지 않는다. 판단은 `pg_is_in_recovery()`로 한다.
+- 이 순서는 로컬 Docker에서 한 바퀴(복제 → 페일오버 → 페일백 → 반대편 재구축, 표식 행 보존) 확인했다(#203). **노드에서는 아직 밟지 않았다.**
+
+**2단계에서 볼륨을 지우는 것이 되돌릴 수 없는 첫 단계다.** 그 전에 새 primary가 모든 쓰기를 갖고 있는지(표식 행) 보고, 논리 백업이 멈춰 있으므로 새 primary에서 `pg_dump`를 한 벌 받아 두면 더 안전하다.
 
 **되돌리지 않는 선택지도 있다.** 승격된 노드를 계속 primary로 두고 구 primary를 standby로 붙이는 방식이다. 전환 작업이 한 번 줄어드는 대신, 두 노드의 사양이 뒤바뀐 채로 남으므로 사양을 맞추는 작업이 따로 필요하다. 어느 쪽을 택하든 **사양이 낮은 노드가 primary인 상태를 방치하지 않는다.**
 
