@@ -205,6 +205,12 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 
 ## 6. 페일오버 · 페일백
 
+**지금 standby는 같은 노드의 컨테이너(`postgres-standby`)다**(시스템 구성서 2.2 · 3장). 아래 절차의 「primary」는 `postgres` 서비스, 「standby」는 `postgres-standby` 서비스로 읽는다. 노드가 통째로 멈추면 둘이 함께 멈추므로 1단계의 「SSH 접속 불가」 판정은 이 구성에서 성립하지 않는다 — **primary 컨테이너만 멈춘 경우의 절차 검증**이다. 명령은 로드맵 7주차 실행에서 이 절에 채운다(1장 원칙).
+
+**복제가 붙어 있는지 먼저 본다** — primary에서 `SELECT client_addr, state, sync_state, replay_lag FROM pg_stat_replication`(`streaming` · `async`), `SELECT slot_name, active, wal_status FROM pg_replication_slots`(`active = t`). standby에서 `SELECT pg_is_in_recovery()`가 `t`.
+
+**7주차 실행 전에 풀 것** — 앱의 접속 대상(`DB_HOST`)이 운영 Compose에 `postgres`로 고정돼 있다. 6단계 「접속 대상 전환」을 `.env`만으로 하려면 변수로 빼야 한다.
+
 ### 6.1 페일오버 절차
 
 Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계에 예상 소요를 병기해 RTO 30분의 근거로 삼는다.

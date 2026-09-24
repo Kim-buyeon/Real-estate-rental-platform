@@ -72,6 +72,8 @@ APP-01 · DB-01 · DB-02 세 노드의 구성과 상시 경로(그림 기준). �
 | NAS-01 | 미확정 | NFS 서버(백업 저장소) | 예 |
 | NAT-01 | 미확정 — 최소 사양 | NAT(IP 포워딩 · 마스커레이드) | 예 |
 
+**지금은 DB-01 · DB-02 행이 APP-01 안의 컨테이너 둘이다**(2.2절) — primary(`postgres`)와 standby(`postgres-standby`). standby는 승격 뒤 primary 역할을 하므로 **primary와 같은 설정 · 같은 메모리 상한**을 둔다(설정은 운영 Compose 한 곳에서 두 서비스가 함께 쓴다). 표의 DB-02 1 GB는 노드를 분리할 때의 설계값이다.
+
 **APP-01만 확정이고 나머지는 미확정이다.** APP-01은 사용자 결정으로 t3.small에 고정한다(2026-09-23). 초기 배치의 4 GB가 아니라 **2 GB**이며, 그 위에 앱 2슬롯 · Redis · 1차 배포의 PostgreSQL까지 올라가므로 **컨테이너마다 상한을 두지 않으면 커널이 메모리를 가장 많이 쓰는 프로세스를 정지시킨다.** 아래 자원 상한이 선택이 아니라 전제인 이유다. 나머지 노드는 부하 시험이 차기 범위로 빠졌으므로 구축 시점에 확정한다. DB-02는 승격 시 primary 역할을 감당하는지 확인이 필요하다(`docs/infra/runbook.md` 6.2절).
 
 **자원 상한**
@@ -123,6 +125,7 @@ APP-01 단일 노드에 두 프로세스를 두는 구성은 노드 자체의 �
 | 지표 수집기(Prometheus agent) → exporter | 9100 · 9121 · 9187 | **동일 노드 루프백.** node exporter는 호스트 네트워크에서 루프백에 바인딩하고, redis · postgres exporter는 루프백에 게시한다. 수집기의 자체 포트(9090)도 루프백만 — 인프라 기술 스택 4.1 |
 | 수집기 → Grafana Cloud | 443(나가는 방향) | 아래 「APP-01 → 인터넷」 행에 포함된다. 들어오는 길은 없다 |
 | Primary → Standby | 5432 | DB-01 사설 IP만 |
+| Standby → Primary 복제(같은 노드 — 지금 구성) | 5432 | **Compose 네트워크 안에서만.** standby 컨테이너는 포트를 게시하지 않고 primary의 5432에 Compose 네트워크로 붙는다. 복제 접속은 `pg_hba.conf`의 복제 줄 하나(복제 역할 · 같은 서브넷 · scram)만 받는다 — `infra/postgres/pg_hba.conf` |
 | 운영자 → APP-01 | 22 | 운영자 IP만. 공개키 인증만. 비밀번호 인증과 root 로그인은 차단 |
 | APP-01 → 다른 노드(DB-01 · DB-02 · NAS-01 · NAT-01) | 22 | APP-01 사설 IP만 — 운영자는 APP-01을 경유(ProxyJump)해 들어간다 |
 | DB-01 · DB-02 · APP-01 → NAS-01 | 2049 | 해당 노드 사설 IP만. NFSv4만 쓰므로 이 포트 하나 |
