@@ -6,8 +6,9 @@
 # 파일 이름이 docker-compose.yml 인 이유: 배포 스크립트(운영 절차서 3.2)가 -f 없이 infra/ 에서 docker compose 를 부른다.
 # 다른 이름이면 Compose 가 상위 폴더로 올라가 루트의 로컬 구성을 집는다.
 #
-# 1차 배포(EC2)에서는 PostgreSQL 도 이 노드에 둔다. DB 노드 분리 · 복제(INF-03)에서 postgres 서비스를 빼고
-# DB_HOST 를 DB-01 사설 IP 로 바꾼다 — 로드맵 6주차.
+# PostgreSQL 도 이 노드에 둔다. 복제(INF-03)의 standby(postgres-standby)도 같은 노드의 컨테이너다 — 노드를 늘릴 수 없어
+# (시스템 구성서 2.2) 전환 절차를 검증하는 자리이고 노드 장애는 막지 못한다. DB 노드를 따로 두게 되면 두 서비스를 빼고
+# DB_HOST 를 그 노드 사설 IP 로 바꾼다.
 #
 # 이미지 — 레지스트리 파이프라인(INF-02) 전에는 로컬 빌드 이미지를 쓴다(운영 절차서 3.2 전제).
 # APP_IMAGE · WEB_IMAGE 로 덮으면 레지스트리 이미지가 된다.
@@ -17,8 +18,8 @@ name: rental-prod
 # 컨테이너 로그 회전 — 서버 운영 기반 설계서 8장이 「컨테이너 로그 — 크기·개수 상한」을 요구하는데 값이 10장에서 미확정이라
 # 지금까지 상한이 없었다. json-file 기본값은 무제한이라 로그만으로 노드 디스크가 찬다
 # (볼륨 크기는 서버 운영 기반 설계서 4.2 에서 미확정이다 — 상한을 두는 근거는 크기가 아니라 증가가 멈추지 않는다는 것).
-# 서비스 11개(nginx · app-1 · app-2 · web · redis · postgres + 관측 수집기 prom-agent · vector · node-exporter ·
-# postgres-exporter · redis-exporter) × 10m × 3개 = 약 330 MB 가 컨테이너 로그 전체의 상한이다.
+# 서비스 12개(nginx · app-1 · app-2 · web · redis · postgres · postgres-standby + 관측 수집기 prom-agent · vector ·
+# node-exporter · postgres-exporter · redis-exporter) × 10m × 3개 = 약 360 MB 가 컨테이너 로그 전체의 상한이다.
 # vector 가 이 json-file 로그를 Docker API 로 읽어 밖으로 보내므로, 회전은 노드 안의 사본만 줄인다.
 x-logging: &logging
   driver: json-file
@@ -63,9 +64,19 @@ x-logging: &logging
 #
 #   임시 구성을 걷고 이것으로 바꿔 올리므로 노드 실사용의 순증은 없다(실측 79.5 MiB 는 이미 노드에 있다).
 #
+# 복제 standby(INF-03) — 같은 노드의 컨테이너다. 트래픽을 받지 않고 WAL 재생만 한다.
+#
+#   서비스              mem_limit   실측              상한의 근거
+#   postgres-standby        256m   (노드 적용 뒤)    primary 와 같다 — 승격되면 primary 역할을 한다
+#   ──────────────────────────────────────────────
+#   위 두 표와 더해 상한 합 2396m. 노드 실사용은 이만큼 순증한다(로컬 Docker 에서 빈 DB 로 띄운 값은 17 MiB 였다 —
+#   이 노드 · 이 DB 크기의 값이 아니다).
+#
 # **상한의 합이 노드 가용 메모리를 넘는다. 의도한 것이고, 대가가 있다.**
-#   1909(총량) − 264(OS · dockerd 실측) = 1645 이고 상한 합 1648 은 그것을 넘는다. 수집기를 더하면 2140 이다.
-#   mem_limit 은 **예약이 아니라 상한**이라 쓰지 않는 몫을 붙들지 않는다. 평시 실사용 합이 913(수집기 더해 약 993)이므로
+#   1909(총량) − 264(OS · dockerd 실측) = 1645 이고 상한 합 1648 은 그것을 넘는다. 수집기를 더하면 2140,
+#   standby 까지 더하면 2396 이다.
+#   mem_limit 은 **예약이 아니라 상한**이라 쓰지 않는 몫을 붙들지 않는다. 평시 실사용 합이 913(수집기 더해 약 993,
+#   standby 실측은 노드 적용 뒤)이므로
 #   평시에는 여유가 있고, 상한의 목적은 총합을 보장하는 것이 아니라 **폭주하는 하나를 가두어 나머지를
 #   지키는 것**이다.
 #
@@ -142,6 +153,67 @@ x-app: &app
       condition: service_healthy
     redis:
       condition: service_healthy
+
+# PostgreSQL 서버 설정 — primary(postgres) · standby(postgres-standby)가 **같은 목록**을 쓴다(INF-03).
+# hot standby 는 max_connections · max_worker_processes · max_locks_per_transaction · max_prepared_transactions 가
+# primary 이상이어야 기동한다. 두 곳에 적으면 한쪽만 고쳐져 standby 가 기동을 거부한다.
+# 뒤의 셋은 기본값(8 · 64 · 0)에 기댄다 — 여기 적지 않으면 양쪽이 같은 기본값이라 조건이 선다.
+# standby 의 shared_buffers 도 같다 — 승격 뒤 primary 역할을 하므로 작게 두면 승격 실측이 반쪽이 된다.
+#
+# 명령 목록 전체를 앵커로 둔 이유 — YAML 병합 키(<<)는 매핑만 합치고 시퀀스는 합치지 못한다. -c 인자만 떼어
+# 앵커로 두면 두 서비스가 그 앞에 postgres 를 붙일 방법이 없다. 그래서 postgres 부터 전체를 한 목록으로 두고
+# primary 는 이미지 기본 entrypoint 로, standby 는 초기화 셸이 이 목록을 "$@" 로 받아 docker-entrypoint.sh 에 넘긴다.
+#
+# max_connections 32 — 앱 풀 16 에 Flyway · 배치 · 운영자 접속 여유를 더했다(Flyway · 배치는 앱과
+# 같은 풀에서 빌리므로 따로 세지 않는다). autovacuum 은 autovacuum_work_mem 기본이 -1 이라
+# maintenance_work_mem 을 그대로 쓰므로 워커 수와 함께 묶는다.
+#
+# 복제에 필요한 wal_level=replica · max_wal_senders=10 · max_replication_slots=10 · hot_standby=on 은 전부 기본값이다 —
+# **기본값에 기대고 있다는 사실만 남긴다.** 바꾸는 변경이 들어오면 복제 조건을 다시 본다.
+x-postgres-command: &postgres-command
+  - postgres
+  - -c
+  - shared_buffers=64MB
+  - -c
+  - max_connections=32
+  - -c
+  - work_mem=4MB
+  - -c
+  - maintenance_work_mem=16MB
+  - -c
+  - autovacuum_max_workers=2
+  # 페일백에서 pg_rewind 를 쓰려면 이 설정이 **장애 전에** 켜져 있어야 한다 — 운영 절차서 6.2 의
+  # 재구축 수단 판정표가 「wal_log_hints = on 또는 데이터 체크섬 활성」을 조건으로 두고, 인프라 기술
+  # 스택 3장이 「장애 발생 후에는 선택할 수 없다」고 못 박았다. 꺼져 있으면 구 primary 를 되돌리는 데
+  # pg_basebackup 전체 재구축을 강요당하고 소요가 데이터 크기에 비례한다.
+  #
+  # 지금 켜는 이유는 **서버 기동 시점에만 정할 수 있기 때문**이다. 복제를 붙인 뒤에 켜려면 standby 가
+  # 붙어 있는 상태에서 primary 를 재기동해야 하고 그때는 계획 정지가 필요하다. 복제 전인 지금은
+  # 컨테이너 재생성만으로 끝난다.
+  #
+  # 판정 조건의 다른 한쪽인 data_checksums 도 나중에 켤 수 있다 — initdb 말고 pg_checksums --enable 로,
+  # 다만 **정상 종료된 클러스터에서만** 돈다(이미지 안에 그 바이너리가 있다). 그래서 대가는
+  # 「재생성」이 아니라 **정지 창 + 전 페이지 재기록**이고, 복제가 붙은 뒤에는 전 노드를 일관되게
+  # 멈춰야 한다(PostgreSQL 문서가 pg_rewind 를 그 위험 사례로 든다). 조건은 둘 중 하나면 성립하므로
+  # 지금은 재기동 한 번으로 끝나는 쪽을 고른다.
+  #
+  # 조건에는 full_page_writes = on 도 있는데 이것은 기본값이라 따로 적지 않는다 — **기본값에 기대고
+  # 있다는 사실만 남긴다.** 끄는 변경이 들어오면 pg_rewind 조건이 함께 깨진다.
+  #
+  # 대가는 WAL 이 약간 느는 것이다. full_page_writes 가 이미 체크포인트 후 첫 수정에서 전체 페이지를
+  # 기록하는데, 이 설정은 그 대상에 **힌트 비트만 바뀐 페이지**까지 넣는다. DB 가 36 MB 라 작다.
+  # standby 도 같은 값을 쓴다 — pg_rewind 의 조건은 되돌려지는 쪽(대상)에 걸리므로, 승격된 standby 가
+  # 나중에 되돌려지는 쪽이 될 때(두 번째 전환 뒤) 같은 조건이 필요하다.
+  - -c
+  - wal_log_hints=on
+  # 복제 슬롯이 붙든 WAL 의 상한 — 인프라 기술 스택 3장. standby 가 멈춰 있어도 슬롯은 WAL 을 지우지 못하게
+  # 붙들어 primary 디스크를 고갈시킨다. 이 크기를 넘기면 슬롯이 무효(wal_status=lost)가 되고 standby 는
+  # 재구축(pg_basebackup)해야 한다 — 디스크 고갈로 primary 가 멈추는 것보다 standby 재구축이 낫다.
+  - -c
+  - max_slot_wal_keep_size=2GB
+  # 접속 규칙은 저장소 파일(infra/postgres/pg_hba.conf)을 쓴다 — 그 파일 머리 주석. 두 서비스 모두 이 경로에 마운트한다.
+  - -c
+  - hba_file=/etc/postgresql/pg_hba.conf
 
 services:
   # 앞단 — 요청 분산 · SSE 전달 · 정적 화면 전달. 호스트 네트워크여야 upstream 의 127.0.0.1 이 호스트를 가리킨다(운영 절차서 4.1).
@@ -292,43 +364,8 @@ services:
     #   실사용이 89 MiB 다(그것도 shared_buffers 128MB · max_connections 100 인 기본값 구성에서 잰 값이다)
     # **셋 중 하나라도 바뀌면 이 산정을 다시 본다.** 트래픽 증가 · DB 증가 · 앱 풀 크기 변경이 그 신호다.
     #
-    # max_connections 32 — 앱 풀 16 에 Flyway · 배치 · 운영자 접속 여유를 더했다(Flyway · 배치는 앱과
-    # 같은 풀에서 빌리므로 따로 세지 않는다). autovacuum 은 autovacuum_work_mem 기본이 -1 이라
-    # maintenance_work_mem 을 그대로 쓰므로 워커 수와 함께 묶는다.
-    command:
-      - postgres
-      - -c
-      - shared_buffers=64MB
-      - -c
-      - max_connections=32
-      - -c
-      - work_mem=4MB
-      - -c
-      - maintenance_work_mem=16MB
-      - -c
-      - autovacuum_max_workers=2
-      # 페일백에서 pg_rewind 를 쓰려면 이 설정이 **장애 전에** 켜져 있어야 한다 — 운영 절차서 6.2 의
-      # 재구축 수단 판정표가 「wal_log_hints = on 또는 데이터 체크섬 활성」을 조건으로 두고, 인프라 기술
-      # 스택 3장이 「장애 발생 후에는 선택할 수 없다」고 못 박았다. 꺼져 있으면 구 primary 를 되돌리는 데
-      # pg_basebackup 전체 재구축을 강요당하고 소요가 데이터 크기에 비례한다.
-      #
-      # 지금 켜는 이유는 **서버 기동 시점에만 정할 수 있기 때문**이다. 복제를 붙인 뒤에 켜려면 standby 가
-      # 붙어 있는 상태에서 primary 를 재기동해야 하고 그때는 계획 정지가 필요하다. 복제 전인 지금은
-      # 컨테이너 재생성만으로 끝난다.
-      #
-      # 판정 조건의 다른 한쪽인 data_checksums 도 나중에 켤 수 있다 — initdb 말고 pg_checksums --enable 로,
-      # 다만 **정상 종료된 클러스터에서만** 돈다(이미지 안에 그 바이너리가 있다). 그래서 대가는
-      # 「재생성」이 아니라 **정지 창 + 전 페이지 재기록**이고, 복제가 붙은 뒤에는 전 노드를 일관되게
-      # 멈춰야 한다(PostgreSQL 문서가 pg_rewind 를 그 위험 사례로 든다). 조건은 둘 중 하나면 성립하므로
-      # 지금은 재기동 한 번으로 끝나는 쪽을 고른다.
-      #
-      # 조건에는 full_page_writes = on 도 있는데 이것은 기본값이라 따로 적지 않는다 — **기본값에 기대고
-      # 있다는 사실만 남긴다.** 끄는 변경이 들어오면 pg_rewind 조건이 함께 깨진다.
-      #
-      # 대가는 WAL 이 약간 느는 것이다. full_page_writes 가 이미 체크포인트 후 첫 수정에서 전체 페이지를
-      # 기록하는데, 이 설정은 그 대상에 **힌트 비트만 바뀐 페이지**까지 넣는다. DB 가 36 MB 라 작다.
-      - -c
-      - wal_log_hints=on
+    # 서버 설정(-c 인자)은 standby 와 같은 목록을 쓴다 — 파일 위쪽 x-postgres-command
+    command: *postgres-command
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -337,6 +374,8 @@ services:
       TZ: Asia/Seoul
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # 접속 규칙 — x-postgres-command 의 hba_file. standby 와 같은 파일이다
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     # 호스트 루프백 게시 — 논리 백업(infra/backup/pg-dump.sh)이 호스트의 pg_dump 로 TCP 접속한다. 정기 작업은 backup 계정으로
     # 도는데 그 계정은 docker 그룹이 아니라 docker compose exec 를 쓸 수 없다(서버 운영 기반 설계서 6.2).
     # 루프백인 이유 — Docker 게시 포트는 호스트 방화벽을 우회하므로(설계서 3.3) 막는 수단이 바인딩 주소뿐이다.
@@ -350,7 +389,88 @@ services:
       timeout: 3s
       retries: 10
 
-  # ── 관측 수집기(INF-05) ────────────────────────────────────────────────
+  # 스트리밍 복제 standby(INF-03) — 비동기 · 물리 슬롯 standby_1(인프라 기술 스택 3장).
+  # **같은 노드의 컨테이너다.** 노드를 늘릴 수 없어(시스템 구성서 2.2) 전환 절차를 검증하는 자리이고,
+  # 노드 장애에는 primary 와 함께 사라진다 — 노드 장애 대응은 성립하지 않는다.
+  # 트래픽을 받지 않는다. 앱은 postgres 만 본다. 포트를 게시하지 않는다 — primary 에는 Compose 네트워크로 붙는다.
+  postgres-standby:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    logging: *logging
+    # primary 와 같다 — 승격되면 primary 역할을 한다
+    mem_limit: 256m
+    # 초기화 — 데이터 디렉터리가 비었을 때(PG_VERSION 이 없을 때)만 primary 에서 받는다. 재기동마다 전체를 복사하지 않는다.
+    #   - 슬롯 standby_1 은 노드 적용 때 primary 에서 **미리 만든다**(-S 는 있는 슬롯을 쓴다). pg_basebackup -C 는
+    #     슬롯이 이미 있으면 실패하므로 재구축할 때마다 걸린다.
+    #   - -R 이 standby.signal 과 postgresql.auto.conf 의 primary_conninfo · primary_slot_name 을 쓴다.
+    #   - -X stream 은 복사하는 동안의 WAL 을 따로 받아 받은 사본만으로 일관되게 한다. -c fast 는 시작 체크포인트를 바로 한다.
+    #   - 이미지(postgres:17-alpine)에 gosu · pg_basebackup 이 있다. 데이터 디렉터리는 postgres(uid 70) 소유 · 700 이어야 서버가 뜬다.
+    #   - 받는 도중 실패하면 pg_basebackup 이 받은 것을 지운다. 컨테이너가 강제로 죽어 조각이 남았는데 PG_VERSION 까지
+    #     들어왔다면 서버가 복구 시작점을 못 찾고 기동을 거부한다(조용히 뜨지 않는다) — 그때는 볼륨을 지우고 다시 올린다.
+    #   - 끝나면 명령 목록(x-postgres-command)을 "$@" 로 받아 이미지의 docker-entrypoint.sh 로 넘긴다. 데이터 디렉터리가
+    #     있으므로 그 스크립트는 initdb 를 건너뛴다.
+    #
+    # 복제 비밀번호는 **볼륨에 쓰지 않는다.** pg_basebackup -R 은 접속에 쓴 비밀번호를 primary_conninfo 에 평문으로
+    # 옮겨 적는다(PGPASSWORD 로 받았을 때 postgresql.auto.conf 에 password=… 가 남는 것을 17.11 에서 확인). 그러면
+    # 비밀번호가 데이터 디렉터리와 그것을 복사하는 모든 곳(볼륨 사본 · 재구축 원본)에 따라간다. 대신
+    #   - 기동할 때마다 이 셸이 환경 변수로 비밀번호 파일(PGPASSFILE)을 tmpfs(메모리)에 쓴다. pg_basebackup 과 이후
+    #     walreceiver 가 이 파일로 인증한다. 파일 안의 : 와 \ 는 \ 로 이스케이프한다(libpq 비밀번호 파일 형식).
+    #   - 그러면 -R 은 password 대신 passfile=<경로> 를 적는다. 경로는 재기동마다 다시 채워지므로 볼륨에 비밀이 남지 않는다.
+    #   - 비밀번호 환경 변수는 서버로 넘기기 전에 지운다 — 서버 프로세스 환경에 남기지 않는다.
+    # 비밀번호를 바꾸면 infra/.env 를 고치고 이 서비스를 재생성한다(파일이 다시 쓰인다).
+    # $$ 는 Compose 가 변수로 풀지 않게 한 것이다(컨테이너 안에서는 $).
+    tmpfs:
+      - /run/replication:size=64k,mode=0700
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        : "$${POSTGRES_REPLICATION_USER:?postgres-standby: POSTGRES_REPLICATION_USER 가 비어 있다 — infra/.env}"
+        : "$${POSTGRES_REPLICATION_PASSWORD:?postgres-standby: POSTGRES_REPLICATION_PASSWORD 가 비어 있다 — infra/.env}"
+        umask 077
+        esc() { printf '%s' "$$1" | sed 's/[\\:]/\\&/g'; }
+        printf '*:*:replication:%s:%s\n' "$$(esc "$$POSTGRES_REPLICATION_USER")" "$$(esc "$$POSTGRES_REPLICATION_PASSWORD")" > "$$PGPASSFILE"
+        chown -R postgres:postgres "$${PGPASSFILE%/*}"
+        unset POSTGRES_REPLICATION_PASSWORD
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          mkdir -p "$$PGDATA"
+          find "$$PGDATA" -mindepth 1 -delete
+          chown postgres:postgres "$$PGDATA"
+          chmod 700 "$$PGDATA"
+          echo "postgres-standby: 데이터 디렉터리가 비어 있다 — primary 에서 pg_basebackup 으로 받는다"
+          gosu postgres pg_basebackup -h postgres -U "$$POSTGRES_REPLICATION_USER" -w -D "$$PGDATA" -S standby_1 -R -X stream -c fast
+        fi
+        exec docker-entrypoint.sh "$$@"
+      - postgres-standby
+    command: *postgres-command
+    environment:
+      # 복제 계정은 이 서비스에만 넘긴다. primary 는 이 비밀번호를 쓰지 않는다(역할은 노드 적용 때 만든다)
+      POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER:-}
+      POSTGRES_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD:-}
+      # 위 tmpfs 안. libpq 가 이 변수로 비밀번호 파일을 찾는다 — pg_basebackup 과 서버의 walreceiver 모두
+      PGPASSFILE: /run/replication/pgpass
+      # healthcheck 의 pg_isready 가 접속 이름으로만 쓴다(없으면 root 로 붙어 5초마다 「role does not exist」 로그가 남는다).
+      # 소유자 비밀번호는 넘기지 않는다 — standby 는 initdb 를 하지 않는다
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      TZ: Asia/Seoul
+    volumes:
+      - pgdata-standby:/var/lib/postgresql/data
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    # 복구 중 일관된 지점에 닿기 전에는 pg_isready 가 거부(1)를 돌려준다 — 받은 뒤 읽기 연결을 받을 때 healthy 다.
+    # start_period 는 첫 기동의 pg_basebackup 몫이다(DB 36 MB — 2026-09-23 실측).
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── 관측 수집기(INF-05)────────────────────────────────────────────────
   # 노드에는 수집과 전송만 둔다. 저장 · 시각화 · 알림은 노드 밖(Grafana Cloud)이다.
   # 포트는 전부 호스트 루프백이다 — 밖에서 긁지 않고 prom-agent 가 노드 안에서 긁어 밖으로 민다.
   # 수집기에는 env_file: .env 를 주지 않는다 — 앱 · DB · 외부 API 비밀이 수집기 환경에 통째로 들어간다.
@@ -496,6 +616,8 @@ services:
 
 volumes:
   pgdata:
+  # standby 의 데이터 디렉터리. 비어 있으면 기동 때 primary 에서 받는다 — 지우면 재구축이다(postgres-standby 주석)
+  pgdata-standby:
   # Redis 재시작 생존용 AOF 자리. 백업 대상이 아니다 — 위 redis 서비스 주석 참고
   redisdata:
   # prom-agent 의 WAL. 전송이 끊긴 동안의 표본 자리 — 백업 대상이 아니다
