@@ -51,12 +51,15 @@ dependencies {
 	// 메타데이터 테이블 · 마이그레이션을 두지 않는다. 버전은 Boot BOM 이 관리한다.
 	implementation 'org.springframework.boot:spring-boot-starter-batch'
 	// 커스텀 지표(SSE 활성 연결 수) 등록 API. 지금은 배치 스타터가 전이로 끌어오지만, 배치를 걷어내도 지표 코드가 남도록 직접 적는다.
-	// 노출(Actuator · Prometheus 레지스트리)은 이 좌표가 하지 않는다 — 레지스트리 빈이 생기면 MeterBinder 가 그때 묶인다.
+	// 노출은 이 좌표의 몫이 아니다 — 아래 Actuator 와 Prometheus 레지스트리가 맡고, MeterBinder 는 레지스트리 빈에 묶인다.
 	// 버전은 Boot BOM 이 관리한다.
 	implementation 'io.micrometer:micrometer-core'
 	// 준비 상태 확인(/actuator/health/readiness) — 인프라 API 명세 1.1. 배포 스크립트가 슬롯을 upstream 에 되돌리기 전에 본다.
-	// 지표 노출(Prometheus 레지스트리)은 관측(INF-05)이 차기 범위라 넣지 않는다. 버전은 Boot BOM 이 관리한다.
+	// 지표 노출(/actuator/prometheus)도 이 스타터의 엔드포인트다(관측 INF-05). 버전은 Boot BOM 이 관리한다.
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// 지표를 Prometheus 텍스트 형식으로 내보내는 레지스트리. 이 좌표가 있어야 /actuator/prometheus 엔드포인트가 생긴다 —
+	// 인프라 API 명세 1장. 노드의 수집기가 긁어 노드 밖으로 보낸다. 버전은 Boot BOM(Micrometer BOM)이 관리한다.
+	implementation 'io.micrometer:micrometer-registry-prometheus'
 	// 비밀번호 재설정 메일(USER-06) — JavaMailSender. Real 구현만 쓰고 기본 Mock 은 SMTP 에 붙지 않는다.
 	// 기술 스택 정의서 2장. 버전은 Boot BOM 이 관리한다.
 	implementation 'org.springframework.boot:spring-boot-starter-mail'

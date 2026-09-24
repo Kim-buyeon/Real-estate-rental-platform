@@ -110,13 +110,27 @@ server:
     accept-count: 100
     # 연결을 맺은 뒤 요청 라인이 도착하기까지 기다리는 상한. 열어만 두고 보내지 않는 연결이 자리를 차지하지 않게 한다.
     connection-timeout: 5s
+    mbeanregistry:
+      # Tomcat 의 MBean 레지스트리. Boot 기본은 false 다(spring-boot-tomcat 4.1.1 메타데이터). 꺼져 있으면 Micrometer 가
+      # 읽을 MBean 이 없어 tomcat.threads.* 지표가 나오지 않는다 — 인프라 API 명세 1장이 Tomcat 스레드 지표를 요구한다.
+      enabled: true
 
-# 준비 상태 확인 — 인프라 API 명세 1.1. 노출은 health 하나뿐이다. 지표(Prometheus)는 관측(INF-05)이 차기 범위라 열지 않는다.
+# 준비 상태 확인(인프라 API 명세 1.1)과 지표 노출(같은 명세 1장, 관측 INF-05). 이 둘만 연다.
+# /actuator/prometheus 는 인증 없이 열려 있다 — 통제는 노출 범위가 한다(보안 설정 PUBLIC_PATHS 주석).
 management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
+  metrics:
+    distribution:
+      # 요청 지연을 정해 둔 경계마다 누적 카운터로 낸다. percentiles-histogram 을 켜지 않는 이유: 구간이 수십 개이고
+      # uri · status 조합마다 곱해져 Grafana Cloud 무료 한도(활성 시계열 10k)를 위협한다. 아래는 운영 절차서 3.3 의
+      # 기준(p95 1초)을 읽을 수 있는 최소 구간이다. 단위를 생략하면 ms 다.
+      # 대괄호는 맵 키의 점을 지키는 표기다 — 키가 미터 이름 http.server.requests 그대로여야 적용된다.
+      # 키 이름은 spring-boot-micrometer-metrics 4.1.1 메타데이터에서 확인했다(management.metrics.distribution.slo).
+      slo:
+        "[http.server.requests]": 100ms,300ms,500ms,1s,3s
   endpoint:
     health:
       # liveness · readiness 그룹. Boot 는 쿠버네티스 위에서만 자동으로 켜므로 Compose 운용에서는 명시해야 한다.
@@ -311,7 +325,9 @@ external:
 #
 # ※ 아래 임계값은 전부 미확정이다. 실패율 · 열린 상태 유지 시간 · 재시도 횟수를 정한 문서가 없다.
 #   1주차 예비 부하 측정에서 확정하고, 확정되면 그 수치를 설계 문서에 먼저 적는다.
-# ※ 서킷 상태의 커스텀 지표 노출(기술 스택 정의서 2장)은 Actuator 가 아직 들어오지 않아 미적용이다.
+# ※ 서킷 기본 지표는 resilience4j-spring-boot4 2.4.0 의 CircuitBreakerMetricsAutoConfiguration 이 전이 의존
+#   resilience4j-micrometer 로 레지스트리에 묶어 /actuator/prometheus 에 낸다. 기술 스택 정의서 2장의 서킷 상태
+#   커스텀 지표를 이것으로 대신할지는 정하지 않았다 — 커스텀 지표 작업에서 정한다.
 resilience4j:
   circuitbreaker:
     configs:
