@@ -211,13 +211,13 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 
 **7주차 실행 전에 풀 것** — 앱의 접속 대상(`DB_HOST`)이 운영 Compose에 `postgres`로 고정돼 있다. 6단계 「접속 대상 전환」을 `.env`만으로 하려면 변수로 빼야 한다.
 
-**standby 구성 순서** — APP-01에 2026-09-24 17:49 ~ 17:51에 실제로 밟은 순서다(#194). standby를 다시 만들 때(볼륨을 지운 재구축)는 2 · 4 · 5만 밟는다 — 역할과 슬롯은 남아 있다.
+**standby 구성 순서** — APP-01에 2026-09-24 17:49 ~ 17:51에 실제로 밟은 순서다(#194). standby를 다시 만들 때(볼륨을 지운 재구축)는 4 · 5만 밟는다 — 역할과 슬롯은 primary에 남아 있다. 슬롯을 지웠으면 2의 슬롯 생성만 다시 한다.
 
 | 순서 | 명령 | 확인 |
 |---|---|---|
 | 1 | `infra/.env`에 `POSTGRES_REPLICATION_USER=replicator` · `POSTGRES_REPLICATION_PASSWORD`(노드에서 `openssl rand -hex 24`로 만든 값, **화면에 찍지 않는다**). 역할 이름은 `infra/postgres/pg_hba.conf`의 복제 줄과 같아야 한다 | `grep -c '^POSTGRES_REPLICATION' .env` → 2 |
-| 2 | primary에서 역할 · 슬롯 — `CREATE ROLE replicator REPLICATION LOGIN` → 비밀번호는 SQL 문에 쓰지 않고 `docker compose exec -T -e RPW postgres psql …`에 `\getenv pw RPW` · `ALTER ROLE replicator PASSWORD :'pw'`로 넣는다(값이 인자 · 이력에 남지 않는다) → `SELECT pg_create_physical_replication_slot('standby_1')` | `rolsuper = f` · `rolreplication = t`, 슬롯 `standby_1` `active = f` |
-| 3 | **primary 재생성**(hba 파일 · 설정 반영) — `bash maintenance.sh on` → `docker compose up -d --no-deps postgres` → healthy · 두 슬롯 API 200 → `bash maintenance.sh off`. **실측 6.7초**(점검 모드 구간) | `SHOW hba_file` → `/etc/postgresql/pg_hba.conf`, `SHOW max_slot_wal_keep_size` → `2GB` |
+| 2 | primary에서 역할 · 슬롯 — `CREATE ROLE replicator REPLICATION LOGIN` → 비밀번호는 SQL 문에 쓰지 않는다 — `export RPW=$(grep '^POSTGRES_REPLICATION_PASSWORD=' .env | cut -d= -f2-)`로 `.env`에서 읽고 `docker compose exec -T -e RPW postgres psql …`(값 없이 `-e RPW`)에 `\getenv pw RPW` · `ALTER ROLE replicator PASSWORD :'pw'`로 넣은 뒤 `unset RPW`(값이 명령 인자 · 셸 이력에 남지 않는다) → `SELECT pg_create_physical_replication_slot('standby_1')` | `rolsuper = f` · `rolreplication = t`, 슬롯 `standby_1` `active = f` |
+| 3 | **primary 재생성**(hba 파일 · 설정 반영) — `bash maintenance.sh on` → `docker compose up -d --no-deps postgres` → healthy · 두 슬롯 API 200 → `bash maintenance.sh off`. **실측 6.7초**(점검 모드 구간) | `SHOW hba_file` · `SHOW max_slot_wal_keep_size`가 운영 Compose(`x-postgres-command`)의 값과 같다 |
 | 4 | `docker compose up -d --no-deps postgres-standby` — 빈 볼륨이면 스스로 `pg_basebackup`을 받는다. **실측 7초에 healthy**(DB 36 MB) | 로그에 `started streaming WAL from primary` |
 | 5 | 복제 확인 — 위 「복제가 붙어 있는지」 질의 + primary에 시험 테이블 쓰기 → standby 조회 → 삭제 | `streaming` · `async` · 슬롯 `active = t` · standby `pg_is_in_recovery() = t` · 행이 도착 |
 
