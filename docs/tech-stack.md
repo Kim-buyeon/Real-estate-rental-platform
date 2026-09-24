@@ -52,7 +52,7 @@
 | Spring Boot Mail (JavaMailSender) | Boot BOM | 비밀번호 재설정 메일(USER-06). 운영은 Gmail SMTP(앱 비밀번호) — 도메인 없이 보낼 수 있고 일 발송 한도가 이 규모에 충분하다. 외부 연동 규칙대로 Mock(링크를 로그로) · Real · Fault 세 구현을 두고 발송은 응답 뒤 비동기다. 모드는 `external.mail.mode`(기본 mock). 환경 변수 `MAIL_HOST` · `MAIL_PORT` · `MAIL_USERNAME` · `MAIL_PASSWORD`(Gmail 앱 비밀번호) · `MAIL_FROM`, 메일 링크의 화면 기준 주소 `APP_BASE_URL` — 값은 `.env` |
 | Spring Security + JWT | — | 액세스·리프레시 토큰 발급과 회전. 토큰은 Redis에 보관한다. `USER_AUTH`의 `auth_type`·`provider_id` 컬럼은 소셜 로그인 확장 지점으로 남긴다 |
 | RestClient | Spring Framework 7 | 외부 API 연동용. 동기식이지만 가상 스레드 위에서 동작하므로 병렬 호출에 문제가 없고 WebClient 대비 코드가 단순하다. **연동 대상별로 인터페이스를 두고 Mock·Real·Fault 세 구현을 둔다** |
-| Resilience4j | — | 등기 API 한 곳의 장애가 매물 조회 전체를 멈추게 해서는 안 되므로 타임아웃·재시도·서킷 브레이커와 대상별 폴백을 적용한다. 서킷 상태는 커스텀 지표로 노출한다 |
+| Resilience4j | — | 등기 API 한 곳의 장애가 매물 조회 전체를 멈추게 해서는 안 되므로 타임아웃·재시도·서킷 브레이커와 대상별 폴백을 적용한다. 서킷 상태는 자동 구성이 지표로 낸다(아래 Actuator 행) |
 | Spring Batch + `@Scheduled` | — | 등기 변동 감지 → `RISK_ANALYSIS` 재계산 → 등급 변동 시 알림 생성이 전형적인 배치 파이프라인이다. **두 인스턴스에서 중복 실행되므로 Redis 분산 락으로 단일 실행을 보장한다** |
 | Spring Events | — | 알림 생성을 판정·저장 트랜잭션에서 분리한다. **트랜잭션 커밋 이후에 발행한다** — 커밋 전에 발행하면 롤백된 판정의 알림이 나간다 |
 | SSE (Server-Sent Events) | — | 알림은 서버에서 클라이언트로 향하는 단방향 전달이다. WebSocket보다 구현과 재연결 처리가 단순하고 HTTP 기반이라 프록시 설정 부담이 없다. **인스턴스가 둘이므로 Redis Pub/Sub으로 전 인스턴스에 브로드캐스트하고, 각 인스턴스가 해당 연결 보유 여부를 확인해 전달한다** |
@@ -61,7 +61,7 @@
 | springdoc-openapi | — | 1인 개발이라 API 문서를 수기로 유지할 여력이 없다. 코드에서 자동 생성한다 |
 | Spring AOP | — | 실행 시간 측정, 외부 API 호출 로깅, 분산 락, 이력 적재를 관점으로 분리한다. 상세는 `docs/architecture/spring-aop.md`를 따른다 |
 | Spring Cache + Redis | — | 외부 API 조회 결과와 자치구 집계를 캐싱한다. 애노테이션 기반이라 서비스 코드 변경 없이 적용·해제가 가능하다 |
-| Actuator + Micrometer | — | 지표 노출. 수집·시각화·알림은 인프라가 담당한다. **SSE 활성 연결 수와 서킷 상태는 커스텀 지표로 직접 노출한다** |
+| Actuator + Micrometer | — | 지표 노출. 수집·시각화·알림은 인프라가 담당한다. **SSE 활성 연결 수는 커스텀 지표(`notification_sse_connections`)로 직접 노출한다. 서킷 상태는 따로 만들지 않고 Resilience4j 자동 구성 지표(`resilience4j_circuitbreaker_state` 등 — resilience4j-spring-boot4 의 `CircuitBreakerMetricsAutoConfiguration`)를 쓴다** — 같은 값을 커스텀으로 또 내면 시계열만 겹친다(2026-09-24 노드 확인, #220) |
 | Lombok | — | 엔티티 보일러플레이트 축소. 단 `@Data`·`@Setter`는 엔티티에 사용하지 않는다 |
 
 **차기 범위** — Spring AI 2.0.x(CONS 상담), OAuth2 Client(소셜 로그인), Firebase Cloud Messaging(NOTI-04 웹 푸시). 발송 채널은 인터페이스로 추상화하고 Mock 구현을 두어 구현체 교체만으로 동작하게 한다.
