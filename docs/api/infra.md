@@ -10,7 +10,7 @@
 
 ## 1. 노출 엔드포인트
 
-**INF-05 행은 일부만 구현됐다**(#192). 지금 노드에 있는 것은 **node · nginx · postgres · redis exporter 넷**이고(nginx exporter는 루프백 8088의 `stub_status`를 읽는다 — #209), 호출 주체는 노드의 Prometheus agent다 — 긁은 지표와 로그는 Grafana Cloud로 보낸다(인프라 기술 스택 4.1). 표의 「호출 주체」 열 중 Prometheus는 agent를, Loki 행은 자체 호스팅을 전제한 것이다 — 지금 로그는 Vector가 Grafana Cloud의 Loki로 보내고 노드에 3100이 없다. 앱 · Blackbox 행은 미구현이다.
+**INF-05 행은 일부만 구현됐다**(#192). 지금 노드에 있는 것은 **앱 두 슬롯의 `/actuator/prometheus`와 node · nginx · postgres · redis exporter 넷**이고(nginx exporter는 루프백 8088의 `stub_status`를 읽는다 — #209, 앱 지표는 #211), 호출 주체는 노드의 Prometheus agent다 — 긁은 지표와 로그는 Grafana Cloud로 보낸다(인프라 기술 스택 4.1). 표의 「호출 주체」 열 중 Prometheus는 agent를, Loki 행은 자체 호스팅을 전제한 것이다 — 지금 로그는 Vector가 Grafana Cloud의 Loki로 보내고 노드에 3100이 없다. Blackbox 행은 미구현이다. 앱 지표의 응답 시간은 SLO 구간 다섯(100ms · 300ms · 500ms · 1s · 3s)만 낸다 — 전체 히스토그램은 활성 시계열 한도(인프라 기술 스택 4.1)를 위협한다.
 
 | 기능 | 대상 | 노드 | 포트 | 경로 | 호출 주체 | 내용 |
 | --- | --- | --- | --- | --- | --- | --- |
