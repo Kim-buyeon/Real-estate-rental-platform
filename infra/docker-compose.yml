@@ -238,20 +238,24 @@ x-postgres-command: &postgres-command
   # standby 도 같은 목록이다. on 은 복구 중에는 아카이브하지 않고(always 가 아니다) 승격하면 그때부터 이어서 한다 —
   # 페일오버 절차에 아카이빙 전환 단계를 넣지 않는다. 두 서비스가 같은 호스트 디렉터리에 쓴다(아래 volumes).
   #
-  # archive_timeout 300 — 5분 강제 스위치(인프라 기술 스택 3장). 쓰기가 적어도 5분마다 세그먼트를 닫아 아카이브에 넘긴다.
-  # 대가는 쓰기가 없는 5분에도 16 MB 세그먼트가 하나씩 생길 수 있다는 것이다 — 정리는 물리 백업 스크립트가 한다.
+  # archive_timeout 300 — 5분 강제 스위치(인프라 기술 스택 3장). 직전 스위치 뒤 WAL 이 쓰였을 때만 5분마다 세그먼트를
+  # 닫아 아카이브에 넘긴다 — 활동이 없던 창에서는 스위치하지 않는다. 대가는 크기다 — PostgreSQL 17 문서 원문
+  # 「archived files that are archived early due to a forced switch are still the same length as completely full files」,
+  # 몇 KB 만 쓰인 창도 16 MB 파일 하나가 된다. 상한은 시간당 12개(192 MB)다.
+  # 노드 실측(2026-09-24 22:41 ~ 22:43) — 재기동 뒤 2시간 20분 누적 WAL 이 71레코드 · 75 KB 였다. 쓰기가 드물어 상한보다
+  # 훨씬 적지만, 파일 하나하나는 거의 비어 있어도 16 MB 다. 정리는 물리 백업 스크립트가 한다(infra/backup/pg-basebackup.sh).
   #
-  # archive_command — PostgreSQL 17 문서 25.3.1 의 예 그대로다. test ! -f 는 같은 이름의 파일을 덮어쓰지 않게 한다
-  # (이미 있으면 실패를 돌려주고 서버가 다시 시도한다 — 조용히 덮어 아카이브를 망가뜨리지 않는다). 0 이 아닌 종료는
-  # 그 세그먼트를 pg_wal 에 남겨 두고 재시도하게 하므로, 실패가 이어지면 pg_wal 이 자란다 — pg_stat_archiver 의
-  # failed_count 로 본다. 이 목록은 셸 없이 argv 로 넘어가 한 항목이 인자 하나가 되므로 공백이 든 값에 따옴표를 두르지 않는다
-  # (서버가 이 값을 셸로 실행한다). %p · %f 는 서버가 채운다.
+  # archive_command — 한 건을 스크립트(infra/postgres/archive-wal.sh)가 받는다. 문서 25.3.1 의 예 test ! -f … && cp … 를
+  # 쓰지 않는 이유는 그 스크립트 머리 주석 — 같은 파일의 재아카이브를 영구 실패로 만들고, cp 도중 kill 되면 잘린 세그먼트가
+  # 최종 이름으로 남는다. 0 이 아닌 종료는 그 세그먼트를 pg_wal 에 남겨 두고 재시도하게 하므로, 실패가 이어지면 pg_wal 이
+  # 자란다 — pg_stat_archiver 의 failed_count 로 본다. 서버가 이 값을 셸로 실행하고 %p · %f 를 채운다.
+  # sh 로 부른다 — 초기화 스크립트와 같이 마운트한 파일의 실행 비트에 기대지 않는다.
   - -c
   - archive_mode=on
   - -c
   - archive_timeout=300
   - -c
-  - archive_command=test ! -f /archive/wal/%f && cp %p /archive/wal/%f
+  - archive_command=/bin/sh /usr/local/bin/rental-archive-wal.sh %p %f
 
 services:
   # 앞단 — 요청 분산 · SSE 전달 · 정적 화면 전달. 호스트 네트워크여야 upstream 의 127.0.0.1 이 호스트를 가리킨다(운영 절차서 4.1).
@@ -430,6 +434,8 @@ services:
       - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
       # 초기화 스크립트 — standby 와 같은 파일이다
       - ./postgres/bootstrap.sh:/usr/local/bin/rental-bootstrap.sh:ro
+      # 아카이브 스크립트 — x-postgres-command 의 archive_command 가 부른다. standby 와 같은 파일이다
+      - ./postgres/archive-wal.sh:/usr/local/bin/rental-archive-wal.sh:ro
       # WAL 아카이브 — x-postgres-command 의 archive_command 가 쓰는 자리. standby 와 같은 호스트 디렉터리다.
       # 호스트 디렉터리는 70:backup 2770 — 컨테이너 postgres(uid 70)가 쓰고 백업 계정이 정리한다(삭제는 디렉터리 쓰기
       # 권한만 있으면 된다). 없는 경로면 Docker 가 root 소유로 만들어 아카이브가 실패하므로 노드 적용 때 먼저 만든다.
@@ -482,6 +488,7 @@ services:
       - pgdata-standby:/var/lib/postgresql/data
       - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
       - ./postgres/bootstrap.sh:/usr/local/bin/rental-bootstrap.sh:ro
+      - ./postgres/archive-wal.sh:/usr/local/bin/rental-archive-wal.sh:ro
       # WAL 아카이브 — postgres 와 같은 호스트 디렉터리(그쪽 주석). 복구 중에는 쓰지 않고 승격하면 이어서 쓴다
       - /var/backups/rental/wal:/archive/wal
     # 복구 중 일관된 지점에 닿기 전에는 pg_isready 가 거부(1)를 돌려준다 — 받은 뒤 읽기 연결을 받을 때 healthy 다.

@@ -129,6 +129,9 @@ fi
 # 시작 WAL 이름은 base.tar.gz 안 backup_label 의 「START WAL LOCATION: 0/… (file 이름)」에서 읽는다.
 # pg_archivecleanup 은 그 이름보다 앞선 세그먼트만 지우고 그 파일 자신과 .history(타임라인 기록 — 승격 뒤 복구에 필요)는 남긴다.
 # -b 는 앞선 백업의 기록 파일(….backup)도 함께 지운다(PostgreSQL 17 에서 생긴 선택지) — 없으면 주마다 하나씩 남는다.
+# 아카이브 스크립트(infra/postgres/archive-wal.sh)의 임시 파일 .<이름>.tmp 는 건드리지 않는다 — pg_archivecleanup 은 이름이
+# 세그먼트 · .partial · (-b 일 때) .backup 형식인 것만 지우고 점으로 시작하는 이름은 그 형식이 아니다. 임시 파일은 같은
+# 세그먼트의 다음 시도가 덮어쓰고 mv 로 사라지므로 따로 치우지 않는다.
 OLDEST="${BACKUPS[0]}"
 LABEL=$(tar -xzOf "$BASE_DIR/$OLDEST/base.tar.gz" backup_label) \
   || { log "!!! backup_label 을 읽지 못했다 — $OLDEST. WAL 을 정리하지 않는다"; exit 1; }
