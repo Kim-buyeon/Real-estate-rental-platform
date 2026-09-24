@@ -214,6 +214,11 @@ x-postgres-command: &postgres-command
   # 접속 규칙은 저장소 파일(infra/postgres/pg_hba.conf)을 쓴다 — 그 파일 머리 주석. 두 서비스 모두 이 경로에 마운트한다.
   - -c
   - hba_file=/etc/postgresql/pg_hba.conf
+  # 로그 시각은 컨테이너 TZ 가 아니라 log_timezone 을 따른다 — initdb 가 postgresql.conf 에 적는 값이고 지금 UTC 다
+  # (2026-09-24 노드 SHOW log_timezone = UTC). 앱 · Nginx 로그와 시각을 맞춘다(#197).
+  # timezone(세션 기본값)은 바꾸지 않는다 — DEFAULT now() 인 timestamp without time zone 컬럼 값이 세션 설정에 따라 달라질 수 있다.
+  - -c
+  - log_timezone=Asia/Seoul
 
 services:
   # 앞단 — 요청 분산 · SSE 전달 · 정적 화면 전달. 호스트 네트워크여야 upstream 의 127.0.0.1 이 호스트를 가리킨다(운영 절차서 4.1).
@@ -370,7 +375,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      # 컨테이너는 호스트 /etc/localtime 을 따르지 않는다. 로그 타임스탬프를 앱 로그(KST)와 맞춘다
+      # 컨테이너 안 도구(date 등)의 시간대. PostgreSQL 로그 시각은 이 값이 아니라 x-postgres-command 의 log_timezone 이 맞춘다
       TZ: Asia/Seoul
     volumes:
       - pgdata:/var/lib/postgresql/data
