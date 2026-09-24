@@ -8,7 +8,7 @@
 #
 # PostgreSQL 도 이 노드에 둔다. 복제(INF-03)의 standby(postgres-standby)도 같은 노드의 컨테이너다 — 노드를 늘릴 수 없어
 # (시스템 구성서 2.2) 전환 절차를 검증하는 자리이고 노드 장애는 막지 못한다. DB 노드를 따로 두게 되면 두 서비스를 빼고
-# DB_HOST 를 그 노드 사설 IP 로 바꾼다.
+# infra/.env 의 DB_HOST 를 그 노드 사설 IP 로 둔다(아래 app-1 의 DB_HOST 주석).
 #
 # 이미지 — 레지스트리 파이프라인(INF-02) 전에는 로컬 빌드 이미지를 쓴다(운영 절차서 3.2 전제).
 # APP_IMAGE · WEB_IMAGE 로 덮으면 레지스트리 이미지가 된다.
@@ -258,7 +258,9 @@ services:
     environment:
       <<: *app-env
       SERVER_PORT: 8081
-      DB_HOST: postgres
+      # 운영에서는 infra/.env 에 DB_HOST 를 두지 않는다 — 비우면 postgres. 페일오버 6단계(운영 절차서 6.1)에서
+      # DB_HOST=postgres-standby 로 바꾸고 슬롯을 순서대로 재생성한다. app-2 도 같은 값을 읽는다
+      DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -282,7 +284,7 @@ services:
     environment:
       <<: *app-env
       SERVER_PORT: 8082
-      DB_HOST: postgres
+      DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
