@@ -6,3 +6,6 @@ infra/nginx/** text eol=lf
 infra/docker-compose.yml text eol=lf
 # 정기 작업 — systemd 는 값 끝의 \r 를 값의 일부로 읽어 유닛이 기동에 실패한다(.service · .timer 는 *.sh 에 걸리지 않는다).
 infra/backup/** text eol=lf
+# 관측 수집기 설정 — 컨테이너에 마운트된다. Prometheus 렌더 셸의 awk 가 줄 끝 \r 를 값과 함께 옮긴다.
+infra/prometheus/** text eol=lf
+infra/vector/** text eol=lf

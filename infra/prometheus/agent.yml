@@ -1,0 +1,39 @@
+# Prometheus agent 모드 설정의 틀 — APP-01 노드의 지표를 긁어 Grafana Cloud 로 보낸다(INF-05).
+# agent 모드는 로컬 저장 · 질의 · 규칙이 없고 WAL 만 둔다. 보는 곳은 노드 밖이다.
+#
+# **이 파일을 그대로 읽히지 않는다.** Prometheus 는 remote_write 의 주소 · 자격 증명 자리에서 환경 변수를 풀지 못한다.
+# 그래서 자격 증명 자리에 @이름@ 자리표시자를 두고,
+# 기동 시 prom-agent 서비스의 셸이 infra/.env 에서 온 환경 변수로 채운 사본을 컨테이너 안 tmpfs(/tmp)에만
+# 써서 그 사본으로 기동한다 — infra/docker-compose.yml 의 prom-agent 주석. 값은 저장소에도 노드 디스크에도 남지 않는다.
+# 자리표시자는 작은따옴표 안에 둔다 — 값에 : · # 이 들어가도 YAML 이 깨지지 않는다(값 안의 ' 는 기동 셸이 '' 로 바꾼다).
+
+global:
+  scrape_interval: 15s
+  # 받는 쪽에서 노드를 가르는 라벨. 노드가 늘면 노드마다 이 값만 다르다
+  external_labels:
+    node: app-01
+
+# 대상은 전부 127.0.0.1 이다. prom-agent 가 호스트 네트워크라 루프백이 호스트를 가리키고, exporter 는
+# 호스트 루프백에 게시되거나(postgres · redis) 루프백에 바인딩한다(node). 컨테이너 IP 로 긁지 않는다 —
+# 컨테이너를 다시 만들면 IP 가 바뀐다.
+#
+# 앱(/actuator/prometheus)은 넣지 않는다 — 지금은 Spring Security 가 그 경로를 막아 대상이 늘 down 이다.
+# 백엔드에서 경로를 여는 작업과 함께 다음에 넣는다.
+scrape_configs:
+  - job_name: node
+    static_configs:
+      - targets: ["127.0.0.1:9100"]
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["127.0.0.1:9187"]
+
+  - job_name: redis
+    static_configs:
+      - targets: ["127.0.0.1:9121"]
+
+remote_write:
+  - url: '@GRAFANA_CLOUD_PROM_URL@'
+    basic_auth:
+      username: '@GRAFANA_CLOUD_PROM_USER@'
+      password: '@GRAFANA_CLOUD_PROM_TOKEN@'
