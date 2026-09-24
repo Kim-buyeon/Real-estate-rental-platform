@@ -79,7 +79,8 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 | `infra/nginx/` | Nginx 설정, upstream |
 | `infra/backup/` | 데이터 백업 작업 — 스크립트와 그것을 거는 systemd 유닛 |
 | `infra/os/` | Rocky Linux 노드 설정 — firewalld · NFS 공유 · 노드 정기 작업 · sshd |
-| `infra/prometheus/` · `infra/grafana/` · `infra/alertmanager/` · `infra/promtail/` | 스크레이프 설정, 알림 규칙, 대시보드 |
+| `infra/prometheus/` · `infra/vector/` | 관측 수집기 설정 — 지표 스크레이프 · 전송, 로그 전송 |
+| `infra/grafana/` · `infra/alertmanager/` | 알림 규칙, 대시보드 — 자체 호스팅으로 되돌릴 때의 자리. 지금은 없다 |
 | `infra/` | `postgresql.conf`, `pg_hba.conf`, 복제 설정 |
 | `infra/` 스크립트 | `deploy.sh` · `smoke.sh` · `maintenance.sh` · 페일오버 |
 | `.github/workflows/` | CI |
@@ -176,8 +177,10 @@ Nginx는 upstream 호스트명을 설정 로드 시점에 한 번만 해석한�
 | firewalld | 노드에 넣은 뒤 `firewall-cmd --check-config` — 저장소 파일이 아니라 그 호스트의 영구 설정을 검사한다 |
 | NFS 공유 | 적용 뒤 `exportfs -v` — 문법만 보는 명령이 없어 노드에서 확인한다 |
 | 셸 스크립트 | `bash -n` |
+| Prometheus agent 설정 | 기동 셸로 자리표시자를 채운 사본에 `promtool check config` — 저장소 파일은 자리표시자가 든 틀이다 |
+| Vector 설정 | `vector validate --no-environment` — 환경 변수는 더미로 준다 |
 
-부하 시험 설정(k6)의 확인 명령은 그 작업이 차기 범위라 뺐다 — git 이력에 있다. **관측 설정의 확인 명령은 수집기 종류가 정해지면 이 표에 더한다** — exporter는 Compose 서비스라 `docker compose config`에 이미 걸린다. Rocky 노드 설정은 이 PC에서 적용해 볼 수 없는 것이 많다. **문법만 본 것과 노드에서 동작을 본 것을 구분해 적는다.**
+부하 시험 설정(k6)의 확인 명령은 그 작업이 차기 범위라 뺐다 — git 이력에 있다. 관측 수집기의 확인 명령은 수집기가 정해져(인프라 기술 스택 4.1) 위 표에 더했다 — exporter는 Compose 서비스라 `docker compose config`에 이미 걸린다. Rocky 노드 설정은 이 PC에서 적용해 볼 수 없는 것이 많다. **문법만 본 것과 노드에서 동작을 본 것을 구분해 적는다.**
 
 ---
 

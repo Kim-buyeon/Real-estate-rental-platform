@@ -1,0 +1,44 @@
+# Vector 설정 — APP-01 노드의 컨테이너 로그를 Grafana Cloud Loki 로 보낸다(INF-05).
+# ${이름} 은 Vector 가 기동 시 환경 변수로 스스로 푼다. 값은 infra/.env 에서 compose 가 넘긴다 — 이 파일에는 이름만 있다.
+# :? 는 값이 비었을 때 기동을 실패시킨다 — compose 는 빠진 변수를 빈 값으로 넘기는데, 빈 사용자 · 토큰은
+# 설정 검사를 통과한다(0.50.0 에서 확인). 그대로 두면 401 만 쌓으며 돈다.
+# 치환은 TOML 을 읽기 **전에** 글자 그대로 일어난다. 값에 " 가 있으면 TOML 이 깨져 기동이 실패하고,
+# \ 가 있으면 TOML 이스케이프로 읽혀 값이 바뀔 수 있다. Grafana Cloud 토큰(glc_ + base64)에는 둘 다 없다.
+
+data_dir = "/var/lib/vector"
+
+# 관리 API 를 끈다. Vector 는 들어오는 포트를 하나도 열지 않고 나가는 전송만 한다 —
+# Docker 소켓을 쥔 컨테이너라 받는 면을 두지 않는다(infra/docker-compose.yml 의 vector 주석).
+[api]
+enabled = false
+
+# Docker 소켓으로 컨테이너 로그를 읽는다. 로그 파일을 직접 읽으면 컨테이너 이름 · Compose 서비스 라벨을 잃는다.
+[sources.docker]
+type = "docker_logs"
+
+# 서비스 라벨 — Compose 가 붙인 서비스 이름. Compose 밖에서 띄운 컨테이너는 컨테이너 이름으로 대신한다
+[transforms.labelled]
+type = "remap"
+inputs = ["docker"]
+source = '''
+.service = .label."com.docker.compose.service" || .container_name
+'''
+
+[sinks.loki]
+type = "loki"
+inputs = ["labelled"]
+endpoint = "${GRAFANA_CLOUD_LOKI_URL:?GRAFANA_CLOUD_LOKI_URL 가 비어 있다 — infra/.env}"
+out_of_order_action = "accept"
+
+[sinks.loki.auth]
+strategy = "basic"
+user = "${GRAFANA_CLOUD_LOKI_USER:?GRAFANA_CLOUD_LOKI_USER 가 비어 있다 — infra/.env}"
+password = "${GRAFANA_CLOUD_LOKI_TOKEN:?GRAFANA_CLOUD_LOKI_TOKEN 가 비어 있다 — infra/.env}"
+
+[sinks.loki.encoding]
+codec = "text"
+
+# 라벨은 둘만 둔다 — Loki 는 라벨 조합마다 스트림을 만든다. 값이 계속 늘어나는 것(컨테이너 ID 등)을 라벨로 두지 않는다
+[sinks.loki.labels]
+node = "app-01"
+service = "{{ service }}"
