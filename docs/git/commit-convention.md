@@ -80,7 +80,7 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 | `infra/backup/` | 데이터 백업 작업 — 스크립트와 그것을 거는 systemd 유닛 |
 | `infra/os/` | Rocky Linux 노드 설정 — firewalld · NFS 공유 · 노드 정기 작업 · sshd |
 | `infra/prometheus/` · `infra/vector/` | 관측 수집기 설정 — 지표 스크레이프 · 전송, 로그 전송 |
-| `infra/grafana/` · `infra/alertmanager/` · `infra/promtail/` | 알림 규칙, 대시보드 — 자체 호스팅으로 되돌릴 때의 자리. 지금은 없다 |
+| `infra/grafana/` · `infra/alertmanager/` | 알림 규칙, 대시보드 — 자체 호스팅으로 되돌릴 때의 자리. 지금은 없다 |
 | `infra/` | `postgresql.conf`, `pg_hba.conf`, 복제 설정 |
 | `infra/` 스크립트 | `deploy.sh` · `smoke.sh` · `maintenance.sh` · 페일오버 |
 | `.github/workflows/` | CI |

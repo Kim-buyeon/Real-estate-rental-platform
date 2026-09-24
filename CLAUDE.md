@@ -43,7 +43,7 @@
 │   ├── backup/             데이터 백업 작업 — 스크립트와 그것을 거는 systemd 유닛
 │   ├── os/                 Rocky Linux 노드 설정 — firewalld · NFS 공유 · 노드 정기 작업 · sshd — 미작성
 │   ├── prometheus/ · vector/   관측 수집기 — 지표 · 로그를 노드 밖으로 보낸다. exporter는 Compose 서비스다
-│   └── alertmanager/ · promtail/ · grafana/   자체 호스팅으로 되돌릴 때의 자리 — 지금은 없다
+│   └── alertmanager/ · grafana/   자체 호스팅으로 되돌릴 때의 자리 — 지금은 없다
 │
 ├── chaos-harness/        시험 실행 — 차기 범위
 │   ├── load/               k6 프로파일과 토큰 풀
