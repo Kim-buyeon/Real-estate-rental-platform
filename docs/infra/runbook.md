@@ -295,7 +295,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 | 순서 | 명령(`infra/`에서) | 멈춤 조건 — 어긋나면 다음으로 가지 않는다 |
 |---|---|---|
-| 2 앞 | **지우기 전 확인** — 새 primary(`postgres-standby`)에 페일오버 뒤 써 둔 표식 행이 있다. 논리 백업이 멈춰 있으므로 새 primary에서 `pg_dump -Fc` 한 벌을 받아 둔다. **새 primary에 슬롯 `standby_1`이 없으면 만든다** — 2단계가 받는 `postgresql.auto.conf`에 새 primary의 옛 standby 시절 `primary_slot_name='standby_1'`이 따라와, 슬롯이 없으면 받은 `postgres`가 `replication slot "standby_1" does not exist`로 붙지 못한다(2차 리허설에서 겪었다) | 표식 행이 없거나 덤프가 실패하면 **여기서 멈춘다** — 다음 행이 되돌릴 수 없다 |
+| 2 앞 | **지우기 전 확인** — 새 primary(`postgres-standby`)에 페일오버 뒤 써 둔 표식 행이 있다. 논리 백업이 멈춰 있으므로 새 primary에서 `pg_dump -Fc` 한 벌을 받아 둔다 | 표식 행이 없거나 덤프가 실패하면 **여기서 멈춘다** — 다음 행이 되돌릴 수 없다 |
 | 2 | `docker compose rm -sf postgres` → `docker volume rm rental-prod_pgdata` → `.env`에 `PG_BOOTSTRAP_FROM=postgres-standby` → `docker compose up -d --no-deps postgres` | `postgres`에서 `pg_is_in_recovery()` = `t` |
 | 3 | 따라잡기 대기 | `postgres-standby`의 `pg_stat_replication`에 `streaming`, `replay_lag` < 1초. 표식 행이 `postgres`에서 보인다 |
 | 5 | `bash maintenance.sh on` | — |
@@ -303,7 +303,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 7 | `.env`에서 `DB_HOST` · `PG_BOOTSTRAP_FROM` 줄 삭제 → `docker compose up -d --no-deps postgres app-1 app-2 postgres-exporter` → readiness. 점검 모드 안이라 두 슬롯을 한꺼번에 재생성한다 | `postgres`가 기존 데이터로 primary로 뜬다. 두 슬롯 API 200 |
 | 8 | `bash maintenance.sh off` → `docker compose rm -sf postgres-standby` → `docker volume rm rental-prod_pgdata-standby` → 슬롯 `standby_1`이 없으면 만든다(6장 머리 「standby 구성 순서」 2) → `docker compose up -d --no-deps postgres-standby` → 표식 행 삭제 | `streaming` · `async` · 슬롯 active |
 
-- 2단계의 `postgres`는 받을 때 슬롯을 지정하지 않지만(`-S` 없음), 받은 뒤에는 원본 설정에서 이어받은 슬롯 이름(`standby_1`)으로 붙는다 — 그래서 2앞에서 슬롯을 만든다. 그 슬롯은 8단계에서 새 primary 볼륨과 함께 사라진다.
+- 2단계의 `postgres`는 **슬롯 없이** 붙는다. 받을 때 원본(옛 standby)의 `postgresql.auto.conf`에서 `primary_slot_name='standby_1'`이 따라오는데, 초기화 스크립트가 슬롯 없이 받은 경우 그 줄을 지운다(#207). 2차 리허설(#205)은 이 처리 전이라 새 primary에 슬롯을 만들어 풀었다. 슬롯이 없으니 페일백 동안 새 primary가 WAL을 붙들어 주지 않는다 — 3단계의 `streaming` 확인이 그 구간을 짧게 둔다.
 - 승격 뒤에도 `postgresql.auto.conf`에 `primary_conninfo`(비밀번호 없이 passfile 경로만)가 남는다. `standby.signal`이 없으면 쓰이지 않는다 — 그 줄로 standby라고 판단하지 않는다. 판단은 `pg_is_in_recovery()`로 한다.
 - 이 순서는 로컬 Docker(#203)와 **노드(2026-09-24 20:20 ~ 20:24, #205)에서 밟았다.** 노드에서는 3단계 멈춤 조건(`streaming` 아님)에서 한 번 멈췄다 — 점검 모드를 켜기 전이라 서비스는 새 primary로 계속 돌았고, 새 primary에 슬롯을 만든 뒤 3단계부터 이어 갔다. 결과 — 받기 6.6초, 점검 모드 구간(5 → 8 해제) **78.6초**, LSN 마지막 `0/9000060` · replay `0/90000D8`, 반대편 재구축 약 10초에 `streaming`. **새 primary에 써 둔 표식 행이 원래 primary에 돌아왔다.**
 
