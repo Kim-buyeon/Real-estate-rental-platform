@@ -326,8 +326,8 @@ external:
 # ※ 아래 임계값은 전부 미확정이다. 실패율 · 열린 상태 유지 시간 · 재시도 횟수를 정한 문서가 없다.
 #   1주차 예비 부하 측정에서 확정하고, 확정되면 그 수치를 설계 문서에 먼저 적는다.
 # ※ 서킷 기본 지표는 resilience4j-spring-boot4 2.4.0 의 CircuitBreakerMetricsAutoConfiguration 이 전이 의존
-#   resilience4j-micrometer 로 레지스트리에 묶어 /actuator/prometheus 에 낸다. 기술 스택 정의서 2장의 서킷 상태
-#   커스텀 지표를 이것으로 대신할지는 정하지 않았다 — 커스텀 지표 작업에서 정한다.
+#   resilience4j-micrometer 로 레지스트리에 묶어 /actuator/prometheus 에 낸다(resilience4j_circuitbreaker_state 등, name 라벨이
+#   연동 인터페이스의 RESILIENCE_INSTANCE). 서킷 상태는 이 기본 지표를 쓰고 커스텀 지표를 따로 만들지 않는다 — 기술 스택 정의서 2장(#220).
 resilience4j:
   circuitbreaker:
     configs:
