@@ -1,0 +1,35 @@
+[Unit]
+# 물리 백업 — 인프라 기술 스택 3장(pg_basebackup 주 1회 · 4주 보존), 서버 운영 기반 설계서 7.2(작업 목록), 운영 절차서 5장.
+# timer 가 부른다. 직접 한 번 돌릴 때는 systemctl start rental-basebackup.service
+Description=Rental physical backup (pg_basebackup -Ft -z, WAL archive cleanup)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# 논리 백업과 같은 역할 계정(rental-backup.service 주석 — 설계서 6.2). WAL 아카이브 디렉터리(70:backup 2770)의
+# 그룹 쓰기 권한으로 정리한다
+User=backup
+Group=backup
+
+# 접속 정보 · 목적지 · 보존은 이 파일에 적지 않는다. 노드의 설정 파일(0600, backup 소유)에서 읽는다.
+# 논리 백업과 파일을 나누는 이유 — 접속 역할이 다르다(rental_backup 은 읽기, rental_basebackup 은 복제). 역할마다 비밀번호 하나다.
+# 비밀번호를 Environment= 로 적으면 systemctl show 로 보인다 — EnvironmentFile 로만 넣는다.
+# ExecStart 는 체크아웃이 아니라 설치한 사본(root 소유 755)을 가리킨다 — rental-backup.service 와 같은 이유(운영 절차서 9.3).
+EnvironmentFile=/etc/rental/basebackup.env
+ExecStart=/opt/rental/infra/backup/pg-basebackup.sh
+
+# 실행 시간 상한 — 목적지가 노드 로컬이라 설계서 5.3 의 NAS 상한 요구에 걸리지 않지만, 끝나지 않는 작업이 다음 주까지
+# 남지 않게 논리 백업과 같은 **잠정값**을 둔다. 첫 실행 소요를 본 뒤 다시 본다
+TimeoutStartSec=30min
+
+# 저널이 확인 수단이다(설계서 7.1). 출력을 그대로 journald 에 남긴다
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rental-basebackup
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+# 실패해도 다시 시도하지 않는다 — 논리 백업과 같은 이유. 실패는 journalctl -u rental-basebackup 으로 본다
+Restart=no
