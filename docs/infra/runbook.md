@@ -293,7 +293,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 | 순서 | 명령(`infra/`에서) | 멈춤 조건 — 어긋나면 다음으로 가지 않는다 |
 |---|---|---|
-| 1 | **지우기 전 확인** — 새 primary(`postgres-standby`)에 페일오버 뒤 써 둔 표식 행이 있다. 논리 백업이 멈춰 있으므로 새 primary에서 `pg_dump -Fc` 한 벌을 받아 둔다 | 표식 행이 없거나 덤프가 실패하면 **여기서 멈춘다** — 다음 행이 되돌릴 수 없다 |
+| 2 앞 | **지우기 전 확인** — 새 primary(`postgres-standby`)에 페일오버 뒤 써 둔 표식 행이 있다. 논리 백업이 멈춰 있으므로 새 primary에서 `pg_dump -Fc` 한 벌을 받아 둔다 | 표식 행이 없거나 덤프가 실패하면 **여기서 멈춘다** — 다음 행이 되돌릴 수 없다 |
 | 2 | `docker compose rm -sf postgres` → `docker volume rm rental-prod_pgdata` → `.env`에 `PG_BOOTSTRAP_FROM=postgres-standby` → `docker compose up -d --no-deps postgres` | `postgres`에서 `pg_is_in_recovery()` = `t` |
 | 3 | 따라잡기 대기 | `postgres-standby`의 `pg_stat_replication`에 `streaming`, `replay_lag` < 1초. 표식 행이 `postgres`에서 보인다 |
 | 5 | `bash maintenance.sh on` | — |
@@ -305,7 +305,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 - 승격 뒤에도 `postgresql.auto.conf`에 `primary_conninfo`(비밀번호 없이 passfile 경로만)가 남는다. `standby.signal`이 없으면 쓰이지 않는다 — 그 줄로 standby라고 판단하지 않는다. 판단은 `pg_is_in_recovery()`로 한다.
 - 이 순서는 로컬 Docker에서 한 바퀴(복제 → 페일오버 → 페일백 → 반대편 재구축, 표식 행 보존) 확인했다(#203). **노드에서는 아직 밟지 않았다.**
 
-**2단계에서 볼륨을 지우는 것이 되돌릴 수 없는 첫 단계다.** 그 전에 새 primary가 모든 쓰기를 갖고 있는지(표식 행) 보고, 논리 백업이 멈춰 있으므로 새 primary에서 `pg_dump`를 한 벌 받아 두면 더 안전하다.
+**2단계에서 볼륨을 지우는 것이 되돌릴 수 없는 첫 단계다.** 그래서 그 앞에 「2 앞」 확인을 둔다(위 표).
 
 **되돌리지 않는 선택지도 있다.** 승격된 노드를 계속 primary로 두고 구 primary를 standby로 붙이는 방식이다. 전환 작업이 한 번 줄어드는 대신, 두 노드의 사양이 뒤바뀐 채로 남으므로 사양을 맞추는 작업이 따로 필요하다. 어느 쪽을 택하든 **사양이 낮은 노드가 primary인 상태를 방치하지 않는다.**
 
