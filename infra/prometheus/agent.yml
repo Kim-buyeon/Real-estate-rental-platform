@@ -14,11 +14,8 @@ global:
     node: app-01
 
 # 대상은 전부 127.0.0.1 이다. prom-agent 가 호스트 네트워크라 루프백이 호스트를 가리키고, exporter 는
-# 호스트 루프백에 게시되거나(postgres · redis) 루프백에 바인딩한다(node · nginx). 컨테이너 IP 로 긁지 않는다 —
+# 호스트 루프백에 게시되거나(postgres · redis · app) 루프백에 바인딩한다(node · nginx). 컨테이너 IP 로 긁지 않는다 —
 # 컨테이너를 다시 만들면 IP 가 바뀐다.
-#
-# 앱(/actuator/prometheus)은 넣지 않는다 — 지금은 Spring Security 가 그 경로를 막아 대상이 늘 down 이다.
-# 백엔드에서 경로를 여는 작업과 함께 다음에 넣는다.
 scrape_configs:
   - job_name: node
     static_configs:
@@ -35,6 +32,14 @@ scrape_configs:
   - job_name: nginx
     static_configs:
       - targets: ["127.0.0.1:9113"]
+
+  # 앱 두 슬롯(app-1 · app-2). 슬롯은 instance 라벨(127.0.0.1:8081 · :8082)로 갈린다.
+  # 앱은 이 경로를 인증 없이 열고, 밖에서는 앞단 Nginx 가 /actuator 를 404 로 막는다 — 노드 안의 이 수집기만 닿는다.
+  # 배포 중 내려간 슬롯은 그동안 down 으로 보인다
+  - job_name: app
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["127.0.0.1:8081", "127.0.0.1:8082"]
 
 remote_write:
   - url: '@GRAFANA_CLOUD_PROM_URL@'
