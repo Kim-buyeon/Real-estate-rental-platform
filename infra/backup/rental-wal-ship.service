@@ -1,0 +1,37 @@
+[Unit]
+# WAL 아카이브 오프사이트 전송 — 인프라 기술 스택 3장, 운영 절차서 5장 · 9.3.
+# timer 가 매분 부른다. 직접 한 번 돌릴 때는 systemctl start rental-wal-ship.service
+Description=Rental WAL archive offsite shipping (gpg, S3 conditional put)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# 논리 · 물리 백업과 같은 역할 계정(rental-backup.service 주석 — 설계서 6.2). 아카이브 파일(0640 · 그룹 backup)을 읽는다
+User=backup
+Group=backup
+
+# 보낼 자리 · 키 경로는 이 파일에 적지 않는다. 노드의 설정 파일(0600, backup 소유)에서 읽는다.
+# 접속 비밀번호가 없어 백업 파일들과 나눠 둔다 — 이 작업이 DB 역할의 비밀번호를 쥐지 않게 한다.
+# ExecStart 는 체크아웃이 아니라 설치한 사본(root 소유 755)을 가리킨다 — rental-backup.service 와 같은 이유(운영 절차서 9.3).
+EnvironmentFile=/etc/rental/wal-ship.env
+ExecStart=/opt/rental/infra/backup/wal-ship.sh
+
+# 보낸 표시 디렉터리는 StateDirectory= 로 만들지 않는다 — 스크립트가 install -d 로 /var/lib/rental-backup 아래에 만든다.
+# 그 부모(backup 소유 700)는 설치 순서에서 만든다(운영 절차서 9.3). backup 이 거기에 쓸 수 있어야 한다.
+
+# 실행 시간 상한 10분 — 평소 한 번은 몇 초다. 네트워크가 끊겼다 돌아오면 밀린 세그먼트를 한꺼번에 보내느라 길어질 수 있지만,
+# 한 건마다 표시를 남기므로 상한에서 끊겨도 남은 것은 다음 실행이 이어서 보낸다. 상한이 없으면 멈춘 업로드가 끝나지 않고
+# 남아(실행 중인 동안 timer 는 새로 부르지 않는다) 전송이 조용히 멈춘다 — 상한이 그것을 저널의 실패로 바꾼다.
+TimeoutStartSec=10min
+
+# 저널이 확인 수단이다(설계서 7.1). 출력을 그대로 journald 에 남긴다
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rental-wal-ship
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+# 실패해도 이 유닛이 다시 시도하지 않는다 — 다음 분의 timer 가 다시 부른다. 실패는 journalctl -u rental-wal-ship 으로 본다
+Restart=no

@@ -1,0 +1,18 @@
+[Unit]
+# WAL 아카이브 오프사이트 전송 타이머 — 서버 운영 기반 설계서 7.1(cron 대신 timer). 매분.
+# **DB-01 · DB-02 양쪽에 둔다.** standby 에서는 로컬 아카이브에 새 파일이 생기지 않아 할 일이 없고, 승격 뒤 새 primary 의
+# 아카이브를 그대로 따라 보낸다 — 페일오버 절차에 timer 전환 단계를 넣지 않는다(논리 백업 타이머와 같다).
+#
+# RPO(노드 소실) — 최대 약 6분: 세그먼트가 로컬 아카이브에 들어가기까지 archive_timeout 5분(강제 전환) + 이 전송 주기 1분.
+# 노드가 살아 있으면 로컬 아카이브가 그대로 남아 이 값에 걸리지 않는다.
+Description=Rental WAL archive offsite shipping timer (every minute)
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+# Persistent=true 는 넣지 않는다 — 매분이라 꺼져 있던 동안의 실행을 부팅 때 따로 돌릴 이유가 없다. 부팅 뒤 첫 분에
+# 돌면서 밀린 것을 이름순으로 모두 보낸다
+AccuracySec=5s
+Unit=rental-wal-ship.service
+
+[Install]
+WantedBy=timers.target
