@@ -203,7 +203,7 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 
 RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석 배치의 강제 재실행**이 더 빠르다. 복구 수단을 데이터 성격에 따라 구분한다.
 
-**3노드의 정기 백업**(2026-09-25 · #237) — 아래 논리 · 물리 백업과 WAL 아카이빙은 **DB-01 · DB-02 양쪽**에 있고(standby에서는 아무것도 하지 않고 끝난다), 접속은 그 노드의 사설 IP(`PGHOST`)로 TLS다(루프백에는 게시하지 않는다). **논리 백업 · 물리 백업 · WAL 모두 노드 로컬 + S3 암호화 사본**(`logical/` · `physical/<시각>/` · `wal/`, #237 · #241). WAL은 매분 도는 `rental-wal-ship`이 보낸다 — 두 DB 노드가 같은 접두어로 보내고, 같은 이름이 이미 있으면 덮어쓰지 않는다(S3 조건부 쓰기). **S3 사본만으로 PITR이 된다**(아래 「S3에서 되살리기」). 옛 노드의 timer는 점검 모드의 멈춘 DB를 백업한다 — 옛 노드 정리 때 끈다. **노드를 꺼 둔 밤에는 02:00 · 01:30이 지나가도 켜는 즉시 한 번 돈다**(`Persistent=true`). 설치 순서는 9.3 「3노드」.
+**3노드의 정기 백업**(2026-09-25 · #237) — 아래 논리 · 물리 백업과 WAL 아카이빙은 **DB-01 · DB-02 양쪽**에 있고(standby에서는 아무것도 하지 않고 끝난다), 접속은 그 노드의 사설 IP(`PGHOST`)로 TLS다(루프백에는 게시하지 않는다). **논리 백업 · 물리 백업 · WAL 모두 노드 로컬 + S3 암호화 사본**(`logical/` · `physical/<시각>/` · `wal/`, #237 · #241). WAL은 매분 도는 `rental-wal-ship`이 보낸다 — 두 DB 노드가 같은 접두어로 보내고, 같은 이름이 이미 있으면 덮어쓰지 않는다(S3 조건부 쓰기). **S3 사본만으로 PITR이 된다**(아래 「S3에서 되살리기」). **옛 노드의 timer 셋(논리 · 물리 백업 · 설정 사본)은 2026-09-25 15:26에 껐다**(사용자 결정 — 점검 모드와 데이터는 보존, #245). **노드를 꺼 둔 밤에는 02:00 · 01:30이 지나가도 켜는 즉시 한 번 돈다**(`Persistent=true`). 설치 순서는 9.3 「3노드」.
 
 **전송이 한 파일에서 멈추면 그 뒤로는 아무것도 보내지 않는다** — 첫 실패에서 끝나고 매분 같은 실패를 저널에 남긴다(0600 세그먼트에서 실측). 그동안 노드 소실 RPO는 5분이 아니라 **멈춘 시간만큼** 늘고, 멈춘 채 주간 물리 백업이 돌면 `pg_archivecleanup`이 아직 보내지 않은 세그먼트를 지워 S3 사슬에 구멍이 난다. **지금 이것을 알리는 것은 일일 점검의 저널 확인뿐이다**(2장) — 지표(`rental_wal_ship_pending_files` · 마지막 성공 시각)는 나가고 있고 권장 알림 규칙은 2장에 있다 — 사용자가 Grafana에 걸기 전까지는 저널 확인뿐이다.
 
@@ -592,6 +592,8 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 **실행 시간 상한 실증** — NAS가 멈춘 경우를 흉내 내려고 **`systemctl stop nfs-server`가 아니라 `sudo rpc.nfsd 0`으로 nfsd만 세운다.** `x-systemd.requires` 때문에 서비스를 멈추면 마운트도 함께 내려가 「마운트는 있는데 서버가 답하지 않는」 경우가 되지 않는다. 그 상태에서 `sudo systemd-run --no-block --unit=nas-stall-test --uid=backup --gid=backup -p Type=oneshot -p TimeoutStartSec=20s -p RequiresMountsFor=/mnt/nas/backup /bin/sh -c 'echo t > /mnt/nas/backup/stall-test'` — **쓰기에서 멈췄다가 20초에 `start operation timed out. Terminating.` → `Failed with result 'timeout'`**, 남은 프로세스 없음(NFS 대기는 kill 가능한 대기다). `sudo rpc.nfsd 8`(기본 스레드 수)로 되살리면 1초 안에 쓰기가 돌아온다. 끝나면 `systemctl reset-failed nas-stall-test`. 그래서 논리 백업의 상한 30분을 확정했다(설계서 5.3).
 
 **설정 사본(`rental-config-copy`)** — 설계서 5.1 · 7.2의 「운영 설정 사본」이다. 체크아웃의 `infra/`(추적 밖의 `.env` 포함)와 리비전 기록(`REVISION` — 커밋과 `git status --porcelain`)을 묶어 **통째로** gpg 대칭 암호화(논리 백업과 같은 키)해 `/mnt/nas/backup/config/`에 둔다. **원본 읽기만 root, 암호화 · 쓰기 · 정리는 `backup`**(`runuser`) — 체크아웃은 `ec2-user` 홈(700) 안이라 `backup`이 읽지 못하고, NFS는 `root_squash`라 root가 쓰지 못한다. NFS 공유(위)를 마친 노드를 전제한다. 2026-09-25 12:01에 실제로 밟은 순서다(#231).
+
+**3노드 APP-01 설정 사본**(2026-09-25 15:26 ~ 15:47, #245) — 목적지가 **APP-01 로컬(`/var/backups/rental/config`) + S3 `config/`**다(NAS를 두지 않는다). 위 순서에서 달라지는 것만 — ① 백업 키를 DB 노드와 같은 것으로(옛 노드에서 스트림 — 한 키로 되살린다) ② AWS CLI v2 · APP-01 전용 역할 `rental-app-config`(`config/`에 `PutObject`만 — `infra/backup/aws/` README 8단계) ③ `/etc/rental/config-copy.env`에 `CONFIG_SRC=/home/deploy/rental` · `CONFIG_DEST=/var/backups/rental/config` · `CONFIG_S3_URI=s3://rental-backup-890742606734/config` · `AWS` · `AWS_DEFAULT_REGION`. **실측** — 로컬 · S3 61,658바이트, 복원 시 `REVISION`이 체크아웃 커밋과 같고 `.env` 일치, 역할은 `config/` 쓰기만(다른 접두어 · 목록 · 삭제 거부), 지표 `task="config_copy"`. S3 사본이 실패하면 로컬 사본을 남기고 보존 정리까지 한 뒤 종료 1(물리 백업과 같다)
 
 | 순서 | 명령 | 확인 |
 |---|---|---|
