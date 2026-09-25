@@ -508,7 +508,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 3 | `sudo install -d -o <계정> -g <계정> -m 700 /home/<계정>/.ssh` → 공개키 **한 줄**을 `authorized_keys`(600, 본인 소유)에 → `sudo restorecon -R /home/<계정>/.ssh` | `ls -Z`에 `ssh_home_t`. 파일 첫머리가 `ssh-ed25519 `인지 본다 — 다른 값이 들어가도 sshd는 거부만 하고(`Connection closed by authenticating user … [preauth]`) 이유를 남기지 않는다 |
 | 4 | 로그인 확인 — 각 키로 `ssh -o IdentitiesOnly=yes -i ~/.ssh/rental-<계정> <계정>@<노드>` | 성공. 다른 계정의 키 · 비밀번호 방식은 거부. sshd 저널 `Accepted publickey for <계정> … ED25519 SHA256:…`로 어느 키인지 남는다 |
 | 5 | 권한 확인 — `sudo -l -U <계정>` | `buyeon` → `(ALL) ALL`(비밀번호 요구 — 배포판 `%wheel ALL=(ALL) ALL` 그대로), `deploy` → `not allowed to run sudo`. `deploy`는 `docker ps` 가능 — **`docker` 그룹은 root와 같은 권한이다**(설계서 6.2) |
-| 6 | 개인 계정의 sudo 비밀번호는 **본인이 정한다** — `ssh -t -i <AWS 키> rocky@<노드> sudo passwd <계정>`(옛 AL2023 노드는 `ec2-user@`). 비밀번호는 sudo에만 쓰이고 SSH 비밀번호 로그인은 막혀 있다(9.1 AL2023 표 1) | `sudo passwd -S <계정>` → `PS` |
+| 6 | 개인 계정의 sudo 비밀번호는 **본인이 정한다** — `ssh -t -i <AWS 키> rocky@<노드> sudo passwd <계정>`(옛 AL2023 노드는 `ec2-user@`). 비밀번호는 sudo에만 쓰이고 SSH 비밀번호 로그인은 막혀 있다(9.1 — AL2023 표 1 · 3노드 표 5) | `sudo passwd -S <계정>` → `PS` |
 
 ### 9.3 백업 · 정기 작업 · NAS(옛 단일 노드)
 
