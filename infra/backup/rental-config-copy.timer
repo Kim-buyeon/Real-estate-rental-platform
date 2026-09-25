@@ -1,0 +1,16 @@
+[Unit]
+# 설정 사본 타이머 — 서버 운영 기반 설계서 7.1(cron 대신 timer) · 7.2(매주 일 01:00).
+# 설계서 5.1 의 「변경 시」 사본은 배포 스크립트에 걸 일이라 여기서 다루지 않는다 — 이 timer 는 주 1회 몫이다
+Description=Rental config copy timer (weekly Sun 01:00 KST)
+
+[Timer]
+# 서버 시간대가 Asia/Seoul 이라는 전제다(설계서 7.2). **시각은 잠정**이다 — 설계서 7.2 의 다른 작업과 같이 운영 1개월 뒤
+# 다시 본다. 01:30 물리 백업 · 02:00 논리 백업 앞이고, 03:00 은 등기 재조회 배치(RISK-08) 자리라 비워 둔다
+OnCalendar=Sun *-*-* 01:00:00
+# 그 시각에 서버가 꺼져 있었으면 다음 부팅 때 한 번 돌린다 — timer 를 고른 이유다(설계서 7.1)
+Persistent=true
+AccuracySec=1min
+Unit=rental-config-copy.service
+
+[Install]
+WantedBy=timers.target
