@@ -129,7 +129,7 @@ APP-01 단일 노드에 두 프로세스를 두는 구성은 노드 자체의 �
 | nginx exporter → Nginx `stub_status` | 8088 | **동일 노드 루프백.** 공개 80 서버와 분리한 내부 서버 블록(`infra/nginx/conf.d/status.conf`) |
 | 수집기 → Grafana Cloud | 443(나가는 방향) | 아래 「APP-01 → 인터넷」 행에 포함된다. 들어오는 길은 없다 |
 | Primary → Standby | 5432 | DB-01 사설 IP만 |
-| Standby → Primary 복제(같은 노드 — 지금 구성) | 5432 | **Compose 네트워크 안에서만.** standby 컨테이너는 포트를 게시하지 않고 primary의 5432에 Compose 네트워크로 붙는다. 복제 접속은 `pg_hba.conf`의 복제 줄 하나(복제 역할 · 같은 서브넷 · scram)만 받는다 — `infra/postgres/pg_hba.conf` |
+| Standby → Primary 복제(같은 노드 — 옛 단일 노드) | 5432 | **Compose 네트워크 안에서만.** standby 컨테이너는 포트를 게시하지 않고 primary의 5432에 Compose 네트워크로 붙는다. 복제 접속은 `pg_hba.conf`의 복제 줄 하나(복제 역할 · 같은 서브넷 · scram)만 받는다 — `infra/postgres/pg_hba.conf` |
 | 3노드: Standby(DB-02) → Primary(DB-01) 복제 | 5432 | DB-02 → DB-01 사설 IP, 보안 그룹 `rental-db` → `rental-db`. **`hostssl` 복제 줄(VPC 대역) · TLS** — 평문은 거절 |
 | 3노드: 승격 뒤 앱 → DB-02 | 5432 | DB-02 사설 IP `10.20.20.10`에 게시(평시에도 게시 — 승격 뒤 앱이 붙는 자리). 단일 노드에서는 standby가 루프백 5433에 게시한다 |
 | 운영자 → APP-01 | 22 | 운영자 IP만. 공개키 인증만. 비밀번호 인증과 root 로그인은 차단 |
