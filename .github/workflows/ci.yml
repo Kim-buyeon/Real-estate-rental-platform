@@ -70,7 +70,7 @@ jobs:
       - name: Validate Compose files
         run: |
           docker compose -f docker-compose.yml config --quiet
-          docker compose -f infra/docker-compose.yml config --quiet
+          docker compose -f infra/docker-compose.yml --profile '*' config --quiet
       # 운영 구성과 같은 마운트 형태로 검사한다 — 진입 파일은 파일 단위, 설정 본문은 폴더째(운영 절차서 4.1)
       - name: Validate Nginx config
         run: |
