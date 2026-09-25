@@ -378,7 +378,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 ## 9. 서버 운영 절차 (Rocky Linux)
 
-서버 운영 기반(INF-07 ~ 09)의 손으로 밟는 순서다. **무엇을 왜 그렇게 두는지는 서버 운영 기반 설계서(`docs/infra/platform.md`)가 갖는다.** 명령은 첫 구축에서 실제로 실행하며 이 절에 채운다(1장 원칙) — 지금 명령까지 채워진 것은 9.1의 AL2023 OS 보안 기준 · 9.2의 계정 추가 · 9.3의 논리 · 물리 백업 · NFS 공유이고 나머지는 단계와 확인 기준만 있다.
+서버 운영 기반(INF-07 ~ 09)의 손으로 밟는 순서다. **무엇을 왜 그렇게 두는지는 서버 운영 기반 설계서(`docs/infra/platform.md`)가 갖는다.** 명령은 첫 구축에서 실제로 실행하며 이 절에 채운다(1장 원칙) — 지금 명령까지 채워진 것은 9.1의 AL2023 OS 보안 기준 · 9.1의 Rocky 3노드 준비 · 9.2의 계정 추가 · 9.3의 논리 · 물리 백업 · NFS 공유이고 나머지는 단계와 확인 기준만 있다.
 
 ### 9.1 새 노드 준비
 
@@ -395,17 +395,17 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 9 | `dnf-automatic`(보안 갱신만 · 자동 재부팅 없음) timer 활성 | `systemctl list-timers` |
 | 10 | NFS 클라이언트 마운트(해당 노드) | 9.3 |
 
-**3노드(Rocky 9.8) 준비 — 실제로 밟은 순서**(사용자 본인 계정 · 서울 · 2026-09-25 12:16 ~ 12:31, #233). 위 표의 1 ~ 9를 세 노드에 밟았다. 10(NFS)은 3노드 결정으로 NAS를 두지 않아 없다. 값(CIDR · 사설 IP · 인스턴스)은 시스템 구성서 2.1 · 3 · 4장이 갖는다.
+**3노드(Rocky 9.8) 준비 — 실제로 밟은 순서**(사용자 본인 계정 · 서울 · 2026-09-25 12:16 ~ 12:31, #233). 위 표의 1 ~ 9를 세 노드에 밟았다 — **단 4의 `rocky` 잠금은 하지 않았다**(아래 6). 10(NFS)은 3노드 결정으로 NAS를 두지 않아 없다. 값(CIDR · 사설 IP · 인스턴스)은 시스템 구성서 2.1 · 3 · 4장이 갖는다.
 
 | 순서 | 명령 | 확인 · 실측 |
 |---|---|---|
 | 1 | VPC · 서브넷 셋 · IGW · 공개 경로(0/0 → IGW) · 사설 경로 · S3 게이트웨이 엔드포인트(사설 경로) → 보안 그룹 `rental-app` · `rental-db` → 키 페어 → `run-instances`(서브넷 · 고정 사설 IP · 공인 IP는 APP-01만 · `--metadata-options HttpTokens=required,HttpPutResponseHopLimit=1` · 루트 20 + 데이터 20 GB gp3 `Encrypted`) → APP-01 `modify-instance-attribute --no-source-dest-check` → 사설 경로 0/0 → APP-01 ENI. **모든 리소스에 `Project=rental` 태그** | `describe-instances` — 공인 IP는 APP-01만, `HttpTokens required` · 홉 1, 볼륨 6개 `Encrypted` |
-| 1 함정 | 새 계정 첫 생성이 `PendingVerification`(리전 검증, 「보통 몇 분 · 최대 4시간」)으로 거부될 수 있다 — 3분 뒤 재시도로 됐다. **CLI가 내준 키 페어 파일이 CRLF**라 `error in libcrypto` — `sed -i 's/$//'` | — |
+| 1 함정 | 새 계정 첫 생성이 `PendingVerification`(리전 검증, 「보통 몇 분 · 최대 4시간」)으로 거부될 수 있다 — 3분 뒤 재시도로 됐다. **CLI가 내준 키 페어 파일이 CRLF**라 `error in libcrypto` — 줄 끝 CR을 지운다(`sed -i 's/\r$//'`) | — |
 | 2 | 사설 노드는 APP-01을 거쳐 들어간다 — `ssh -J`는 점프 호스트에 `-i`를 쓰지 않으므로 호스트별 `IdentityFile` · `ProxyJump`를 적은 SSH 설정 파일로 | DB 노드 접속 |
 | 3 | 시간대 `sudo timedatectl set-timezone Asia/Seoul` — 이미지 기본이 UTC | `timedatectl` |
 | 4 | 데이터 볼륨 — **루트가 아닌 디스크를 골라**(`lsblk -no PKNAME $(findmnt -no SOURCE /)`로 루트 디스크를 빼고) `mkfs.xfs` → UUID로 fstab(`defaults,nofail`) → `mount` → `restorecon`. APP-01 `/var/lib/docker`, DB `/srv/pgdata` | **재부팅 뒤 APP-01의 데이터 디스크 이름이 `nvme0n1` → `nvme1n1`로 바뀌었다** — UUID가 아니면 마운트가 틀렸다 |
 | 5 | sshd · journald 조각(AL2023 표와 같은 파일) | `permitrootlogin no` |
-| 6 | 계정 — `backup`(2001) 먼저 → `buyeon` · `deploy`(9.2) | 세 노드 모두 2001 · 2002 · 2003 — 옛 노드와 같다. `rocky`는 자동화용으로 남긴다(잠금은 별도 — 설계서 6.2 적용 상태) |
+| 6 | 계정 — `backup`(2001) 먼저 → `buyeon` · `deploy`(9.2) | 세 노드 모두 2001 · 2002 · 2003 — 옛 노드와 같다. `rocky`는 자동화용으로 남긴다 — **잠그지 않았다.** `buyeon`의 sudo 비밀번호가 정해지기 전에는 무비밀번호 sudo를 가진 계정이 `rocky`뿐이다(옛 노드 `ec2-user`와 같은 결정 — 설계서 6.2 적용 상태 행) |
 | 7 | chrony — **할 일 없음.** 이미지가 DHCP로 169.254.169.123을 받아 선택한다 | `chronyc sources`에 `^* 169.254.169.123` |
 | 8 | firewalld — **이미지에 없다.** `dnf install firewalld` → `enable --now` → APP-01 `infra/os/firewalld/app-01.sh`(ssh · http · 영역 내 전달 · 마스커레이드), DB `infra/os/firewalld/db.sh`(ssh · postgresql) | APP-01 `forward: yes` · `masquerade: yes` · `ip_forward = 1`, **DB 노드에서 NAT로 나간다**(`curl` 200 · `dnf makecache`) |
 | 9 | SELinux — 이미지 기본 Enforcing | `getenforce` |
@@ -547,7 +547,7 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 
 ### 9.4 Amazon Linux 2023 → Rocky Linux 9 이전
 
-설계서 9장의 다섯 단계를 밟는다. **되돌릴 길이 남아 있는지 단계마다 확인한다** — 전환(Elastic IP 재지정) 전까지는 옛 노드가 그대로 서비스한다.
+설계서 9장의 다섯 단계를 밟는다. **본인 계정 3노드는 Elastic IP를 쓰지 않으므로**(설계서 3.5) 4단계의 「Elastic IP를 옮긴다」는 「새 APP-01 주소를 알리고 카카오맵 사이트 도메인에 등록한다」로 읽는다. **되돌릴 길이 남아 있는지 단계마다 확인한다** — 전환(Elastic IP 재지정) 전까지는 옛 노드가 그대로 서비스한다.
 
 | 순서 | 작업 | 되돌리기 |
 |---|---|---|

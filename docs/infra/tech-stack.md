@@ -35,7 +35,7 @@
 | 네트워크 격리 | VPC 공개/사설 서브넷 · NAT 인스턴스 · S3 게이트웨이 엔드포인트 | DB · NAS를 인터넷에서 닿지 않게. 관리형 NAT Gateway 대신 인스턴스(비용) — 서버 운영 기반 설계서 3장 |
 | NAS(백업 모음) | NFS 서버(`nfs-utils`, NFSv4) on EC2 + EBS | 논리 백업 · 설정 사본을 한곳에 모은다. EFS 대신 자체 서버(비용 · 이식성) — 같은 설계서 5장 |
 | 정기 작업 | systemd timer | 꺼져 있던 시각의 작업을 부팅 뒤 실행, 결과가 저널에 남는다 — 같은 설계서 7장 |
-| OS 보안 | SELinux(enforcing) · firewalld · `dnf-automatic` · chrony | Rocky 기본을 끄지 않고 쓴다 — 같은 설계서 8장 |
+| OS 보안 | SELinux(enforcing) · firewalld · `dnf-automatic` · chrony | Rocky 기본을 끄지 않고 쓴다. 단 EC2 공식 AMI에는 firewalld · `dnf-automatic`이 없어 노드 준비에서 설치한다 — 같은 설계서 3.3 · 8장 |
 | 컨테이너 실행 | Docker · Docker Compose | 노드 다섯 개(앱 · DB 둘 · NAS · NAT) 규모에서 오케스트레이터 도입은 과잉 |
 | 리버스 프록시 | Nginx | TLS 종단, 요청 분산, 무중단 배포의 실행 주체 |
 | CI | GitHub Actions | 푸시 시 빌드·테스트·이미지 생성 |
@@ -72,11 +72,11 @@
 
 | 기술 | 버전 | 선정 사유 |
 |---|---|---|
-| Rocky Linux | 9(부 버전 미확정) | RHEL 9 계열. 공식 AMI(Marketplace, 무료 · 구독 동의 필요). Docker 공식 저장소가 RHEL 9 계열을 지원한다 |
+| Rocky Linux | 9.8(2026-09-25 확정) | RHEL 9 계열. 공식 AMI(Rocky 소유 계정의 AMI는 Marketplace 구독 없이 뜬다 — 시스템 구성서 2.1). Docker 공식 저장소가 RHEL 9 계열을 지원한다 |
 | Docker CE | Docker 공식 RHEL 저장소 | Rocky 기본 Podman 대신 — Compose · 배포 스크립트를 그대로 쓴다 |
 | XFS · EBS(데이터 볼륨 분리) | — | Rocky 기본 파일시스템. LVM 없이 EBS 확장 + `xfs_growfs` |
 | NFS(`nfs-utils`) | NFSv4 | NAS(백업 모음) |
-| firewalld · SELinux | Rocky 기본 | 호스트 방화벽과 강제 접근 통제를 끄지 않는다 |
+| firewalld · SELinux | Rocky 패키지(firewalld는 EC2 AMI에 없어 설치) | 호스트 방화벽과 강제 접근 통제를 끄지 않는다 |
 | systemd timer · `dnf-automatic` | Rocky 기본 | 정기 작업과 보안 갱신 |
 | chrony + Amazon Time Sync Service | Rocky 기본 · 169.254.169.123 | 사설 서브넷에서도 인터넷 없이 시각을 맞춘다 |
 | NAT 인스턴스(Rocky 9) | — | 사설 서브넷의 인터넷 출구 — 관리형 NAT Gateway 대신 |
@@ -180,7 +180,7 @@
 
 | 항목 | 고정 버전 | 비고 |
 |---|---|---|
-| Rocky Linux | 9 | 부 버전은 AMI 수령 시 확정 — 시스템 구성서 2.1절 |
+| Rocky Linux | 9.8 | 시스템 구성서 2.1절 |
 | PostgreSQL | 17 | 애플리케이션 스택과 동일 |
 | Redis | 7 | 애플리케이션 스택과 동일 |
 | Docker 이미지 | `postgres:17-alpine`, `redis:7-alpine` | 로컬·CI·운영 공통 고정 |
