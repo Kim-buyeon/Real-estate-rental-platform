@@ -6,9 +6,15 @@
 # 파일 이름이 docker-compose.yml 인 이유: 배포 스크립트(운영 절차서 3.2)가 -f 없이 infra/ 에서 docker compose 를 부른다.
 # 다른 이름이면 Compose 가 상위 폴더로 올라가 루트의 로컬 구성을 집는다.
 #
-# PostgreSQL 도 이 노드에 둔다. 복제(INF-03)의 standby(postgres-standby)도 같은 노드의 컨테이너다 — 노드를 늘릴 수 없어
-# (시스템 구성서 2.2) 전환 절차를 검증하는 자리이고 노드 장애는 막지 못한다. DB 노드를 따로 두게 되면 두 서비스를 빼고
-# infra/.env 의 DB_HOST 를 그 노드 사설 IP 로 둔다(아래 app-1 의 DB_HOST 주석).
+# 프로필 — 한 파일을 노드마다 다른 몫으로 띄운다. 모든 서비스가 프로필을 가지므로 infra/.env 의 COMPOSE_PROFILES 가
+# 비어 있으면 아무것도 뜨지 않는다.
+#   app       nginx · app-1 · app-2 · web · redis · 관측 수집기(prom-agent · vector · exporter 넷)
+#   db        postgres
+#   standby   postgres-standby
+#   단일 노드(옛 APP-01)   COMPOSE_PROFILES=app,db,standby — 셋이 한 노드의 컨테이너다. standby 는 전환 절차를 검증하는
+#                          자리이고 노드 장애는 막지 못한다
+#   3노드                  APP-01 app · DB-01 db · DB-02 standby. APP-01 의 infra/.env 는 DB_HOST 를 DB-01 사설 IP 로 둔다
+#                          (아래 app-1 의 DB_HOST 주석)
 #
 # 이미지 — 레지스트리 파이프라인(INF-02) 전에는 로컬 빌드 이미지를 쓴다(운영 절차서 3.2 전제).
 # APP_IMAGE · WEB_IMAGE 로 덮으면 레지스트리 이미지가 된다.
@@ -131,6 +137,7 @@ x-logging: &logging
 # docker compose up 에서는 조용히 무시된다.
 
 x-app: &app
+  profiles: ["app"]
   image: ${APP_IMAGE:-rental-backend:local}
   env_file: .env
   restart: unless-stopped
@@ -156,8 +163,11 @@ x-app: &app
     # ExitOnOutOfMemoryError 는 OOM 뒤 좀비 상태로 남지 않고 죽어서 restart: unless-stopped 가 받게 한다.
     JAVA_TOOL_OPTIONS: "-XX:+UseG1GC -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp"
   depends_on:
+    # required: false — 3노드에서는 postgres 가 다른 노드(DB-01)라 이 노드의 활성 프로필에 없다. 없으면 기다리지 않고
+    # 뜨고, 있으면(단일 노드) 지금처럼 healthy 를 기다린다
     postgres:
       condition: service_healthy
+      required: false
     redis:
       condition: service_healthy
 
@@ -256,10 +266,21 @@ x-postgres-command: &postgres-command
   - archive_timeout=300
   - -c
   - archive_command=/bin/sh /usr/local/bin/rental-archive-wal.sh %p %f
+  # 노드 간 전송 암호화(2026-09-25 사용자 결정 · #235) — 3노드 DB 노드는 PG_SSL=on. 단일 노드는 기본 off 라 인증서 경로를
+  # 읽지 않는다. 인증서는 노드마다 자체 서명으로 만들어 PG_TLS_DIR 에 두고(운영 절차서 9장) 아래 마운트로 읽는다.
+  # 클라이언트는 따로 켜지 않는다 — pgJDBC · libpq(pg_basebackup · walreceiver)의 기본 sslmode 가 prefer 라 서버가 켜면
+  # 암호화로 붙고, 평문 접속은 pg_hba.conf 의 VPC 대역 reject 줄이 막는다.
+  - -c
+  - ssl=${PG_SSL:-off}
+  - -c
+  - ssl_cert_file=/etc/postgresql/tls/server.crt
+  - -c
+  - ssl_key_file=/etc/postgresql/tls/server.key
 
 services:
   # 앞단 — 요청 분산 · SSE 전달 · 정적 화면 전달. 호스트 네트워크여야 upstream 의 127.0.0.1 이 호스트를 가리킨다(운영 절차서 4.1).
   nginx:
+    profiles: ["app"]
     # 현재 stable 계열. 프론트 이미지(frontend/Dockerfile)와 같은 계열로 둔다
     image: nginx:1.30-alpine
     network_mode: host
@@ -295,7 +316,8 @@ services:
     environment:
       <<: *app-env
       SERVER_PORT: 8081
-      # 운영에서는 infra/.env 에 DB_HOST 를 두지 않는다 — 비우면 postgres. 페일오버 6단계(운영 절차서 6.1)에서
+      # 단일 노드에서는 infra/.env 에 DB_HOST 를 두지 않는다 — 비우면 postgres. 3노드의 APP-01 은 DB-01 사설 IP 다(파일 머리 프로필).
+      # 페일오버 6단계(운영 절차서 6.1)에서
       # DB_HOST=postgres-standby 로 바꾸고 슬롯을 순서대로 재생성한다. app-2 도 같은 값을 읽는다
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: 5432
@@ -336,6 +358,7 @@ services:
       start_period: 90s
 
   web:
+    profiles: ["app"]
     image: ${WEB_IMAGE:-rental-frontend:local}
     restart: unless-stopped
     logging: *logging
@@ -353,6 +376,7 @@ services:
       start_period: 10s
 
   redis:
+    profiles: ["app"]
     image: redis:7-alpine
     restart: unless-stopped
     logging: *logging
@@ -387,6 +411,7 @@ services:
       retries: 10
 
   postgres:
+    profiles: ["db"]
     image: postgres:17-alpine
     restart: unless-stopped
     logging: *logging
@@ -429,7 +454,9 @@ services:
       # 컨테이너 안 도구(date 등)의 시간대. PostgreSQL 로그 시각은 이 값이 아니라 x-postgres-command 의 log_timezone 이 맞춘다
       TZ: Asia/Seoul
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # 데이터 자리 — 기본은 Compose 이름 볼륨(단일 노드). DB 노드는 데이터 볼륨의 경로를 준다(서버 운영 기반 설계서 4.1
+      # 「DB 파일이 루트를 채우지 않게」) — 이름 볼륨은 /var/lib/docker(루트 디스크) 아래에 생긴다. 값이 / 로 시작하면 바인드다
+      - ${PG_DATA_SOURCE:-pgdata}:/var/lib/postgresql/data
       # 접속 규칙 — x-postgres-command 의 hba_file. standby 와 같은 파일이다
       - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
       # 초기화 스크립트 — standby 와 같은 파일이다
@@ -440,13 +467,18 @@ services:
       # 호스트 디렉터리는 70:backup 2770 — 컨테이너 postgres(uid 70)가 쓰고 백업 계정이 정리한다(삭제는 디렉터리 쓰기
       # 권한만 있으면 된다). 없는 경로면 Docker 가 root 소유로 만들어 아카이브가 실패하므로 노드 적용 때 먼저 만든다.
       - /var/backups/rental/wal:/archive/wal
+      # 서버 인증서 — PG_SSL=off 인 단일 노드에서는 읽지 않는다(경로가 없으면 Docker 가 빈 디렉터리를 만든다)
+      - ${PG_TLS_DIR:-/etc/rental/pg-tls}:/etc/postgresql/tls:ro
     # 호스트 루프백 게시 — 논리 백업(infra/backup/pg-dump.sh)이 호스트의 pg_dump 로 TCP 접속한다. 정기 작업은 backup 계정으로
     # 도는데 그 계정은 docker 그룹이 아니라 docker compose exec 를 쓸 수 없다(서버 운영 기반 설계서 6.2).
     # 루프백인 이유 — Docker 게시 포트는 호스트 방화벽을 우회하므로(설계서 3.3) 막는 수단이 바인딩 주소뿐이다.
-    # 다른 게시 포트와 같은 셋째 겹(컨테이너 포트 루프백 바인딩)이라 새 접근면이 생기지 않는다. 앱은 여전히 Compose 네트워크로 닿는다.
-    # DB 가 DB-01 로 옮겨 가면(INF-03) 이 게시는 서비스와 함께 사라지고 백업 쪽은 PGHOST 만 바뀐다.
+    # 다른 게시 포트와 같은 셋째 겹(컨테이너 포트 루프백 바인딩)이라 새 접근면이 생기지 않는다. 단일 노드의 앱은 여전히 Compose 네트워크로 닿는다.
+    #
+    # 게시 주소 PG_PUBLISH_ADDR — 단일 노드는 비워 둔다(루프백, 기본값). DB 노드(DB-01)는 그 노드의 사설 IP 하나다 —
+    # 다른 노드(APP-01 의 앱 · DB-02 의 standby)가 붙어야 하는 포트라서다(서버 운영 기반 설계서 3.3 「예외 — DB 노드의 5432」).
+    # 0.0.0.0 은 쓰지 않는다. 게시 포트는 firewalld 를 우회하므로 이 포트의 방어는 보안 그룹 · 사설 서브넷이 맡는다.
     ports:
-      - "127.0.0.1:5432:5432"
+      - "${PG_PUBLISH_ADDR:-127.0.0.1}:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -454,10 +486,11 @@ services:
       retries: 10
 
   # 스트리밍 복제 standby(INF-03) — 비동기 · 물리 슬롯 standby_1(인프라 기술 스택 3장).
-  # **같은 노드의 컨테이너다.** 노드를 늘릴 수 없어(시스템 구성서 2.2) 전환 절차를 검증하는 자리이고,
-  # 노드 장애에는 primary 와 함께 사라진다 — 노드 장애 대응은 성립하지 않는다.
-  # 트래픽을 받지 않는다. 앱은 postgres 만 본다. 포트를 게시하지 않는다 — primary 에는 Compose 네트워크로 붙는다.
+  # 단일 노드(프로필 app,db,standby)에서는 **같은 노드의 컨테이너다** — 전환 절차를 검증하는 자리이고,
+  # 노드 장애에는 primary 와 함께 사라진다 — 노드 장애 대응은 성립하지 않는다. 3노드에서는 DB-02 에 이것만 뜬다(프로필 standby).
+  # 트래픽을 받지 않는다. 앱은 postgres 만 본다. 단일 노드에서는 primary 에 Compose 네트워크로 붙고, DB-02 에서는 DB-01 사설 IP 로 붙는다.
   postgres-standby:
+    profiles: ["standby"]
     image: postgres:17-alpine
     restart: unless-stopped
     logging: *logging
@@ -471,8 +504,9 @@ services:
     entrypoint: ["/bin/sh", "/usr/local/bin/rental-bootstrap.sh"]
     command: *postgres-command
     environment:
-      # 받을 곳과 슬롯 — 초기화 스크립트. 슬롯은 primary 에 노드 적용 때 미리 만든다
-      PG_BOOTSTRAP_FROM: postgres
+      # 받을 곳과 슬롯 — 초기화 스크립트. 슬롯은 primary 에 노드 적용 때 미리 만든다.
+      # 받을 곳 PG_STANDBY_FROM — 단일 노드는 비워 둔다(postgres, 기본값). DB-02 는 DB-01 사설 IP 다
+      PG_BOOTSTRAP_FROM: ${PG_STANDBY_FROM:-postgres}
       PG_BOOTSTRAP_SLOT: standby_1
       # 복제 계정 — 역할은 노드 적용 때 primary 에서 만든다. postgres 에도 같은 값을 넘긴다(페일백 때 이쪽에서 받는다)
       POSTGRES_REPLICATION_USER: ${POSTGRES_REPLICATION_USER:-}
@@ -485,12 +519,15 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       TZ: Asia/Seoul
     volumes:
-      - pgdata-standby:/var/lib/postgresql/data
+      # 데이터 자리 — postgres 서비스의 주석과 같다. DB-02 는 데이터 볼륨 경로
+      - ${PG_STANDBY_DATA_SOURCE:-pgdata-standby}:/var/lib/postgresql/data
       - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
       - ./postgres/bootstrap.sh:/usr/local/bin/rental-bootstrap.sh:ro
       - ./postgres/archive-wal.sh:/usr/local/bin/rental-archive-wal.sh:ro
       # WAL 아카이브 — postgres 와 같은 호스트 디렉터리(그쪽 주석). 복구 중에는 쓰지 않고 승격하면 이어서 쓴다
       - /var/backups/rental/wal:/archive/wal
+      # 서버 인증서 — PG_SSL=off 인 단일 노드에서는 읽지 않는다(경로가 없으면 Docker 가 빈 디렉터리를 만든다)
+      - ${PG_TLS_DIR:-/etc/rental/pg-tls}:/etc/postgresql/tls:ro
     # 복구 중 일관된 지점에 닿기 전에는 pg_isready 가 거부(1)를 돌려준다 — 받은 뒤 읽기 연결을 받을 때 healthy 다.
     # start_period 는 첫 기동의 pg_basebackup 몫이다(DB 36 MB — 2026-09-23 실측).
     healthcheck:
@@ -499,9 +536,15 @@ services:
       timeout: 3s
       retries: 10
       start_period: 60s
+    # 승격 뒤 앱이 붙는 자리. 단일 노드는 5432 를 primary 가 쓰므로 루프백 5433(기본값), DB-02 는 자기 사설 IP 의 5432 다
+    # (PG_STANDBY_PUBLISH_ADDR · PG_STANDBY_PUBLISH_PORT). 0.0.0.0 을 쓰지 않는 이유는 postgres 의 ports 주석과 같다
+    ports:
+      - "${PG_STANDBY_PUBLISH_ADDR:-127.0.0.1}:${PG_STANDBY_PUBLISH_PORT:-5433}:5432"
     depends_on:
+      # required: false — 3노드에서는 postgres 가 다른 노드(DB-01)라 이 노드의 활성 프로필에 없다(x-app 의 depends_on 주석)
       postgres:
         condition: service_healthy
+        required: false
 
   # ── 관측 수집기(INF-05)────────────────────────────────────────────────
   # 노드에는 수집과 전송만 둔다. 저장 · 시각화 · 알림은 노드 밖(Grafana Cloud)이다.
@@ -511,6 +554,7 @@ services:
 
   # 지표 수집 · 전송 — Prometheus agent 모드. 스크레이프 대상과 remote_write 는 prometheus/agent.yml
   prom-agent:
+    profiles: ["app"]
     image: prom/prometheus:v3.6.0
     # 호스트 네트워크 — 대상이 전부 호스트 루프백(127.0.0.1:9100 · 9121 · 9187)이라 여기서 127.0.0.1 이 호스트를 가리켜야 한다.
     # 컨테이너 IP 로 긁으면 재생성 때 IP 가 바뀌어 대상이 사라진다.
@@ -571,6 +615,7 @@ services:
 
   # 로그 수집 · 전송 — 컨테이너 로그를 Docker API 로 읽어 Loki 로 보낸다. 설정은 vector/vector.toml
   vector:
+    profiles: ["app"]
     image: timberio/vector:0.50.0-alpine
     restart: unless-stopped
     logging: *logging
@@ -596,6 +641,7 @@ services:
   # 호스트 지표. 호스트 네트워크 · 호스트 PID · 호스트 루트 읽기 전용 — node exporter 공식 README 의 Docker 예시 그대로다.
   # README 는 호스트를 재는 도구를 컨테이너에 넣으려면 호스트 네임스페이스에 닿는 이 설정들이 필요하다고 적는다.
   node-exporter:
+    profiles: ["app"]
     image: quay.io/prometheus/node-exporter:v1.9.1
     network_mode: host
     pid: host
@@ -615,26 +661,32 @@ services:
 
   # PostgreSQL 지표. 전용 역할로 붙는다 — 앱 소유자 역할의 비밀번호를 수집기에 주지 않는다(pg_monitor 멤버, 최고 권한 아님).
   # 역할은 노드 적용 때 만든다. 앱과 같이 Compose 네트워크로 postgres 에 닿는다.
-  # DB 가 DB-01 로 옮겨 가면(INF-03) 이 서비스도 그 노드로 간다 — 지금은 postgres 와 같은 노드라 여기 있다.
+  # 프로필은 app 이다 — 3노드에서도 APP-01 에 남아 DB_HOST(DB-01 사설 IP)로 postgres 에 붙는다.
   postgres-exporter:
+    profiles: ["app"]
     image: quay.io/prometheuscommunity/postgres-exporter:v0.18.1
     restart: unless-stopped
     logging: *logging
     mem_limit: 64m
     environment:
       # 호스트는 앱과 같은 DB_HOST — 페일오버(운영 절차서 6.1) 뒤에도 현재 primary 를 본다
-      DATA_SOURCE_URI: ${DB_HOST:-postgres}:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_URI: ${DB_HOST:-postgres}:5432/${POSTGRES_DB}?sslmode=${PG_EXPORTER_SSLMODE:-disable}
       DATA_SOURCE_USER: ${POSTGRES_MONITOR_USER:-}
       DATA_SOURCE_PASS: ${POSTGRES_MONITOR_PASSWORD:-}
       TZ: Asia/Seoul
     # 호스트 루프백 게시 — prom-agent(호스트 네트워크)가 127.0.0.1 로 긁는다. 다른 게시 포트와 같은 셋째 겹이다
     ports:
       - "127.0.0.1:9187:9187"
+    # required: false — 3노드에서는 postgres 가 다른 노드라 이 노드의 활성 프로필에 없다(x-app 의 depends_on 주석).
+    # 짧은 형식(- postgres)에는 required 를 줄 수 없어 긴 형식으로 쓴다. condition 은 짧은 형식의 기본값 그대로다
     depends_on:
-      - postgres
+      postgres:
+        condition: service_started
+        required: false
 
   # Redis 지표
   redis-exporter:
+    profiles: ["app"]
     image: oliver006/redis_exporter:v1.78.0
     restart: unless-stopped
     logging: *logging
@@ -652,6 +704,7 @@ services:
   # nginx 가 호스트 네트워크이고 stub_status 를 루프백에만 열었으므로 이 서비스도 호스트 네트워크여야 거기 닿는다.
   # 호스트 네트워크라 바인딩 주소가 곧 노출 범위다. 루프백에만 연다(시스템 구성서 4장, 셋째 겹)
   nginx-exporter:
+    profiles: ["app"]
     image: nginx/nginx-prometheus-exporter:1.5.3
     network_mode: host
     restart: unless-stopped
