@@ -7,6 +7,7 @@ DB 노드의 백업 사본을 받는 버킷과, 노드가 그 버킷에 쓰는 �
 | `logical/` | 논리 백업 `pg-dump.sh` — 매일 덤프 한 벌 | `BACKUP_S3_URI=s3://rental-backup-890742606734/logical` |
 | `wal/` | WAL 전송 `wal-ship.sh` — 매분, 아직 보내지 않은 아카이브 파일을 `<이름>.gpg`로. 조건부 쓰기(`If-None-Match: *`)라 같은 이름을 덮어쓰지 않는다 | `WAL_S3_URI=s3://rental-backup-890742606734/wal` |
 | `physical/` | 물리 백업 `pg-basebackup.sh` — 매주 `<시각>/` 아래 `base.tar.gz` · `pg_wal.tar.gz` · `backup_manifest`의 `.gpg` | `BASEBACKUP_S3_URI=s3://rental-backup-890742606734/physical` |
+| `config/` | 운영 설정 사본 `config-copy.sh` — APP-01에서 매주 `config-<시각>.tar.gz.gpg`(`infra/` · `.env` · `REVISION`). **APP-01 전용 역할 `rental-app-config`**로 올린다 | `CONFIG_S3_URI=s3://rental-backup-890742606734/config` |
 
 | 값 | |
 | --- | --- |
@@ -21,8 +22,9 @@ DB 노드의 백업 사본을 받는 버킷과, 노드가 그 버킷에 쓰는 �
 | --- | --- | --- |
 | `role-trust.json` | 역할 신뢰 정책 — EC2만 이 역할을 맡는다 | 서버 운영 기반 설계서 6.1 — 서버가 S3를 쓰는 권한은 키 파일이 아니라 인스턴스 역할로 준다 |
 | `role-policy.json` | 역할 권한 — `logical/` · `wal/` · `physical/` 아래 `s3:PutObject`만. 읽기 · 목록 · 삭제가 없다. 그래서 WAL 전송은 「이미 보냈는가」를 S3에 묻지 않고 노드의 보낸 표시와 조건부 쓰기(있으면 412)로 가린다 | 서버 운영 기반 설계서 6.1 「필요한 서비스로 좁힌다」 · 3.3 「역할 권한은 필요한 버킷 · 동작으로 좁힌다」. 노드가 털려도 오프사이트 사본을 읽거나 지우지 못한다. 복원 때 내려받기는 운영자 자격 증명으로 한다 |
+| `app-role-policy.json` | APP-01 역할 `rental-app-config` 권한 — `config/` 아래 `s3:PutObject`만. 신뢰 정책은 `role-trust.json`을 같이 쓴다 | 서버 운영 기반 설계서 6.1 — APP-01은 DB 백업 접두어에 쓸 이유가 없어 역할을 나눈다 |
 | `bucket-policy.json` | TLS가 아닌 요청(`aws:SecureTransport` = false)을 버킷 · 객체 모두 거부 | 백업은 노드를 떠나기 전에 이미 암호화되지만 전송 구간도 평문을 허용하지 않는다 |
-| `lifecycle.json` | `logical/` · `wal/` · `physical/` 아래 객체를 각각 28일 뒤 만료, 끝나지 않은 멀티파트 업로드는 1일 뒤 정리(역할이 `AbortMultipartUpload`를 갖지 않아 노드가 스스로 치우지 못한다) | 인프라 기술 스택 정의서 3장 — 4주 보존. WAL은 남긴 물리 백업 중 가장 오래된 것부터만 쓸모 있어(서버 운영 기반 설계서 5.4) 물리 백업과 같은 28일로 맞춘다. 로컬 물리 백업은 개수(4개)로, S3는 날짜로 센다 — 주간 실행이 빠지면 S3에 남는 물리 백업이 4개보다 적다 |
+| `lifecycle.json` | `logical/` · `wal/` · `physical/` · `config/` 아래 객체를 각각 28일 뒤 만료, 끝나지 않은 멀티파트 업로드는 1일 뒤 정리(역할이 `AbortMultipartUpload`를 갖지 않아 노드가 스스로 치우지 못한다) | 인프라 기술 스택 정의서 3장 — 4주 보존. WAL은 남긴 물리 백업 중 가장 오래된 것부터만 쓸모 있어(서버 운영 기반 설계서 5.4) 물리 백업과 같은 28일로 맞춘다. 로컬 물리 백업은 개수(4개)로, S3는 날짜로 센다 — 주간 실행이 빠지면 S3에 남는 물리 백업이 4개보다 적다 |
 
 서버 측 암호화 요구 조건은 역할 정책에 넣지 않는다 — 버킷 기본 암호화(SSE-S3)가 모든 객체에 건다. 버전 관리는 켜지 않는다(기본값이 꺼짐이라 명령이 없다).
 
@@ -79,6 +81,16 @@ aws iam add-role-to-instance-profile --instance-profile-name rental-db-backup --
 ```sh
 aws ec2 associate-iam-instance-profile --region ap-northeast-2 \
   --instance-id <인스턴스 ID> --iam-instance-profile Name=rental-db-backup
+```
+
+**8. APP-01 역할(설정 사본)**
+
+```sh
+aws iam create-role --role-name rental-app-config --assume-role-policy-document file://role-trust.json --tags Key=Project,Value=rental
+aws iam put-role-policy --role-name rental-app-config --policy-name rental-app-config-put --policy-document file://app-role-policy.json
+aws iam create-instance-profile --instance-profile-name rental-app-config
+aws iam add-role-to-instance-profile --instance-profile-name rental-app-config --role-name rental-app-config
+aws ec2 associate-iam-instance-profile --region ap-northeast-2   --instance-id <APP-01 인스턴스 ID> --iam-instance-profile Name=rental-app-config
 ```
 
 ## 확인

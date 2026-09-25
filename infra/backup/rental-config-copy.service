@@ -6,6 +6,7 @@ After=network-online.target
 Wants=network-online.target
 # 목적지 NAS(NFS) 마운트에 의존한다 — 마운트가 빠진 채 돌면 빈 마운트 지점(로컬 디스크)에 조용히 쓰게 된다.
 # 의존을 걸면 마운트 실패가 작업 실패로 저널에 남는다(설계서 5.3)
+# 마운트가 아닌 경로면 루트 마운트에만 걸려 영향이 없다 — 3노드 APP-01 에는 NFS 가 없다
 RequiresMountsFor=/mnt/nas/backup
 
 [Service]

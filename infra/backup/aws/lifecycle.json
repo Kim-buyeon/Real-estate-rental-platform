@@ -38,6 +38,19 @@
       "AbortIncompleteMultipartUpload": {
         "DaysAfterInitiation": 1
       }
+    },
+    {
+      "ID": "expire-config-28d",
+      "Filter": {
+        "Prefix": "config/"
+      },
+      "Status": "Enabled",
+      "Expiration": {
+        "Days": 28
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
     }
   ]
 }
