@@ -226,7 +226,7 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 
 ## 6. 페일오버 · 페일백
 
-> **3노드(2026-09-25 · #235)에서는 아래 명령의 대상이 바뀐다.** 이 장의 표는 같은 노드(옛 단일 노드) 기준으로 실측한 것이다. 3노드에서는 — 접속 대상 전환이 `DB_HOST=postgres-standby`가 아니라 **APP-01 `.env`의 `DB_HOST=10.20.20.10`**(DB-02 사설 IP), DB-02의 standby는 이미 자기 사설 IP 5432에 게시돼 있어 승격하면 그대로 받는다. 페일백의 구 primary 재구축은 DB-01에서 데이터 자리(`/srv/pgdata/data`)를 비우고 `.env`에 `PG_BOOTSTRAP_FROM=10.20.20.10`. **노드 간 명령과 소요는 페일오버 리허설에서 실측해 이 장을 고친다**
+> **3노드(2026-09-25)의 명령과 실측은 6.3이다**(#239 — DB-01 노드째 정지 리허설). 6.1 · 6.2의 표는 같은 노드(옛 단일 노드) 기준이다. 판단 기준 · 멈춤 조건은 두 구성에 같다.
 
 **지금 standby는 같은 노드의 컨테이너(`postgres-standby`)다**(시스템 구성서 2.2 · 3장). 아래 절차의 「primary」는 `postgres` 서비스, 「standby」는 `postgres-standby` 서비스로 읽는다. 노드가 통째로 멈추면 둘이 함께 멈추므로 1단계의 「SSH 접속 불가」 판정은 이 구성에서 성립하지 않는다 — **primary 컨테이너만 멈춘 경우의 절차 검증**이다. 명령은 로드맵 7주차 실행에서 이 절에 채운다(1장 원칙).
 
@@ -337,6 +337,42 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 승격된 노드가 목표 처리량을 감당하는지는 실측된 바 없다. 7주차 시나리오 3에서 페일오버 직후 상태의 처리량을 함께 기록하고, 감당하지 못하면 페일백을 계획이 아니라 즉시 조치로 재분류한다.
 
 ---
+
+### 6.3 3노드 — 실제로 밟은 순서
+
+2026-09-25 14:01 ~ 14:10(#239). 장애는 **DB-01 인스턴스를 통째로 멈춰**(`aws ec2 stop-instances`) 만들었다. 명령은 노드별 체크아웃(`/home/deploy/rental/infra`)에서 `deploy`로 돈다. SQL은 해당 노드의 DB 컨테이너 안 `psql`.
+
+**페일오버**
+
+| 순서 | 명령 | 멈춤 조건 · 실측(장애 주입부터) |
+|---|---|---|
+| 2 | APP-01 `bash maintenance.sh on` | 2.9초 |
+| 3 | 구 primary 격리 — 노드가 죽었으면 할 일이 없다. **살아 있으면 DB-01에서 `docker compose stop postgres`** | — |
+| 4 | DB-02 `SELECT pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn()` | `t`여야 다음. 4.2초 |
+| 5 | DB-02 `SELECT pg_promote(true, 60)` | `pg_is_in_recovery() = f`, timeline +1. **8.0초** |
+| 6 | APP-01 `.env` `DB_HOST=10.20.20.10` → `docker compose up -d --no-deps app-1 app-2 postgres-exporter` → 두 슬롯 healthy | 93.0초(JVM 기동) |
+| 7 | APP-01 `bash maintenance.sh off` → 밖에서 API 200 · `smoke.sh` 두 슬롯 | **95.2초**, 실패 0 |
+
+- **승격된 DB-02가 논리 백업을 스스로 이어받는다** — timer가 두 노드에 있고 스크립트가 primary 여부를 본다(S3 사본까지 확인). 할 일 없음
+- DB-02의 5432는 평시에도 사설 IP에 게시돼 있어(시스템 구성서 4장) 승격 즉시 앱이 붙는다
+
+**페일백**
+
+| 순서 | 명령 | 멈춤 조건 · 실측 |
+|---|---|---|
+| 1 | DB-01 기동(`aws ec2 start-instances`) → SSH가 되자마자 **`docker compose stop postgres`** | 옛 timeline의 primary로 **약 1.5초** 떠 있었다(`restart: unless-stopped`). 앱은 DB-02를 보고 있어 연결 0 — **이때 `DB_HOST`를 되돌리지 않는다** |
+| 2 | **멈춤 조건** — DB-02가 primary이고 페일오버 뒤 쓴 표식 행이 있다 → DB-01 `sudo find /srv/pgdata/data -mindepth 1 -delete` → `.env` `PG_BOOTSTRAP_FROM=10.20.20.10` → `docker compose up -d postgres` | 슬롯 없이 받는다(초기화 스크립트가 이어받은 슬롯 이름을 지운다). **7.4초에 streaming**, DB-01에 표식 행 |
+| 3 | APP-01 점검 모드 → DB-02 `SELECT pg_current_wal_lsn()` 기록 | — |
+| 4 | **멈춤 조건** — DB-01 `pg_last_wal_replay_lsn() >= <3의 값>` | 3.8초 |
+| 5 | DB-02 `docker compose stop postgres-standby` → DB-01 `SELECT pg_promote(true, 60)` | timeline +1, 표식 행. 점검 모드부터 7.0초 |
+| 6 | APP-01 `.env` `DB_HOST=10.20.10.10` → 두 슬롯 · exporter 재생성 → 점검 모드 해제 | 앱 준비 약 77초 — **측정은 199초**(아래) |
+| 7 | DB-01 `.env`에서 `PG_BOOTSTRAP_FROM` 삭제 → DB-01 `SELECT pg_create_physical_replication_slot('standby_1')` → DB-02 데이터 자리 비우기 → `docker compose up -d postgres-standby` | **6.9초에 streaming** · TLS · 슬롯 active |
+| 8 | **DB-01에서 물리 백업을 바로 한 번**(`systemctl start rental-basebackup`) | 아래 둘째 |
+| 9 | 두 노드 테이블 건수 대조 · 표식 테이블 삭제 | 같다 — 유실 없음 |
+
+- **페일백 점검 구간 199초 중 약 100초는 도구 탓이었다** — 준비를 기다리던 운영자 SSH 세션이 응답 없이 멈췄다가 끊겼다. 운영자 SSH 설정에 `ServerAliveInterval 15` · `ServerAliveCountMax 4`를 두고, 긴 대기는 노드 안에서 끝까지 도는 명령으로 한다
+- **WAL 아카이브는 노드마다 로컬이라 페일오버 구간(timeline 2)의 WAL은 DB-02에만 남는다** — DB-01의 옛 물리 백업에서 그 구간을 건너 PITR 할 수 없다. 그래서 8에서 새 물리 백업을 뜬다. 근본 대책은 WAL 아카이브를 공동 목적지(S3)로 — 후속
+- 페일오버 · 페일백 모두 **사람의 판정 · 알림 시간이 빠진 값**이다(6.1 실측과 같은 조건)
 
 ## 7. 장애 대응
 
