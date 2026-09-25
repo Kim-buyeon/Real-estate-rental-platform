@@ -1,0 +1,13 @@
+# NFS 공유 — 논리 백업 목적지. 서버 운영 기반 설계서 5.1 · 5.3, 운영 절차서 9.3.
+# 설치 위치: /etc/exports.d/rental-backup.exports (root 소유 644). 이름이 .exports 로 끝나야 읽힌다(man exports)
+# 반영: exportfs -ra. 확인은 exportfs -v — 공유가 127.0.0.1 에만, 옵션에 root_squash · sync 가 보여야 한다
+#
+# 설계서 5.3 의 규칙:
+#  - 클라이언트는 IP 로 하나씩 적는다. * · 서브넷 대역은 쓰지 않는다
+#  - root_squash 를 유지한다 — 클라이언트의 root 가 공유 안에서 root 가 되지 않는다. 쓰기는 backup 계정(2001)이 한다
+#  - sync — 서버가 디스크에 적은 뒤 응답한다. async 는 NAS 가 멈추면 받았다고 답한 백업을 잃는다
+#
+# 클라이언트가 127.0.0.1 인 이유는 nfs.conf.d/50-rental.conf 와 같다 — 단일 노드에서 자기 자신에게 건 공유다.
+# 노드를 분리하면 이 줄의 클라이언트를 DB-01 · DB-02 · APP-01 의 사설 IP 로 하나씩 바꾼다.
+
+/srv/nfs/backup  127.0.0.1(rw,sync,root_squash)
