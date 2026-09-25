@@ -266,6 +266,16 @@ x-postgres-command: &postgres-command
   - archive_timeout=300
   - -c
   - archive_command=/bin/sh /usr/local/bin/rental-archive-wal.sh %p %f
+  # 노드 간 전송 암호화(2026-09-25 사용자 결정 · #235) — 3노드 DB 노드는 PG_SSL=on. 단일 노드는 기본 off 라 인증서 경로를
+  # 읽지 않는다. 인증서는 노드마다 자체 서명으로 만들어 PG_TLS_DIR 에 두고(운영 절차서 9장) 아래 마운트로 읽는다.
+  # 클라이언트는 따로 켜지 않는다 — pgJDBC · libpq(pg_basebackup · walreceiver)의 기본 sslmode 가 prefer 라 서버가 켜면
+  # 암호화로 붙고, 평문 접속은 pg_hba.conf 의 VPC 대역 reject 줄이 막는다.
+  - -c
+  - ssl=${PG_SSL:-off}
+  - -c
+  - ssl_cert_file=/etc/postgresql/tls/server.crt
+  - -c
+  - ssl_key_file=/etc/postgresql/tls/server.key
 
 services:
   # 앞단 — 요청 분산 · SSE 전달 · 정적 화면 전달. 호스트 네트워크여야 upstream 의 127.0.0.1 이 호스트를 가리킨다(운영 절차서 4.1).
@@ -444,7 +454,9 @@ services:
       # 컨테이너 안 도구(date 등)의 시간대. PostgreSQL 로그 시각은 이 값이 아니라 x-postgres-command 의 log_timezone 이 맞춘다
       TZ: Asia/Seoul
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # 데이터 자리 — 기본은 Compose 이름 볼륨(단일 노드). DB 노드는 데이터 볼륨의 경로를 준다(서버 운영 기반 설계서 4.1
+      # 「DB 파일이 루트를 채우지 않게」) — 이름 볼륨은 /var/lib/docker(루트 디스크) 아래에 생긴다. 값이 / 로 시작하면 바인드다
+      - ${PG_DATA_SOURCE:-pgdata}:/var/lib/postgresql/data
       # 접속 규칙 — x-postgres-command 의 hba_file. standby 와 같은 파일이다
       - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
       # 초기화 스크립트 — standby 와 같은 파일이다
@@ -455,6 +467,8 @@ services:
       # 호스트 디렉터리는 70:backup 2770 — 컨테이너 postgres(uid 70)가 쓰고 백업 계정이 정리한다(삭제는 디렉터리 쓰기
       # 권한만 있으면 된다). 없는 경로면 Docker 가 root 소유로 만들어 아카이브가 실패하므로 노드 적용 때 먼저 만든다.
       - /var/backups/rental/wal:/archive/wal
+      # 서버 인증서 — PG_SSL=off 인 단일 노드에서는 읽지 않는다(경로가 없으면 Docker 가 빈 디렉터리를 만든다)
+      - ${PG_TLS_DIR:-/etc/rental/pg-tls}:/etc/postgresql/tls:ro
     # 호스트 루프백 게시 — 논리 백업(infra/backup/pg-dump.sh)이 호스트의 pg_dump 로 TCP 접속한다. 정기 작업은 backup 계정으로
     # 도는데 그 계정은 docker 그룹이 아니라 docker compose exec 를 쓸 수 없다(서버 운영 기반 설계서 6.2).
     # 루프백인 이유 — Docker 게시 포트는 호스트 방화벽을 우회하므로(설계서 3.3) 막는 수단이 바인딩 주소뿐이다.
@@ -505,12 +519,15 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       TZ: Asia/Seoul
     volumes:
-      - pgdata-standby:/var/lib/postgresql/data
+      # 데이터 자리 — postgres 서비스의 주석과 같다. DB-02 는 데이터 볼륨 경로
+      - ${PG_STANDBY_DATA_SOURCE:-pgdata-standby}:/var/lib/postgresql/data
       - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
       - ./postgres/bootstrap.sh:/usr/local/bin/rental-bootstrap.sh:ro
       - ./postgres/archive-wal.sh:/usr/local/bin/rental-archive-wal.sh:ro
       # WAL 아카이브 — postgres 와 같은 호스트 디렉터리(그쪽 주석). 복구 중에는 쓰지 않고 승격하면 이어서 쓴다
       - /var/backups/rental/wal:/archive/wal
+      # 서버 인증서 — PG_SSL=off 인 단일 노드에서는 읽지 않는다(경로가 없으면 Docker 가 빈 디렉터리를 만든다)
+      - ${PG_TLS_DIR:-/etc/rental/pg-tls}:/etc/postgresql/tls:ro
     # 복구 중 일관된 지점에 닿기 전에는 pg_isready 가 거부(1)를 돌려준다 — 받은 뒤 읽기 연결을 받을 때 healthy 다.
     # start_period 는 첫 기동의 pg_basebackup 몫이다(DB 36 MB — 2026-09-23 실측).
     healthcheck:
@@ -653,7 +670,7 @@ services:
     mem_limit: 64m
     environment:
       # 호스트는 앱과 같은 DB_HOST — 페일오버(운영 절차서 6.1) 뒤에도 현재 primary 를 본다
-      DATA_SOURCE_URI: ${DB_HOST:-postgres}:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_URI: ${DB_HOST:-postgres}:5432/${POSTGRES_DB}?sslmode=${PG_EXPORTER_SSLMODE:-disable}
       DATA_SOURCE_USER: ${POSTGRES_MONITOR_USER:-}
       DATA_SOURCE_PASS: ${POSTGRES_MONITOR_PASSWORD:-}
       TZ: Asia/Seoul
