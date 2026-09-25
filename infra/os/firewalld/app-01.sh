@@ -38,6 +38,7 @@ fail() { echo "app-01.sh: $*" >&2; exit 1; }
 command -v firewall-cmd >/dev/null || fail "firewalld 가 설치돼 있지 않다 — dnf install -y firewalld"
 systemctl is-active --quiet firewalld || fail "firewalld 가 활성이 아니다 — systemctl enable --now firewalld"
 # eth0 는 영역을 따로 지정하지 않아 기본 영역에 든다. 기본 영역이 public 이 아니면 아래 규칙이 NIC 에 걸리지 않는다.
+[[ "$(firewall-cmd --get-zone-of-interface=eth0 2>/dev/null)" == public ]] || fail "eth0 가 public 영역이 아니다 — 연결에 다른 영역이 묶여 있으면 아래 규칙이 NIC 에 걸리지 않는다"
 [[ "$(firewall-cmd --get-default-zone)" == "${ZONE}" ]] || fail "기본 영역이 ${ZONE} 가 아니다"
 
 for s in "${SERVICES[@]}"; do
