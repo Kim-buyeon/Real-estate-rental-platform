@@ -200,9 +200,9 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 | 실패가 남는가 | 실패하면 0이 아닌 코드로 끝나 `journalctl -u rental-backup`에 남는다. 확인 항목은 9.3 |
 | 값이 비어 있으면 | 접속 정보 · 암호화 키 경로가 없으면 지어내지 않고 실패한다 |
 
-**목적지는 노드의 로컬 경로(`/var/backups/rental`)로 고정한다.** 이 계정은 오브젝트 스토리지 쓰기 권한이 없고(#180), NAS는 INF-08 이후다. **그래서 노드가 통째로 사라지면 백업도 함께 사라진다** — 잘못된 UPDATE · 배치 오적재로부터는 되살리지만 노드 소실은 막지 못한다. 권한이 생기면 `BACKUP_S3_URI`에 값만 넣는다. 스크립트를 다시 쓰지 않는다.
+**목적지는 NFS 마운트(`/mnt/nas/backup`)다**(2026-09-25 · #227 — 그 전에는 로컬 `/var/backups/rental`). 노드가 하나라 NFS 공유가 **같은 노드 · 같은 디스크**다(9.3). 이 계정은 오브젝트 스토리지 쓰기 권한이 없다(#180). **그래서 노드가 통째로 사라지면 백업도 함께 사라진다** — 잘못된 UPDATE · 배치 오적재로부터는 되살리지만 노드 소실은 막지 못한다. 권한이 생기면 `BACKUP_S3_URI`에 값만 넣는다. 스크립트를 다시 쓰지 않는다.
 
-**아직 정해지지 않은 것** — 보존 기간 · 실행 시간 상한. 잠정값은 스크립트와 유닛이 갖고, 확정 시점은 서버 운영 기반 설계서 5.4 · 10장이 갖는다. 암호화 도구(`gpg`)와 `backup` 계정 UID · GID는 같은 설계서 5.1 · 6.2가 정했다. 호스트 클라이언트가 닿도록 운영 Compose가 PostgreSQL을 루프백(`127.0.0.1:5432`)에 게시한다(시스템 구성서 4장).
+**아직 정해지지 않은 것** — 보존 기간. 잠정값(7일)은 스크립트가 갖고, 확정 시점은 서버 운영 기반 설계서 5.4가 갖는다. 실행 시간 상한은 30분으로 확정했다(같은 설계서 5.3). 암호화 도구(`gpg`)와 `backup` 계정 UID · GID는 같은 설계서 5.1 · 6.2가 정했다. 호스트 클라이언트가 닿도록 운영 Compose가 PostgreSQL을 루프백(`127.0.0.1:5432`)에 게시한다(시스템 구성서 4장).
 
 **WAL 연속 아카이빙** — 두 DB 서비스가 같은 인자로 `archive_mode=on` · `archive_timeout=300`(5분 강제 스위치)을 쓰고, 완료된 WAL 세그먼트를 호스트 `/var/backups/rental/wal`에 복사한다(#214). **1등급 RPO 5분을 지키는 것이 이 설정이다**(시스템 구성서 5.1). `archive_mode`는 재기동해야 바뀐다. standby는 복구 중에는 아카이브하지 않고 승격하면 이어서 한다 — 페일오버에 아카이빙 전환 단계가 없다.
 
@@ -457,13 +457,13 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 | 확인 | 방법 |
 |---|---|
 | 유닛 문법 | `systemd-analyze verify <유닛>` — 노드에 넣기 전에 본다 |
-| 수동 1회 실행 | `systemctl start rental-backup.service` → `journalctl -u rental-backup -n 50`. 첫 실행은 이렇게 확인하고 소요 시간을 잰다. 실행 시간 상한은 NAS 목적지 첫 실행 소요로 확정한다(설계서 10장) |
+| 수동 1회 실행 | `systemctl start rental-backup.service` → `journalctl -u rental-backup -n 50`. 첫 실행은 이렇게 확인하고 소요 시간을 잰다 |
 | primary에서만 도는가 | **DB-01 · DB-02 양쪽에 timer를 둔다.** standby의 저널에는 「standby」로 끝난 기록만 남고 파일이 생기지 않아야 한다 |
 | 암호화되어 있는가 | 최신 파일의 앞부분에 `pg_dump` 평문 헤더(`PGDMP`)가 보이면 안 된다. 보이면 암호화가 빠진 것이다 |
 | 보존이 도는가 | 보존 기간보다 오래된 파일이 남아 있지 않은가. 기간은 **잠정**이며 첫 백업 크기를 보고 조정한다(5장) |
 | 되살아나는가 | 위 복원 순서로 풀고 **테이블별 건수를 운영 DB와 대조한다.** 백업 뒤 쓰기가 있었으면 그 테이블은 달라도 된다 |
 
-**첫 적용 실측**(APP-01 · t3.small · 2026-09-24, 트래픽 없는 시간) — 덤프 + 암호화 **2초**, 암호문 **3.1 MB**(DB 36 MB), 파일 앞부분이 gpg 패킷(`0x8c`)이고 `PGDMP` 없음. 복원 1초, **33개 테이블 전부 운영과 건수 일치**(합 103,641행 — `property` 67,183 · `risk_analysis` 6,007). 밖에서 5432 접속 불가 · 80 접속 가능. 실행 시간 상한 30분 · 보존 7일은 **잠정 그대로 둔다** — 상한은 NAS hard 마운트 정지에 대비한 값인데(유닛 주석) 목적지가 아직 로컬이라 이 실측이 그 경우를 대표하지 않는다. 확정 시점은 서버 운영 기반 설계서 10장.
+**첫 적용 실측**(APP-01 · t3.small · 2026-09-24, 트래픽 없는 시간) — 덤프 + 암호화 **2초**, 암호문 **3.1 MB**(DB 36 MB), 파일 앞부분이 gpg 패킷(`0x8c`)이고 `PGDMP` 없음. 복원 1초, **33개 테이블 전부 운영과 건수 일치**(합 103,641행 — `property` 67,183 · `risk_analysis` 6,007). 밖에서 5432 접속 불가 · 80 접속 가능. 보존 7일은 **잠정 그대로 둔다**(설계서 5.4). 실행 시간 상한은 NFS 목적지로 옮긴 뒤 확정했다 — 아래 「NFS 공유」.
 
 **물리 백업 · WAL 아카이빙(`rental-basebackup`)** — 5장. 설치 순서는 아래다(#214). 논리 백업 설치를 마친 노드를 전제한다 — `backup` 계정 · `/etc/rental` · 루프백 게시가 이미 있다.
 
@@ -480,6 +480,23 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 | 9 | 수동 1회 `sudo systemctl start rental-basebackup.service` → PITR 리허설(5장) → `sudo systemctl enable --now rental-basebackup.timer` | `journalctl -u rental-basebackup` 종료 0 · `list-timers`에 다음 일 01:30 |
 
 **원격으로 밟을 때 걸린 것 둘**(#214) — ① `ssh … '…'` 안의 큰따옴표 속 `$$`는 원격 셸이 PID로 푼다. SQL의 달러 인용은 표준입력으로 보낸다. ② `ssh … 'bash -s' <<EOF` 안에서 `docker compose exec -T`는 **남은 스크립트를 표준입력으로 먹는다** — 뒤 명령이 조용히 사라진다. 그 줄에 `</dev/null`을 붙인다.
+
+**NFS 공유(INF-08)** — 단일 노드라 APP-01이 자기 자신에게 공유를 건다(설계서 5.3 「단일 노드의 자기 공유」). 조각은 `infra/os/nfs/`에 있다. 논리 백업 설치를 마친 노드를 전제한다 — `backup` 계정(2001)이 있다. 2026-09-25 11:14 ~ 11:17에 실제로 밟은 순서다(#227).
+
+| 순서 | 명령 | 확인 |
+|---|---|---|
+| 1 | `rpm -q nfs-utils`(AL2023 기본 설치) · 공유 디렉터리 `sudo install -d -m 755 /srv/nfs` · `sudo install -d -o backup -g backup -m 700 /srv/nfs/backup` | `backup 700` |
+| 2 | 조각 셋 설치 — `nfs.conf.d/50-rental.conf` → `/etc/nfs.conf.d/`, `nfs-mountd.service.d/v4only.conf` → `/etc/systemd/system/nfs-mountd.service.d/`, `exports.d/rental-backup.exports` → `/etc/exports.d/`(모두 root 644) | — |
+| 3 | `sudo systemctl mask --now rpc-statd.service rpcbind.service rpcbind.socket` → `sudo systemctl daemon-reload` → `sudo systemctl enable --now nfs-server` | `sudo cat /proc/fs/nfsd/versions` → `-3 +4 +4.1 +4.2` · `sudo exportfs -v`에 `127.0.0.1(…rw,…root_squash…)` · `ss -ltn`에 **2049가 `127.0.0.1`에만**, 111 · 20048 없음 |
+| 4 | fstab에 `127.0.0.1:/srv/nfs/backup  /mnt/nas/backup  nfs4  _netdev,nofail,x-systemd.requires=nfs-server.service  0 0` → `sudo findmnt --verify` → `sudo systemctl daemon-reload` → `sudo install -d -m 755 /mnt/nas/backup` → `sudo mount /mnt/nas/backup` | `findmnt /mnt/nas/backup` → `nfs4 … vers=4.2 … hard` |
+| 5 | `root_squash` — `sudo touch /mnt/nas/backup/x` | **거부**(`Permission denied`). `sudo -u backup`으로 쓰면 성공, 소유 `2001:2001` |
+| 6 | 로컬에 쌓인 논리 백업을 옮긴다 — `backup` 계정으로 `cp -p` → `cmp` 같으면 원본 삭제. 날짜가 보존돼야 보존 정리가 이어진다 | 옮긴 파일 수 · 시각 유지 |
+| 7 | `/etc/rental/backup.env`에 `BACKUP_DEST=/mnt/nas/backup` → 유닛 재설치(`RequiresMountsFor=/mnt/nas/backup`) · `daemon-reload` → 수동 1회 | `systemctl show rental-backup -p RequiresMountsFor`에 그 경로, 종료 0, 파일이 NFS에 · 앞부분이 gpg 패킷 |
+| 8 | 밖에서 2049 · 111 · 20048 | 닫힘 |
+
+**실측**(2026-09-25) — NFS 목적지 논리 백업 **1.6초**(로컬 2초와 같은 수준), 거부 로그 0건(enforcing · 공유 디렉터리 기본 레이블 `var_t`). 수동 `rpc.nfsd` 재기동 때 `Unable to request RDMA services: Protocol not supported`가 찍힌다 — 배포판 `nfs.conf`의 `rdma=y` 때문이고 TCP 공유와 무관하다.
+
+**실행 시간 상한 실증** — NAS가 멈춘 경우를 흉내 내려고 **`systemctl stop nfs-server`가 아니라 `sudo rpc.nfsd 0`으로 nfsd만 세운다.** `x-systemd.requires` 때문에 서비스를 멈추면 마운트도 함께 내려가 「마운트는 있는데 서버가 답하지 않는」 경우가 되지 않는다. 그 상태에서 `sudo systemd-run --no-block --unit=nas-stall-test --uid=backup --gid=backup -p Type=oneshot -p TimeoutStartSec=20s -p RequiresMountsFor=/mnt/nas/backup /bin/sh -c 'echo t > /mnt/nas/backup/stall-test'` — **쓰기에서 멈췄다가 20초에 `start operation timed out. Terminating.` → `Failed with result 'timeout'`**, 남은 프로세스 없음(NFS 대기는 kill 가능한 대기다). `sudo rpc.nfsd 8`(기본 스레드 수)로 되살리면 1초 안에 쓰기가 돌아온다. 끝나면 `systemctl reset-failed nas-stall-test`. 그래서 논리 백업의 상한 30분을 확정했다(설계서 5.3).
 
 **NAS가 멈추면** 서비스는 영향이 없다(시스템 구성서 5.2). 물리 백업 · WAL(지금은 노드 로컬 — 5장, 설계 목표는 S3)은 계속되므로 급하게 손대지 않고, 복구 뒤 멈춘 기간의 논리 백업을 한 번 수동 실행한다.
 
