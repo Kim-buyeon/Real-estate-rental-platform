@@ -1,0 +1,37 @@
+[Unit]
+# 설정 사본 — 서버 운영 기반 설계서 5.1 · 5.4 · 7.2(작업 목록), 운영 절차서 9.3.
+# timer 가 부른다. 직접 한 번 돌릴 때는 systemctl start rental-config-copy.service
+Description=Rental config copy (infra/ with .env, encrypted)
+After=network-online.target
+Wants=network-online.target
+# 목적지 NAS(NFS) 마운트에 의존한다 — 마운트가 빠진 채 돌면 빈 마운트 지점(로컬 디스크)에 조용히 쓰게 된다.
+# 의존을 걸면 마운트 실패가 작업 실패로 저널에 남는다(설계서 5.3)
+RequiresMountsFor=/mnt/nas/backup
+
+[Service]
+Type=oneshot
+# User= 를 두지 않는다 — root 로 돈다. 원본 체크아웃이 ec2-user 홈(700) 안이라 backup 계정은 읽지 못한다.
+# root 는 읽기만 하고, 암호화 · NAS 쓰기 · 정리는 스크립트가 runuser 로 backup 계정에 넘긴다 — 공유가 root_squash 라
+# root 는 쓸 수 없고, 백업 디렉터리 소유자는 backup 이다(설계서 5.3 · 6.2)
+
+# 원본 경로(CONFIG_SRC) · 키 파일 경로(BACKUP_KEY_FILE)는 이 파일에 적지 않는다. 노드의 설정 파일(0600, root 소유)에서 읽는다.
+# ExecStart 는 체크아웃이 아니라 설치한 사본(root 소유 755)을 가리킨다 — 스크립트가 바뀌면 다시 설치한다(운영 절차서 9.3)
+EnvironmentFile=/etc/rental/config-copy.env
+ExecStart=/opt/rental/infra/backup/config-copy.sh
+
+# 실행 시간 상한 — 설계서 5.3 이 NAS 를 쓰는 정기 작업에 상한을 요구한다. hard 마운트에서 NAS 가 멈추면 작업이 끝나지
+# 않고 남아 저널에 실패조차 남지 않는다. **잠정 10분** — 논리 백업의 30분은 덤프 크기 몫이고, 이 작업은 수백 KB 다.
+# 01:00 에 시작해 멈춰도 01:30 물리 백업 전에 실패로 끝난다
+TimeoutStartSec=10min
+
+# 모니터링이 없어 저널이 유일한 확인 수단이다(설계서 7.1). 출력을 그대로 journald 에 남긴다
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rental-config-copy
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+# 실패해도 다시 시도하지 않는다. 원인이 남아 있으면 반복해도 같은 실패가 쌓일 뿐이고,
+# 다음 실행은 다음 주 timer 가 만든다. 실패는 journalctl -u rental-config-copy 로 본다
+Restart=no
