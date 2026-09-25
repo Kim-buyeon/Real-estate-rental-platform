@@ -44,7 +44,7 @@
 
 | 규칙 | 식(PromQL) | 이유 |
 |---|---|---|
-| WAL 전송 멈춤 | `time() - rental_job_last_success_timestamp_seconds{task="wal_ship"} > 300` | 매분 도는데 5분 넘게 성공이 없으면 노드 소실 RPO가 늘고 있다(5장) |
+| WAL 전송 멈춤 | `time() - rental_job_last_success_timestamp_seconds{task="wal_ship"} > 300` | 매분 도는데 5분 넘게 성공이 없으면 노드 소실 RPO가 늘고 있다(시스템 구성서 5.1) |
 | WAL 전송 밀림 | `rental_wal_ship_pending_files > 3` | 보내지 못한 세그먼트가 쌓인다 |
 | 논리 백업 누락 | `time() - max(rental_job_last_success_timestamp_seconds{task="logical_backup"}) > 26*3600` | 매일 02:00 — 두 DB 노드 중 primary만 쓰므로 `max` |
 | 물리 백업 누락 | `time() - max(rental_job_last_success_timestamp_seconds{task="physical_backup"}) > 8*86400` | 매주 일 01:30 |
@@ -66,7 +66,7 @@
 | **reload만 사용한다. restart 금지** | restart는 모든 연결을 끊는다. SSE 알림 연결이 전 사용자에게서 동시에 끊긴다 |
 | **`nginx -t`를 reload 전에 항상 실행** | 설정을 스크립트로 수정하므로 치환 실패 가능성이 있다 |
 | **Nginx 설정 변경은 체크아웃 → `nginx -t` → reload로 반영한다. 진입 파일(`infra/nginx/entry.conf`)만 예외다** | `conf.d/` · `main/`은 폴더째 마운트해 `git checkout`이 파일을 새로 만들어도 이름으로 다시 찾는다. 진입 파일은 파일 단위 마운트라 바꾸면 컨테이너가 옛 파일을 계속 보므로 재생성이 필요하다(4.1) |
-| **수집기 설정(`infra/prometheus/agent.yml`) 변경은 체크아웃 → `docker compose up -d --no-deps --force-recreate prom-agent`로 반영한다** | 저장소 파일은 자리표시자가 든 틀이고 기동 셸이 환경 변수로 채운 사본을 tmpfs에 써서 그것으로 뜬다(운영 Compose 주석). 정의가 그대로면 `up -d`는 재생성하지 않아 **옛 대상으로 조용히 계속 돈다** — #209에서 실측. 재생성하는 수십 초 동안 원격 쓰기가 빈다. 반영 뒤 노드에서 `curl -s 127.0.0.1:9090/api/v1/targets`로 전 대상 `up`을 본다(#209 · #211) |
+| **수집기 설정(`infra/prometheus/agent.yml`) 변경은 체크아웃 → `docker compose up -d --no-deps --force-recreate prom-agent`로 반영한다** — DB 노드의 `agent-db.yml`이면 그 노드에서 `prom-agent-db` | 저장소 파일은 자리표시자가 든 틀이고 기동 셸이 환경 변수로 채운 사본을 tmpfs에 써서 그것으로 뜬다(운영 Compose 주석). 정의가 그대로면 `up -d`는 재생성하지 않아 **옛 대상으로 조용히 계속 돈다** — #209에서 실측. 재생성하는 수십 초 동안 원격 쓰기가 빈다. 반영 뒤 노드에서 `curl -s 127.0.0.1:9090/api/v1/targets`로 전 대상 `up`을 본다(#209 · #211) |
 | **`down` 플래그만 토글한다** | 서버 목록 자체를 바꾸면 실패 시 설정과 컨테이너 상태가 어긋난다 |
 | **배포 착수 전에 `upstream.conf`가 추적 상태와 같은지 확인하고, 다르면 중단한다** | 위 두 규칙이 부딪히는 자리다. 실패로 멈춘 배포는 슬롯을 `down`으로 남기는데 그 상태에서 체크아웃이 돌면 **죽은 슬롯이 upstream에 되살아난다.** 배포 스크립트가 착수 단계에서 한 번만 본다(3.2) |
 | **제외 → drain → 교체 → 확인 → 복귀 순서 고정** | 컨테이너를 먼저 정지하면 그 사이 요청이 전부 실패한다 |
@@ -205,7 +205,7 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 
 **3노드의 정기 백업**(2026-09-25 · #237) — 아래 논리 · 물리 백업과 WAL 아카이빙은 **DB-01 · DB-02 양쪽**에 있고(standby에서는 아무것도 하지 않고 끝난다), 접속은 그 노드의 사설 IP(`PGHOST`)로 TLS다(루프백에는 게시하지 않는다). **논리 백업 · 물리 백업 · WAL 모두 노드 로컬 + S3 암호화 사본**(`logical/` · `physical/<시각>/` · `wal/`, #237 · #241). WAL은 매분 도는 `rental-wal-ship`이 보낸다 — 두 DB 노드가 같은 접두어로 보내고, 같은 이름이 이미 있으면 덮어쓰지 않는다(S3 조건부 쓰기). **S3 사본만으로 PITR이 된다**(아래 「S3에서 되살리기」). 옛 노드의 timer는 점검 모드의 멈춘 DB를 백업한다 — 옛 노드 정리 때 끈다. **노드를 꺼 둔 밤에는 02:00 · 01:30이 지나가도 켜는 즉시 한 번 돈다**(`Persistent=true`). 설치 순서는 9.3 「3노드」.
 
-**전송이 한 파일에서 멈추면 그 뒤로는 아무것도 보내지 않는다** — 첫 실패에서 끝나고 매분 같은 실패를 저널에 남긴다(0600 세그먼트에서 실측). 그동안 노드 소실 RPO는 5분이 아니라 **멈춘 시간만큼** 늘고, 멈춘 채 주간 물리 백업이 돌면 `pg_archivecleanup`이 아직 보내지 않은 세그먼트를 지워 S3 사슬에 구멍이 난다. **지금 이것을 알리는 것은 일일 점검의 저널 확인뿐이다**(2장) — 관측 알림에 거는 것은 후속.
+**전송이 한 파일에서 멈추면 그 뒤로는 아무것도 보내지 않는다** — 첫 실패에서 끝나고 매분 같은 실패를 저널에 남긴다(0600 세그먼트에서 실측). 그동안 노드 소실 RPO는 5분이 아니라 **멈춘 시간만큼** 늘고, 멈춘 채 주간 물리 백업이 돌면 `pg_archivecleanup`이 아직 보내지 않은 세그먼트를 지워 S3 사슬에 구멍이 난다. **지금 이것을 알리는 것은 일일 점검의 저널 확인뿐이다**(2장) — 지표(`rental_wal_ship_pending_files` · 마지막 성공 시각)는 나가고 있고 권장 알림 규칙은 2장에 있다 — 사용자가 Grafana에 걸기 전까지는 저널 확인뿐이다.
 
 **논리 백업 정기 작업** — `infra/backup/pg-dump.sh`를 systemd timer(`rental-backup.timer`)가 부른다. 실행 시각은 서버 운영 기반 설계서 7.2가 정한다. 순서는 primary 확인 → `pg_dump -Fc` → 암호화 → 목적지 적재 → 보존 기간 지난 것 삭제이고, standby에서는 아무것도 하지 않고 끝난다. **왜 그렇게 두는지는 서버 운영 기반 설계서 5.1 · 7.2가 갖는다.** 여기에는 실행할 때 확인할 것만 적는다.
 
@@ -632,7 +632,7 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 
 **S3에서 되살리기** — 노드의 역할은 쓰기만 해서 **내려받기는 운영자 자격 증명**으로 한다. 운영자 PC에서 `aws s3 cp --recursive s3://…/physical/<시각>/ …` · `aws s3 cp --recursive s3://…/wal/ … --exclude "*" --include "<timeline>*" --include "*.history.gpg"`(`--exclude "*"`가 먼저 있어야 거른다) → 되살릴 노드로 옮긴다 → 그 노드에서 `backup`으로 복호화(키는 노드에만 있다 — 운영자 PC에서 풀지 않는다) → 5장 PITR 리허설과 같은 방식. **실측**(2026-09-25): 암호화된 WAL은 gpg가 압축해 작다(`wal/` 28개 548 KB — 16 MB 세그먼트가 대부분 비어 있다), 풀기 + 재생 1.65초, 리허설 A / 운영 A,B.
 
-**DB 노드 지표(3노드)** — `sudo install -d -o backup -g backup -m 755 /var/lib/rental-metrics`(정기 작업이 결과 지표를 쓰는 자리 — node exporter가 `/`를 `/host`로 붙여 읽는다) → DB 노드 `.env`에 `RENTAL_NODE=db-01`(DB-02는 `db-02`) → 스크립트 재설치 → `docker compose up -d`(프로필 `db` · `standby`가 `node-exporter` · `prom-agent-db`를 올린다). 확인 — `curl -s 127.0.0.1:9100/metrics | grep ^rental_`, `node_textfile_scrape_error 0`, 수집기 `127.0.0.1:9090/metrics`의 `prometheus_remote_storage_samples_failed_total 0`(#243). **단일 노드 구성(`app,db,standby`)에서는 `prom-agent-db`를 올리지 않는다** — `prom-agent`와 9090이 겹친다(운영 Compose 주석)
+**노드 지표(3노드)** — **세 노드 모두** `sudo install -d -o backup -g backup -m 755 /var/lib/rental-metrics`(없으면 node exporter가 `node_textfile_scrape_error 1`과 스크레이프마다 오류 로그를 낸다 — APP-01에서 실측)(정기 작업이 결과 지표를 쓰는 자리 — node exporter가 `/`를 `/host`로 붙여 읽는다) → DB 노드 `.env`에 `RENTAL_NODE=db-01`(DB-02는 `db-02`) → 스크립트 재설치 → `docker compose up -d`(프로필 `db` · `standby`가 `node-exporter` · `prom-agent-db`를 올린다). 확인 — `curl -s 127.0.0.1:9100/metrics | grep ^rental_`, `node_textfile_scrape_error 0`, 수집기 `127.0.0.1:9090/metrics`의 `prometheus_remote_storage_samples_failed_total 0`(#243). **단일 노드 구성(`app,db,standby`)에서는 `prom-agent-db`를 올리지 않는다** — `prom-agent`와 9090이 겹친다(운영 Compose 주석)
 
 
 
