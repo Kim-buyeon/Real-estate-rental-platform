@@ -37,8 +37,9 @@ PSQL=${PSQL:-psql}
 PG_DUMP=${PG_DUMP:-pg_dump}
 
 # ── 목적지 ──
-# 로컬 경로로 고정한다. NAS(설계서 5.1 · 공유 경로 예 /srv/nfs/backup)는 7주차라 아직 없다 — 구축 뒤 이 값만 바꾼다.
-# 로컬이라 노드 소실은 막지 못한다. 그것을 막을 오프사이트 사본(아래 BACKUP_S3_URI)은 이 계정에 S3 쓰기 권한이 없어 비워 둔다.
+# 기본값은 로컬 경로다. NAS 마운트를 쓰는 노드는 EnvironmentFile(backup.env)에서 BACKUP_DEST=/mnt/nas/backup 으로 준다(설계서 5.1 · 5.3) —
+# 단일 노드에서는 자기 자신에게 건 NFS 공유라, 어느 쪽이든 같은 디스크에 있다.
+# 그래서 노드 소실은 막지 못한다. 그것을 막을 오프사이트 사본(아래 BACKUP_S3_URI)은 이 계정에 S3 쓰기 권한이 없어 비워 둔다.
 BACKUP_DEST=${BACKUP_DEST:-/var/backups/rental}
 # 덤프를 만들고 암호화하는 자리. 목적지가 NFS 여도 암호화는 노드 안에서 끝난다(기술 스택 3장 · 설계서 5.1)
 BACKUP_WORK_DIR=${BACKUP_WORK_DIR:-/var/tmp}
