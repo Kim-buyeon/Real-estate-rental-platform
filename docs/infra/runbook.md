@@ -32,7 +32,7 @@
 
 | 노드 | 재부팅 중 | 방법 |
 |---|---|---|
-| APP-01 | **서비스 전체 중단**(단일 노드 — 두 슬롯 · Nginx가 함께 멈춘다, 시스템 구성서 3장). **실측 — 부팅 후 전 컨테이너 정상 88초**(2026-09-23). 화면은 10초쯤에 뜨지만 그때 API 는 아직 실패한다 — **복귀 판정은 API 로 한다**(71초) | 공지 후 저트래픽 시간대. 기동 뒤 배포 확인(3장)과 같은 확인 |
+| APP-01 | **서비스 전체 중단**(단일 노드 — 두 슬롯 · Nginx가 함께 멈춘다, 시스템 구성서 3장). **실측 — 부팅 후 전 컨테이너 정상 88초**(2026-09-23). 화면은 10초쯤에 뜨지만 그때 API 는 아직 실패한다 — **복귀 판정은 API 로 한다**(71초). 2026-09-25 재부팅(SELinux enforcing 전환 확인)은 명령에서 API 첫 200까지 약 93초(9.1) | 공지 후 저트래픽 시간대. 기동 뒤 배포 확인(3장)과 같은 확인 |
 | DB-01 | **전 기능 중단**(시스템 구성서 5.2 Primary 정지) | 점검 모드(4.2)로 쓰기를 막고 재부팅, 기동 뒤 해제 |
 | DB-02 · NAS-01 · NAT-01 | 영향 없음(복제 · 백업 · 갱신만 잠시 멈춘다) | 그대로 재부팅. DB-02는 기동 뒤 복제 재개 확인 |
 
@@ -399,11 +399,13 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 | 순서 | 명령 | 확인 |
 |---|---|---|
-| 1 | **기존 SSH 세션을 닫지 않는다.** `sudo install -m 644 -o root -g root ~/rental/infra/os/sshd/40-rental.conf /etc/ssh/sshd_config.d/` → `sudo sshd -t` → `sudo systemctl reload sshd` | `sudo sshd -T`에 `permitrootlogin no` · `passwordauthentication no`. **새 창에서 접속이 되는 것을 본 뒤에** 기존 세션을 닫는다. `root@`로 접속하면 거부된다 |
+| 1 | **기존 SSH 세션을 닫지 않는다.** 원격에서 한 번에 밟을 때는 기존 세션을 붙들고 있기 어려우므로 **되돌리는 타이머를 먼저 건다** — `sudo systemd-run --unit=sshd-revert --on-active=5min /bin/sh -c 'rm -f /etc/ssh/sshd_config.d/40-rental.conf; systemctl reload sshd'`. 그다음 `sudo install -m 644 -o root -g root ~/rental/infra/os/sshd/40-rental.conf /etc/ssh/sshd_config.d/` → `sudo sshd -t` → `sudo systemctl reload sshd` | `sudo sshd -T`에 `permitrootlogin no` · `passwordauthentication no`. **새 창에서 접속이 되는 것을 본 뒤에** 기존 세션을 닫고 되돌림 타이머를 푼다(`sudo systemctl stop sshd-revert.timer`). `root@`로 접속하면 거부된다 |
 | 2 | `sudo install -D -m 644 -o root -g root ~/rental/infra/os/journald/50-rental.conf /etc/systemd/journald.conf.d/50-rental.conf` → `sudo systemctl restart systemd-journald` | `systemd-analyze cat-config systemd/journald.conf`에 조각이 보인다 · `journalctl --disk-usage` |
 | 3 | 시간 동기화 — AL2023은 기본 설정이 169.254.169.123을 쓴다. 할 일이 없다 | `chronyc sources`에서 그 주소가 `^*` |
 | 4 | SELinux — **먼저 거부 기록이 없는지 본다.** `sudo ausearch --input-logs -m AVC,USER_AVC -ts this-week </dev/null`이 비어 있어야 한다(permissive는 거부를 막지 않고 기록만 한다). 그다음 `sudo setenforce 1` → `sudo sed -i 's/^SELINUX=permissive$/SELINUX=enforcing/' /etc/selinux/config`. 재레이블은 필요 없다 — permissive로 켜진 채 운영돼 레이블이 유지돼 있다 | `getenforce` → `Enforcing`. 수동 백업 1회(`sudo systemctl start rental-backup.service`)가 종료 0이고 그 뒤 AVC가 없다. 거부가 나면 `sudo setenforce 0`으로 즉시 되돌리고 `audit2why`로 원인을 본다 — 끄는 것으로 해결하지 않는다 |
 | 5 | 계획 재부팅(2장 — 서비스 전체 중단) | 기동 뒤 `getenforce` → `Enforcing`, 배포 확인(3장)과 같은 확인. 컨테이너가 `spc_t`로 돈다(`ps -eZ`) — 설계서 8장 SELinux 행 |
+
+**첫 적용 실측**(APP-01 · 2026-09-25 10:28 ~ 10:31, 표본 1회 — #223) — sshd 조각이 `50-redhat.conf`를 이김(`sshd -T` → `permitrootlogin no`), `root@` · 비밀번호 방식 접속 거부. journald `max 1.0G`. SELinux 전환 전 · 뒤 거부 0건, 전환 뒤 논리 · 물리 백업 종료 0, WAL 아카이브 실패 0, 두 슬롯 `smoke.sh` 60건 실패 0. **재부팅** — 명령 10:29:40 → 커널 10:29:51 → 화면 첫 200 **약 26초** → API 첫 200 **약 93초**(커널에서 약 82초, 바깥 폴링 오차 ±5초). 뒤에 `Enforcing` 유지 · 부팅 이후 거부 0 · 컨테이너 전부 `spc_t`. 9/23 실측(API 71초)보다 길지만 표본이 하나씩이라 enforcing 탓으로 단정하지 않는다.
 
 **`ausearch`는 `</dev/null`을 붙인다.** 표준입력이 터미널이 아니면 로그 파일 대신 표준입력을 읽는다 — `ssh … 'bash -s'` 안에서는 남은 스크립트를 먹고 「no matches」로 끝난다. `--input-logs`가 로그 파일을 읽게 한다.
 
