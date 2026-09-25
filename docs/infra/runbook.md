@@ -509,6 +509,18 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 
 **실행 시간 상한 실증** — NAS가 멈춘 경우를 흉내 내려고 **`systemctl stop nfs-server`가 아니라 `sudo rpc.nfsd 0`으로 nfsd만 세운다.** `x-systemd.requires` 때문에 서비스를 멈추면 마운트도 함께 내려가 「마운트는 있는데 서버가 답하지 않는」 경우가 되지 않는다. 그 상태에서 `sudo systemd-run --no-block --unit=nas-stall-test --uid=backup --gid=backup -p Type=oneshot -p TimeoutStartSec=20s -p RequiresMountsFor=/mnt/nas/backup /bin/sh -c 'echo t > /mnt/nas/backup/stall-test'` — **쓰기에서 멈췄다가 20초에 `start operation timed out. Terminating.` → `Failed with result 'timeout'`**, 남은 프로세스 없음(NFS 대기는 kill 가능한 대기다). `sudo rpc.nfsd 8`(기본 스레드 수)로 되살리면 1초 안에 쓰기가 돌아온다. 끝나면 `systemctl reset-failed nas-stall-test`. 그래서 논리 백업의 상한 30분을 확정했다(설계서 5.3).
 
+**설정 사본(`rental-config-copy`)** — 설계서 5.1 · 7.2의 「운영 설정 사본」이다. 체크아웃의 `infra/`(추적 밖의 `.env` 포함)와 리비전 기록(`REVISION` — 커밋과 `git status --porcelain`)을 묶어 **통째로** gpg 대칭 암호화(논리 백업과 같은 키)해 `/mnt/nas/backup/config/`에 둔다. **원본 읽기만 root, 암호화 · 쓰기 · 정리는 `backup`**(`runuser`) — 체크아웃은 `ec2-user` 홈(700) 안이라 `backup`이 읽지 못하고, NFS는 `root_squash`라 root가 쓰지 못한다. NFS 공유(위)를 마친 노드를 전제한다. 2026-09-25 12:01에 실제로 밟은 순서다(#231).
+
+| 순서 | 명령 | 확인 |
+|---|---|---|
+| 1 | `sudo install -D -o root -g root -m 755 ~/rental/infra/backup/config-copy.sh /opt/rental/infra/backup/config-copy.sh` — **스크립트가 바뀌면 다시 실행한다** | `diff`로 체크아웃과 같다 |
+| 2 | `/etc/rental/config-copy.env`(root 0600) — `CONFIG_SRC=/home/ec2-user/rental` · `BACKUP_KEY_FILE=/etc/rental/backup.key`. 체크아웃 자리가 바뀌면 `CONFIG_SRC`만 고친다 | `stat` → `root 600` |
+| 3 | `systemd-analyze verify` → `rental-config-copy.{service,timer}`를 `/etc/systemd/system/`에 → `daemon-reload` → 수동 1회 | 종료 0 |
+| 4 | **되살아나는가** — `backup`으로 `env HOME=/var/backups/rental gpg --batch --decrypt --passphrase-file /etc/rental/backup.key --output <임시>/c.tgz <사본>` → `tar -tzf` → `REVISION` · `infra/.env`만 풀어 `cmp`. 임시 디렉터리는 지운다 | `.env`가 운영 것과 같다 |
+| 5 | `sudo systemctl enable --now rental-config-copy.timer` | `list-timers`에 다음 **일 01:00** |
+
+**실측**(2026-09-25) — 수동 1회 **0.86초**, 암호문 **43,616바이트**(`infra/` 47개 항목), 앞부분 gpg 패킷(`8c 0d`), `REVISION`의 커밋이 체크아웃과 같고 `.env` 일치. 연달아 5회 돌려 **최신 4개만 남는 것**을 확인했다. 거부 로그 0건. 상한은 10분(잠정 — 유닛 주석), 01:00에 멈춰도 01:30 물리 백업 전에 끝난다.
+
 **NAS가 멈추면** 서비스는 영향이 없다(시스템 구성서 5.2). 물리 백업 · WAL(지금은 노드 로컬 — 5장, 설계 목표는 S3)은 계속되므로 급하게 손대지 않고, 복구 뒤 멈춘 기간의 논리 백업을 한 번 수동 실행한다.
 
 ### 9.4 Amazon Linux 2023 → Rocky Linux 9 이전
