@@ -39,12 +39,12 @@ PG_DUMP=${PG_DUMP:-pg_dump}
 # ── 목적지 ──
 # 기본값은 로컬 경로다. NAS 마운트를 쓰는 노드는 EnvironmentFile(backup.env)에서 BACKUP_DEST=/mnt/nas/backup 으로 준다(설계서 5.1 · 5.3) —
 # 단일 노드에서는 자기 자신에게 건 NFS 공유라, 어느 쪽이든 같은 디스크에 있다.
-# 그래서 노드 소실은 막지 못한다. 그것을 막을 오프사이트 사본(아래 BACKUP_S3_URI)은 이 계정에 S3 쓰기 권한이 없어 비워 둔다.
+# 그래서 노드 소실은 막지 못한다. 그것을 막는 것이 오프사이트 사본(아래 BACKUP_S3_URI)이다.
 BACKUP_DEST=${BACKUP_DEST:-/var/backups/rental}
 # 덤프를 만들고 암호화하는 자리. 목적지가 NFS 여도 암호화는 노드 안에서 끝난다(기술 스택 3장 · 설계서 5.1)
 BACKUP_WORK_DIR=${BACKUP_WORK_DIR:-/var/tmp}
 # 오프사이트 사본은 선택이다. 값이 있으면 그 자리로도 한 벌 올린다. 권한은 인스턴스 역할로 준다 — 키 파일을 두지 않는다(설계서 6.1)
-# 지금은 비어 있다(S3 쓰기 권한 없음). 권한이 생기면 EnvironmentFile 에 이 값만 넣는다 — 스크립트는 바꾸지 않는다
+# 3노드의 DB 노드는 EnvironmentFile 에 s3://<버킷>/logical 을 준다(infra/backup/aws/). 단일 노드는 S3 쓰기 권한이 없어 비워 둔다
 BACKUP_S3_URI=${BACKUP_S3_URI:-}
 AWS=${AWS:-aws}
 
