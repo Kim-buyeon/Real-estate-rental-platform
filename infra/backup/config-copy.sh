@@ -8,7 +8,8 @@
 # 실패하면 0 이 아닌 코드로 끝난다 — journalctl -u rental-config-copy 로 본다(설계서 7.1).
 #
 # 복원: backup 계정으로 gpg --batch --passphrase-file <키> --decrypt config-<시각>.tar.gz.gpg | tar -xz
-#       — REVISION(커밋 · 작업 트리 변경)과 infra/(.env 포함)가 나온다.
+#       — REVISION(커밋 · 작업 트리 변경)과 infra/(.env 포함)가 나온다. 평문 .env 가 풀리므로 NAS 가 아닌 곳의
+#       700 임시 디렉터리에서 풀고 끝나면 지운다(운영 절차서 9.3).
 #
 # ── 두 계정으로 나눠 돈다 ──
 #  - 읽기는 root 다. 원본 체크아웃이 ec2-user 홈(700) 안이라 backup 계정은 읽지 못한다. 그렇다고 홈을 풀면 .env 가 든
@@ -39,6 +40,8 @@ BACKUP_USER=${BACKUP_USER:-backup}
 # **잠정 최신 4개** — 주 1회 × 4주, 물리 백업(4개)과 같은 주기다. 설계서 5.4 가 설정 사본 보존을 미확정으로 두고
 # 「첫 백업 크기 · NAS 볼륨 크기를 보고 정한다」고 했다. 재조정 시점은 설계서 10장의 「운영 1개월 뒤」다.
 CONFIG_KEEP=${CONFIG_KEEP:-4}
+# 0 이면 방금 만든 사본까지 지우고, 숫자가 아니면 아래 비교가 조용히 정리를 건너뛴다 — 1 이상의 정수만 받는다
+[[ "$CONFIG_KEEP" =~ ^[1-9][0-9]*$ ]] || { log "!!! CONFIG_KEEP 는 1 이상의 정수여야 한다: $CONFIG_KEEP"; exit 1; }
 
 # ── 키 ──
 : "${BACKUP_KEY_FILE:?BACKUP_KEY_FILE 이 필요하다 — 복호화 키는 저장소가 아니라 노드에 두고 NAS 와 분리 보관한다(기술 스택 3장)}"
@@ -61,12 +64,13 @@ trap 'rm -rf "$WORK"; as_backup rm -f -- "$CONFIG_DEST/$TMP_NAME" 2>/dev/null ||
 # ── 1. 리비전 기록 ──
 # 어느 커밋의 설정이고 작업 트리에 커밋 안 된 변경이 있었는지 남긴다. root 가 남의 저장소를 읽으면 git 이 소유자 불일치로
 # 거부한다(safe.directory) — 이 저장소 하나만 이 명령에 한해 허용한다. 전역 설정은 바꾸지 않는다.
-git_src() { git -c safe.directory="$CONFIG_SRC" -C "$CONFIG_SRC" "$@"; }
-{
-  printf 'commit %s\n' "$(git_src rev-parse HEAD)"
-  printf 'status --porcelain\n'
-  git_src status --porcelain
-} > "$WORK/REVISION"
+# --no-optional-locks — git status 는 권한이 되면 인덱스를 새로 고쳐 다시 쓴다. root(umask 077)로 쓰면 인덱스가
+# root 소유 0600 이 되어 체크아웃 주인의 git 이 깨진다. 이 옵션이 그 쓰기를 막아 root 는 정말 읽기만 한다.
+# 값은 변수로 먼저 받는다 — printf 인자 안의 명령 치환은 실패해도 set -e 에 걸리지 않아 빈 커밋이 기록된다.
+git_src() { git --no-optional-locks -c safe.directory="$CONFIG_SRC" -C "$CONFIG_SRC" "$@"; }
+REV=$(git_src rev-parse HEAD)
+STATUS=$(git_src status --porcelain)
+printf 'commit %s\nstatus --porcelain\n%s\n' "$REV" "$STATUS" > "$WORK/REVISION"
 
 # ── 2. 목적지 준비 ──
 if ! as_backup test -d "$CONFIG_DEST"; then
