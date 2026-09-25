@@ -10,12 +10,12 @@
 # ── 접속 방식 — 호스트의 PostgreSQL 클라이언트로 TCP 접속한다(컨테이너 안의 pg_dump 를 부르지 않는다) ──
 #  - 정기 작업은 backup 계정으로 돈다(설계서 6.2). 그 계정은 로그인 불가이고 docker 그룹이 아니다 —
 #    docker 그룹은 root 와 같은 권한이라 백업을 위해 줄 수 없다(같은 절). docker compose exec 는 이 계정으로 불가능하다.
-#  - 접속 정보를 libpq 표준 변수(PGHOST · PGPORT · PGUSER · PGDATABASE)로만 받으므로, 6주차에 DB 노드가 분리되면
-#    PGHOST 만 DB-01 사설 IP 로 바뀐다. 컨테이너 이름 · Compose 프로젝트 이름에 묶이지 않는다.
-#  - 전제 두 가지. 호스트에 서버와 같거나 높은 버전(현재 17)의 클라이언트가 있어야 한다 — Amazon Linux 기본 저장소의
-#    postgresql17 이 서버와 같은 17.x 다. Rocky 노드로 옮기면 거기서도 같은 주 버전의 클라이언트 패키지를 깐다.
-#    DB 가 컨테이너로 도는 동안에는 그 포트가 호스트 루프백에 게시되어 있어야 한다 — 운영 Compose 가 postgres 를
-#    127.0.0.1:5432 에 게시한다(DOCKER-USER 규칙 대신 루프백 바인딩 — 설계서 3.3).
+#  - 접속 정보를 libpq 표준 변수(PGHOST · PGPORT · PGUSER · PGDATABASE)로만 받으므로, DB 노드가 분리된
+#    3노드에서도 PGHOST 만 그 노드 사설 IP 로 바뀌었다. 컨테이너 이름 · Compose 프로젝트 이름에 묶이지 않는다.
+#  - 전제 두 가지. 호스트에 서버와 같거나 높은 버전(현재 17)의 클라이언트가 있어야 한다 — 3노드(Rocky)는 PGDG 저장소의
+#    postgresql17, 옛 단일 노드(Amazon Linux)는 기본 저장소의 postgresql17 이다.
+#    그리고 DB 포트가 호스트에서 닿아야 한다 — 3노드는 운영 Compose 가 그 노드 사설 IP 하나에 게시하므로 PGHOST 가
+#    사설 IP 이고 TLS 로 붙는다(pg_hba 가 VPC 대역 평문을 거절한다). 옛 단일 노드는 127.0.0.1:5432 루프백 게시였다(설계서 3.3).
 #
 # ── 비밀번호 ──
 #  명령줄 인자로 넘기지 않는다 — ps 에 그대로 보인다. libpq 가 스스로 읽는 두 경로만 쓴다:
