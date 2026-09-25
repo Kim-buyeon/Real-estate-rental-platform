@@ -19,12 +19,14 @@
 |---|---|
 | 일 1회 | 배치 실행 결과, 등급 변동 건수 이상 여부, 알림 발송 실패 건수, 디스크 사용률(전 노드 `df -h` — 데이터 볼륨 포함), **정기 작업 결과**(`systemctl list-timers` · `journalctl -u <작업> --since yesterday` — 9.3절) |
 | 주 1회 | 전체 백업 성공 여부, NAS의 논리 백업 · S3 사본 생성 여부(9.3절), 복제 지연 추이, 슬로우 쿼리 상위 10건, 캐시 적중률 추이 |
-| 월 1회 | 커널 갱신 반영을 위한 계획 재부팅(한 노드씩 — 노드별 영향은 표 아래), 계정 목록 대조(전 노드 동일 — 9.2절), 백업 복원 검증(물리 · 논리 각각), 가용성 목표 달성률 집계(`docs/infra/system.md` 5.1절), 용량 추이 대비 증설 시점 판단, 외부 API 호출량·비용 집계, **밖에서 본 열린 포트 확인**(아래) |
+| 월 1회 | 커널 · 보안 갱신 반영을 위한 계획 재부팅(한 노드씩 — 노드별 영향과 AL2023의 갱신 명령은 표 아래), 계정 목록 대조(전 노드 동일 — 9.2절), 백업 복원 검증(물리 · 논리 각각), 가용성 목표 달성률 집계(`docs/infra/system.md` 5.1절), 용량 추이 대비 증설 시점 판단, 외부 API 호출량·비용 집계, **밖에서 본 열린 포트 확인**(아래) |
 | 분기 1회 | 페일오버·페일백 시험, PITR 시험, 베이스 이미지 갱신 후 재스캔(3.1절), 절차서 갱신 |
 
 **열린 포트는 밖에서 본다.** 노드 안에서 `ss`로 보는 것과 인터넷에서 닿는 것은 다르다 — Docker가 게시한 포트는 호스트 방화벽을 우회하므로(설계서 3.3) 루프백 바인딩이 실제로 먹는지는 외부에서 두드려야 판정된다. 시스템 구성서 4장의 허용 표와 대조해 **표에 없는 포트가 열려 있으면 그것이 결함이다.** 특히 데이터 저장소(5432 · 6379)가 닿으면 즉시 조치한다. 운영자 접속(22)의 출발지가 표대로 좁혀져 있는지도 함께 본다.
 
 **월 주기로 둔 이유는 1차 배포 구간 때문이다.** 그 구간은 호스트 방화벽 없이 두 겹으로 돈다(설계서 3.3). Rocky 이전까지가 짧아 분기 주기로는 그 안에서 한 번도 돌지 않고 끝날 수 있다 — 두 겹뿐인 동안을 덮으려고 만든 확인이 그 동안을 덮지 못한다. 세 겹이 갖춰진 뒤에 주기를 다시 본다.
+
+**AL2023 노드는 재부팅 전에 갱신을 사람이 올린다.** `dnf-automatic`이 새 보안 갱신을 받지 못하기 때문이다(설계서 8장 패키지 갱신 행). `sudo dnf check-update --releasever=latest --security`로 대상을 보고, 그 시점의 날짜 박은 버전(`dnf check-release-update`가 알려 준다)으로 `sudo dnf upgrade --releasever=<버전>`을 실행한 뒤 재부팅한다. `latest`를 그대로 쓰지 않는 것은 같은 버전을 다른 노드 · 다음 노드에 다시 밟을 수 있게 하려는 것이다. Docker · containerd가 함께 올라오면 기동 뒤 배포 확인(3장)을 빠뜨리지 않는다.
 
 **계획 재부팅의 노드별 영향** — 서비스가 끊기는 노드는 트래픽이 낮은 시간대에 미리 알리고 한다.
 
@@ -376,7 +378,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 ## 9. 서버 운영 절차 (Rocky Linux)
 
-서버 운영 기반(INF-07 ~ 09)의 손으로 밟는 순서다. **무엇을 왜 그렇게 두는지는 서버 운영 기반 설계서(`docs/infra/platform.md`)가 갖는다.** 명령은 첫 구축에서 실제로 실행하며 이 절에 채운다(1장 원칙) — 지금 명령까지 채워진 것은 9.3의 논리 백업뿐이고 나머지는 단계와 확인 기준만 있다.
+서버 운영 기반(INF-07 ~ 09)의 손으로 밟는 순서다. **무엇을 왜 그렇게 두는지는 서버 운영 기반 설계서(`docs/infra/platform.md`)가 갖는다.** 명령은 첫 구축에서 실제로 실행하며 이 절에 채운다(1장 원칙) — 지금 명령까지 채워진 것은 9.1의 AL2023 OS 보안 기준 · 9.3의 논리 · 물리 백업이고 나머지는 단계와 확인 기준만 있다.
 
 ### 9.1 새 노드 준비
 
@@ -392,6 +394,18 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 8 | Docker CE 설치(공식 RHEL 저장소) | `docker compose version`. 컨테이너 로그 상한은 노드가 아니라 Compose가 갖는다(설계서 8장) — 이 단계에서 할 일이 없다 |
 | 9 | `dnf-automatic`(보안 갱신만 · 자동 재부팅 없음) timer 활성 | `systemctl list-timers` |
 | 10 | NFS 클라이언트 마운트(해당 노드) | 9.3 |
+
+**APP-01(Amazon Linux 2023)에 적용하는 OS 보안 기준** — 위 표 중 이 노드에서 성립하는 5 · 6(chrony만 — 시간대는 이미 `Asia/Seoul`) · 7(SELinux만)과 저널이다(#223). 설정 조각은 `infra/os/`에 있고 체크아웃에서 설치한다. 9는 AL2023에서 성립하지 않는다 — 2장의 월 1회 갱신이 대신한다(설계서 8장).
+
+| 순서 | 명령 | 확인 |
+|---|---|---|
+| 1 | **기존 SSH 세션을 닫지 않는다.** `sudo install -m 644 -o root -g root ~/rental/infra/os/sshd/40-rental.conf /etc/ssh/sshd_config.d/` → `sudo sshd -t` → `sudo systemctl reload sshd` | `sudo sshd -T`에 `permitrootlogin no` · `passwordauthentication no`. **새 창에서 접속이 되는 것을 본 뒤에** 기존 세션을 닫는다. `root@`로 접속하면 거부된다 |
+| 2 | `sudo install -D -m 644 -o root -g root ~/rental/infra/os/journald/50-rental.conf /etc/systemd/journald.conf.d/50-rental.conf` → `sudo systemctl restart systemd-journald` | `systemd-analyze cat-config systemd/journald.conf`에 조각이 보인다 · `journalctl --disk-usage` |
+| 3 | 시간 동기화 — AL2023은 기본 설정이 169.254.169.123을 쓴다. 할 일이 없다 | `chronyc sources`에서 그 주소가 `^*` |
+| 4 | SELinux — **먼저 거부 기록이 없는지 본다.** `sudo ausearch --input-logs -m AVC,USER_AVC -ts this-week </dev/null`이 비어 있어야 한다(permissive는 거부를 막지 않고 기록만 한다). 그다음 `sudo setenforce 1` → `sudo sed -i 's/^SELINUX=permissive$/SELINUX=enforcing/' /etc/selinux/config`. 재레이블은 필요 없다 — permissive로 켜진 채 운영돼 레이블이 유지돼 있다 | `getenforce` → `Enforcing`. 수동 백업 1회(`sudo systemctl start rental-backup.service`)가 종료 0이고 그 뒤 AVC가 없다. 거부가 나면 `sudo setenforce 0`으로 즉시 되돌리고 `audit2why`로 원인을 본다 — 끄는 것으로 해결하지 않는다 |
+| 5 | 계획 재부팅(2장 — 서비스 전체 중단) | 기동 뒤 `getenforce` → `Enforcing`, 배포 확인(3장)과 같은 확인. 컨테이너가 `spc_t`로 돈다(`ps -eZ`) — 설계서 8장 SELinux 행 |
+
+**`ausearch`는 `</dev/null`을 붙인다.** 표준입력이 터미널이 아니면 로그 파일 대신 표준입력을 읽는다 — `ssh … 'bash -s'` 안에서는 남은 스크립트를 먹고 「no matches」로 끝난다. `--input-logs`가 로그 파일을 읽게 한다.
 
 ### 9.2 계정 추가 · 삭제
 

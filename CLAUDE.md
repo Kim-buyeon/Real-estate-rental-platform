@@ -41,7 +41,7 @@
 ├── infra/                운영 구성. 서버에 반영되는 Compose · 설정 · 배포 스크립트
 │   ├── nginx/              요청 분산 · 점검 모드. local/ 은 로컬 구성의 앞단 서버 블록
 │   ├── backup/             데이터 백업 작업 — 스크립트와 그것을 거는 systemd 유닛
-│   ├── os/                 Rocky Linux 노드 설정 — firewalld · NFS 공유 · 노드 정기 작업 · sshd — 미작성
+│   ├── os/                 노드 설정 조각 — sshd · journald. firewalld · NFS 공유 · 노드 정기 작업은 미작성
 │   ├── prometheus/ · vector/   관측 수집기 — 지표 · 로그를 노드 밖으로 보낸다. exporter는 Compose 서비스다
 │   └── alertmanager/ · grafana/   자체 호스팅으로 되돌릴 때의 자리 — 지금은 없다
 │
