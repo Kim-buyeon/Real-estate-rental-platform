@@ -51,7 +51,7 @@ description: 바꾼 것과 문서가 어긋나지 않았는지 확인한다. 변
 | `infra/nginx/` | `docs/infra/runbook.md` · `docs/api/infra.md` · `docs/infra/platform.md` | 슬롯 · 포트 · 타임아웃 · `/actuator` 차단 · 점검 모드 |
 | PostgreSQL · Redis 설정 | `docs/infra/tech-stack.md` · `docs/infra/system.md` | 자원 상한 · WAL · 복제 슬롯 · 보존 기간 |
 | `docker-compose*.yml` | `docs/infra/system.md` · `docs/api/infra.md` · `docs/infra/tech-stack.md` · `docs/infra/platform.md` 3.3 | 포트와 접근 통제 표 · 구성 요소 목록 · 게시 주소(루프백 · 사설 IP 하나) |
-| `infra/os/` | `docs/infra/platform.md` · `docs/infra/system.md` 4장 · `docs/infra/runbook.md` 9장 | 방화벽 포트 · NFS 공유 대상 · 계정 UID · GID · 정기 작업 시각 · 보존 · SELinux 설정이 설계서와 같은가 |
+| `infra/os/` | `docs/infra/platform.md` · `docs/infra/system.md` 4장 · `docs/infra/runbook.md` 9장 | firewalld 포트 · 계정 UID · GID · 정기 작업 시각 · 보존 · S3 역할 정책 · SELinux 설정 · NFS 공유 대상(옛 단일 노드)이 설계서와 같은가 |
 | 배포 스크립트(`infra/*.sh`) | `docs/infra/runbook.md` 3장 · 4.2 | 스크립트는 파일이 정본이고 절차서는 단계 표와 기준을 싣는다. 인자 · 대기 시간 · 판정 기준 · 재시도 횟수가 표와 맞는지 |
 | `.env.example` | `docs/api/infra.md` · `docs/infra/system.md` · `docs/tech-stack.md` · `docs/architecture/data-loading.md` 1.3 | 변수 이름과 개수. 외부 API 키는 1.3 표와 이름이 같은가 |
 
