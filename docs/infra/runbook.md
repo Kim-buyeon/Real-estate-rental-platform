@@ -513,7 +513,7 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 
 | 순서 | 명령 | 확인 |
 |---|---|---|
-| 1 | `sudo install -D -o root -g root -m 755 ~/rental/infra/backup/config-copy.sh /opt/rental/infra/backup/config-copy.sh` — **스크립트가 바뀌면 다시 실행한다** | `diff`로 체크아웃과 같다 |
+| 1 | `sudo install -D -o root -g root -m 755 ~/rental/infra/backup/config-copy.sh /opt/rental/infra/backup/config-copy.sh` — **스크립트가 바뀌면 다시 실행한다** | `cmp`로 체크아웃과 같다 |
 | 2 | `/etc/rental/config-copy.env`(root 0600) — `CONFIG_SRC=/home/ec2-user/rental` · `BACKUP_KEY_FILE=/etc/rental/backup.key`. 체크아웃 자리가 바뀌면 `CONFIG_SRC`만 고친다 | `stat` → `root 600` |
 | 3 | `systemd-analyze verify` → `rental-config-copy.{service,timer}`를 `/etc/systemd/system/`에 → `daemon-reload` → 수동 1회 | 종료 0 |
 | 4 | **되살아나는가** — NAS가 아닌 곳에 `mktemp -d`(700)로 임시 디렉터리를 만들어 `backup`에게 준 뒤, `backup`으로 `env HOME=/var/backups/rental gpg --batch --decrypt --passphrase-file /etc/rental/backup.key --output <임시>/c.tgz <사본>` → `tar -tzf` → `REVISION` · `infra/.env`만 풀어 `cmp`. **평문 `.env`가 풀리므로 임시 디렉터리는 바로 지운다** | `.env`가 운영 것과 같다 |
