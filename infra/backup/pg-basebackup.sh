@@ -4,8 +4,8 @@
 #
 #   bash pg-basebackup.sh      그 시각의 물리 백업을 한 번 만든다
 #
-# 순서: primary 확인 → pg_basebackup -Ft -z(WAL 포함) → 최신 BASEBACKUP_KEEP 개만 남기고 삭제 →
-#       남은 것 중 가장 오래된 백업보다 앞선 WAL 아카이브 정리(pg_archivecleanup).
+# 순서: primary 확인 → pg_basebackup -Ft -z(WAL 포함) → (BASEBACKUP_S3_URI 가 있으면) 암호화한 S3 사본 →
+#       최신 BASEBACKUP_KEEP 개만 남기고 삭제 → 남은 것 중 가장 오래된 백업보다 앞선 WAL 아카이브 정리(pg_archivecleanup).
 # 실패하면 0 이 아닌 코드로 끝난다 — journalctl -u rental-basebackup 으로 본다(설계서 7.1).
 #
 # 시점 복구(PITR)는 이 백업 하나 위에 WAL 아카이브(docker-compose.yml 의 archive_command 가 쓰는 자리)를 재생해서 한다.
@@ -24,9 +24,10 @@
 #   (1) backup 계정의 ~/.pgpass (0600)   (2) PGPASSWORD — systemd EnvironmentFile(0600, backup 소유)로 넣는다.
 #  이 스크립트는 값을 읽지도 출력하지도 않는다. -w 로 대화형 입력을 막아 timer 안에서 멈추지 않게 한다.
 #
-# ── 암호화하지 않는다 ──
+# ── 로컬 사본은 암호화하지 않는다 ──
 #  목적지가 노드 로컬이라 데이터 볼륨과 같은 디스크 · 같은 노출이다. 노드 밖으로 나갈 때 암호화한다(설계서 7.2).
-#  목적지 디렉터리 권한(backup 소유 700)과 umask 077 이 막는다.
+#  목적지 디렉터리 권한(backup 소유 700)과 umask 077 이 막는다. S3 사본은 노드를 떠나기 전에 파일마다 gpg 로 암호화한다
+#  — 논리 백업(pg-dump.sh)과 같은 도구 · 같은 키 파일이다(기술 스택 3장).
 set -euo pipefail
 umask 077
 
@@ -45,8 +46,13 @@ PG_BASEBACKUP=${PG_BASEBACKUP:-pg_basebackup}
 PG_ARCHIVECLEANUP=${PG_ARCHIVECLEANUP:-pg_archivecleanup}
 
 # ── 목적지 ──
-# 로컬 경로다(기능 정의서 INF-04 행 · 운영 절차서 5장). 오프사이트(S3) 사본은 쓰기 권한이 없어 두지 않는다.
+# 로컬 경로다(기능 정의서 INF-04 행 · 운영 절차서 5장).
 BASEBACKUP_DEST=${BASEBACKUP_DEST:-/var/backups/rental/physical}
+# 오프사이트(S3) 사본은 선택이다. 값이 있으면 <URI>/<시각>/ 아래로 암호화해 한 벌 올린다 — 3노드는 s3://<버킷>/physical 을 준다.
+# 비어 있으면 지금처럼 로컬만 남긴다(단일 노드). 권한은 인스턴스 역할로 준다 — 키 파일을 두지 않는다(설계서 6.1).
+# 암호화 키(BACKUP_KEY_FILE)는 이 값이 있을 때만 필요하다 — 없으면 S3 사본 단계에서 실패한다
+BASEBACKUP_S3_URI=${BASEBACKUP_S3_URI:-}
+AWS=${AWS:-aws}
 # WAL 아카이브 — 컨테이너의 /archive/wal 이 마운트된 호스트 디렉터리(docker-compose.yml)
 WAL_ARCHIVE_DIR=${WAL_ARCHIVE_DIR:-/var/backups/rental/wal}
 
@@ -107,6 +113,45 @@ mv -- "$WORK" "$FINAL"
 trap - EXIT TERM INT
 log "크기 $(du -sk "$FINAL" | cut -f1) KiB"
 
+# ── 2-1. 오프사이트(S3) 사본 ──
+# 로컬 백업은 이미 성공했다. 사본이 실패해도 아래 보존 · WAL 정리는 그대로 하고, 끝에서 0 이 아닌 코드로 끝낸다 —
+# 사본 실패로 정리가 멈추면 로컬 디스크가 자라고, 성공으로 끝내면 실패가 저널에 남지 않는다.
+# 파일마다 임시 파일로 암호화한 뒤 올린다 — gpg 출력을 aws s3 cp - 로 흘리면 gpg 가 도중에 실패해도 aws 는 끝난 입력으로
+# 보고 잘린 객체를 올린다. 임시 파일은 목적지 디렉터리(같은 디스크 · 700)에 점 이름으로 둔다 — 아래 보존 계산에 걸리지 않는다.
+# backup_manifest 를 마지막에 올린다 — 그것이 있으면 세 파일이 다 올라간 것이다.
+# 이 함수는 if 안에서 불려 set -e 가 걸리지 않는다 — 명령마다 || return 1 로 멈춘다.
+offsite_copy() {
+  [ -n "${BACKUP_KEY_FILE:-}" ] || { log "!!! BACKUP_KEY_FILE 이 필요하다 — 복호화 키는 저장소가 아니라 노드에 둔다(기술 스택 3장)"; return 1; }
+  [ -r "$BACKUP_KEY_FILE" ] || { log "!!! 키 파일을 읽을 수 없다: $BACKUP_KEY_FILE"; return 1; }
+  case "$BASEBACKUP_S3_URI" in
+    s3://?*) ;;
+    *) log "!!! BASEBACKUP_S3_URI 는 s3:// 로 시작해야 한다: $BASEBACKUP_S3_URI"; return 1 ;;
+  esac
+  local f dest
+  ENC=$(mktemp "$BASEBACKUP_DEST/.s3-upload.XXXXXX") || return 1
+  for f in base.tar.gz pg_wal.tar.gz backup_manifest; do
+    dest="${BASEBACKUP_S3_URI%/}/$STAMP/$f.gpg"
+    log "오프사이트 사본 — $f → $dest"
+    gpg --batch --yes --quiet --symmetric --cipher-algo AES256 \
+      --passphrase-file "$BACKUP_KEY_FILE" --output "$ENC" "$FINAL/$f" || return 1
+    [ -s "$ENC" ] || { log "!!! 암호화 결과가 비어 있다 — $f"; return 1; }
+    "$AWS" s3 cp --only-show-errors "$ENC" "$dest" || return 1
+  done
+}
+OFFSITE_FAILED=0
+if [ -n "$BASEBACKUP_S3_URI" ]; then
+  ENC=
+  # 임시 파일은 어떻게 끝나든 지운다 — 실행 시간 상한의 SIGTERM 도 exit 로 바꿔 EXIT trap 을 돌린다(위 2 와 같다)
+  trap 'rm -f -- "${ENC:-}"' EXIT
+  trap 'exit 143' TERM INT
+  if ! offsite_copy; then
+    OFFSITE_FAILED=1
+    log "!!! 오프사이트 사본 실패 — 로컬 백업 $FINAL 은 성공했다. 보존 · WAL 정리는 이어서 하고 끝에서 실패로 끝낸다"
+  fi
+  rm -f -- "$ENC"
+  trap - EXIT TERM INT
+fi
+
 # ── 3. 최신 BASEBACKUP_KEEP 개만 남긴다 ──
 # 이 스크립트가 만든 이름(YYYYmmdd-HHMMSS 디렉터리)만 센다 — 같은 경로의 다른 것을 건드리지 않는다.
 # 이름이 시각이라 글자 순서가 시간 순서다.
@@ -141,3 +186,7 @@ log "WAL 정리 — $WAL_ARCHIVE_DIR 에서 $START_WAL 보다 앞선 것(기준 
 "$PG_ARCHIVECLEANUP" -b "$WAL_ARCHIVE_DIR" "$START_WAL"
 
 log "물리 백업 완료 — $STAMP (보존 ${#BACKUPS[@]}개)"
+if [ "$OFFSITE_FAILED" -ne 0 ]; then
+  log "!!! 오프사이트 사본이 실패해 0 이 아닌 코드로 끝낸다 — 로컬 백업은 남아 있다"
+  exit 1
+fi

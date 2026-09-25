@@ -2,10 +2,14 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "PutLogicalBackupOnly",
+      "Sid": "PutBackupObjectsOnly",
       "Effect": "Allow",
       "Action": "s3:PutObject",
-      "Resource": "arn:aws:s3:::rental-backup-890742606734/logical/*"
+      "Resource": [
+        "arn:aws:s3:::rental-backup-890742606734/logical/*",
+        "arn:aws:s3:::rental-backup-890742606734/wal/*",
+        "arn:aws:s3:::rental-backup-890742606734/physical/*"
+      ]
     }
   ]
 }

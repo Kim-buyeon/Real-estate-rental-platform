@@ -190,7 +190,9 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 
 RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석 배치의 강제 재실행**이 더 빠르다. 복구 수단을 데이터 성격에 따라 구분한다.
 
-**3노드의 정기 백업**(2026-09-25 · #237) — 아래 논리 · 물리 백업과 WAL 아카이빙은 **DB-01 · DB-02 양쪽**에 있고(standby에서는 아무것도 하지 않고 끝난다), 접속은 그 노드의 사설 IP(`PGHOST`)로 TLS다(루프백에는 게시하지 않는다). **논리 백업은 노드 로컬 `/var/backups/rental` + S3 사본**(`logical/`), 물리 백업 · WAL은 아직 노드 로컬이다. 옛 노드의 timer는 점검 모드의 멈춘 DB를 백업한다 — 옛 노드 정리 때 끈다. **노드를 꺼 둔 밤에는 02:00 · 01:30이 지나가도 켜는 즉시 한 번 돈다**(`Persistent=true`). 설치 순서는 9.3 「3노드」.
+**3노드의 정기 백업**(2026-09-25 · #237) — 아래 논리 · 물리 백업과 WAL 아카이빙은 **DB-01 · DB-02 양쪽**에 있고(standby에서는 아무것도 하지 않고 끝난다), 접속은 그 노드의 사설 IP(`PGHOST`)로 TLS다(루프백에는 게시하지 않는다). **논리 백업 · 물리 백업 · WAL 모두 노드 로컬 + S3 암호화 사본**(`logical/` · `physical/<시각>/` · `wal/`, #237 · #241). WAL은 매분 도는 `rental-wal-ship`이 보낸다 — 두 DB 노드가 같은 접두어로 보내고, 같은 이름이 이미 있으면 덮어쓰지 않는다(S3 조건부 쓰기). **S3 사본만으로 PITR이 된다**(아래 「S3에서 되살리기」). 옛 노드의 timer는 점검 모드의 멈춘 DB를 백업한다 — 옛 노드 정리 때 끈다. **노드를 꺼 둔 밤에는 02:00 · 01:30이 지나가도 켜는 즉시 한 번 돈다**(`Persistent=true`). 설치 순서는 9.3 「3노드」.
+
+**전송이 한 파일에서 멈추면 그 뒤로는 아무것도 보내지 않는다** — 첫 실패에서 끝나고 매분 같은 실패를 저널에 남긴다(0600 세그먼트에서 실측). 그동안 노드 소실 RPO는 5분이 아니라 **멈춘 시간만큼** 늘고, 멈춘 채 주간 물리 백업이 돌면 `pg_archivecleanup`이 아직 보내지 않은 세그먼트를 지워 S3 사슬에 구멍이 난다. **지금 이것을 알리는 것은 일일 점검의 저널 확인뿐이다**(2장) — 관측 알림에 거는 것은 후속.
 
 **논리 백업 정기 작업** — `infra/backup/pg-dump.sh`를 systemd timer(`rental-backup.timer`)가 부른다. 실행 시각은 서버 운영 기반 설계서 7.2가 정한다. 순서는 primary 확인 → `pg_dump -Fc` → 암호화 → 목적지 적재 → 보존 기간 지난 것 삭제이고, standby에서는 아무것도 하지 않고 끝난다. **왜 그렇게 두는지는 서버 운영 기반 설계서 5.1 · 7.2가 갖는다.** 여기에는 실행할 때 확인할 것만 적는다.
 
@@ -202,19 +204,19 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 | 실패가 남는가 | 실패하면 0이 아닌 코드로 끝나 `journalctl -u rental-backup`에 남는다. 확인 항목은 9.3 |
 | 값이 비어 있으면 | 접속 정보 · 암호화 키 경로가 없으면 지어내지 않고 실패한다 |
 
-**목적지 — 3노드는 DB 노드 로컬(`/var/backups/rental`) + S3**(`s3://rental-backup-890742606734/logical/`, #237) — 노드가 통째로 사라져도 S3 사본이 남는다. S3에는 **쓰기만** 한다(역할이 `logical/`에 `PutObject`만 가진다 — 노드가 털려도 사본을 읽거나 지우지 못한다). 되살릴 때는 운영자 자격 증명으로 내려받는다. **옛 단일 노드는** NFS 마운트(`/mnt/nas/backup`)였다(#227 — 그 전에는 로컬). 노드가 하나라 NFS 공유가 **같은 노드 · 같은 디스크**다(9.3). 옛 계정은 오브젝트 스토리지 쓰기 권한이 없었다(#180). **그래서 옛 노드에서는 노드가 통째로 사라지면 백업도 함께 사라진다** — 잘못된 UPDATE · 배치 오적재로부터는 되살리지만 노드 소실은 막지 못한다. S3 사본은 `BACKUP_S3_URI` · `AWS` · `AWS_DEFAULT_REGION`을 env에 넣어 켠다(9.3 「3노드」 5단계) — 스크립트는 바꾸지 않았다.
+**목적지 — 3노드는 DB 노드 로컬(`/var/backups/rental`) + S3**(`s3://rental-backup-890742606734/logical/`, #237) — 노드가 통째로 사라져도 S3 사본이 남는다. S3에는 **쓰기만** 한다(역할이 `logical/` · `wal/` · `physical/`에 `PutObject`만 가진다 — 노드가 털려도 사본을 읽거나 지우지 못한다). 되살릴 때는 운영자 자격 증명으로 내려받는다. **옛 단일 노드는** NFS 마운트(`/mnt/nas/backup`)였다(#227 — 그 전에는 로컬). 노드가 하나라 NFS 공유가 **같은 노드 · 같은 디스크**다(9.3). 옛 계정은 오브젝트 스토리지 쓰기 권한이 없었다(#180). **그래서 옛 노드에서는 노드가 통째로 사라지면 백업도 함께 사라진다** — 잘못된 UPDATE · 배치 오적재로부터는 되살리지만 노드 소실은 막지 못한다. S3 사본은 `BACKUP_S3_URI` · `AWS` · `AWS_DEFAULT_REGION`을 env에 넣어 켠다(9.3 「3노드」 5단계) — 스크립트는 바꾸지 않았다.
 
 **아직 정해지지 않은 것** — 보존 기간. 잠정값(7일)은 스크립트가 갖고, 확정 시점은 서버 운영 기반 설계서 5.4가 갖는다. 실행 시간 상한은 30분으로 확정했다(같은 설계서 5.3). 암호화 도구(`gpg`)와 `backup` 계정 UID · GID는 같은 설계서 5.1 · 6.2가 정했다. 호스트 클라이언트가 닿도록 운영 Compose가 PostgreSQL을 루프백(`127.0.0.1:5432`)에 게시한다(시스템 구성서 4장).
 
-**WAL 연속 아카이빙** — 두 DB 서비스가 같은 인자로 `archive_mode=on` · `archive_timeout=300`(5분 강제 스위치)을 쓰고, 완료된 WAL 세그먼트를 호스트 `/var/backups/rental/wal`에 복사한다(#214). **1등급 RPO 5분을 지키는 것이 이 설정이다**(시스템 구성서 5.1). `archive_mode`는 재기동해야 바뀐다. standby는 복구 중에는 아카이브하지 않고 승격하면 이어서 한다 — 페일오버에 아카이빙 전환 단계가 없다.
+**WAL 연속 아카이빙** — 두 DB 서비스가 같은 인자로 `archive_mode=on` · `archive_timeout=240`(4분 강제 스위치 — 2026-09-25 300에서 당김, 3노드 노드 소실 RPO를 5분 안에 넣으려고. **`-c` 인자라 DB 컨테이너를 재생성해야 반영된다** — primary는 점검 모드 안에서, 반영 기록은 #241)을 쓰고, 완료된 WAL 세그먼트를 호스트 `/var/backups/rental/wal`에 복사한다(#214). **1등급 RPO 5분을 지키는 것이 이 설정이다**(시스템 구성서 5.1 — 3노드에서 노드째 잃으면 전송 주기 1분이 더해진다, 5장). `archive_mode`는 재기동해야 바뀐다. standby는 복구 중에는 아카이브하지 않고 승격하면 이어서 한다 — 페일오버에 아카이빙 전환 단계가 없다.
 
 | 확인 | 내용 |
 |---|---|
 | 아카이빙이 도는가 | primary에서 `SELECT archived_count, failed_count, last_archived_wal, last_failed_wal FROM pg_stat_archiver` — `failed_count`가 늘지 않는다 |
-| 디렉터리 권한 | `/var/backups/rental/wal`은 `70:backup` `2770` — 컨테이너(uid 70)가 쓰고 `backup` 계정이 정리한다(삭제는 디렉터리 쓰기 권한만 필요). 세그먼트는 `0600` uid 70이라 `backup` 계정은 읽지 못한다 — PITR은 같은 uid로 도는 컨테이너가 읽는다. **디렉터리가 없으면 Docker가 root 소유로 만들어 아카이빙이 실패한다** — 먼저 만든다 |
+| 디렉터리 권한 | `/var/backups/rental/wal`은 `70:backup` `2770` — 컨테이너(uid 70)가 쓰고 `backup` 계정이 정리한다(삭제는 디렉터리 쓰기 권한만 필요). 세그먼트는 `0640` uid 70 · 그룹 `backup`이라(#241 — 그 전에는 0600) `backup` 계정이 읽어 S3로 보낸다 — PITR은 같은 uid로 도는 컨테이너가 읽는다. **디렉터리가 없으면 Docker가 root 소유로 만들어 아카이빙이 실패한다** — 먼저 만든다 |
 | 실패하면 | `archive_command`가 실패한 세그먼트는 `pg_wal`에서 지워지지 않고 쌓인다. 디스크를 먼저 본다. **같은 이름이 이미 있고 내용이 다르면 스크립트가 1을 돌려 그 세그먼트에서 영구히 멈춘다** — PostgreSQL 로그에 `rental-archive-wal: … 가 이미 있고 내용이 다르다`. 두 서버가 같은 아카이브에 쓰고 있다는 뜻이다(리허설 컨테이너를 운영 인자로 띄운 경우 등). 덮어쓰지 말고 어느 쪽 파일인지 먼저 가린다 |
 
-**물리 백업 정기 작업** — `infra/backup/pg-basebackup.sh`를 `rental-basebackup.timer`가 주 1회 부른다(시각은 서버 운영 기반 설계서 7.2). 순서는 primary 확인 → `pg_basebackup -Ft -z`(WAL 포함) → 최신 4개 보존 → 가장 오래 남긴 백업의 시작 WAL보다 앞선 아카이브를 `pg_archivecleanup`으로 정리. 접속 · 비밀번호 규칙은 위 논리 백업 표와 같고 역할만 다르다 — 복제 권한을 가진 전용 역할 `rental_basebackup`(`EnvironmentFile`은 `/etc/rental/basebackup.env`). 호스트 도구는 AL2023에서 `postgresql17-server`(`pg_basebackup`) · `postgresql17-contrib`(`pg_archivecleanup`)에 있다 — 설치해도 호스트의 `postgresql.service`는 켜지 않는다.
+**물리 백업 정기 작업** — `infra/backup/pg-basebackup.sh`를 `rental-basebackup.timer`가 주 1회 부른다(시각은 서버 운영 기반 설계서 7.2). 순서는 primary 확인 → `pg_basebackup -Ft -z`(WAL 포함) → **`BASEBACKUP_S3_URI`가 있으면 세 파일을 암호화해 S3 `physical/<시각>/`로**(실패하면 로컬 보존 · WAL 정리는 마치고 종료 1) → 최신 4개 보존 → 가장 오래 남긴 백업의 시작 WAL보다 앞선 아카이브를 `pg_archivecleanup`으로 정리. 접속 · 비밀번호 규칙은 위 논리 백업 표와 같고 역할만 다르다 — 복제 권한을 가진 전용 역할 `rental_basebackup`(`EnvironmentFile`은 `/etc/rental/basebackup.env`). 호스트 도구는 AL2023에서 `postgresql17-server`(`pg_basebackup`) · `postgresql17-contrib`(`pg_archivecleanup`)에 있다 — 설치해도 호스트의 `postgresql.service`는 켜지 않는다.
 
 **로컬 단계에서는 암호화하지 않는다.** 데이터 볼륨과 같은 디스크 · 같은 노출이다. 노드 밖으로 내보낼 때 암호화한다 — 인프라 기술 스택 3장의 기준이 「전송 전 암호화」다(서버 운영 기반 설계서 7.2 「NAS → S3」 행도 같다). 논리 백업이 암호화하는 것은 노드 밖(3노드는 S3, 설계상 NAS)으로 나가기 때문이다.
 
@@ -374,7 +376,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 - 4 · 5의 순서 — replay 확인(3.6초) → DB-02 정지(5.2초) → 승격(6.8초)으로 **정지 앞에서 확인했다.** 점검 모드 안이라 그 사이 쓰기는 없었지만 절차는 위 표 순서로 한다
 - 6의 멈춤 조건 — 두 슬롯 healthy를 기다리던 운영자 SSH 세션이 응답 없이 멈췄다가 끊겨(`Connection reset by peer`), **연결 확인 없이 해제 명령이 나갔다.** 점검 모드 0초부터 해제 · API 200까지 **199.2초**. 두 슬롯의 기동 로그(`Started … in 73.5 / 74.2 s`)로 보면 앱은 14:07:01쯤 준비됐다(점검 모드부터 약 87초) — 그 뒤 해제까지 **약 113초가 도구 탓**이다. 서비스 기준 복귀 시간은 재지 못했다. 대책 — 운영자 SSH 설정에 `ServerAliveInterval 15` · `ServerAliveCountMax 4`, 긴 대기는 노드 안에서 끝까지 도는 명령으로
 
-- **WAL 아카이브는 노드마다 로컬이라 페일오버 구간(timeline 2)의 WAL은 DB-02에만 남는다** — DB-01의 옛 물리 백업에서 그 구간을 건너 PITR 할 수 없다. 그래서 8에서 새 물리 백업을 뜬다. 근본 대책은 WAL 아카이브를 공동 목적지(S3)로 — 후속. **DB-01 노드를 잃으면 그 노드의 WAL 아카이브도 함께 잃는다**(시스템 구성서 5장의 RPO 5분 근거가 이 경우 성립하지 않는다 — 후속 이슈)
+- **WAL 아카이브는 노드마다 로컬이라 페일오버 구간(timeline 2)의 WAL은 DB-02에만 남는다** — DB-01의 옛 물리 백업에서 그 구간을 건너 PITR 할 수 없다. 그래서 8에서 새 물리 백업을 뜬다. 근본 대책은 WAL 아카이브를 공동 목적지(S3)로 — 후속. **DB-01 노드를 잃으면 그 노드의 WAL 아카이브도 함께 잃는다**(시스템 구성서 5장의 RPO 5분 근거가 이 경우 성립하지 않는다 — 후속 이슈) **→ 2026-09-25 해소(#241)** — WAL을 S3로 보낸다. 승격된 노드의 WAL도 같은 접두어로 가서 S3에서 timeline이 이어진다. 페일백 뒤 새 물리 백업은 여전히 바로 뜬다(로컬 PITR이 빠르다).
 - 페일오버 · 페일백 모두 **사람의 판정 · 알림 시간이 빠진 값**이다(6.1 실측과 같은 조건)
 
 ---
@@ -603,6 +605,20 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 | 7 | `enable --now rental-backup.timer rental-basebackup.timer`(두 노드) | 다음 02:00 · 일 01:30 |
 
 **`sudo -u backup aws …`로 시험할 때는 전체 경로**(`/usr/local/bin/aws`) — `sudo`의 경로에는 `/usr/local/bin`이 없다. 서비스 경로에는 있지만 env에 `AWS`를 적어 둔다.
+
+**WAL · 물리 백업 S3 전송(3노드)** — 위 표를 마친 노드에서(#241, 2026-09-25 14:30 ~ 14:46).
+
+| 순서 | 명령 | 확인 · 실측 |
+|---|---|---|
+| 1 | 역할 정책 · 수명 주기를 `infra/backup/aws/`의 것으로 다시 넣는다(`put-role-policy` 같은 이름 — 덮어쓴다) | 접두어 셋 · 규칙 셋 |
+| 2 | 아카이브 스크립트(0640) 반영 — **`archive-wal.sh`는 파일 하나를 바인드 마운트한다.** 체크아웃이 바뀌면(파일이 새 inode가 되면) 도는 컨테이너는 옛 내용을 본다 → **DB 컨테이너를 재시작해야 반영된다**(primary는 점검 모드 안에서 — 16.3초 실측). 재시작 전 · 재시작 중에 아카이브된 세그먼트는 0600이다 → `sudo find /var/backups/rental/wal -maxdepth 1 -type f -perm 0600 -exec chmod 0640 {} +`를 **재시작 뒤에 한 번 더** | 새 세그먼트 `-rw-r----- 70 backup` |
+| 3 | `sudo install -d -o backup -g backup -m 700 /var/lib/rental-backup`(전송 상태 · GNUPGHOME의 부모 — root로 만들어져 있으면 고친다) → 스크립트 `wal-ship.sh` 설치 · 유닛 `rental-wal-ship.{service,timer}` | — |
+| 4 | `/etc/rental/wal-ship.env`(`backup` 600) — `WAL_S3_URI=s3://rental-backup-890742606734/wal` · `BACKUP_KEY_FILE` · `GNUPGHOME` · `AWS` · `AWS_DEFAULT_REGION`. `basebackup.env`에 `BASEBACKUP_S3_URI=…/physical` · 같은 넷 | — |
+| 5 | 두 노드 수동 전송 → `enable --now rental-wal-ship.timer` | `WAL 전송 — 보냄 N · 이미 있음 M …`. 보내지 못한 파일이 있으면 **그 파일에서 멈추고 매분 실패를 남긴다**(0600 세그먼트에서 실측) |
+| 6 | 물리 백업 수동 1회 | S3 `physical/<시각>/` 세 파일 |
+
+**S3에서 되살리기** — 노드의 역할은 쓰기만 해서 **내려받기는 운영자 자격 증명**으로 한다. 운영자 PC에서 `aws s3 cp --recursive s3://…/physical/<시각>/ …` · `aws s3 cp --recursive s3://…/wal/ … --exclude "*" --include "<timeline>*" --include "*.history.gpg"`(`--exclude "*"`가 먼저 있어야 거른다) → 되살릴 노드로 옮긴다 → 그 노드에서 `backup`으로 복호화(키는 노드에만 있다 — 운영자 PC에서 풀지 않는다) → 5장 PITR 리허설과 같은 방식. **실측**(2026-09-25): 암호화된 WAL은 gpg가 압축해 작다(`wal/` 28개 548 KB — 16 MB 세그먼트가 대부분 비어 있다), 풀기 + 재생 1.65초, 리허설 A / 운영 A,B.
+
 
 ### 9.4 Amazon Linux 2023 → Rocky Linux 9 이전
 
