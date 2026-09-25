@@ -4,7 +4,8 @@
 #   bash pg-dump.sh            그 시각의 백업을 한 번 만든다
 #
 # 순서: primary 확인 → pg_dump -Fc → 암호화 → 목적지 적재 → 보존 기간 지난 것 삭제.
-# 실패하면 0 이 아닌 코드로 끝난다 — 모니터링이 없어 journalctl -u rental-backup 이 유일한 확인 수단이다(설계서 7.1).
+# 실패하면 0 이 아닌 코드로 끝난다 — journalctl -u rental-backup 으로 본다(설계서 7.1). 성공으로 끝나면 마지막 성공 시각을
+# 지표로 남긴다(아래 「정기 작업 결과 지표」) — 멈춘 것은 그 시각이 늙는 것으로 드러난다.
 #
 # ── 접속 방식 — 호스트의 PostgreSQL 클라이언트로 TCP 접속한다(컨테이너 안의 pg_dump 를 부르지 않는다) ──
 #  - 정기 작업은 backup 계정으로 돈다(설계서 6.2). 그 계정은 로그인 불가이고 docker 그룹이 아니다 —
@@ -24,6 +25,35 @@ set -euo pipefail
 umask 077
 
 log() { printf '%s >>> %s\n' "$(date '+%F %T')" "$*"; }
+
+# ── 정기 작업 결과 지표 — node exporter 의 textfile 수집기가 읽는다(운영 Compose 의 node-exporter 주석) ──
+# 디렉터리(backup 소유 755)는 노드 준비에서 만든다. 없으면 지표만 건너뛰고 작업은 실패시키지 않는다 —
+# 지표는 작업 결과를 보이게 하는 수단이지 작업의 일부가 아니다. 파일은 644 여야 컨테이너의 nobody 가 읽는다(umask 077 을 덮는다).
+# 같은 디렉터리의 점 이름 임시 파일에 쓰고 mv 로 바꾼다 — 같은 파일시스템 안의 이름 바꾸기라 수집기가 반쯤 쓴 파일을 읽지 않고,
+# 수집기는 .prom 으로 끝나는 이름만 읽으므로 임시 파일(.<작업>.prom.tmp)은 걸리지 않는다.
+# 세 스크립트에 같은 함수를 둔다 — 노드에는 스크립트를 파일마다 따로 설치하므로(운영 절차서) 나눠 두면 설치할 파일이 하나 는다.
+# 도움말 문장은 세 스크립트가 글자까지 같아야 한다 — 같은 지표 이름의 HELP 가 파일마다 다르면 수집기가 뒤에 읽은 파일의 그 지표를
+# 버리고 node_textfile_scrape_error 를 1 로 둔다(node exporter v1.9.1 collector/textfile.go).
+# 호출은 `… | write_metrics <작업> || log …` 로 한다 — || 안이라 set -e 가 걸리지 않으므로 명령마다 || return 1 로 멈춘다.
+RENTAL_METRICS_DIR=${RENTAL_METRICS_DIR:-/var/lib/rental-metrics}
+write_metrics() {
+  local dir=${RENTAL_METRICS_DIR%/} tmp
+  if [ ! -d "$dir" ]; then
+    cat > /dev/null
+    log "지표 디렉터리가 없다: $dir — 지표($1.prom)만 건너뛴다"
+    return 0
+  fi
+  tmp="$dir/.$1.prom.tmp"
+  { cat > "$tmp" && chmod 644 "$tmp" && mv -f -- "$tmp" "$dir/$1.prom"; } || { rm -f -- "$tmp"; return 1; }
+}
+# last_success <작업 라벨> — 지금 시각을 마지막 성공 시각으로 쓴다. 성공으로 끝나는 경로에서만 부른다
+last_success() {
+  printf '%s\n' \
+    '# HELP rental_job_last_success_timestamp_seconds Unix time of the last successful run of a rental scheduled job.' \
+    '# TYPE rental_job_last_success_timestamp_seconds gauge' \
+    "rental_job_last_success_timestamp_seconds{task=\"$1\"} $(date +%s)" \
+    | write_metrics "$1" || log "!!! 지표를 쓰지 못했다 — $RENTAL_METRICS_DIR/$1.prom. 작업은 성공했다"
+}
 
 # ── 접속 — 값이 없으면 지어내지 않고 실패한다. 값은 노드의 EnvironmentFile 에 둔다 ──
 PGHOST=${PGHOST:-127.0.0.1}
@@ -75,6 +105,7 @@ read -r -a ENCRYPT_ARGV <<< "$BACKUP_ENCRYPT_CMD"
 IN_RECOVERY=$("$PSQL" -w -Atqc 'SELECT pg_is_in_recovery()')
 if [ "$IN_RECOVERY" != "f" ]; then
   log "standby 다(pg_is_in_recovery = $IN_RECOVERY). 아무것도 하지 않고 끝낸다 — 설계서 7.2"
+  # 성공 시각을 쓰지 않는다 — 백업을 만든 것이 아니다. 이 지표는 primary 에서만 뜻을 갖는다
   exit 0
 fi
 
@@ -108,3 +139,4 @@ find "$BACKUP_DEST" -maxdepth 1 -type f -name "$PGDATABASE-*.dump$BACKUP_ENCRYPT
   -mtime +"$BACKUP_RETENTION_DAYS" -print -delete
 
 log "백업 완료 — $NAME"
+last_success logical_backup

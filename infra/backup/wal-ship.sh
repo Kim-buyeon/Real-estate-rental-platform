@@ -5,6 +5,7 @@
 #
 # 순서: 보낸 표시 정리 → 대상 고르기 → 한 건씩 암호화 → 조건부 쓰기(있으면 덮지 않는다) → 보낸 표시.
 # 실패하면 0 이 아닌 코드로 끝난다 — journalctl -u rental-wal-ship 으로 본다(설계서 7.1). 다음 분에 남은 것부터 다시 한다.
+# 결과는 지표로도 남긴다 — 성공으로 끝나면 마지막 성공 시각, 어떻게 끝나든 아직 보내지 않은 수(아래 「지표」).
 #
 # ── 왜 archive_command 가 아니라 호스트 timer 인가 ──
 #  archive_command(infra/postgres/archive-wal.sh)는 노드 로컬 디렉터리에만 쓴다. 거기서 S3 로 바로 보내면 컨테이너에
@@ -26,6 +27,35 @@ set -euo pipefail
 umask 077
 
 log() { printf '%s >>> %s\n' "$(date '+%F %T')" "$*"; }
+
+# ── 정기 작업 결과 지표 — node exporter 의 textfile 수집기가 읽는다(운영 Compose 의 node-exporter 주석) ──
+# 디렉터리(backup 소유 755)는 노드 준비에서 만든다. 없으면 지표만 건너뛰고 작업은 실패시키지 않는다 —
+# 지표는 작업 결과를 보이게 하는 수단이지 작업의 일부가 아니다. 파일은 644 여야 컨테이너의 nobody 가 읽는다(umask 077 을 덮는다).
+# 같은 디렉터리의 점 이름 임시 파일에 쓰고 mv 로 바꾼다 — 같은 파일시스템 안의 이름 바꾸기라 수집기가 반쯤 쓴 파일을 읽지 않고,
+# 수집기는 .prom 으로 끝나는 이름만 읽으므로 임시 파일(.<작업>.prom.tmp)은 걸리지 않는다.
+# 세 스크립트에 같은 함수를 둔다 — 노드에는 스크립트를 파일마다 따로 설치하므로(운영 절차서) 나눠 두면 설치할 파일이 하나 는다.
+# 도움말 문장은 세 스크립트가 글자까지 같아야 한다 — 같은 지표 이름의 HELP 가 파일마다 다르면 수집기가 뒤에 읽은 파일의 그 지표를
+# 버리고 node_textfile_scrape_error 를 1 로 둔다(node exporter v1.9.1 collector/textfile.go).
+# 호출은 `… | write_metrics <작업> || log …` 로 한다 — || 안이라 set -e 가 걸리지 않으므로 명령마다 || return 1 로 멈춘다.
+RENTAL_METRICS_DIR=${RENTAL_METRICS_DIR:-/var/lib/rental-metrics}
+write_metrics() {
+  local dir=${RENTAL_METRICS_DIR%/} tmp
+  if [ ! -d "$dir" ]; then
+    cat > /dev/null
+    log "지표 디렉터리가 없다: $dir — 지표($1.prom)만 건너뛴다"
+    return 0
+  fi
+  tmp="$dir/.$1.prom.tmp"
+  { cat > "$tmp" && chmod 644 "$tmp" && mv -f -- "$tmp" "$dir/$1.prom"; } || { rm -f -- "$tmp"; return 1; }
+}
+# last_success <작업 라벨> — 지금 시각을 마지막 성공 시각으로 쓴다. 성공으로 끝나는 경로에서만 부른다
+last_success() {
+  printf '%s\n' \
+    '# HELP rental_job_last_success_timestamp_seconds Unix time of the last successful run of a rental scheduled job.' \
+    '# TYPE rental_job_last_success_timestamp_seconds gauge' \
+    "rental_job_last_success_timestamp_seconds{task=\"$1\"} $(date +%s)" \
+    | write_metrics "$1" || log "!!! 지표를 쓰지 못했다 — $RENTAL_METRICS_DIR/$1.prom. 작업은 성공했다"
+}
 
 # ── 값 — 필수 값이 없으면 지어내지 않고 실패한다. 값은 노드의 EnvironmentFile(/etc/rental/wal-ship.env)에 둔다 ──
 # 아카이브 — 컨테이너의 /archive/wal 이 마운트된 호스트 디렉터리(docker-compose.yml). 물리 백업의 WAL 정리와 같은 자리다
@@ -65,6 +95,39 @@ is_wal_name() {
   [[ "$1" =~ ^[0-9A-F]{24}$ || "$1" =~ ^[0-9A-F]{8}\.history$ || "$1" =~ ^[0-9A-F]{24}\.[0-9A-F]{8}\.backup$ ]]
 }
 
+# ── 지표 — 파일 둘로 나눈다 ──
+#   wal_ship.prom           rental_job_last_success_timestamp_seconds{task="wal_ship"} — 성공으로 끝날 때만 바꾼다
+#   wal_ship_pending.prom   rental_wal_ship_pending_files — 실패로 멈춰도 끝날 때마다 바꾼다
+# 한 파일에 두면 실패 때 pending 만 바꾸려고 직전 파일에서 last_success 줄을 읽어 옮겨야 한다. 나누면 각자 덮어쓰기만 한다.
+# pending 은 끝나는 시점에 다시 센다 — 아카이브에 있고 보낸 표시가 없는 이름의 수다. 실행 중에 새로 아카이브된 것도 든다.
+# 여기(값 확인 뒤)부터 건다 — 위에서 값 · 디렉터리가 틀려 멈추면 셀 수 없어 pending 은 직전 값에 머문다.
+# 그때는 last_success 가 늘지 않는 것으로 드러난다.
+write_pending() {
+  local n=0 name
+  while IFS= read -r name; do
+    is_wal_name "$name" || continue
+    [ -e "$WAL_SHIP_STATE_DIR/$name" ] || n=$((n + 1))
+  done < <(find "$WAL_ARCHIVE_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n')
+  printf '%s\n' \
+    '# HELP rental_wal_ship_pending_files WAL archive files not yet shipped to S3 at the end of the last wal-ship run.' \
+    '# TYPE rental_wal_ship_pending_files gauge' \
+    "rental_wal_ship_pending_files $n" \
+    | write_metrics wal_ship_pending || log "!!! 지표를 쓰지 못했다 — $RENTAL_METRICS_DIR/wal_ship_pending.prom"
+}
+ENC=
+ERR=
+# 어떻게 끝나든 임시 파일을 지우고 pending 을 쓴다. 종료 코드는 그대로 돌려준다
+on_exit() {
+  local rc=$?
+  [ -z "$ENC" ] || rm -f -- "$ENC"
+  [ -z "$ERR" ] || rm -f -- "$ERR"
+  write_pending || true
+  exit "$rc"
+}
+trap on_exit EXIT
+# systemd 의 실행 시간 상한은 SIGTERM 으로 끊는다. bash 는 신호로 죽을 때 EXIT trap 을 돌리지 않으므로 exit 로 바꿔 받는다
+trap 'exit 143' TERM INT
+
 # ── 1. 표시 디렉터리 ──
 # 부모(/var/lib/rental-backup, backup 소유 700)는 노드 준비에서 만든다(운영 절차서 9.3). 여기서는 그 아래만 만든다
 install -d -m 700 "$WAL_SHIP_STATE_DIR"
@@ -91,11 +154,9 @@ done < <(find "$WAL_SHIP_STATE_DIR" -mindepth 1 -maxdepth 1 -type f -print0)
 #  내용으로 덮지 못하게 한다. 412 는 다른 노드나 앞선 실행(표시를 남기기 전에 끊긴 것)이 이미 보낸 것이라 성공으로 친다.
 #  암호문은 같은 평문이어도 매번 달라(무작위 솔트 · 세션 키) 내용 비교는 할 수 없다 — 이름으로만 가린다.
 #  두 쓰기가 겹치면 S3 는 409 ConditionalRequestConflict 를 준다 — 실패로 끝내고 다음 분에 다시 하면 412 로 가려진다.
+# 두 임시 파일은 위 on_exit 가 지운다
 ENC=$(mktemp)
 ERR=$(mktemp)
-trap 'rm -f -- "$ENC" "$ERR"' EXIT
-# systemd 의 실행 시간 상한은 SIGTERM 으로 끊는다. bash 는 신호로 죽을 때 EXIT trap 을 돌리지 않으므로 exit 로 바꿔 받는다
-trap 'exit 143' TERM INT
 
 SENT=0
 EXISTED=0
@@ -127,3 +188,5 @@ while IFS= read -r name; do
 done < <(find "$WAL_ARCHIVE_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
 
 log "WAL 전송 — 보냄 $SENT · 이미 있음 $EXISTED · 건너뜀(보낸 표시) $SKIPPED · 표시 정리 $REMOVED"
+# standby 노드에서도 쓴다 — 이 작업은 primary 확인 없이 그 노드의 로컬 아카이브를 따라가므로 어느 쪽에서든 성공이 뜻을 갖는다
+last_success wal_ship
