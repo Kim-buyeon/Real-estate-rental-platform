@@ -516,10 +516,10 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 | 1 | `sudo install -D -o root -g root -m 755 ~/rental/infra/backup/config-copy.sh /opt/rental/infra/backup/config-copy.sh` — **스크립트가 바뀌면 다시 실행한다** | `diff`로 체크아웃과 같다 |
 | 2 | `/etc/rental/config-copy.env`(root 0600) — `CONFIG_SRC=/home/ec2-user/rental` · `BACKUP_KEY_FILE=/etc/rental/backup.key`. 체크아웃 자리가 바뀌면 `CONFIG_SRC`만 고친다 | `stat` → `root 600` |
 | 3 | `systemd-analyze verify` → `rental-config-copy.{service,timer}`를 `/etc/systemd/system/`에 → `daemon-reload` → 수동 1회 | 종료 0 |
-| 4 | **되살아나는가** — `backup`으로 `env HOME=/var/backups/rental gpg --batch --decrypt --passphrase-file /etc/rental/backup.key --output <임시>/c.tgz <사본>` → `tar -tzf` → `REVISION` · `infra/.env`만 풀어 `cmp`. 임시 디렉터리는 지운다 | `.env`가 운영 것과 같다 |
+| 4 | **되살아나는가** — NAS가 아닌 곳에 `mktemp -d`(700)로 임시 디렉터리를 만들어 `backup`에게 준 뒤, `backup`으로 `env HOME=/var/backups/rental gpg --batch --decrypt --passphrase-file /etc/rental/backup.key --output <임시>/c.tgz <사본>` → `tar -tzf` → `REVISION` · `infra/.env`만 풀어 `cmp`. **평문 `.env`가 풀리므로 임시 디렉터리는 바로 지운다** | `.env`가 운영 것과 같다 |
 | 5 | `sudo systemctl enable --now rental-config-copy.timer` | `list-timers`에 다음 **일 01:00** |
 
-**실측**(2026-09-25) — 수동 1회 **0.86초**, 암호문 **43,616바이트**(`infra/` 47개 항목), 앞부분 gpg 패킷(`8c 0d`), `REVISION`의 커밋이 체크아웃과 같고 `.env` 일치. 연달아 5회 돌려 **최신 4개만 남는 것**을 확인했다. 거부 로그 0건. 상한은 10분(잠정 — 유닛 주석), 01:00에 멈춰도 01:30 물리 백업 전에 끝난다.
+**실측**(2026-09-25) — 수동 1회 **0.86초**, 암호문 **43,616바이트**(묶음 47개 항목 — `REVISION` 포함), 앞부분 gpg 패킷(`8c 0d`), `REVISION`의 커밋이 체크아웃과 같고 `.env` 일치. 연달아 5회 돌려 **최신 4개만 남는 것**을 확인했다. 거부 로그 0건. 상한은 10분(잠정 — 유닛 주석), 01:00에 멈춰도 01:30 물리 백업 전에 끝난다.
 
 **NAS가 멈추면** 서비스는 영향이 없다(시스템 구성서 5.2). 물리 백업 · WAL(지금은 노드 로컬 — 5장, 설계 목표는 S3)은 계속되므로 급하게 손대지 않고, 복구 뒤 멈춘 기간의 논리 백업을 한 번 수동 실행한다.
 
