@@ -593,8 +593,6 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 
 **설정 사본(`rental-config-copy`)** — 설계서 5.1 · 7.2의 「운영 설정 사본」이다. 체크아웃의 `infra/`(추적 밖의 `.env` 포함)와 리비전 기록(`REVISION` — 커밋과 `git status --porcelain`)을 묶어 **통째로** gpg 대칭 암호화(논리 백업과 같은 키)해 `/mnt/nas/backup/config/`에 둔다. **원본 읽기만 root, 암호화 · 쓰기 · 정리는 `backup`**(`runuser`) — 체크아웃은 `ec2-user` 홈(700) 안이라 `backup`이 읽지 못하고, NFS는 `root_squash`라 root가 쓰지 못한다. NFS 공유(위)를 마친 노드를 전제한다. 2026-09-25 12:01에 실제로 밟은 순서다(#231).
 
-**3노드 APP-01 설정 사본**(2026-09-25 15:26 ~ 15:47, #245) — 목적지가 **APP-01 로컬(`/var/backups/rental/config`) + S3 `config/`**다(NAS를 두지 않는다). 위 순서에서 달라지는 것만 — ① 백업 키를 DB 노드와 같은 것으로(옛 노드에서 스트림 — 한 키로 되살린다) ② AWS CLI v2 · APP-01 전용 역할 `rental-app-config`(`config/`에 `PutObject`만 — `infra/backup/aws/` README 8단계) ③ `/etc/rental/config-copy.env`에 `CONFIG_SRC=/home/deploy/rental` · `CONFIG_DEST=/var/backups/rental/config` · `CONFIG_S3_URI=s3://rental-backup-890742606734/config` · `AWS` · `AWS_DEFAULT_REGION`. **실측** — 로컬 · S3 61,658바이트, 복원 시 `REVISION`이 체크아웃 커밋과 같고 `.env` 일치, 역할은 `config/` 쓰기만(다른 접두어 · 목록 · 삭제 거부), 지표 `task="config_copy"`. S3 사본이 실패하면 로컬 사본을 남기고 보존 정리까지 한 뒤 종료 1(물리 백업과 같다)
-
 | 순서 | 명령 | 확인 |
 |---|---|---|
 | 1 | `sudo install -D -o root -g root -m 755 ~/rental/infra/backup/config-copy.sh /opt/rental/infra/backup/config-copy.sh` — **스크립트가 바뀌면 다시 실행한다** | `cmp`로 체크아웃과 같다 |
@@ -605,7 +603,9 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 
 **실측**(2026-09-25) — 수동 1회 **0.86초**, 암호문 **43,616바이트**(묶음 47개 항목 — `REVISION` 포함), 앞부분 gpg 패킷(`8c 0d`), `REVISION`의 커밋이 체크아웃과 같고 `.env` 일치. 연달아 5회 돌려 **최신 4개만 남는 것**을 확인했다. 거부 로그 0건. 상한은 10분(잠정 — 유닛 주석), 01:00에 멈춰도 01:30 물리 백업 전에 끝난다.
 
-**NAS가 멈추면** 서비스는 영향이 없다(시스템 구성서 5.2). 물리 백업 · WAL(지금은 노드 로컬 — 5장, 설계 목표는 S3)은 계속되므로 급하게 손대지 않고, 복구 뒤 멈춘 기간의 논리 백업을 한 번 수동 실행한다.
+**3노드 APP-01 설정 사본**(2026-09-25 15:26 ~ 15:47, #245) — 목적지가 **APP-01 로컬(`/var/backups/rental/config`) + S3 `config/`**다(NAS를 두지 않는다). 위 옛 노드 순서에서 달라지는 것만 — ① 백업 키를 DB 노드와 같은 것으로(옛 노드에서 스트림 — 한 키로 되살린다) ② AWS CLI v2 · APP-01 전용 역할 `rental-app-config`(`config/`에 `PutObject`만 — `infra/backup/aws/` README 8단계) ③ `/etc/rental/config-copy.env`에 `CONFIG_SRC=/home/deploy/rental` · `CONFIG_DEST=/var/backups/rental/config` · `CONFIG_S3_URI=s3://rental-backup-890742606734/config` · `AWS` · `AWS_DEFAULT_REGION`. **실측** — 로컬 · S3 61,658바이트, 복원 시 `REVISION`이 체크아웃 커밋과 같고 `.env` 일치, 역할은 `config/` 쓰기만(`logical/` 쓰기 · `config/` 목록 · 읽기 · 삭제 거부, 객체 `AES256`), 지표 `task="config_copy"`. S3 사본이 실패하면 로컬 사본을 남기고 보존 정리까지 한 뒤 종료 1(물리 백업과 같다).
+
+**NAS가 멈추면** 서비스는 영향이 없다(시스템 구성서 5.2). 물리 백업 · WAL(3노드는 로컬 + S3 — 5장, 옛 단일 노드는 로컬)은 계속되므로 급하게 손대지 않고, 복구 뒤 멈춘 기간의 논리 백업을 한 번 수동 실행한다.
 
 **3노드(Rocky) 설치 — 실제로 밟은 순서**(DB-01 · DB-02, 2026-09-25 13:42 ~ 13:49, #237). 위 AL2023 표와 다른 것만 적는다.
 
