@@ -12,6 +12,32 @@
       "AbortIncompleteMultipartUpload": {
         "DaysAfterInitiation": 1
       }
+    },
+    {
+      "ID": "expire-wal-28d",
+      "Filter": {
+        "Prefix": "wal/"
+      },
+      "Status": "Enabled",
+      "Expiration": {
+        "Days": 28
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
+    },
+    {
+      "ID": "expire-physical-28d",
+      "Filter": {
+        "Prefix": "physical/"
+      },
+      "Status": "Enabled",
+      "Expiration": {
+        "Days": 28
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
     }
   ]
 }
