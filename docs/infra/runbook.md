@@ -378,7 +378,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 ## 9. 서버 운영 절차 (Rocky Linux)
 
-서버 운영 기반(INF-07 ~ 09)의 손으로 밟는 순서다. **무엇을 왜 그렇게 두는지는 서버 운영 기반 설계서(`docs/infra/platform.md`)가 갖는다.** 명령은 첫 구축에서 실제로 실행하며 이 절에 채운다(1장 원칙) — 지금 명령까지 채워진 것은 9.1의 AL2023 OS 보안 기준 · 9.3의 논리 · 물리 백업이고 나머지는 단계와 확인 기준만 있다.
+서버 운영 기반(INF-07 ~ 09)의 손으로 밟는 순서다. **무엇을 왜 그렇게 두는지는 서버 운영 기반 설계서(`docs/infra/platform.md`)가 갖는다.** 명령은 첫 구축에서 실제로 실행하며 이 절에 채운다(1장 원칙) — 지금 명령까지 채워진 것은 9.1의 AL2023 OS 보안 기준 · 9.2의 계정 추가 · 9.3의 논리 · 물리 백업 · NFS 공유이고 나머지는 단계와 확인 기준만 있다.
 
 ### 9.1 새 노드 준비
 
@@ -387,7 +387,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 1 | Rocky 9 공식 AMI로 인스턴스 생성 — 서브넷 · 보안 그룹은 시스템 구성서 4장 | 사설 노드에 공인 IP가 없다 |
 | 2 | **인스턴스 메타데이터를 IMDSv2 required 로 잠근다**(설계서 3.3 「인스턴스 메타데이터」). **인스턴스 역할을 붙이기 전에 한다** | `describe-instances`에 `HttpTokens`가 `required`로 나온다 |
 | 3 | 데이터 볼륨 부착 → XFS 생성 → UUID + `nofail`로 fstab → 재부팅. **볼륨은 암호화해서 만든다**(설계서 4.2) | 재부팅 뒤 마운트 유지. `describe-volumes`에 `Encrypted`가 참으로 나온다 |
-| 4 | 운영자 개인 계정 · `deploy` · `backup`(고정 UID · GID) 생성. `rocky`는 `authorized_keys` 제거 · 계정 만료 · `nologin` — `passwd -l`만으로는 공개키 로그인이 막히지 않는다(설계서 6.2) | `rocky`로 SSH 시도가 거부된다 |
+| 4 | `backup`(고정 UID · GID)을 먼저, 그다음 운영자 개인 계정 · `deploy` 생성 — 순서가 노드마다 같아야 자동 할당 UID가 같아진다(9.2). `rocky`는 `authorized_keys` 제거 · 계정 만료 · `nologin` — `passwd -l`만으로는 공개키 로그인이 막히지 않는다(설계서 6.2) | `rocky`로 SSH 시도가 거부된다 |
 | 5 | sshd — 공개키만 · root 금지 | 비밀번호 로그인 시도가 거부된다 |
 | 6 | 시간대 `Asia/Seoul`, chrony에 169.254.169.123 | `chronyc sources`에 그 주소가 선택됨 |
 | 7 | firewalld 노드별 포트 · SELinux enforcing 확인 | `getenforce` → Enforcing |
@@ -414,6 +414,17 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 - **전 노드에 같은 순서로** 적용한다. 한 노드라도 빠지면 NFS 권한과 감사 기록이 어긋난다.
 - 추가: 계정 생성 → 공개키 등록 → 필요한 그룹(`wheel` · `docker`)만 → 로그인 확인
 - 삭제(퇴사 · 키 유출): 공개키 제거 → 계정 만료(`usermod --expiredate`) · `nologin` → 소유 파일 확인 후 삭제. `passwd -l`만으로는 공개키 로그인이 막히지 않는다(설계서 6.2). **키 유출이면 그 키로 들어갈 수 있던 전 노드에서 즉시**
+
+**추가 명령** — APP-01에 `buyeon`(운영자 개인) · `deploy`를 만든 순서다(2026-09-25 11:43 ~ 11:48, #229). **1 ~ 5는 그때 밟았고, 1의 비밀구절과 6은 사용자가 직접 할 일로 남아 있다** — 6의 확인 칸은 기대값이다.
+
+| 순서 | 명령 | 확인 |
+|---|---|---|
+| 1 | 운영자 PC에서 **계정마다 키를 따로** 만든다 — `ssh-keygen -t ed25519 -C "<계정>@<노드> <날짜>" -f ~/.ssh/rental-<계정>`. 비밀구절은 본인이 건다(`ssh-keygen -p -f …`). AWS 키 페어를 여러 계정에 재사용하지 않는다 — 키 하나가 새면 그 키가 열던 계정이 전부 열린다 | 개인 키는 운영자 PC에만 |
+| 2 | `sudo useradd -m -G wheel -c '<설명>' buyeon` · `sudo useradd -m -G docker -c '<설명>' deploy` — **UID는 자동 할당이다.** `useradd`는 범위 안의 가장 큰 UID 다음을 주므로 `backup`(2001)이 있는 노드에서는 **2002부터** 나온다(APP-01: `buyeon` 2002 · `deploy` 2003). 노드마다 같은 UID가 나오게 하려면 **`backup`을 먼저 만들고 사람 · 역할 계정을 같은 순서로** 만든다 | `id <계정>` — 그룹이 `wheel` 또는 `docker` 하나 |
+| 3 | `sudo install -d -o <계정> -g <계정> -m 700 /home/<계정>/.ssh` → 공개키 **한 줄**을 `authorized_keys`(600, 본인 소유)에 → `sudo restorecon -R /home/<계정>/.ssh` | `ls -Z`에 `ssh_home_t`. 파일 첫머리가 `ssh-ed25519 `인지 본다 — 다른 값이 들어가도 sshd는 거부만 하고(`Connection closed by authenticating user … [preauth]`) 이유를 남기지 않는다 |
+| 4 | 로그인 확인 — 각 키로 `ssh -o IdentitiesOnly=yes -i ~/.ssh/rental-<계정> <계정>@<노드>` | 성공. 다른 계정의 키 · 비밀번호 방식은 거부. sshd 저널 `Accepted publickey for <계정> … ED25519 SHA256:…`로 어느 키인지 남는다 |
+| 5 | 권한 확인 — `sudo -l -U <계정>` | `buyeon` → `(ALL) ALL`(비밀번호 요구 — 배포판 `%wheel ALL=(ALL) ALL` 그대로), `deploy` → `not allowed to run sudo`. `deploy`는 `docker ps` 가능 — **`docker` 그룹은 root와 같은 권한이다**(설계서 6.2) |
+| 6 | 개인 계정의 sudo 비밀번호는 **본인이 정한다** — `ssh -t -i <AWS 키> ec2-user@<노드> sudo passwd <계정>`. 비밀번호는 sudo에만 쓰이고 SSH 비밀번호 로그인은 막혀 있다(9.1 AL2023 표 1) | `sudo passwd -S <계정>` → `PS` |
 
 ### 9.3 NAS · 정기 작업
 
