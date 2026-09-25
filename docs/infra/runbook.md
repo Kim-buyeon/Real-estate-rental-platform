@@ -415,6 +415,17 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 - 추가: 계정 생성 → 공개키 등록 → 필요한 그룹(`wheel` · `docker`)만 → 로그인 확인
 - 삭제(퇴사 · 키 유출): 공개키 제거 → 계정 만료(`usermod --expiredate`) · `nologin` → 소유 파일 확인 후 삭제. `passwd -l`만으로는 공개키 로그인이 막히지 않는다(설계서 6.2). **키 유출이면 그 키로 들어갈 수 있던 전 노드에서 즉시**
 
+**추가 명령** — APP-01에 `buyeon`(운영자 개인) · `deploy`를 만든 순서다(2026-09-25 11:43 ~ 11:48, #229).
+
+| 순서 | 명령 | 확인 |
+|---|---|---|
+| 1 | 운영자 PC에서 **계정마다 키를 따로** 만든다 — `ssh-keygen -t ed25519 -C "<계정>@<노드> <날짜>" -f ~/.ssh/rental-<계정>`. 비밀구절은 본인이 건다(`ssh-keygen -p -f …`). AWS 키 페어를 여러 계정에 재사용하지 않는다 — 키 하나가 새면 그 키가 열던 계정이 전부 열린다 | 개인 키는 운영자 PC에만 |
+| 2 | `sudo useradd -m -G wheel -c '<설명>' buyeon` · `sudo useradd -m -G docker -c '<설명>' deploy` — **UID는 자동 할당이다.** `useradd`는 범위 안의 가장 큰 UID 다음을 주므로 `backup`(2001)이 있는 노드에서는 **2002부터** 나온다(APP-01: `buyeon` 2002 · `deploy` 2003). 노드마다 같은 UID가 나오게 하려면 **`backup`을 먼저 만들고 사람 · 역할 계정을 같은 순서로** 만든다 | `id <계정>` — 그룹이 `wheel` 또는 `docker` 하나 |
+| 3 | `sudo install -d -o <계정> -g <계정> -m 700 /home/<계정>/.ssh` → 공개키 **한 줄**을 `authorized_keys`(600, 본인 소유)에 → `sudo restorecon -R /home/<계정>/.ssh` | `ls -Z`에 `ssh_home_t`. 파일 첫머리가 `ssh-ed25519 `인지 본다 — 다른 값이 들어가도 sshd는 거부만 하고(`Connection closed by authenticating user … [preauth]`) 이유를 남기지 않는다 |
+| 4 | 로그인 확인 — 각 키로 `ssh -o IdentitiesOnly=yes -i ~/.ssh/rental-<계정> <계정>@<노드>` | 성공. 다른 계정의 키 · 비밀번호 방식은 거부. sshd 저널 `Accepted publickey for <계정> … ED25519 SHA256:…`로 어느 키인지 남는다 |
+| 5 | 권한 확인 — `sudo -l -U <계정>` | `buyeon` → `(ALL) ALL`(비밀번호 요구 — 배포판 `%wheel ALL=(ALL) ALL` 그대로), `deploy` → `not allowed to run sudo`. `deploy`는 `docker ps` 가능 — **`docker` 그룹은 root와 같은 권한이다**(설계서 6.2) |
+| 6 | 개인 계정의 sudo 비밀번호는 **본인이 정한다** — `ssh -t -i <AWS 키> ec2-user@<노드> sudo passwd <계정>`. 비밀번호는 sudo에만 쓰이고 SSH 비밀번호 로그인은 막혀 있다(9.1 AL2023 표 1) | `sudo passwd -S <계정>` → `PS` |
+
 ### 9.3 NAS · 정기 작업
 
 | 확인 | 방법 |
