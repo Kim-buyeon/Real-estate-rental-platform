@@ -40,6 +40,19 @@
 
 **알림이 아직 없으므로 점검은 사람이 확인하는 것이다**(INF-05 — 지표 · 로그 수집은 있고 알림 규칙은 미구현). 위 표의 확인을 거르면 디스크가 차거나 백업이 멈춰도 알 수 없다. 외부 경로 감시(HetrixTools) 일시정지 규칙은 관측을 세울 때 되살린다.
 
+**권장 알림 규칙 — Grafana Cloud에 사용자가 건다**(토큰이 쓰기 전용이라 여기서 만들 수 없다, #243). 지표 이름은 인프라 API 명세 1장.
+
+| 규칙 | 식(PromQL) | 이유 |
+|---|---|---|
+| WAL 전송 멈춤 | `time() - rental_job_last_success_timestamp_seconds{task="wal_ship"} > 300` | 매분 도는데 5분 넘게 성공이 없으면 노드 소실 RPO가 늘고 있다(5장) |
+| WAL 전송 밀림 | `rental_wal_ship_pending_files > 3` | 보내지 못한 세그먼트가 쌓인다 |
+| 논리 백업 누락 | `time() - max(rental_job_last_success_timestamp_seconds{task="logical_backup"}) > 26*3600` | 매일 02:00 — 두 DB 노드 중 primary만 쓰므로 `max` |
+| 물리 백업 누락 | `time() - max(rental_job_last_success_timestamp_seconds{task="physical_backup"}) > 8*86400` | 매주 일 01:30 |
+| 수집 끊김 | `up == 0` 또는 노드별 `absent(up{node="db-01"})` | 노드 · 수집기가 멈추면 위 규칙도 침묵한다 |
+
+**노드를 꺼 둔 동안(본인 계정 — 작업할 때만 켠다)은 위 규칙이 전부 울린다** — 끄는 동안 알림을 멈추거나 `for`를 길게 둔다.
+
+
 ---
 
 ## 3. 배포 절차
@@ -618,6 +631,9 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 | 6 | 물리 백업 수동 1회 | S3 `physical/<시각>/` 세 파일 |
 
 **S3에서 되살리기** — 노드의 역할은 쓰기만 해서 **내려받기는 운영자 자격 증명**으로 한다. 운영자 PC에서 `aws s3 cp --recursive s3://…/physical/<시각>/ …` · `aws s3 cp --recursive s3://…/wal/ … --exclude "*" --include "<timeline>*" --include "*.history.gpg"`(`--exclude "*"`가 먼저 있어야 거른다) → 되살릴 노드로 옮긴다 → 그 노드에서 `backup`으로 복호화(키는 노드에만 있다 — 운영자 PC에서 풀지 않는다) → 5장 PITR 리허설과 같은 방식. **실측**(2026-09-25): 암호화된 WAL은 gpg가 압축해 작다(`wal/` 28개 548 KB — 16 MB 세그먼트가 대부분 비어 있다), 풀기 + 재생 1.65초, 리허설 A / 운영 A,B.
+
+**DB 노드 지표(3노드)** — `sudo install -d -o backup -g backup -m 755 /var/lib/rental-metrics`(정기 작업이 결과 지표를 쓰는 자리 — node exporter가 `/`를 `/host`로 붙여 읽는다) → DB 노드 `.env`에 `RENTAL_NODE=db-01`(DB-02는 `db-02`) → 스크립트 재설치 → `docker compose up -d`(프로필 `db` · `standby`가 `node-exporter` · `prom-agent-db`를 올린다). 확인 — `curl -s 127.0.0.1:9100/metrics | grep ^rental_`, `node_textfile_scrape_error 0`, 수집기 `127.0.0.1:9090/metrics`의 `prometheus_remote_storage_samples_failed_total 0`(#243). **단일 노드 구성(`app,db,standby`)에서는 `prom-agent-db`를 올리지 않는다** — `prom-agent`와 9090이 겹친다(운영 Compose 주석)
+
 
 
 ### 9.4 Amazon Linux 2023 → Rocky Linux 9 이전
