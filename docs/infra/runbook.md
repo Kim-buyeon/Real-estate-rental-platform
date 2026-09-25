@@ -395,6 +395,28 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 9 | `dnf-automatic`(보안 갱신만 · 자동 재부팅 없음) timer 활성 | `systemctl list-timers` |
 | 10 | NFS 클라이언트 마운트(해당 노드) | 9.3 |
 
+**3노드(Rocky 9.8) 준비 — 실제로 밟은 순서**(사용자 본인 계정 · 서울 · 2026-09-25 12:16 ~ 12:31, #233). 위 표의 1 ~ 9를 세 노드에 밟았다. 10(NFS)은 3노드 결정으로 NAS를 두지 않아 없다. 값(CIDR · 사설 IP · 인스턴스)은 시스템 구성서 2.1 · 3 · 4장이 갖는다.
+
+| 순서 | 명령 | 확인 · 실측 |
+|---|---|---|
+| 1 | VPC · 서브넷 셋 · IGW · 공개 경로(0/0 → IGW) · 사설 경로 · S3 게이트웨이 엔드포인트(사설 경로) → 보안 그룹 `rental-app` · `rental-db` → 키 페어 → `run-instances`(서브넷 · 고정 사설 IP · 공인 IP는 APP-01만 · `--metadata-options HttpTokens=required,HttpPutResponseHopLimit=1` · 루트 20 + 데이터 20 GB gp3 `Encrypted`) → APP-01 `modify-instance-attribute --no-source-dest-check` → 사설 경로 0/0 → APP-01 ENI. **모든 리소스에 `Project=rental` 태그** | `describe-instances` — 공인 IP는 APP-01만, `HttpTokens required` · 홉 1, 볼륨 6개 `Encrypted` |
+| 1 함정 | 새 계정 첫 생성이 `PendingVerification`(리전 검증, 「보통 몇 분 · 최대 4시간」)으로 거부될 수 있다 — 3분 뒤 재시도로 됐다. **CLI가 내준 키 페어 파일이 CRLF**라 `error in libcrypto` — `sed -i 's/$//'` | — |
+| 2 | 사설 노드는 APP-01을 거쳐 들어간다 — `ssh -J`는 점프 호스트에 `-i`를 쓰지 않으므로 호스트별 `IdentityFile` · `ProxyJump`를 적은 SSH 설정 파일로 | DB 노드 접속 |
+| 3 | 시간대 `sudo timedatectl set-timezone Asia/Seoul` — 이미지 기본이 UTC | `timedatectl` |
+| 4 | 데이터 볼륨 — **루트가 아닌 디스크를 골라**(`lsblk -no PKNAME $(findmnt -no SOURCE /)`로 루트 디스크를 빼고) `mkfs.xfs` → UUID로 fstab(`defaults,nofail`) → `mount` → `restorecon`. APP-01 `/var/lib/docker`, DB `/srv/pgdata` | **재부팅 뒤 APP-01의 데이터 디스크 이름이 `nvme0n1` → `nvme1n1`로 바뀌었다** — UUID가 아니면 마운트가 틀렸다 |
+| 5 | sshd · journald 조각(AL2023 표와 같은 파일) | `permitrootlogin no` |
+| 6 | 계정 — `backup`(2001) 먼저 → `buyeon` · `deploy`(9.2) | 세 노드 모두 2001 · 2002 · 2003 — 옛 노드와 같다. `rocky`는 자동화용으로 남긴다(잠금은 별도 — 설계서 6.2 적용 상태) |
+| 7 | chrony — **할 일 없음.** 이미지가 DHCP로 169.254.169.123을 받아 선택한다 | `chronyc sources`에 `^* 169.254.169.123` |
+| 8 | firewalld — **이미지에 없다.** `dnf install firewalld` → `enable --now` → APP-01 `infra/os/firewalld/app-01.sh`(ssh · http · 영역 내 전달 · 마스커레이드), DB `infra/os/firewalld/db.sh`(ssh · postgresql) | APP-01 `forward: yes` · `masquerade: yes` · `ip_forward = 1`, **DB 노드에서 NAT로 나간다**(`curl` 200 · `dnf makecache`) |
+| 9 | SELinux — 이미지 기본 Enforcing | `getenforce` |
+| 10 | `dnf install dnf-automatic` → `infra/os/dnf/automatic.conf`로 대체(키는 배포판 파일과 대조 — 이 판에 `reboot` 키가 있다) → `enable --now dnf-automatic.timer` | 다음 실행 06:00 + 무작위 |
+| 11 | Docker — `dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo` → `docker-ce docker-ce-cli containerd.io docker-compose-plugin` → `enable --now docker`. **`systemctl enable --now …`의 출력을 `tail -0` 같은 파이프에 흘리지 않는다** — 파이프가 먼저 닫혀 systemctl이 중간에 죽고 서비스가 꺼진 채 남았다 | Docker 29.8.1 · Compose v5.5.1, `Firewall Backend: iptables+firewalld`, `hello-world`. APP-01에서 Docker가 뜬 뒤에도 DB 노드의 NAT가 된다 |
+| 12 | 재부팅(`aws ec2 reboot-instances`) | 세 노드 약 12초에 부팅, 마운트 · 서비스 · 설정 유지, 거부 로그 0. **밖에서 APP-01은 22만 열림**(80은 보안 그룹이 열었으나 아직 듣는 것이 없다) |
+
+**메모리** — Rocky 9.8 t3.small은 `free`의 total이 **1713 MiB**다(AL2023 t3.small 1909). 운영 Compose의 메모리 상한은 1909를 기준으로 짰으므로 서비스를 옮길 때 다시 본다.
+
+**켜고 끄기(본인 계정 — 작업할 때만 켠다)** — 끌 때 `aws ec2 stop-instances --instance-ids <세 ID>`, 켤 때 `start-instances` → `wait instance-status-ok` → `describe-instances --query '…PublicIpAddress'`로 **APP-01의 새 공인 주소**를 얻어 SSH 설정의 `HostName`을 고친다(Elastic IP를 쓰지 않는다 — 시스템 구성서 2.1). 사설 IP는 바뀌지 않는다. **정지해도 EBS는 과금된다.**
+
 **APP-01(Amazon Linux 2023)에 적용하는 OS 보안 기준** — 위 표 중 이 노드에서 성립하는 5 · 6(chrony만 — 시간대는 이미 `Asia/Seoul`) · 7(SELinux만)과 저널이다(#223). 설정 조각은 `infra/os/`에 있고 체크아웃에서 설치한다. 9는 AL2023에서 성립하지 않는다 — 2장의 월 1회 갱신이 대신한다(설계서 8장).
 
 | 순서 | 명령 | 확인 |
