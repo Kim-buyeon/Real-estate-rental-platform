@@ -20,7 +20,7 @@ EnvironmentFile=/etc/rental/basebackup.env
 ExecStart=/opt/rental/infra/backup/pg-basebackup.sh
 
 # 실행 시간 상한 — 목적지가 노드 로컬이라 설계서 5.3 의 NAS 상한 요구에 걸리지 않지만, 끝나지 않는 작업이 다음 주까지
-# 남지 않게 논리 백업과 같은 **잠정값**을 둔다. 첫 실행 소요를 본 뒤 다시 본다
+# 남지 않게 논리 백업과 같은 30분을 둔다(논리 백업은 NFS 목적지 실측으로 확정 — 설계서 5.3). 물리 백업 첫 실행은 3초였다
 TimeoutStartSec=30min
 
 # 저널이 확인 수단이다(설계서 7.1). 출력을 그대로 journald 에 남긴다
