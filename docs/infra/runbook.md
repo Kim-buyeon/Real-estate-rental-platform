@@ -77,7 +77,7 @@
 
 **전제** — GitHub Actions가 이미지를 빌드해 GHCR에 커밋 해시 태그로 올린다(`ghcr.io/kim-buyeon/real-estate-rental-platform/backend:<해시>` · `.../frontend:<해시>`). `develop` · `main`에 push되면 올라간다.
 
-**시크릿** — DB 비밀번호와 외부 API 키는 서버의 **`infra/.env`** 에 두고 `docker compose`가 컨테이너에 주입한다(이름은 루트 `.env.example`과 같다). 파일 권한은 소유자만 읽도록 제한하고 저장소에는 커밋하지 않는다. 백업 복호화 키만 이 파일과 분리해 보관한다.
+**시크릿** — DB 비밀번호와 외부 API 키는 서버의 **`infra/.env`** 에 두고 `docker compose`가 컨테이너에 주입한다(이름은 루트 `.env.example`과 같다). 파일 권한은 소유자만 읽도록 제한하고 저장소에는 커밋하지 않는다. 백업 복호화 키만 이 파일과 분리해 보관한다. **`.env`에는 그 노드의 프로필(`COMPOSE_PROFILES`)이 있어야 한다** — 운영 Compose의 서비스가 전부 프로필에 묶여 있어 비면 아무것도 뜨지 않는다. 옛 단일 노드는 `app,db,standby`, 3노드는 APP-01 `app` · DB-01 `db` · DB-02 `standby`(시스템 구성서 4장 · 9.5).
 
 스크립트는 `infra/deploy.sh`다. `infra/`에서 실행한다.
 
@@ -190,6 +190,8 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 
 RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석 배치의 강제 재실행**이 더 빠르다. 복구 수단을 데이터 성격에 따라 구분한다.
 
+**3노드의 정기 백업은 아직 옮기지 않았다**(2026-09-25) — 아래 논리 · 물리 백업과 WAL 아카이빙의 timer는 옛 노드에 있고, 옛 노드는 점검 모드라 **새 primary(DB-01)의 백업이 없는 구간이다.** DB-01의 WAL은 `archive_mode`로 로컬 `/var/backups/rental/wal`에 쌓인다. 백업 이전 이슈에서 푼다.
+
 **논리 백업 정기 작업** — `infra/backup/pg-dump.sh`를 systemd timer(`rental-backup.timer`)가 부른다. 실행 시각은 서버 운영 기반 설계서 7.2가 정한다. 순서는 primary 확인 → `pg_dump -Fc` → 암호화 → 목적지 적재 → 보존 기간 지난 것 삭제이고, standby에서는 아무것도 하지 않고 끝난다. **왜 그렇게 두는지는 서버 운영 기반 설계서 5.1 · 7.2가 갖는다.** 여기에는 실행할 때 확인할 것만 적는다.
 
 | 확인 | 내용 |
@@ -223,6 +225,8 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 ---
 
 ## 6. 페일오버 · 페일백
+
+> **3노드(2026-09-25 · #235)에서는 아래 명령의 대상이 바뀐다.** 이 장의 표는 같은 노드(옛 단일 노드) 기준으로 실측한 것이다. 3노드에서는 — 접속 대상 전환이 `DB_HOST=postgres-standby`가 아니라 **APP-01 `.env`의 `DB_HOST=10.20.20.10`**(DB-02 사설 IP), DB-02의 standby는 이미 자기 사설 IP 5432에 게시돼 있어 승격하면 그대로 받는다. 페일백의 구 primary 재구축은 DB-01에서 데이터 자리(`/srv/pgdata/data`)를 비우고 `.env`에 `PG_BOOTSTRAP_FROM=10.20.20.10`. **노드 간 명령과 소요는 페일오버 리허설에서 실측해 이 장을 고친다**
 
 **지금 standby는 같은 노드의 컨테이너(`postgres-standby`)다**(시스템 구성서 2.2 · 3장). 아래 절차의 「primary」는 `postgres` 서비스, 「standby」는 `postgres-standby` 서비스로 읽는다. 노드가 통째로 멈추면 둘이 함께 멈추므로 1단계의 「SSH 접속 불가」 판정은 이 구성에서 성립하지 않는다 — **primary 컨테이너만 멈춘 경우의 절차 검증**이다. 명령은 로드맵 7주차 실행에서 이 절에 채운다(1장 원칙).
 
@@ -308,7 +312,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 **2026-09-24 리허설에서 이 두 규칙을 어겼다**(#201). 두 DB를 정상 종료한 뒤 `pg_rewind --source-pgdata`로 구 primary를 맞추려 했는데 결과가 「no rewind required」였고, 그대로 구 primary를 primary로 띄웠다. 승격된 쪽에 써 둔 시험 표식 테이블이 사라졌고, 이어서 standby 볼륨을 지워 되살릴 곳도 없앴다. **실제 데이터 손실은 없었다** — 그 구간 Nginx로 들어온 쓰기 요청 0건(확인용 GET 1건), DB에 쓰는 정기 작업 없음, 건수가 직전과 같다. 스크립트가 표식 행을 확인하고도 멈추지 않은 것이 원인이다.
 
-**페일오버가 끝난 동안 논리 백업은 멈춘다.** 백업은 `postgres` 서비스가 루프백에 게시한 5432로 붙는데(5장) `postgres-standby`는 게시하지 않는다. 그 상태를 오래 두지 않는다.
+**페일오버가 끝난 동안 논리 백업은 멈춘다.** 백업은 `postgres` 서비스가 루프백에 게시한 5432로 붙는데(5장) `postgres-standby`는 단일 노드에서 루프백 5433에 게시해 백업 경로(5432)에 없다. 그 상태를 오래 두지 않는다.
 
 **같은 노드 페일백 순서**(#203) — 두 PostgreSQL 서비스는 같은 초기화 스크립트(`infra/postgres/bootstrap.sh`)를 쓴다. 볼륨이 비어 있고 `PG_BOOTSTRAP_FROM`이 있으면 그곳에서 `pg_basebackup`으로 받아 standby로 뜬다. 구 primary는 되감지 않고 **볼륨을 비워 새로 받는다** — 위 재구축 수단 표의 둘째 행이고, DB가 작아(36 MB) 수 초다. 각 단계는 위 표의 번호를 따른다.
 
@@ -413,7 +417,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 11 | Docker — `dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo` → `docker-ce docker-ce-cli containerd.io docker-compose-plugin` → `enable --now docker`. **`systemctl enable --now …`의 출력을 `tail -0` 같은 파이프에 흘리지 않는다** — 파이프가 먼저 닫혀 systemctl이 중간에 죽고 서비스가 꺼진 채 남았다 | Docker 29.8.1 · Compose v5.5.1, `Firewall Backend: iptables+firewalld`, `hello-world`. APP-01에서 Docker가 뜬 뒤에도 DB 노드의 NAT가 된다 |
 | 12 | 재부팅(`aws ec2 reboot-instances`) | 세 노드 약 12초에 부팅, 마운트 · 서비스 · 설정 유지, 거부 로그 0. **밖에서 APP-01은 22만 열림**(80은 보안 그룹이 열었으나 아직 듣는 것이 없다) |
 
-**메모리** — Rocky 9.8 t3.small은 `free`의 total이 **1713 MiB**다(AL2023 t3.small 1909). 운영 Compose의 메모리 상한은 1909를 기준으로 짰으므로 서비스를 옮길 때 다시 본다.
+**메모리** — Rocky 9.8 이미지는 **kdump용으로 192 MB를 예약한다**(`crashkernel=1G-4G:192M`) — t3.small의 `free` total이 **1713 MiB**(AL2023 1909)로 보이고, 서비스를 올린 APP-01의 available이 150 MiB까지 내려갔다. **세 노드에서 끈다** — `sudo grubby --update-kernel=ALL --remove-args=crashkernel` → `sudo systemctl disable --now kdump` → 재부팅(2026-09-25, 사용자 승인). 뒤에 total **1905 MiB**, APP-01 available **386 MiB**. 대가는 커널 패닉 때 덤프를 못 남기는 것이다. 운영 Compose의 메모리 상한(1909 기준)은 그대로 맞는다.
 
 **켜고 끄기(본인 계정 — 작업할 때만 켠다)** — 끌 때 `aws ec2 stop-instances --instance-ids <세 ID>`, 켤 때 `start-instances` → `wait instance-status-ok` → `describe-instances --query '…PublicIpAddress'`로 **APP-01의 새 공인 주소**를 얻어 SSH 설정의 `HostName`을 고친다(Elastic IP를 쓰지 않는다 — 시스템 구성서 2.1). 사설 IP는 바뀌지 않는다. **정지해도 EBS는 과금된다.**
 
@@ -556,3 +560,22 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 | 3 | 새 노드에서 배포 · 확인(3장) | 같다 |
 | 4 | 점검 모드(4.2) → 마지막 차분 → Elastic IP를 새 APP-01로 → 점검 모드 해제 | Elastic IP를 옛 APP-01로 |
 | 5 | 옛 노드 정지 보존 → 기간 경과 후 삭제 | 옛 노드 재기동 |
+
+### 9.5 단일 노드 → 3노드 이전 — 실제로 밟은 순서
+
+2026-09-25 13:06 ~ 13:21(노드 시각, #235). 9.4의 다섯 단계 중 1 ~ 4를 이렇게 밟았다 — 두 계정의 VPC 사이에 경로가 없어 복제 합류 대신 논리 덤프로 옮겼다. 옛 노드는 5단계(정지 보존) 대신 **점검 모드로 남겼다** — 두 곳에서 쓰기가 갈라지지 않게.
+
+| 순서 | 명령 | 확인 · 실측 |
+|---|---|---|
+| 1 | 새 노드 체크아웃 — `deploy`로 `git clone` → `/home/deploy/rental`(공개 저장소) | — |
+| 2 | `.env` — 옛 노드의 것을 **운영자 PC 파이프로 스트림**(`ssh 옛 'cat …/.env' \| ssh 새 'sudo -u deploy sh -c "umask 077; cat > …"'` — 이 PC 디스크에 남지 않는다) → 노드별 값: APP-01 `COMPOSE_PROFILES=app` · `DB_HOST=10.20.10.10` · `APP_BASE_URL` · `PG_EXPORTER_SSLMODE=require`, DB-01 `db` · `PG_PUBLISH_ADDR=10.20.10.10` · `PG_SSL=on` · `PG_DATA_SOURCE=/srv/pgdata/data`, DB-02 `standby` · `PG_STANDBY_FROM=10.20.10.10` · `PG_STANDBY_PUBLISH_ADDR=10.20.20.10` · `PG_STANDBY_PUBLISH_PORT=5432` · `PG_SSL=on` · `PG_STANDBY_DATA_SOURCE=/srv/pgdata/data` | `docker compose config --services`(`deploy`로) — APP-01 11 · DB-01 `postgres` · DB-02 `postgres-standby` |
+| 3 | DB 노드 — WAL 디렉터리(9.3 물리 백업 2단계와 같은 권한), TLS 인증서 `sudo openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -keyout /etc/rental/pg-tls/server.key -out /etc/rental/pg-tls/server.crt -days 825 -subj "/CN=<노드>.rental.internal" -addext "subjectAltName=IP:<사설 IP>"` → 둘 다 `70:70`, 키 600. 데이터 자리 `sudo install -d -o 70 -g 70 -m 700 /srv/pgdata/data` | 인증서 만료 2028-12-28 |
+| 4 | DB-01 `docker compose up -d postgres`(빈 DB) | healthy, `show ssl` → `on`, `pg_hba_file_rules` 오류 0, 게시 `10.20.10.10:5432`만, 데이터가 데이터 볼륨에. APP-01에서 `sslmode=disable` → **거절**, `require` → **TLSv1.3** |
+| 5 | 옛 노드 `bash maintenance.sh on` | `/` · API 503 |
+| 6 | 옛 노드 `docker compose exec -T postgres pg_dumpall --globals-only`(역할 · SCRAM 검증자) · `pg_dump -Fc` → 파이프로 DB-01 `/tmp` → 컨테이너에 `docker cp` → 전역은 `psql -f`(「already exists」는 무시), DB는 `pg_restore --exit-on-error` → 임시 파일 삭제. **원격 명령의 다른 출력(`date` 등)을 덤프와 같은 표준출력에 섞지 않는다** — 1차 덤프가 그렇게 깨졌다(`input file does not appear to be a valid archive`) | 역할 5개 · 속성 유지, TABLE DATA 33, **테이블별 `count(*)`가 옛 노드와 33개 전부 같다**(합 103,641) |
+| 7 | DB-01 `SELECT pg_create_physical_replication_slot('standby_1')` → DB-02 `docker compose up -d postgres-standby` | **14초에 healthy**, `pg_stat_replication` `streaming` · **ssl t · TLSv1.3**, 표식 행이 DB-02에 보인다, DB-02 건수도 같다 |
+| 8 | APP-01 `docker compose pull` → `up -d` | 11개 Up, 두 슬롯 `smoke.sh` 실패 0, 밖에서 `/` · API 200, 앱 → DB 연결 전부 TLS, 밖에서 22 · 80만 |
+| 9 | kdump 끄기 · 재부팅(9.1 메모리 단락) | 재부팅 명령에서 **API 200까지 92초**, 복제 · TLS 자동 재개 |
+
+- **옛 노드에서는 전체 `docker compose up -d`를 하지 않는다.** 프로필 · `depends_on` 변경으로 두 앱 슬롯이 한꺼번에 재생성된다(`up --dry-run`으로 확인). 옛 노드 `.env`에는 `COMPOSE_PROFILES=app,db,standby`를 넣어 둔다
+- 새 서비스 주소는 APP-01 공인 IP(켤 때마다 바뀐다 — 9.1 「켜고 끄기」). 카카오맵 JS 키의 사이트 도메인에 그 주소를 등록해야 지도가 뜬다

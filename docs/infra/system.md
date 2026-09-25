@@ -74,7 +74,7 @@ APP-01 · DB-01 · DB-02 세 노드의 구성과 상시 경로(그림 기준). �
 | NAS-01 | **두지 않는다**(3노드 결정 — 백업 오프사이트는 S3) | NFS 서버(백업 저장소) | — |
 | NAT-01 | **두지 않는다 — APP-01이 겸한다**(3노드 결정) | NAT(IP 포워딩 · 마스커레이드) | — |
 
-**지금은 DB-01 · DB-02 행이 APP-01 안의 컨테이너 둘이다**(2.2절) — primary(`postgres`)와 standby(`postgres-standby`). standby는 승격 뒤 primary 역할을 하므로 **primary와 같은 설정 · 같은 메모리 상한**을 둔다(설정은 운영 Compose 한 곳에서 두 서비스가 함께 쓴다). 표의 DB-02는 3노드 결정으로 t3.small(2 GB)로 올렸다 — 옛 설계값은 1 GB였다.
+**3노드(2026-09-25 · #235)에서는 DB-01 · DB-02 행이 실제 노드다** — DB-01에 `postgres`, DB-02에 `postgres-standby`(같은 운영 Compose의 프로필 `db` · `standby`). **옛 단일 노드에서는 두 행이 APP-01 안의 컨테이너 둘이었다**(2.2절). primary(`postgres`)와 standby(`postgres-standby`). standby는 승격 뒤 primary 역할을 하므로 **primary와 같은 설정 · 같은 메모리 상한**을 둔다(설정은 운영 Compose 한 곳에서 두 서비스가 함께 쓴다). 표의 DB-02는 3노드 결정으로 t3.small(2 GB)로 올렸다 — 옛 설계값은 1 GB였다.
 
 **APP-01만 확정이고 나머지는 미확정이다.** APP-01은 사용자 결정으로 t3.small에 고정한다(2026-09-23). 초기 배치의 4 GB가 아니라 **2 GB**이며, 그 위에 앱 2슬롯 · Redis · 1차 배포의 PostgreSQL까지 올라가므로 **컨테이너마다 상한을 두지 않으면 커널이 메모리를 가장 많이 쓰는 프로세스를 정지시킨다.** 아래 자원 상한이 선택이 아니라 전제인 이유다. 나머지 노드는 부하 시험이 차기 범위로 빠졌으므로 구축 시점에 확정한다. DB-02는 승격 시 primary 역할을 감당하는지 확인이 필요하다(`docs/infra/runbook.md` 6.2절).
 
@@ -123,12 +123,15 @@ APP-01 단일 노드에 두 프로세스를 두는 구성은 노드 자체의 �
 | Nginx → web(정적 화면) | 8090 | 동일 노드 루프백 |
 | App → PostgreSQL | 5432 | APP-01 사설 IP만 |
 | 논리 백업 정기 작업(호스트) → PostgreSQL 컨테이너 | 5432 | **동일 노드 루프백.** 1차 배포에서 PostgreSQL이 APP-01의 컨테이너인 동안만 — 정기 작업이 `docker` 그룹 없이 호스트 클라이언트로 붙는 자리다(서버 운영 기반 설계서 6.2). DB 노드를 분리하면 위 행으로 흡수된다 |
+| 3노드: 앱(APP-01) → PostgreSQL(DB-01) | 5432 | **DB-01 사설 IP `10.20.10.10`에만 게시**(`0.0.0.0` 금지), 보안 그룹 `rental-db`가 `rental-app`에서만 받는다. **TLS만 받는다** — VPC 대역 평문은 `pg_hba.conf`가 거절(2026-09-25 사용자 결정) |
 | App → Redis | 6379 | 동일 노드 루프백. 외부 바인딩 금지 |
 | 지표 수집기(Prometheus agent) → exporter · 앱 | 9100 · 9113 · 9121 · 9187 · 8081 · 8082 | **동일 노드 루프백.** 앱은 `/actuator/prometheus`를 인증 없이 열고 앞단 Nginx가 `/actuator`를 404로 막는다(인프라 API 명세 1장). node · nginx exporter는 호스트 네트워크에서 루프백에 바인딩하고, redis · postgres exporter는 루프백에 게시한다. 수집기의 자체 포트(9090)도 루프백만 — 인프라 기술 스택 4.1 |
 | nginx exporter → Nginx `stub_status` | 8088 | **동일 노드 루프백.** 공개 80 서버와 분리한 내부 서버 블록(`infra/nginx/conf.d/status.conf`) |
 | 수집기 → Grafana Cloud | 443(나가는 방향) | 아래 「APP-01 → 인터넷」 행에 포함된다. 들어오는 길은 없다 |
 | Primary → Standby | 5432 | DB-01 사설 IP만 |
 | Standby → Primary 복제(같은 노드 — 지금 구성) | 5432 | **Compose 네트워크 안에서만.** standby 컨테이너는 포트를 게시하지 않고 primary의 5432에 Compose 네트워크로 붙는다. 복제 접속은 `pg_hba.conf`의 복제 줄 하나(복제 역할 · 같은 서브넷 · scram)만 받는다 — `infra/postgres/pg_hba.conf` |
+| 3노드: Standby(DB-02) → Primary(DB-01) 복제 | 5432 | DB-02 → DB-01 사설 IP, 보안 그룹 `rental-db` → `rental-db`. **`hostssl` 복제 줄(VPC 대역) · TLS** — 평문은 거절 |
+| 3노드: 승격 뒤 앱 → DB-02 | 5432 | DB-02 사설 IP `10.20.20.10`에 게시(평시에도 게시 — 승격 뒤 앱이 붙는 자리). 단일 노드에서는 standby가 루프백 5433에 게시한다 |
 | 운영자 → APP-01 | 22 | 운영자 IP만. 공개키 인증만. 비밀번호 인증과 root 로그인은 차단 |
 | APP-01 → 다른 노드(DB-01 · DB-02 · NAS-01 · NAT-01) | 22 | APP-01 사설 IP만 — 운영자는 APP-01을 경유(ProxyJump)해 들어간다 |
 | DB-01 · DB-02 · APP-01 → NAS-01(3노드: 없음) | 2049 | 해당 노드 사설 IP만. NFSv4만 쓰므로 이 포트 하나 |
