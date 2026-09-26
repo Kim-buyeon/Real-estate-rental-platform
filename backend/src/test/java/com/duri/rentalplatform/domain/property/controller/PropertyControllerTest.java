@@ -19,6 +19,7 @@ import com.duri.rentalplatform.domain.property.dto.request.PropertyMapClustersRe
 import com.duri.rentalplatform.domain.property.dto.request.PropertySearchRequest;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMapClustersResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse;
+import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkersResponse;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import com.duri.rentalplatform.domain.property.service.PropertyQueryService;
@@ -126,6 +127,48 @@ class PropertyControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    // ---------- 지도 마커 (명세 1.3) ----------
+
+    @Test
+    @DisplayName("표시 영역 좌표가 오면 서비스가 던진 INVALID_REQUEST를 400으로 전달한다")
+    void boxParamsReturn400() throws Exception {
+        when(queryService.search(any(PropertySearchRequest.class)))
+                .thenThrow(new BusinessException(ErrorCode.INVALID_REQUEST, "minLat"));
+
+        mockMvc.perform(get("/api/properties")
+                        .param("minLat", "37.53").param("maxLat", "37.58")
+                        .param("minLng", "126.80").param("maxLng", "126.88"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.error.field").value("minLat"));
+    }
+
+    @Test
+    @DisplayName("radiusKm이 2를 넘으면 400 INVALID_REQUEST이고 서비스를 부르지 않는다")
+    void radiusOverMaxReturns400() throws Exception {
+        mockMvc.perform(get("/api/properties")
+                        .param("lat", "37.55").param("lng", "126.85").param("radiusKm", "2.01"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.error.field").value("radiusKm"));
+
+        verify(queryService, never()).search(any());
+    }
+
+    @Test
+    @DisplayName("radiusKm 2는 상한 안이라 200이다")
+    void radiusAtMaxReturns200() throws Exception {
+        when(queryService.search(any(PropertySearchRequest.class)))
+                .thenReturn(PropertyMarkersResponse.of(List.of()));
+
+        mockMvc.perform(get("/api/properties")
+                        .param("lat", "37.55").param("lng", "126.85").param("radiusKm", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.count").value(0));
     }
 
     // ---------- 지도 묶음 (명세 1.12) ----------
