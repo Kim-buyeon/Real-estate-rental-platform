@@ -77,6 +77,7 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 | --- | --- |
 | `docker-compose.yml` · `infra/docker-compose.yml` · `Dockerfile` | 컨테이너 정의 |
 | `infra/nginx/` | Nginx 설정, upstream |
+| `infra/aws/` | 계정 수준 설정 스크립트 — EC2 상태 검사 경보(노드 자동 복구). 백업 전용 S3 · IAM 정책은 `infra/backup/aws/` |
 | `infra/backup/` | 데이터 백업 작업 — 스크립트와 그것을 거는 systemd 유닛, 오프사이트 저장소(S3 버킷 · IAM 역할) 정책 정의(`aws/`) |
 | `infra/os/` | 노드 설정 — firewalld · NFS 공유 · 노드 정기 작업 · sshd · journald |
 | `infra/prometheus/` · `infra/vector/` | 관측 수집기 설정 — 지표 스크레이프 · 전송, 로그 전송 |

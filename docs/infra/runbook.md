@@ -70,6 +70,10 @@
 
 **노드를 끄기 전(본인 계정 — 작업할 때만 켠다)에는 무음(Silence)을 건다** — 끄면 수집 끊김이 노드마다 울린다. 무음은 `alertname=수집 끊김`에 다음 작업 시각까지 건다.
 
+**노드 자동 복구 — EC2 상태 검사 경보**(2026-09-26 · #258). 서비스 노드 넷에 경보 둘씩 — 인스턴스 상태 검사 3분 연속 실패 → **재부팅**, 시스템 상태 검사 2분 연속 실패 → **recover**. 만드는 것은 `infra/aws/status-check-alarms.sh`(멱등). 정지해 둔 동안은 지표가 없어 울리지 않는다. 부하 시험 T2에서 APP-01 OS가 멈춰 impaired로 남았고 사람이 재부팅할 때까지 약 70분 걸렸다(#257) — 이 경보가 있으면 약 3분 + 재부팅 시간이다. **동작 실측** — 2026-09-26 19:39:45 DB-02 경보를 `aws cloudwatch set-alarm-state --state-value ALARM`으로 강제하자 같은 초에 「Reboot EC2 Instance … action completed successfully」와 SNS 발송이 경보 이력에 남았다(`describe-alarm-history`). 실제 OS 정지로 울린 적은 아직 없다.
+
+**경보가 울리면(메일 「rental-<노드>-instance-check-reboot」 ALARM)** — ① `aws cloudwatch describe-alarm-history --alarm-name <경보>`로 재부팅이 실행됐는지 ② 그 노드가 돌아왔는지 — 1장 재부팅 표의 기동 뒤 확인(APP 노드는 API 200 · 슬롯 readiness, DB-01은 복제 `streaming`, DB-02는 복제 수신) ③ 이전 부팅의 커널 로그(`journalctl -k -b -1`)에서 원인(OOM · hung task)을 찾는다 ④ 7장 장애 대응 흐름과 장애 보고서로 잇는다 — 자동 복구는 원인을 없애지 않는다. **메일 알림은 SNS 주제 `rental-node-alarms`의 이메일 구독이 확인돼야 온다**(스크립트 실행 뒤 AWS 확인 메일의 링크).
+
 **대시보드**(`rental` 폴더 — Node Exporter Full · JVM (Micrometer) · NGINX exporter · Redis · PostgreSQL)의 데이터 소스는 `grafanacloud-whitemocha1136-prom`(UID `grafanacloud-prom`)이다. 가져온 공개 대시보드가 빈 화면이던 원인은 셋이다(#253) — NGINX · Node · PostgreSQL은 데이터 소스 변수가 목록 첫 항목(`grafanacloud-usage`)으로 잡혔다. JVM은 패널 일부가 없는 변수 `${DS_PROMETHEUS}`를 가리켰고, `application` 라벨로 거르는데 앱 지표에 그 라벨이 없어 `job="app"`으로 바꿨다. Redis는 처음부터 맞았다.
 
 
@@ -200,7 +204,7 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 | 경로 | 전달 | 요점 |
 |---|---|---|
 | `/actuator` | 404 | 관리 경로는 밖으로 열지 않는다. readiness는 배포 스크립트가 슬롯 포트로 직접 본다 |
-| `/api/` | `app` | 연결 · 읽기 · 쓰기에 상한을 두고, 슬롯 하나가 죽으면 남은 슬롯으로 재시도하되 **재시도 횟수에도 상한**을 둔다 — 상한이 없으면 재시도가 요청 시간을 곱한다 |
+| `/api/` | `app` | **앞단 전체 요청 상한을 넘으면 곧바로 429 · 공통 봉투**(`TOO_MANY_REQUESTS`, #258 — 값은 설정 파일). 연결 · 읽기 · 쓰기에 상한을 두고, 슬롯 하나가 죽으면 남은 슬롯으로 재시도하되 **재시도 횟수에도 상한**을 둔다 — 상한이 없으면 재시도가 요청 시간을 곱한다 |
 | `= /api/notifications/stream` | `app` | SSE — 버퍼링을 끄고 **읽기 타임아웃만** 길게 둔다. 연결이 오래 열려 있는 것과 응답이 느린 것은 다르다. 접근 로그를 쿼리 없는 형식으로 남겨 일회용 티켓이 로그에 남지 않게 한다 |
 | `/` | `web` | 정적 화면. 클라이언트 라우팅 fallback은 프론트 이미지가 한다 |
 
@@ -211,6 +215,8 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 **점검 중 사용자가 보는 것**은 안내 화면이다. 503에 `Retry-After`와 `Cache-Control: no-store`가 함께 나간다 — 점검인지 장애인지 구분되지 않으면 사용자가 같은 요청을 반복한다. 화면은 외부 폰트 · 스크립트 · 이미지를 쓰지 않는다. 점검 중에는 화면(web) 슬롯도 신뢰할 수 없기 때문이다. **쓰기 요청(GET · HEAD 외)은 본문 없는 503을 받는다** — Nginx의 정적 파일 핸들러가 그 메서드를 거부해 안내 화면을 주려 하면 405가 되고, 그러면 「전 경로 503」이 깨진다.
 
 **업스트림이 낸 503은 이 화면으로 바뀌지 않는다.** 점검과 장애를 섞지 않기 위해서다. 슬롯이 모두 죽으면 Nginx는 502를 내므로 이 경우도 점검 화면이 아니다 — 점검 화면이 보이면 그것은 사람이 켠 것이다.
+
+**앞단 전체 요청 상한**(`limit_req`, 2026-09-26 · #258 — 값은 `default.conf` 머리). 넘치면 곧바로 429와 공통 봉투(`TOO_MANY_REQUESTS`, API 공통 명세 2장)를 돌려준다. 근거는 부하 시험 T2(#257) — 첫 측정에서 200 RPS에 앱 JVM OOM → APP-01 OS 정지(약 70분 중단). 상한 100 r/s로 다시 재니 노드는 살았으나 200 RPS 단계에서 받아들인 요청만으로 앱 슬롯 넷이 모두 컨테이너 상한에서 종료됐고(502 9,286건), 100 RPS에서 지도 2단계 p95가 642ms로 기준을 넘었다. 그래서 **60 r/s · burst 30** — 기준을 지킨 마지막 단계(50 RPS)와 넘은 단계(100 RPS) 사이다. 그 값으로 같은 T2를 다시 돌려 200 RPS 단계에서도 5xx · 무응답 0, 받아들인 요청 p95 148ms, 앱 종료 0을 확인했다(용량 산정 리포트 `chaos-harness/report/capacity-20260926.md`, #257). **넘치는 부하를 받지 않고 거절해 노드를 살려 두는 것**이 목적이라 키는 앞단 전체 하나다(클라이언트별 남용 방지는 다른 문제). SSE(`/api/notifications/stream`)와 화면(`/`)에는 걸지 않는다. 값은 표본 1회의 잠정값이다 — 앱 노드를 늘리거나 병목을 고치면 T2를 다시 돌려 고친다. 100 r/s 적용 때 LOAD-01에서 초당 300건 · 10초를 보내 약 103건/초만 통과하는 것을, 점검 모드(503 · 안내 화면)가 그대로인 것을 확인했다.
 
 `proxy_next_upstream`이 실질적인 무손실 장치다. 한 슬롯이 죽어 502를 반환하면 Nginx가 동일 요청을 다른 슬롯으로 재시도한다. **다만 POST 등 비멱등 요청은 기본적으로 재시도하지 않는다**(중복 처리 방지). 따라서 "요청 손실 0건"은 조회 요청에 대한 서술이며, 쓰기 요청은 극소수 실패할 수 있다. 장애 시험 결과서에는 이 구분을 그대로 기록한다.
 
@@ -503,7 +509,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 11 | Docker — `dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo` → `docker-ce docker-ce-cli containerd.io docker-compose-plugin` → `enable --now docker`. **`systemctl enable --now …`의 출력을 `tail -0` 같은 파이프에 흘리지 않는다** — 파이프가 먼저 닫혀 systemctl이 중간에 죽고 서비스가 꺼진 채 남았다 | Docker 29.8.1 · Compose v5.5.1, `Firewall Backend: iptables+firewalld`, `hello-world`. APP-01에서 Docker가 뜬 뒤에도 DB 노드의 NAT가 된다 |
 | 12 | 재부팅(`aws ec2 reboot-instances`) | 세 노드 약 12초에 부팅, 마운트 · 서비스 · 설정 유지, 거부 로그 0. **밖에서 APP-01은 22만 열림**(80은 보안 그룹이 열었으나 아직 듣는 것이 없다) |
 
-**메모리** — Rocky 9.8 이미지는 **kdump용으로 192 MB를 예약한다**(`crashkernel=1G-4G:192M`) — t3.small의 `free` total이 **1713 MiB**(AL2023 1909)로 보이고, 서비스를 올린 APP-01의 available이 150 MiB까지 내려갔다. **세 노드에서 끈다** — `sudo grubby --update-kernel=ALL --remove-args=crashkernel` → `sudo systemctl disable --now kdump` → 재부팅(2026-09-25, 사용자 승인). 뒤에 total **1905 MiB**, APP-01 available **386 MiB**. 대가는 커널 패닉 때 덤프를 못 남기는 것이다. 운영 Compose의 메모리 상한(1909 기준)은 그대로 맞는다.
+**메모리** — Rocky 9.8 이미지는 **kdump용으로 192 MB를 예약한다**(`crashkernel=1G-4G:192M`) — t3.small의 `free` total이 **1713 MiB**(AL2023 1909)로 보이고, 서비스를 올린 APP-01의 available이 150 MiB까지 내려갔다. **세 노드에서 끈다** — `sudo grubby --update-kernel=ALL --remove-args=crashkernel` → `sudo systemctl disable --now kdump` → 재부팅(2026-09-25, 사용자 승인). 뒤에 total **1905 MiB**, APP-01 available **386 MiB**. 대가는 커널 패닉 때 덤프를 못 남기는 것이다. **새 커널이 설치되면 예약이 다시 붙는다** — 2026-09-26 보안 갱신(5.14.0-687.51.1)이 `crashkernel=…2G-64G:256M`을 달고 들어왔고, 재부팅 뒤 APP-01 total이 1649 MiB로 줄어 부하 아래 메모리가 말라 노드가 멈췄다(#258). `grubby --update-kernel=ALL`은 그때 있던 커널에만 걸리므로 **세 가지를 함께 둔다** — `/etc/kdump.conf`의 `auto_reset_crashkernel no`, `/etc/default/grub`의 `GRUB_CMDLINE_LINUX`에서 `crashkernel=` 제거, `grubby --update-kernel=ALL --remove-args=crashkernel`. 네 노드에 반영했고(2026-09-26 20:2x) APP-01 · DB-02는 재부팅으로 1905 MiB를 확인했다. 확인은 `grep -c crashkernel /proc/cmdline`이 0. 운영 Compose의 메모리 상한(1909 기준)은 그대로 맞는다.
 
 **켜고 끄기(본인 계정 — 작업할 때만 켠다)** — **네 노드(APP-02 포함, #255)를 함께 켜고 끈다**(2026-09-26 결정). 끌 때 `aws ec2 stop-instances --instance-ids <네 ID>`, 켤 때 `start-instances` → `wait instance-status-ok` → `describe-instances --query '…PublicIpAddress'`로 **APP-01의 새 공인 주소**를 얻어 SSH 설정의 `HostName`을 고친다(Elastic IP를 쓰지 않는다 — 시스템 구성서 2.1). 사설 IP는 바뀌지 않는다. **정지해도 EBS는 과금된다.** APP-02만 멈춘 동안은 upstream 네 줄을 그대로 두고(4.1), 배포는 `APP_NODE_SSH=`로 한다(3.2) — 원격 슬롯으로 간 요청이 연결 시간 초과 2초만큼 늦는 것은 받아들인다(같은 결정).
 
