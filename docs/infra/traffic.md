@@ -59,7 +59,7 @@
 
 | 엔드포인트 | 서비스 기능 | 비중 | 성격 |
 |---|---|---|---|
-| `GET /api/properties` (좌표 조건) | PROP-02 | 30% | **가장 무거운 조회.** 부하 시험의 주 대상 |
+| `GET /api/properties` (좌표 조건) · `GET /api/properties/map-clusters` | PROP-02 | 30% | **가장 무거운 조회.** 부하 시험의 주 대상. 자치구 단계는 서버가 격자로 묶은 `map-clusters`다(2026-09-26 · #263 — 전에는 마커 전량) |
 | `GET /api/properties/district-counts` | PROP-08 | 22% | 캐시 대상. 지도(`/map`) 진입 직후 |
 | `GET /api/properties/{id}` | PROP-03 | 13% | 상세 진입 |
 | `GET /api/properties/{id}/risk` | RISK-01 | 10% | 판정 결과 조회 |

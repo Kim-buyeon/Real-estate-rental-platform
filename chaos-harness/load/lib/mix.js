@@ -396,16 +396,25 @@ function districtCounts(s, ep) {
 }
 
 function mapStage2(s, geo) {
-  // GET /api/properties?district&minLat&maxLat&minLng&maxLng — 응답 data { items[마커], count } (PropertyMarkersResponse)
+  // GET /api/properties/map-clusters?district&minLat&maxLat&minLng&maxLng — 응답 data { total, clustered, clusters[], markers[] }
+  // (API 명세 매물 1.12, #263). 화면의 자치구 단계와 같은 호출이다 — 전에는 마커 전량(GET /api/properties + 좌표)을 받아 화면이 묶었다
   const d = pickDistrict(geo);
   // 자치구 경계 안의 임의 지점을 중심으로 레벨 7 크기의 표시 영역 — 사용자가 구 안에서 지도를 옮기는 것
   const lat = d.bbox[0] + Math.random() * (d.bbox[1] - d.bbox[0]);
   const lng = d.bbox[2] + Math.random() * (d.bbox[3] - d.bbox[2]);
   const box = roundOutward(lat - S2_HALF_LAT, lat + S2_HALF_LAT, lng - S2_HALF_LNG, lng + S2_HALF_LNG);
-  const res = send(s, 'map_s2', 'GET /api/properties (bbox)', 'GET',
-    BASE_URL + '/api/properties' + qs(Object.assign({ district: d.name }, vu.filter, box)), null, true, OK_200);
-  const ok = nonEmptyItems('map_s2', res, function (data) { return data.count === data.items.length; });
-  if (ok) remember(body(res).data.items);
+  const res = send(s, 'map_s2', 'GET /api/properties/map-clusters', 'GET',
+    BASE_URL + '/api/properties/map-clusters' + qs(Object.assign({ district: d.name }, vu.filter, box)), null, true, OK_200);
+  const ok = validate('map_s2', res, function (b) {
+    const data = b.data;
+    const shaped = b.success === true && Array.isArray(data.clusters) && Array.isArray(data.markers);
+    if (shaped) ltEmpty.add(data.total === 0, { ep: 'map_s2' });
+    // 묶음 건수 + 개별 마커 수 = total 이어야 한다 — 칸을 빠뜨리거나 두 번 세지 않았는지
+    const counted = shaped && data.clusters.reduce(function (a, c) { return a + c.count; }, 0) + data.markers.length;
+    return shaped && data.total > 0 && counted === data.total;
+  });
+  // 3단계 · 상세는 매물 id 가 필요하다 — 개별 마커(한 건 칸 · 40건 이하 영역)만 기억한다
+  if (ok) remember(body(res).data.markers);
 }
 
 function mapStage3(s, geo) {
