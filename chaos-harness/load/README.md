@@ -11,14 +11,15 @@
 | `sse-hold.js` | SSE 연결 점유만 — 확장을 못 쓸 때의 대안 | constant-vus |
 | `make-tokens.js` | 토큰 풀 만들기(준비 단계) | shared-iterations 1회 |
 | `lib/mix.js` · `lib/tokens.js` · `lib/summary.js` | 공용 모듈 | — |
+| `tools/stages.py` | `--out csv` 시계열의 단계별 집계 — 상태 코드 분포, 받아들인(2xx · 3xx) 처리량 · p95 · p99, 지도 2단계 p95. `python3 tools/stages.py results/t2.csv.gz` | — |
 
 T4(`soak.js`)는 아직 없다.
 
 ## 필요한 것
 
 - **k6 v2.x**(2.0 이상). 본 스크립트는 v1.x 에서도 돈다. `sse.js` 는 커뮤니티 확장 [xk6-sse](https://github.com/phymbert/xk6-sse) 가 필요하다.
-  - 부하 생성 노드가 인터넷에 나갈 수 있으면: k6 v2 의 자동 확장 해석이 `import sse from 'k6/x/sse'` 를 보고 확장이 든 바이너리를 받아 온다. 별도 빌드가 없다.
-  - 인터넷이 없으면: 미리 `xk6 build --with github.com/phymbert/xk6-sse@v0.2.0` 으로 빌드한 바이너리를 옮긴다(xk6-sse v0.2.0 은 k6 v2 대상, k6 v1.x 라면 v0.1.12).
+  - **자동 확장 해석은 이 확장을 받지 못한다**(2026-09-26 LOAD-01 실측, k6 v2.3.0 — `unknown dependency : k6/x/sse` 로 곧바로 끝난다). 반드시 아래처럼 빌드한 바이너리로 돌린다. **SSE 실행 로그의 첫 줄을 확인한다** — SSE 가 곧바로 끝나도 본 프로파일은 그대로 돌아, 연결 점유 없이 측정된다(그날 T2 재측정 두 번이 그랬다).
+  - 빌드: `xk6 build --with github.com/phymbert/xk6-sse@v0.2.0` 으로 빌드한 바이너리를 옮긴다(xk6-sse v0.2.0 은 k6 v2 대상, k6 v1.x 라면 v0.1.12).
 - 대상 앞단 주소 `BASE_URL`(기본 `http://10.20.0.10` — APP-01 사설 IP의 앞단 Nginx).
 - 매물 데이터가 적재돼 있어야 한다(트래픽 정의서 6장). setup 이 자치구별 마커 조회로 좌표 경계와 시드 매물을 구한다.
 
