@@ -26,7 +26,7 @@
 - APP-01의 지점은 루프백에만 바인딩한다. 인터넷에 노출하지 않는다.
 - **DB 노드의 5432는 이 표의 관측 지점이 아니다** — 앱 · 복제 경로이며 3노드에서는 DB-01 · DB-02 사설 IP에 게시하고 TLS만 받는다. 게시 주소와 접근 통제는 시스템 구성서 4장. **3노드의 DB 노드 node exporter는 그 노드의 수집기(`prom-agent-db`)가 긁어 직접 보낸다**(2026-09-25 · #243) — APP-01이 노드 밖에서 긁지 않으므로 9100을 열지 않는다
 - **node exporter는 세 노드 모두에 둔다.** DB 노드의 디스크 사용률은 복제 슬롯 적체·WAL 아카이브 관련 알림과 시험의 판정 지표이며, APP-01의 지표로는 알 수 없다. DB 노드의 9100은 그 노드의 수집기가 루프백으로 긁는다 — 노드 밖에 열지 않는다(3노드, #243).
-- **정기 작업 결과 지표**(node exporter textfile, 2026-09-25 · #243) — DB 노드의 `/var/lib/rental-metrics/*.prom`을 node exporter가 읽는다. `rental_job_last_success_timestamp_seconds{task="wal_ship|logical_backup|physical_backup"}`(마지막 성공 시각, epoch 초 — 성공으로 끝날 때만 바뀐다, standby의 「아무것도 안 함」은 쓰지 않는다) · `rental_wal_ship_pending_files`(아직 보내지 못한 WAL 파일 수). 라벨 이름이 `job`이 아니라 `task`인 것은 수집 때 붙는 `job="node"`와 겹치지 않게다. 권장 알림은 운영 절차서 2장
+- **정기 작업 결과 지표**(node exporter textfile, 2026-09-25 · #243) — DB 노드의 `/var/lib/rental-metrics/*.prom`을 node exporter가 읽는다. `rental_job_last_success_timestamp_seconds{task="wal_ship|logical_backup|physical_backup"}`(마지막 성공 시각, epoch 초 — 성공으로 끝날 때만 바뀐다, standby의 「아무것도 안 함」은 쓰지 않는다) · `rental_wal_ship_pending_files`(아직 보내지 못한 WAL 파일 수). 라벨 이름이 `job`이 아니라 `task`인 것은 수집 때 붙는 `job="node"`와 겹치지 않게다. 알림 규칙은 운영 절차서 2장
 - Nginx는 `/actuator`로 시작하는 경로를 차단한다.
 - Prometheus 스크레이프 주기는 15초, Blackbox 프로브 주기는 30초다.
 - 스크레이프 실패는 오류를 발생시키지 않고 해당 지표가 비어 있는 상태가 된다.
