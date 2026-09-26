@@ -85,7 +85,7 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 | `infra/` | `postgresql.conf`, `pg_hba.conf`, 복제 설정 |
 | `infra/` 스크립트 | `deploy.sh` · `smoke.sh` · `maintenance.sh` · 페일오버 |
 | `.github/workflows/` | CI |
-| `chaos-harness/` | k6 부하 스크립트, 장애 주입 스크립트, 수집기 — 차기 범위 |
+| `chaos-harness/` | k6 부하 스크립트 · 결과 집계 도구 · 용량 산정 리포트. 장애 주입 스크립트 · 수집기는 차기 범위 |
 
 **`infra`도 type을 전부 쓴다.** 인프라 변경이라고 모두 `chore`가 아니다.
 
