@@ -70,6 +70,10 @@
 
 **노드를 끄기 전(본인 계정 — 작업할 때만 켠다)에는 무음(Silence)을 건다** — 끄면 수집 끊김이 노드마다 울린다. 무음은 `alertname=수집 끊김`에 다음 작업 시각까지 건다.
 
+**노드 자동 복구 — EC2 상태 검사 경보**(2026-09-26 · #258). 서비스 노드 넷에 경보 둘씩 — 인스턴스 상태 검사 3분 연속 실패 → **재부팅**, 시스템 상태 검사 2분 연속 실패 → **recover**. 만드는 것은 `infra/aws/status-check-alarms.sh`(멱등). 정지해 둔 동안은 지표가 없어 울리지 않는다. 부하 시험 T2에서 APP-01 OS가 멈춰 impaired로 남았고 사람이 재부팅할 때까지 약 70분 걸렸다(#257) — 이 경보가 있으면 약 3분 + 재부팅 시간이다. **동작 실측** — 2026-09-26 19:39:45 DB-02 경보를 `aws cloudwatch set-alarm-state --state-value ALARM`으로 강제하자 같은 초에 「Reboot EC2 Instance … action completed successfully」와 SNS 발송이 경보 이력에 남았다(`describe-alarm-history`). 실제 OS 정지로 울린 적은 아직 없다.
+
+**경보가 울리면(메일 「rental-<노드>-instance-check-reboot」 ALARM)** — ① `aws cloudwatch describe-alarm-history --alarm-name <경보>`로 재부팅이 실행됐는지 ② 그 노드가 돌아왔는지 — 1장 재부팅 표의 기동 뒤 확인(APP 노드는 API 200 · 슬롯 readiness, DB-01은 복제 `streaming`, DB-02는 복제 수신) ③ 이전 부팅의 커널 로그(`journalctl -k -b -1`)에서 원인(OOM · hung task)을 찾는다 ④ 7장 장애 대응 흐름과 장애 보고서로 잇는다 — 자동 복구는 원인을 없애지 않는다. **메일 알림은 SNS 주제 `rental-node-alarms`의 이메일 구독이 확인돼야 온다**(스크립트 실행 뒤 AWS 확인 메일의 링크).
+
 **대시보드**(`rental` 폴더 — Node Exporter Full · JVM (Micrometer) · NGINX exporter · Redis · PostgreSQL)의 데이터 소스는 `grafanacloud-whitemocha1136-prom`(UID `grafanacloud-prom`)이다. 가져온 공개 대시보드가 빈 화면이던 원인은 셋이다(#253) — NGINX · Node · PostgreSQL은 데이터 소스 변수가 목록 첫 항목(`grafanacloud-usage`)으로 잡혔다. JVM은 패널 일부가 없는 변수 `${DS_PROMETHEUS}`를 가리켰고, `application` 라벨로 거르는데 앱 지표에 그 라벨이 없어 `job="app"`으로 바꿨다. Redis는 처음부터 맞았다.
 
 
