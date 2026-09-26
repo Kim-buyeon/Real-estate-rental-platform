@@ -23,3 +23,7 @@ infra/nginx/maintenance/on
 # 배포용 로컬 메모와 SSH 키 — 계정 비밀번호 · 앱 비밀번호 · 프라이빗 키가 들어 있다
 aws.txt
 *.pem
+
+# 부하 시험 — 토큰 풀(JWT)과 실행 결과는 커밋하지 않는다(INF-06)
+chaos-harness/load/tokens*.json
+chaos-harness/load/results/
