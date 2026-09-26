@@ -264,8 +264,8 @@ bash report/collect.sh "$S" "$T0" "$INJECT_AT" "$RECOVER_AT" > report/$S.md
 
 | 워크플로 | 실행 위치 | 대상 |
 |---|---|---|
-| load-test | APP-02 | 부하 프로파일 T1 ~ T7 |
-| chaos-test | APP-02 | 장애 시나리오 1 ~ 9 |
+| load-test | LOAD-01 | 부하 프로파일 T1 ~ T7 |
+| chaos-test | LOAD-01 | 장애 시나리오 1 ~ 9 |
 
 **부하 시험 입력**
 
