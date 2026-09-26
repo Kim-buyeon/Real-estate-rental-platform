@@ -36,7 +36,7 @@
 | NAS(백업 모음) | **3노드: 두지 않는다 — S3가 대신한다**(3노드 결정). 옛 설계: NFS 서버(`nfs-utils`, NFSv4) on EC2 + EBS | 논리 백업 · 설정 사본은 노드 로컬 + S3 사본(#237 · #245). 옛 설계는 한곳에 모으는 자체 NFS 서버(EFS 대신 — 비용 · 이식성) — 같은 설계서 5장 |
 | 정기 작업 | systemd timer | 꺼져 있던 시각의 작업을 부팅 뒤 실행, 결과가 저널에 남는다 — 같은 설계서 7장 |
 | OS 보안 | SELinux(enforcing) · firewalld · `dnf-automatic` · chrony | Rocky 기본을 끄지 않고 쓴다. 단 EC2 공식 AMI에는 firewalld · `dnf-automatic`이 없어 노드 준비에서 설치한다 — 같은 설계서 3.3 · 8장 |
-| 컨테이너 실행 | Docker · Docker Compose | 노드 셋(앱 · DB 둘 — 옛 설계는 NAS · NAT을 더한 다섯) 규모에서 오케스트레이터 도입은 과잉 |
+| 컨테이너 실행 | Docker · Docker Compose | 노드 넷(앱 둘 · DB 둘 — 2026-09-26 앱 노드 APP-02를 더했다, #255. 옛 설계는 앱 하나 · DB 둘에 NAS · NAT을 더한 다섯) 규모에서 오케스트레이터 도입은 과잉 |
 | 리버스 프록시 | Nginx | TLS 종단, 요청 분산, 무중단 배포의 실행 주체 |
 | CI | GitHub Actions | 푸시 시 빌드·테스트·이미지 생성 |
 | 이미지 저장소 | GitHub Container Registry | CI와 같은 곳이라 인증이 추가로 필요 없다 |
@@ -150,7 +150,7 @@
 |---|---|---|---|
 | 지표 수집 · 전송 | **Prometheus agent 모드**(`--agent`) | 스크레이프 · `remote_write`만 하고 로컬 저장 · 질의 · 규칙 평가를 끈다 — 그 일은 밖에서 한다. exporter 설정이 Prometheus 표준 그대로라 자체 호스팅으로 되돌릴 때 수집 설정을 다시 쓰지 않는다(1.1 예외의 이식성 논거). 노드 실측 27 ~ 47 MiB(2026-09-23 ~ 24) | Prometheus 서버 모드 — 로컬 TSDB가 노드 메모리 · 디스크를 쓰는데 볼 곳이 밖이다 |
 | 로그 수집 · 전송 | **Vector** | Docker 로그를 컨테이너 · Compose 서비스 라벨과 함께 Loki 형식으로 보낸다. 노드 실측 10 ~ 14.5 MiB | **Promtail** — 2025-02-13 LTS 진입, **2026-03-02 EOL**([Grafana 공지](https://community.grafana.com/t/promtail-end-of-life-eol-march-2026-how-to-migrate-to-grafana-alloy-for-existing-loki-server-deployments/159636)). **Grafana Alloy** — Promtail의 후계이고 지표 · 로그를 하나로 모으지만 노드 여유(`free -m` available 359 MiB — 2026-09-24 15:04 실측, 임시 수집기가 돌던 상태)에 비해 무겁다는 보고가 있다. **실측하지 않았다** — 실측으로 들어간다고 확인된 조합을 고른 것이고, Alloy가 들어가지 않는다고 확인한 것은 아니다 |
-| 지표 원천 | 앱 두 슬롯(`/actuator/prometheus`) · node · nginx · postgres · redis exporter | 위 표와 같다. nginx exporter는 루프백 전용 `stub_status` 서버 블록을 읽는다. 앱 지표 경로는 인증 없이 열고 노출 범위로 막는다(인프라 API 명세 1장). Blackbox exporter는 아직 없다. **Grafana Cloud 무료 티어는 활성 시계열 10k가 하드 한도다**([사용 한도](https://grafana.com/docs/grafana-cloud/cost-management-and-billing/manage-invoices/understand-your-invoice/usage-limits/)) — exporter 넷이 약 3,080개(2026-09-24 21:40 노드 실측, `/metrics`의 주석 아닌 줄 수)라 앱 응답 시간은 전체 히스토그램 대신 SLO 구간만 낸다 **3노드 DB 노드는 node exporter + 정기 작업 결과 textfile 지표를 자기 수집기(`prom-agent-db`, 노드 라벨 `db-01` · `db-02`)로 직접 보낸다**(#243). 시계열 6,318 / 10k — 세 수집기의 로컬 active series 합(2026-09-25), Grafana 쪽에서 센 값은 아니다 | 앱 응답 시간 `percentiles-histogram` — 구간 수십 개 × uri · status 조합 |
+| 지표 원천 | 앱 슬롯 넷(APP-01 · APP-02 각 둘, `/actuator/prometheus`) · node · nginx · postgres · redis exporter | 위 표와 같다. nginx exporter는 루프백 전용 `stub_status` 서버 블록을 읽는다. 앱 지표 경로는 인증 없이 열고 노출 범위로 막는다(인프라 API 명세 1장). Blackbox exporter는 아직 없다. **Grafana Cloud 무료 티어는 활성 시계열 10k가 하드 한도다**([사용 한도](https://grafana.com/docs/grafana-cloud/cost-management-and-billing/manage-invoices/understand-your-invoice/usage-limits/)) — exporter 넷이 약 3,080개(2026-09-24 21:40 노드 실측, `/metrics`의 주석 아닌 줄 수)라 앱 응답 시간은 전체 히스토그램 대신 SLO 구간만 낸다 **3노드 DB 노드는 node exporter + 정기 작업 결과 textfile 지표를 자기 수집기(`prom-agent-db`, 노드 라벨 `db-01` · `db-02`)로 직접 보낸다**(#243). **앱 노드 APP-02도 node exporter와 앱 두 슬롯을 자기 수집기(`prom-agent-app-node`, `app-02`)로 직접 보낸다**(#255). 시계열 6,318 / 10k — 세 수집기의 로컬 active series 합(2026-09-25), Grafana 쪽에서 센 값은 아니다 | 앱 응답 시간 `percentiles-histogram` — 구간 수십 개 × uri · status 조합 |
 
 **exporter는 루프백에만 게시하고 agent는 호스트 네트워크에서 `127.0.0.1`로 긁는다.** 컨테이너 IP로 긁으면 재생성마다 대상이 바뀐다. 루프백 게시는 접근 통제의 셋째 겹과 같은 방식이다(시스템 구성서 4장).
 
@@ -170,7 +170,7 @@
 |---|---|---|
 | k6 | 최신 안정 | 부하 생성. **arrival-rate 계열 executor**를 사용한다. VU 기반은 응답이 느려질수록 인가 RPS가 함께 떨어져 포화점을 찾지 못한다 |
 
-부하 생성기는 **APP-02**에서 실행한다. 애플리케이션과 같은 노드에서 돌리면 CPU를 나눠 써 측정이 오염된다.
+부하 생성기는 **LOAD-01**에서 실행한다(옛 설계 이름 APP-02 — 그 이름은 2026-09-26 앱 노드가 가져갔다, #255). 애플리케이션과 같은 노드에서 돌리면 CPU를 나눠 써 측정이 오염된다.
 
 시험 실행 절차와 자동화 범위는 `docs/infra/test-plan.md` 4·5장을 따른다.
 

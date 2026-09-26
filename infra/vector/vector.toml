@@ -1,4 +1,4 @@
-# Vector 설정 — APP-01 노드의 컨테이너 로그를 Grafana Cloud Loki 로 보낸다(INF-05).
+# Vector 설정 — 앱 노드(APP-01 · APP-02)의 컨테이너 로그를 Grafana Cloud Loki 로 보낸다(INF-05 · INF-01). 두 노드가 같은 파일이다.
 # ${이름} 은 Vector 가 기동 시 환경 변수로 스스로 푼다. 값은 infra/.env 에서 compose 가 넘긴다 — 이 파일에는 이름만 있다.
 # :? 는 값이 비었을 때 기동을 실패시킨다 — compose 는 빠진 변수를 빈 값으로 넘기는데, 빈 사용자 · 토큰은
 # 설정 검사를 통과한다(0.50.0 에서 확인). 그대로 두면 401 만 쌓으며 돈다.
@@ -39,6 +39,10 @@ password = "${GRAFANA_CLOUD_LOKI_TOKEN:?GRAFANA_CLOUD_LOKI_TOKEN 가 비어 있�
 codec = "text"
 
 # 라벨은 둘만 둔다 — Loki 는 라벨 조합마다 스트림을 만든다. 값이 계속 늘어나는 것(컨테이너 ID 등)을 라벨로 두지 않는다
+# node 는 노드의 infra/.env 의 RENTAL_NODE 에서 온다(APP-02 는 app-02). 비어 있으면 app-01 이다 — APP-01 의 .env 는 RENTAL_NODE 를
+# 비워 두는 약속이라(.env.example) 이 노드의 라벨을 지금과 같게 둔다. 대가는 APP-02 에서 값을 빠뜨리면 app-01 로 섞여 들어간다는
+# 것이다 — 같은 .env 를 읽는 prom-agent-app-node 가 빈 RENTAL_NODE 로는 기동에 실패하므로 docker compose ps 에서 함께 드러난다.
+# 치환은 위와 같이 TOML 을 읽기 전에 글자 그대로다. 노드 이름에는 " · \ 가 없다.
 [sinks.loki.labels]
-node = "app-01"
+node = "${RENTAL_NODE:-app-01}"
 service = "{{ service }}"

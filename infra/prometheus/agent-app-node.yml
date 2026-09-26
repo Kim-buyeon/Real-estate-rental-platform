@@ -1,0 +1,42 @@
+# Prometheus agent 모드 설정의 틀 — 앱 노드(APP-02)의 지표를 긁어 Grafana Cloud 로 보낸다(INF-01 · INF-05).
+# agent 모드는 로컬 저장 · 질의 · 규칙이 없고 WAL 만 둔다. 보는 곳은 노드 밖이다.
+#
+# **이 파일을 그대로 읽히지 않는다.** Prometheus 는 remote_write 의 주소 · 자격 증명 자리에서 환경 변수를 풀지 못한다.
+# 그래서 자격 증명 · 노드 이름 · 슬롯 주소 자리에 @이름@ 자리표시자를 두고,
+# 기동 시 prom-agent-app-node 서비스의 셸(prom-agent 와 같은 셸)이 infra/.env 에서 온 환경 변수로 채운 사본을 컨테이너 안
+# tmpfs(/tmp)에만 써서 그 사본으로 기동한다 — infra/docker-compose.yml 의 prom-agent · prom-agent-app-node 주석.
+# 값은 저장소에도 노드 디스크에도 남지 않는다.
+# 자리표시자는 작은따옴표 안에 둔다 — 값에 : · # 이 들어가도 YAML 이 깨지지 않는다(값 안의 ' 는 기동 셸이 '' 로 바꾼다).
+#
+# APP-01 의 틀(agent.yml)과 나눈 이유 — 앱 노드에는 nginx · redis 가 없고 postgres exporter 도 APP-01 에만 있다.
+# 뜨는 것은 node exporter 와 앱 슬롯 둘뿐이다.
+
+global:
+  scrape_interval: 15s
+  # 받는 쪽에서 노드를 가르는 라벨. 값은 노드의 infra/.env 에서 온다(app-02). APP-01 의 틀은 app-01 로 고정이다
+  external_labels:
+    node: '@RENTAL_NODE@'
+
+scrape_configs:
+  # 호스트 지표. prom-agent-app-node 가 호스트 네트워크라 루프백이 호스트를 가리키고, node exporter 는 루프백에 바인딩한다
+  - job_name: node
+    static_configs:
+      - targets: ["127.0.0.1:9100"]
+
+  # 앱 두 슬롯(app-1 · app-2). **대상 주소가 루프백이 아니다** — 이 노드의 슬롯은 APP-01 의 nginx 가 닿도록 노드 사설 IP
+  # 하나에만 게시된다(APP_PUBLISH_ADDR, docker-compose.yml 의 app-1 주석). 게시가 그 주소에만 걸리므로 127.0.0.1 로는 닿지 않는다.
+  # 게시 주소와 같은 값을 받아 긁는다 — 두 곳에 IP 를 적지 않는다.
+  # instance 라벨이 <사설 IP>:8081 · :8082 가 되어 APP-01 슬롯(127.0.0.1:…)과도 갈린다. node 라벨이 함께 붙는다.
+  # 앱은 이 경로를 인증 없이 연다(agent.yml 의 app 잡 주석). 이 노드에서는 그 경로가 사설망에 게시된 포트 위에 있어
+  # 보안 그룹(rental-app-node 가 rental-app 에서만 받는다)이 막는다.
+  # 배포 중 내려간 슬롯은 그동안 down 으로 보인다
+  - job_name: app
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['@APP_PUBLISH_ADDR@:8081', '@APP_PUBLISH_ADDR@:8082']
+
+remote_write:
+  - url: '@GRAFANA_CLOUD_PROM_URL@'
+    basic_auth:
+      username: '@GRAFANA_CLOUD_PROM_USER@'
+      password: '@GRAFANA_CLOUD_PROM_TOKEN@'

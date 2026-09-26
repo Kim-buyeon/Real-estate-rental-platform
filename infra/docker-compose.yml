@@ -1,4 +1,4 @@
-# 운영 구성 — APP-01 노드. 시스템 구성서 2 · 3장, 운영 절차서 3 · 4장.
+# 운영 구성 — APP-01 · APP-02 · DB-01 · DB-02 노드. 시스템 구성서 2 · 3장, 운영 절차서 3 · 4장.
 # 이 파일이 있는 infra/ 에서 실행한다. 값은 같은 폴더의 .env 에서 읽는다(루트 .env.example 과 같은 이름).
 #
 #   cd infra && docker compose up -d
@@ -9,12 +9,17 @@
 # 프로필 — 한 파일을 노드마다 다른 몫으로 띄운다. 모든 서비스가 프로필을 가지므로 infra/.env 의 COMPOSE_PROFILES 가
 # 비어 있으면 아무것도 뜨지 않는다.
 #   app       nginx · app-1 · app-2 · web · redis · 관측 수집기(prom-agent · vector · exporter 넷)
+#   app-node  app-1 · app-2 · 관측 수집기(node-exporter · prom-agent-app-node · vector) — 앱 노드 APP-02(INF-01).
+#             앞단 nginx · web · redis · exporter(redis · postgres · nginx)는 APP-01 에만 있다. 요청은 APP-01 의 nginx 가
+#             사설망으로 넘기고(nginx/conf.d/upstream.conf), 슬롯은 APP-01 의 Redis 에 TLS(6380)로 붙는다(redis 서비스 주석)
 #   db        postgres · 관측 수집기(node-exporter · prom-agent-db)
 #   standby   postgres-standby · 관측 수집기(node-exporter · prom-agent-db)
 #   단일 노드(옛 APP-01)   COMPOSE_PROFILES=app,db,standby — 셋이 한 노드의 컨테이너다. standby 는 전환 절차를 검증하는
 #                          자리이고 노드 장애는 막지 못한다. prom-agent-db 는 이 구성을 받지 못한다(그 서비스 주석)
 #   3노드                  APP-01 app · DB-01 db · DB-02 standby. APP-01 의 infra/.env 는 DB_HOST 를 DB-01 사설 IP 로 둔다
 #                          (아래 app-1 의 DB_HOST 주석)
+#   4노드                  3노드 + APP-02 app-node. APP-02 의 infra/.env 는 COMPOSE_PROFILES=app-node · DB_HOST(DB-01 사설 IP) ·
+#                          APP_PUBLISH_ADDR · APP_REDIS_HOST · APP_REDIS_PORT · Redis TLS 신뢰 설정을 둔다(app-1 주석)
 #
 # 이미지 — 레지스트리 파이프라인(INF-02) 전에는 로컬 빌드 이미지를 쓴다(운영 절차서 3.2 전제).
 # APP_IMAGE · WEB_IMAGE 로 덮으면 레지스트리 이미지가 된다.
@@ -24,9 +29,10 @@ name: rental-prod
 # 컨테이너 로그 회전 — 서버 운영 기반 설계서 8장이 「컨테이너 로그 — 크기·개수 상한」을 요구하는데 값이 10장에서 미확정이라
 # 지금까지 상한이 없었다. json-file 기본값은 무제한이라 로그만으로 노드 디스크가 찬다
 # (볼륨 크기는 서버 운영 기반 설계서 4.2 에서 미확정이다 — 상한을 두는 근거는 크기가 아니라 증가가 멈추지 않는다는 것).
-# 서비스 14개(nginx · app-1 · app-2 · web · redis · postgres · postgres-standby + 관측 수집기 prom-agent · prom-agent-db · vector ·
-# node-exporter · postgres-exporter · redis-exporter · nginx-exporter) × 10m × 3개 = 약 420 MB 가 한 파일 전체의 상한이다.
-# 한 노드에는 그 노드의 프로필에 든 서비스만 뜨므로 노드마다는 이보다 작다(DB 노드는 3개 — 약 90 MB).
+# 서비스 15개(nginx · app-1 · app-2 · web · redis · postgres · postgres-standby + 관측 수집기 prom-agent · prom-agent-db ·
+# prom-agent-app-node · vector · node-exporter · postgres-exporter · redis-exporter · nginx-exporter) × 10m × 3개 = 약 450 MB 가
+# 한 파일 전체의 상한이다. 한 노드에는 그 노드의 프로필에 든 서비스만 뜨므로 노드마다는 이보다 작다
+# (DB 노드는 3개 — 약 90 MB, APP-02 는 5개 — 약 150 MB).
 # vector 가 이 json-file 로그를 Docker API 로 읽어 밖으로 보내므로, 회전은 노드 안의 사본만 줄인다.
 x-logging: &logging
   driver: json-file
@@ -86,6 +92,17 @@ x-logging: &logging
 #   ──────────────────────────────────────────────
 #   위 세 표와 더해 상한 합 2428m.
 #
+# 앱 노드 APP-02(INF-01, 프로필 app-node) — 같은 t3.small 이고 위 표들의 상한을 그대로 쓴다.
+#
+#   서비스                  mem_limit   실측
+#   app-1 · app-2          600m × 2   (노드 적용 뒤)
+#   prom-agent-app-node        150m   (노드 적용 뒤)
+#   vector                     150m   (노드 적용 뒤)
+#   node-exporter               64m   (노드 적용 뒤)
+#   ──────────────────────────────────────────────
+#   상한 합 1564m. PostgreSQL · Redis · nginx 가 없어 APP-01 에서 잰 가용량 1645(아래)보다 작다 — 같은 인스턴스 유형이라
+#   옮겨 쓴 값이고 APP-02 의 free -m · OS 실사용은 노드 적용 뒤에 잰다. 아래 「상한의 합이 …」는 APP-01 의 이야기다.
+#
 # **상한의 합이 노드 가용 메모리를 넘는다. 의도한 것이고, 대가가 있다.**
 #   1909(총량) − 264(OS · dockerd 실측) = 1645 이고 상한 합 1648 은 그것을 넘는다. 수집기를 더하면 2140,
 #   standby 까지 더하면 2396, nginx exporter 까지 더하면 2428 이다.
@@ -137,8 +154,11 @@ x-logging: &logging
 # Compose v2 스펙에서 메모리 상한은 최상위 서비스 키 mem_limit 다. deploy.resources.limits 는 Swarm 전용이라
 # docker compose up 에서는 조용히 무시된다.
 
+# 슬롯 공통. 프로필이 둘이다 — APP-01(app)과 APP-02(app-node)가 같은 슬롯 정의를 쓰고, 노드마다 다른 것은
+# 게시 주소 · Redis 접속 자리뿐이다(app-1 주석). 슬롯 이름(app-1 · app-2)은 노드마다 같다 — 배포 스크립트는 노드와 이름의
+# 쌍으로 슬롯을 가른다(deploy.sh 의 SLOTS).
 x-app: &app
-  profiles: ["app"]
+  profiles: ["app", "app-node"]
   image: ${APP_IMAGE:-rental-backend:local}
   env_file: .env
   restart: unless-stopped
@@ -169,8 +189,20 @@ x-app: &app
     postgres:
       condition: service_healthy
       required: false
+    # required: false — APP-02(app-node)에는 redis 가 없다(APP-01 의 것에 사설망으로 붙는다). 같은 노드에 있으면(APP-01) healthy 를 기다린다
     redis:
       condition: service_healthy
+      required: false
+  # Redis TLS 신뢰 앵커(CA 인증서) 자리 — APP-02 의 슬롯이 APP-01 Redis 의 6380 에 TLS 로 붙을 때 서버 인증서를 검증한다.
+  # 앱은 코드 변경 없이 Spring Boot 속성을 환경 변수로 받는다 — APP-02 의 infra/.env(env_file)에
+  #   SPRING_DATA_REDIS_SSL_ENABLED=true · SPRING_DATA_REDIS_SSL_BUNDLE=redis ·
+  #   SPRING_SSL_BUNDLE_PEM_REDIS_TRUSTSTORE_CERTIFICATE=file:/etc/rental/redis-tls/ca.crt
+  # 을 두고, 이 마운트가 그 파일을 넣는다. APP-01 은 속성을 두지 않아 이 디렉터리를 읽지 않는다
+  # (경로가 없으면 Docker 가 빈 디렉터리를 만든다 — postgres 의 PG_TLS_DIR 마운트와 같다).
+  # 호스트 쪽을 Redis 서버의 인증서 디렉터리(REDIS_TLS_DIR)와 **나눈 이유** — APP-01 에서 그 디렉터리에는 서버 개인키가 있다.
+  # 같은 자리를 슬롯에 붙이면 앱 컨테이너가 Redis 서버 키를 읽는다. 슬롯에는 CA 하나만 든 디렉터리를 붙인다.
+  volumes:
+    - ${REDIS_TLS_CA_DIR:-/etc/rental/redis-tls-ca}:/etc/rental/redis-tls:ro
 
 # PostgreSQL 서버 설정 — primary(postgres) · standby(postgres-standby)가 **같은 목록**을 쓴다(INF-03).
 # hot standby 는 max_connections · max_worker_processes · max_locks_per_transaction · max_prepared_transactions 가
@@ -182,9 +214,12 @@ x-app: &app
 # 앵커로 두면 두 서비스가 그 앞에 postgres 를 붙일 방법이 없다. 그래서 postgres 부터 전체를 한 목록으로 두고
 # 두 서비스 모두 초기화 스크립트(infra/postgres/bootstrap.sh)가 이 목록을 "$@" 로 받아 docker-entrypoint.sh 에 넘긴다.
 #
-# max_connections 32 — 앱 풀 16 에 Flyway · 배치 · 운영자 접속 여유를 더했다(Flyway · 배치는 앱과
-# 같은 풀에서 빌리므로 따로 세지 않는다). autovacuum 은 autovacuum_work_mem 기본이 -1 이라
-# maintenance_work_mem 을 그대로 쓰므로 워커 수와 함께 묶는다.
+# max_connections 48 — 앱 풀 32(슬롯 넷 — APP-01 둘 · APP-02 둘 — × 풀 8, application.yml 의 maximum-pool-size)에
+# exporter · 백업 · 운영자 접속 여유 16 을 더했다(INF-01, 2026-09-26 — 전에는 슬롯 둘의 풀 16 + 16 = 32 였다. 슬롯이 넷이 되면
+# 앱 풀만으로 옛 상한을 채운다). Flyway · 배치는 앱과 같은 풀에서 빌리므로 따로 세지 않는다.
+# 반영 순서 — **standby 먼저, 그다음 primary.** hot standby 는 max_connections 가 primary 이상이어야 기동하므로(위) primary 를
+# 먼저 48 로 올리면 32 인 standby 가 WAL 의 설정 변경 기록을 받고 복구를 멈춘다.
+# autovacuum 은 autovacuum_work_mem 기본이 -1 이라 maintenance_work_mem 을 그대로 쓰므로 워커 수와 함께 묶는다.
 #
 # 복제에 필요한 wal_level=replica · max_wal_senders=10 · max_replication_slots=10 · hot_standby=on 은 전부 기본값이다 —
 # **기본값에 기대고 있다는 사실만 남긴다.** 바꾸는 변경이 들어오면 복제 조건을 다시 본다.
@@ -193,7 +228,7 @@ x-postgres-command: &postgres-command
   - -c
   - shared_buffers=64MB
   - -c
-  - max_connections=32
+  - max_connections=48
   - -c
   - work_mem=4MB
   - -c
@@ -312,7 +347,18 @@ services:
       - app-2
       - web
 
-  # 슬롯 둘 — 액티브-액티브(INF-01). 포트는 호스트 루프백에만 연다(시스템 구성서 4장)
+  # 슬롯 둘 — 액티브-액티브(INF-01). 노드마다 둘이고 APP-01 · APP-02 를 합쳐 넷이 앞단 nginx 뒤에 선다(upstream.conf).
+  # 포트는 호스트 루프백에만 연다(시스템 구성서 4장) — **다른 노드가 붙어야 하는 APP-02 만 예외다.**
+  # 게시 주소 APP_PUBLISH_ADDR — APP-01 은 비워 둔다(루프백, 기본값). APP-02 는 그 노드의 사설 IP 하나다(10.20.20.30) —
+  # APP-01 의 nginx 와 배포 스크립트의 readiness 확인이 사설망으로 닿는다. 0.0.0.0 은 쓰지 않는다. 게시 포트는 firewalld 를
+  # 우회하므로(서버 운영 기반 설계서 3.3) 이 포트의 방어는 보안 그룹(rental-app-node 가 rental-app 에서만 받는다) · 사설 서브넷이다.
+  # 앱은 /actuator 를 인증 없이 연다(prom-agent 의 app 잡 주석) — 그 경로도 이 두 겹 안에서만 닿는다.
+  #
+  # Redis 접속 자리 APP_REDIS_HOST · APP_REDIS_PORT — APP-01 은 비워 둔다(같은 노드의 redis:6379, Compose 네트워크 평문).
+  # APP-02 는 APP-01 사설 IP 와 TLS 포트(10.20.0.10 · 6380)에 x-app 의 CA 로 검증하며 붙는다(redis 서비스 주석).
+  # **REDIS_HOST · REDIS_PORT 로 받지 않는 이유** — 그 두 이름은 앱이 env_file(.env)로 직접 읽는 키이고 운영 .env 에 로컬 구성의
+  # 값(localhost · 6379)이 남아 있을 수 있다. 같은 이름으로 치환하면 그 값이 APP-01 슬롯의 redis 를 덮는다. 여기서 environment 가
+  # env_file 을 이기므로 .env 의 REDIS_HOST · REDIS_PORT 는 지금처럼 쓰이지 않는다.
   app-1:
     <<: *app
     environment:
@@ -323,10 +369,10 @@ services:
       # DB_HOST=postgres-standby 로 바꾸고 슬롯을 순서대로 재생성한다. app-2 도 같은 값을 읽는다
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: 5432
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_HOST: ${APP_REDIS_HOST:-redis}
+      REDIS_PORT: ${APP_REDIS_PORT:-6379}
     ports:
-      - "127.0.0.1:8081:8081"
+      - "${APP_PUBLISH_ADDR:-127.0.0.1}:8081:8081"
     # 슬롯 생사 가시화. 포트는 컨테이너 안의 SERVER_PORT 값이다(호스트 포트가 아니다).
     # 실행 이미지가 eclipse-temurin:21-jre 라 curl · wget 이 없다. bash 의 /dev/tcp 로 TCP 를 직접 열어 확인한다.
     # CMD-SHELL 은 /bin/sh(dash)로 실행돼 /dev/tcp 를 모르므로 반드시 CMD + bash -c 형태여야 한다.
@@ -347,10 +393,10 @@ services:
       SERVER_PORT: 8082
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: 5432
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_HOST: ${APP_REDIS_HOST:-redis}
+      REDIS_PORT: ${APP_REDIS_PORT:-6379}
     ports:
-      - "127.0.0.1:8082:8082"
+      - "${APP_PUBLISH_ADDR:-127.0.0.1}:8082:8082"
     # app-1 과 같다. 포트만 이 슬롯의 SERVER_PORT 다
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8082 && printf 'GET /actuator/health/liveness HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"]
@@ -399,13 +445,51 @@ services:
     # 리프레시 토큰이 Redis 에 있어 배포로 컨테이너를 재생성하기만 해도 전 사용자가 로그아웃된다. 노드가 사라지면
     # 데이터도 사라진다는 방침은 그대로다(볼륨은 이 노드 안에 있고 백업 대상이 아니다).
     # everysec 은 최대 1초치 손실을 받아들이는 대신 요청 경로에 fsync 를 두지 않는다.
-    command: ["sh", "-c", "exec redis-server --maxmemory 64mb --maxmemory-policy volatile-lru --appendonly yes --appendfsync everysec $${REDIS_PASSWORD:+--requirepass $$REDIS_PASSWORD}"]
+    #
+    # 노드 간 접속(INF-01, 2026-09-26 사용자 결정) — APP-02 의 슬롯이 이 Redis 를 사설망으로 쓴다. 리프레시 토큰이 노드 사이를
+    # 오가므로 비밀번호만이 아니라 TLS 도 건다(서버 운영 기반 설계서 3.6). REDIS_TLS=on 이면
+    #   - 평문 6379 는 그대로 둔다 — APP-01 슬롯 · redis-exporter · healthcheck 는 같은 노드 Compose 네트워크 안이라 바꾸지 않는다.
+    #     6379 는 여전히 호스트에 게시하지 않는다(아래 ports)
+    #   - TLS 6380 을 더 연다. 서버 인증서는 자체 서명 인증서 하나이고(ca.crt 는 그 사본 — 클라이언트의 신뢰 기준) SAN 은 APP-01 사설 IP(10.20.0.10)다 — 만드는 절차는 운영 절차서.
+    #     클라이언트 인증서는 요구하지 않는다(--tls-auth-clients no) — 접속 자격은 비밀번호가 맡고, CA 는 서버 검증에만 쓴다
+    #   - REDIS_PASSWORD 가 비어 있으면 기동을 실패시킨다 — 노드 밖에 여는 포트를 인증 없이 띄우지 않는다
+    # 단일 노드 · APP-02 가 없는 구성은 REDIS_TLS 를 비워 둔다 — 지금과 같은 평문 6379 하나다.
+    # 비밀번호는 지금처럼 명령 인자로 넘긴다(컨테이너 안 ps 에 보인다 — 이 변경 전과 같다).
+    # 실행 사용자 — 명령이 sh 로 시작해 이미지 진입점(docker-entrypoint.sh)의 권한 내리기(첫 인자가 redis-server 일 때만)를 타지
+    # 않는다. 진입점 스크립트로 읽은 추정이고 노드에서 확인하지 않았다 — 키 파일 권한을 정할 때 docker compose exec redis id 로 본다.
+    # $$ 는 Compose 가 변수로 풀지 않게 한 것이다(컨테이너 안에서는 $).
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        set -- redis-server --maxmemory 64mb --maxmemory-policy volatile-lru --appendonly yes --appendfsync everysec
+        if [ -n "$${REDIS_PASSWORD:-}" ]; then set -- "$$@" --requirepass "$$REDIS_PASSWORD"; fi
+        case "$${REDIS_TLS:-}" in
+          on)
+            [ -n "$${REDIS_PASSWORD:-}" ] || { echo "redis: REDIS_TLS=on 인데 REDIS_PASSWORD 가 비어 있다 — infra/.env" >&2; exit 1; }
+            set -- "$$@" --tls-port 6380 --tls-cert-file /tls/server.crt --tls-key-file /tls/server.key --tls-ca-cert-file /tls/ca.crt --tls-auth-clients no ;;
+          "") ;;
+          *) echo "redis: REDIS_TLS 는 on 이거나 비어 있어야 한다 — infra/.env" >&2; exit 1 ;;
+        esac
+        exec "$$@"
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # on 이면 TLS 6380 을 연다(위). APP-01 에 APP-02 가 붙는 구성만 on
+      REDIS_TLS: ${REDIS_TLS:-}
       TZ: Asia/Seoul
     volumes:
       - redisdata:/data
-    # 외부 바인딩 금지 — 앱은 Compose 네트워크로 닿는다. 호스트 포트를 열지 않는다
+      # 서버 인증서 · 키 · CA — REDIS_TLS 가 비어 있으면 읽지 않는다(경로가 없으면 Docker 가 빈 디렉터리를 만든다 —
+      # postgres 의 PG_TLS_DIR 마운트와 같다). 앱 슬롯에는 이 디렉터리를 붙이지 않는다(x-app 의 volumes 주석)
+      - ${REDIS_TLS_DIR:-/etc/rental/redis-tls}:/tls:ro
+    # 평문 6379 는 게시하지 않는다 — APP-01 슬롯은 Compose 네트워크로 닿는다.
+    # TLS 6380 만 게시한다. 게시 주소 REDIS_TLS_PUBLISH_ADDR — 단일 노드는 비워 둔다(루프백, 기본값. REDIS_TLS 가 비어 있으면 받는
+    # 쪽이 없어 연결이 거절된다). APP-01 은 자기 사설 IP 하나(10.20.0.10) — APP-02 가 붙어야 하는 포트라서다(0.0.0.0 금지).
+    # 게시 포트는 firewalld 를 우회하므로(서버 운영 기반 설계서 3.3) 방어는 보안 그룹(rental-app 이 rental-app-node 에서만 6380 을
+    # 받는다) · TLS · 비밀번호다.
+    ports:
+      - "${REDIS_TLS_PUBLISH_ADDR:-127.0.0.1}:6380:6380"
     healthcheck:
       test: ["CMD-SHELL", "redis-cli $${REDIS_PASSWORD:+-a $$REDIS_PASSWORD} ping | grep -q PONG"]
       interval: 5s
@@ -431,7 +515,10 @@ services:
     #
     # 그 최악이 지금 성립하기 어려운 이유는 셋이다 —
     #   데이터베이스가 36 MB 로 작아 자주 읽는 페이지가 shared_buffers 안에 머문다(실측)
-    #   앱 풀이 슬롯당 8, 둘이 16 이라 커넥션 32 가 동시에 정렬하는 상태가 오지 않는다
+    #   앱 풀이 슬롯당 8 이라 커넥션이 전부 동시에 정렬하는 상태가 오지 않는다. **슬롯이 넷(INF-01 — 앱 풀 32 ·
+    #   max_connections 48)이 되어 이 근거는 약해졌다** — 백엔드 16 개가 늘어 커넥션당 1.5~3 MiB 로 최대 24~48 MiB 가 더
+    #   붙을 수 있고, 위 300~360 MiB 는 32 커넥션 기준 산정이다. 3노드부터 이 서비스는 DB 노드 혼자라 APP-01 의
+    #   앱 슬롯과 메모리를 다투지 않는다 — 상한을 다시 잡는 일은 부하 시험(INF-06)의 실측으로 한다
     #   실사용이 89 MiB 다(그것도 shared_buffers 128MB · max_connections 100 인 기본값 구성에서 잰 값이다)
     # **셋 중 하나라도 바뀌면 이 산정을 다시 본다.** 트래픽 증가 · DB 증가 · 앱 풀 크기 변경이 그 신호다.
     #
@@ -551,6 +638,7 @@ services:
   # ── 관측 수집기(INF-05)────────────────────────────────────────────────
   # 노드에는 수집과 전송만 둔다. 저장 · 시각화 · 알림은 노드 밖(Grafana Cloud)이다.
   # 포트는 전부 호스트 루프백이다 — 밖에서 긁지 않고 prom-agent 가 노드 안에서 긁어 밖으로 민다.
+  # 예외는 APP-02 의 앱 슬롯 하나다 — 사설 IP 에 게시되므로(app-1 주석) 그 노드의 수집기도 그 주소로 긁는다(prom-agent-app-node).
   # 수집기에는 env_file: .env 를 주지 않는다 — 앱 · DB · 외부 API 비밀이 수집기 환경에 통째로 들어간다.
   # 필요한 변수만 environment 로 넘긴다.
 
@@ -573,8 +661,8 @@ services:
     #   - 키 중 하나라도 비어 있으면 기동을 실패시킨다 — 빈 자격 증명으로 조용히 돌며 401 만 쌓는 상태를 만들지 않는다.
     #     restart: unless-stopped 가 재시도하고 docker compose ps 에 Restarting 으로 드러난다.
     # $$ 는 Compose 가 변수로 풀지 않게 한 것이다(컨테이너 안에서는 $).
-    #   - 채울 키 목록은 셸 안이 아니라 environment 의 PROM_AGENT_KEYS 로 받는다 — DB 노드의 prom-agent-db 가 이 셸을
-    #     YAML 앵커로 그대로 쓰고 키 목록만 다르다(RENTAL_NODE 가 더 있다). 틀도 두 서비스 모두 같은 컨테이너 경로
+    #   - 채울 키 목록은 셸 안이 아니라 environment 의 PROM_AGENT_KEYS 로 받는다 — DB 노드의 prom-agent-db · APP-02 의
+    #     prom-agent-app-node 가 이 셸을 YAML 앵커로 그대로 쓰고 키 목록만 다르다(RENTAL_NODE 등이 더 있다). 틀도 두 서비스 모두 같은 컨테이너 경로
     #     /etc/prometheus/agent.yml 에 붙인다. 목록이 비었거나 없으면 채우지 않은 틀로 뜨지 않게 기동을 실패시킨다.
     #
     # --web.listen-address — 호스트 네트워크라 기본값(0.0.0.0:9090)이면 노드의 모든 주소에 열린다.
@@ -652,9 +740,41 @@ services:
       # agent WAL — prom-agent 와 이름을 나눈다. 단일 노드에서 같은 볼륨을 두 수집기가 잡지 않게 한다
       - promagent-db:/prometheus
 
+  # 앱 노드(APP-02)의 지표 수집 · 전송(INF-01) — 대상은 그 노드의 node exporter 와 앱 슬롯 둘이다. 틀은 prometheus/agent-app-node.yml
+  # 각 노드가 직접 Grafana Cloud 로 보낸다(나가는 길은 APP-01 의 NAT) — 교차 수집을 하지 않는 이유는 prom-agent-db 와 같다.
+  # 이미지 · 호스트 네트워크 · 상한 · tmpfs · 기동 셸은 prom-agent 와 같다(앵커). 다른 것은 채울 키 · 틀 · 저장 볼륨뿐이다.
+  #   RENTAL_NODE       node 라벨(app-02). 비어 있으면 기동에 실패한다 — APP-01(app-01 고정)과 섞이지 않게 한다
+  #   APP_PUBLISH_ADDR  슬롯을 긁는 주소. 슬롯이 이 주소에만 게시되므로 루프백으로는 닿지 않는다 — 게시 주소와 긁는 주소를
+  #                     한 값에서 받는다. 비어 있으면 기동에 실패한다
+  # 상한 150m 은 prom-agent 의 실측(대상 다섯)에서 가져왔다 — 이 노드(대상 셋)의 실측은 노드 적용 뒤다.
+  prom-agent-app-node:
+    profiles: ["app-node"]
+    image: prom/prometheus:v3.6.0
+    network_mode: host
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 150m
+    tmpfs: *prom-agent-tmpfs
+    entrypoint: *prom-agent-entrypoint
+    environment:
+      PROM_AGENT_KEYS: GRAFANA_CLOUD_PROM_URL GRAFANA_CLOUD_PROM_USER GRAFANA_CLOUD_PROM_TOKEN RENTAL_NODE APP_PUBLISH_ADDR
+      GRAFANA_CLOUD_PROM_URL: ${GRAFANA_CLOUD_PROM_URL:-}
+      GRAFANA_CLOUD_PROM_USER: ${GRAFANA_CLOUD_PROM_USER:-}
+      GRAFANA_CLOUD_PROM_TOKEN: ${GRAFANA_CLOUD_PROM_TOKEN:-}
+      RENTAL_NODE: ${RENTAL_NODE:-}
+      APP_PUBLISH_ADDR: ${APP_PUBLISH_ADDR:-}
+      TZ: Asia/Seoul
+    volumes:
+      # 기동 셸이 읽는 자리는 prom-agent 와 같은 /etc/prometheus/agent.yml 이다
+      - ./prometheus/agent-app-node.yml:/etc/prometheus/agent.yml:ro
+      # agent WAL — 다른 수집기와 이름을 나눈다
+      - promagent-app-node:/prometheus
+
   # 로그 수집 · 전송 — 컨테이너 로그를 Docker API 로 읽어 Loki 로 보낸다. 설정은 vector/vector.toml
+  # 프로필은 app · app-node 다 — APP-02 도 자기 노드의 컨테이너 로그(앱 슬롯 둘 · 수집기)를 직접 보낸다.
+  # 노드 라벨은 RENTAL_NODE 로 받는다(vector.toml 의 labels 주석).
   vector:
-    profiles: ["app"]
+    profiles: ["app", "app-node"]
     image: timberio/vector:0.50.0-alpine
     restart: unless-stopped
     logging: *logging
@@ -665,6 +785,8 @@ services:
       GRAFANA_CLOUD_LOKI_URL: ${GRAFANA_CLOUD_LOKI_URL:-}
       GRAFANA_CLOUD_LOKI_USER: ${GRAFANA_CLOUD_LOKI_USER:-}
       GRAFANA_CLOUD_LOKI_TOKEN: ${GRAFANA_CLOUD_LOKI_TOKEN:-}
+      # 로그의 node 라벨. APP-01 은 비워 둔다(vector.toml 의 기본값 app-01), APP-02 는 app-02
+      RENTAL_NODE: ${RENTAL_NODE:-}
       TZ: Asia/Seoul
     volumes:
       - ./vector/vector.toml:/etc/vector/vector.toml:ro
@@ -679,9 +801,9 @@ services:
 
   # 호스트 지표. 호스트 네트워크 · 호스트 PID · 호스트 루트 읽기 전용 — node exporter 공식 README 의 Docker 예시 그대로다.
   # README 는 호스트를 재는 도구를 컨테이너에 넣으려면 호스트 네임스페이스에 닿는 이 설정들이 필요하다고 적는다.
-  # 프로필은 셋 다다 — DB 노드에서는 prom-agent-db 가 긁는다.
+  # 프로필은 넷 다다 — DB 노드에서는 prom-agent-db 가, APP-02 에서는 prom-agent-app-node 가 긁는다.
   node-exporter:
-    profiles: ["app", "db", "standby"]
+    profiles: ["app", "app-node", "db", "standby"]
     image: quay.io/prometheus/node-exporter:v1.9.1
     network_mode: host
     pid: host
@@ -737,6 +859,8 @@ services:
     restart: unless-stopped
     logging: *logging
     mem_limit: 64m
+    # 같은 노드의 평문 6379 로 붙는다 — TLS 6380 은 APP-02 몫이다(redis 서비스 주석). 비밀번호는 redis 와 같은 값을 받으므로
+    # REDIS_PASSWORD 를 켜도 따로 맞출 것이 없다
     environment:
       REDIS_ADDR: redis://redis:6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
@@ -776,5 +900,7 @@ volumes:
   promagent:
   # prom-agent-db 의 WAL(DB 노드) — 백업 대상이 아니다
   promagent-db:
+  # prom-agent-app-node 의 WAL(APP-02) — 백업 대상이 아니다
+  promagent-app-node:
   # vector 의 읽은 위치 — 백업 대상이 아니다
   vectordata:
