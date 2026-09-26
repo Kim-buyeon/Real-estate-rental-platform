@@ -326,7 +326,7 @@ GET /api/properties/map-clusters — 자치구 단계(1.2)의 호출이다. 표�
 - 표시 영역을 **12 × 12 칸**으로 나눈다. 칸 번호는 `floor((좌표 − 최소) ÷ 칸 크기)`이고 0 ~ 11로 자른다 — 경계에 걸린 매물은 가장자리 칸에 든다. 영역의 높이나 폭이 0이면(`min` = `max`) 그 축은 모두 0번 칸이다
 - 영역의 매물이 **40건 이하면 묶지 않는다**(`clustered: false`) — 전부 `markers`로 온다
 - 40건을 넘으면 **두 건 이상인 칸은 묶음**(`clusters`), **한 건뿐인 칸은 개별 마커**(`markers`)로 온다
-- 묶음을 선택하면 그 칸의 `bbox`로 지도를 확대하고, 바뀐 표시 영역으로 이 조회를 다시 부른다
+- 묶음을 선택하면 그 칸 경계(`minLat` ~ `maxLng`)로 지도를 확대하고, 바뀐 표시 영역으로 이 조회를 다시 부른다
 
 | 필드 | 설명 |
 | --- | --- |
@@ -350,8 +350,8 @@ GET /api/properties/map-clusters?district=강서구&minLat=37.52&maxLat=37.58&mi
     "clusters": [
       {
         "key": "5:7",
-        "latitude": 37.5534,
-        "longitude": 126.8561,
+        "latitude": 37.5476,
+        "longitude": 126.8601,
         "count": 214,
         "gradeCounts": { "SAFE": 80, "CAUTION": 71, "DANGER": 58, "UNANALYZED": 5 },
         "minLat": 37.545,
