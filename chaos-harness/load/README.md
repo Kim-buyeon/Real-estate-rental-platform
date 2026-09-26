@@ -11,6 +11,7 @@
 | `sse-hold.js` | SSE 연결 점유만 — 확장을 못 쓸 때의 대안 | constant-vus |
 | `make-tokens.js` | 토큰 풀 만들기(준비 단계) | shared-iterations 1회 |
 | `lib/mix.js` · `lib/tokens.js` · `lib/summary.js` | 공용 모듈 | — |
+| `run-steps.sh` | T2 한 회차 — 토큰 풀 두 개 → SSE 250 → (SSE 가 떠 있을 때만) steps.js. SSE 가 곧바로 끝나면 본 프로파일을 시작하지 않는다 | — |
 | `tools/stages.py` | `--out csv` 시계열의 단계별 집계 — 상태 코드 분포, 받아들인(2xx · 3xx) 처리량 · p95 · p99, 지도 2단계 p95. `python3 tools/stages.py results/t2.csv.gz` | — |
 
 T4(`soak.js`)는 아직 없다.
@@ -61,7 +62,7 @@ redis-cli FLUSHALL && k6 run -e DURATION=10m -e PROFILE=T5 -e SUMMARY_DIR=result
 | `PRE_VUS` / `MAX_VUS` | 계산값 | 본 | 아래 「VU 수」 |
 | `TOP_DISTRICTS` | 매물 수 상위 3개 | 본 | 지역 분포의 상위 자치구, 쉼표 구분 |
 | `SSE_VUS` · `SSE_AUTH` · `HEARTBEAT_SEC` | 250 · `ticket` · 25 | sse | 동시 연결 · 인증 방식(`ticket`/`header`) · 하트비트 간격 |
-| `LT_PASSWORD` · `START` · `COUNT` · `OUT` · `WISHLIST` · `CONCURRENCY` | — · 1 · 100 · `tokens.json` · 5 · 10 | make-tokens | 계정 비밀번호 · 번호 구간 · 출력 · 계정당 관심 매물 · 동시 요청 |
+| `LT_PASSWORD` · `START` · `COUNT` · `OUT` · `WISHLIST` · `CONCURRENCY` | — · 1 · 100 · `tokens.json` · 5 · 10 | make-tokens | 계정 비밀번호 · 번호 구간 · 출력 · 계정당 관심 매물 · 동시 요청 — **앞단 요청 상한이 있으면 3 이하**(2026-09-26 상한 60 r/s 에서 10 이면 가입이 429 로 빠져 SSE 풀 231/250) |
 
 ## 결과 읽기
 

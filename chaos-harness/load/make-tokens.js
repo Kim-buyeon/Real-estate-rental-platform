@@ -17,6 +17,7 @@
 //   { generatedAt, baseUrl, start, count, tokens: [{ email, accessToken, refreshToken }], errors: [...] }
 
 import http from 'k6/http';
+import { sleep } from 'k6';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://10.20.0.10').replace(/\/+$/, '');
 const PASSWORD = __ENV.LT_PASSWORD;
@@ -65,6 +66,22 @@ function post(url, body, token, tag) {
   };
 }
 
+// 앞단 요청 상한(429)에 걸린 요청만 1초 쉬고 다시 보낸다 — 최대 5회. 상한은 준비 단계도 가리지 않아,
+// 재시도가 없으면 걸린 계정이 조용히 빠져 풀이 모자란다(2026-09-26 SSE 풀 231 · 248 / 250)
+function batchRetry429(reqs) {
+  const out = http.batch(reqs);
+  let pending = out.map(function (r, i) { return r.status === 429 ? i : -1; }).filter(function (i) { return i >= 0; });
+  for (let attempt = 0; attempt < 5 && pending.length > 0; attempt++) {
+    sleep(1);
+    const again = http.batch(pending.map(function (i) { return reqs[i]; }));
+    pending = pending.filter(function (idx, k) {
+      out[idx] = again[k];
+      return again[k].status === 429;
+    });
+  }
+  return out;
+}
+
 function chunks(arr, n) {
   const out = [];
   for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
@@ -91,7 +108,7 @@ export function setup() {
   let created = 0;
   let existed = 0;
   chunks(numbers, CONCURRENCY).forEach(function (group) {
-    const responses = http.batch(group.map(function (n) {
+    const responses = batchRetry429(group.map(function (n) {
       return post('/api/auth/signup', { email: email(n), password: PASSWORD, name: '부하시험' + n }, null, 'signup');
     }));
     responses.forEach(function (res, i) {
@@ -104,7 +121,7 @@ export function setup() {
   // 2. 로그인 — 이미 있던 계정의 비밀번호가 LT_PASSWORD 와 다르면 401 AUTH_INVALID_CREDENTIAL
   const tokens = [];
   chunks(numbers, CONCURRENCY).forEach(function (group) {
-    const responses = http.batch(group.map(function (n) {
+    const responses = batchRetry429(group.map(function (n) {
       return post('/api/auth/login', { email: email(n), password: PASSWORD }, null, 'login');
     }));
     responses.forEach(function (res, i) {
@@ -127,7 +144,7 @@ export function setup() {
       }
     });
     chunks(reqs, CONCURRENCY * 2).forEach(function (group) {
-      const responses = http.batch(group.map(function (g) { return g.r; }));
+      const responses = batchRetry429(group.map(function (g) { return g.r; }));
       responses.forEach(function (res, i) {
         if (res.status !== 201 && !(res.status === 409 && errCode(res) === 'WISHLIST_DUPLICATED')) {
           errors.push({ step: 'wishlist', email: group[i].t.email, status: res.status, code: errCode(res) });
