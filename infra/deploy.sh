@@ -237,7 +237,7 @@ for slot in "${SLOTS[@]}"; do
   # 원격 슬롯도 이 노드에서 본다 — nginx 가 요청을 보내는 길(사설망)과 같은 길이다
   log "[$ID] readiness 대기"
   for i in $(seq 1 60); do
-    # 시간 상한 — 사설망에서 패킷이 버려지면 상한 없는 curl 은 회당 수십 초 매달려 「최대 120초」(60회 × 2초)가 깨진다
+    # 시간 상한 — 사설망에서 패킷이 버려지면 상한 없는 curl 은 회당 수십 초 매달린다. 상한을 두어 60회 루프의 최악이 약 240 ~ 300초로 묶인다(루프백은 약 120초 — 운영 절차서 3.2)
     if curl -fs --connect-timeout 2 -m 3 "http://$ADDR:$PORT/actuator/health/readiness" | grep -q '"status":"UP"'; then
       break
     fi
