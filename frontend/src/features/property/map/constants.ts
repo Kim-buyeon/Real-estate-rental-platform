@@ -37,15 +37,6 @@ export const DISTRICT_LEVEL = 7;
 export const BBOX_PRECISION = 4;
 
 /**
- * 표시 영역을 나누는 격자의 한 변 칸 수. 확대할수록 셀이 작아져 묶음이 저절로 풀린다 —
- * 지도 레벨에 의존하지 않는다(레벨 값이 실측 전 잠정이다).
- */
-export const GRID_DIVISIONS = 12;
-
-/** 이 수 이하면 묶지 않고 전부 개별로 그린다 */
-export const CLUSTER_THRESHOLD = 40;
-
-/**
  * 겹친 오버레이의 앞뒤. 가리킨 것이 맨 앞이고, 나머지는 건수 순위(0부터)를 그대로 쓴다.
  * 건수를 그대로 계층으로 쓰면 자치구 대부분이 상한을 넘겨 전부 같은 계층이 된다.
  */

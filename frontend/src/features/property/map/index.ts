@@ -5,9 +5,7 @@
 
 export {
   BBOX_PRECISION,
-  CLUSTER_THRESHOLD,
   DISTRICT_LEVEL,
-  GRID_DIVISIONS,
   OVERLAY_Z_FRONT,
   SEOUL_BOUNDS,
   SEOUL_INITIAL_LEVEL,
@@ -30,8 +28,8 @@ export type { MapPoint, RawBoundingBox } from './map';
 
 export { isMapSdkReady, loadKakaoMaps } from './loader';
 
-export { groupMarkers } from './cluster';
-export type { GroupedMarkers, MarkerCluster } from './cluster';
+export { toMarkerCluster } from './markerCluster';
+export type { MarkerCluster } from './markerCluster';
 
 export { createOverlayLayer } from './overlay';
 export type { OverlayItem, OverlayLayer } from './overlay';

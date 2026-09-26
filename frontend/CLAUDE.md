@@ -169,7 +169,7 @@ instance.interceptors.response.use(undefined, async (error: AxiosError<ApiRespon
 
 **API 명세 문서 하나 = 파일 하나.** 회원·인증 명세 → `user.ts`, 매물 → `property.ts`, 위험도 → `risk.ts`, 대출 → `loan.ts`, 알림 → `notification.ts`. 함수를 추가하기 전에 그 파일을 읽는다.
 
-- **명세 표의 행 하나 = 함수 하나.** 같은 경로를 두 함수로 만들지 않는다. 예외는 둘 — 응답 형태가 파라미터로 갈리는 매물 조회는 목록과 지도 마커의 타입이 다르므로 `fetchPropertyList` · `fetchPropertyMarkers` 둘이고 (매물 API 명세 1.3), 실시간 수신 행은 `request<T>()` 함수가 아니라 `EventSource`다 (아래 알림 수신).
+- **명세 표의 행 하나 = 함수 하나.** 같은 경로를 두 함수로 만들지 않는다. 매물 조회(`GET /api/properties`)는 좌표 조건이 있으면 마커 형태로 응답하지만(매물 API 명세 1.3) 화면은 목록 형태만 쓴다 — 지도 자치구 단계는 지도 묶음 조회(`fetchPropertyMapClusters`, 명세 1.12)다. 예외는 실시간 수신 행이다 — `request<T>()` 함수가 아니라 `EventSource`다 (아래 알림 수신).
 - 함수는 파라미터를 받아 `request<T>()`를 부르고 타입을 붙여 돌려준다. 그 이상 하지 않는다 — 캐싱 · 재시도 · 가공은 `queries/`와 컴포넌트의 일이다.
 - 경로 · 파라미터명 · 열거값은 명세에 있는 것만 쓴다. 필요한 것이 명세에 없으면 명세를 먼저 고친다.
 - **차기 범위 엔드포인트의 함수를 만들지 않는다.** 결번 기능(소셜 로그인 · 검색 이력 · 탈퇴 · 시세 통계 · 전환 계산 · 신청기한 · LOAN-02~06 · 푸시 토큰)이 그것이다. 범위는 서비스 기능 정의서 개요가 정한다.
@@ -188,10 +188,10 @@ instance.interceptors.response.use(undefined, async (error: AxiosError<ApiRespon
 export interface PropertyFilter { district?: string; contractType?: ContractType; depositMin?: number; /* 명세 1.1 */ }
 export interface BoundingBox { minLat: number; maxLat: number; minLng: number; maxLng: number }
 export interface PropertyMarker { propertyId: number; latitude: number; longitude: number; deposit: number; riskGrade: RiskGrade | null; debtRatio: number | null; /* 명세 1.4 — 분석 이력이 없으면 null */ }
-export interface PropertyMarkerList { items: PropertyMarker[]; count: number }
+export interface PropertyMapClusters { total: number; clustered: boolean; clusters: PropertyMapCluster[]; markers: PropertyMarker[] /* 명세 1.12 */ }
 
-export const fetchPropertyMarkers = (filter: PropertyFilter, bbox: BoundingBox) =>
-  request<PropertyMarkerList>({ url: '/properties', params: { ...filter, ...bbox } });
+export const fetchPropertyMapClusters = (filter: PropertyFilter, bbox: BoundingBox) =>
+  request<PropertyMapClusters>({ url: '/properties/map-clusters', params: { ...filter, ...bbox } });
 
 export const fetchPropertyDetail = (propertyId: number) =>
   request<PropertyDetail>({ url: `/properties/${propertyId}` });
@@ -208,7 +208,7 @@ TanStack Query v5의 `queryOptions()`로 **엔드포인트마다 정의를 하�
 
 - **요청을 바꾸는 값은 전부 키에 들어간다.** 필터 · 표시 영역 좌표 · 커서 · 식별자. 키에 없는 값으로 요청하면 다른 조건의 결과가 캐시에서 나온다.
 - 키는 배열이고 첫 원소가 도메인 루트다. 루트는 여섯 — `user` · `property` · `wishlist` · `risk` · `loan` · `notification`. 관심 매물은 매물 폴더에 있지만 루트를 따로 둔다 — 무효화 범위가 다르다.
-- 지도 마커 · 자치구 집계는 `placeholderData: keepPreviousData` — 지도가 움직이는 동안 비지 않는다 (기술 스택 정의서 4장). `keepPreviousData`는 v5의 함수다. v4의 불리언 옵션을 쓰지 않는다.
+- 지도 묶음 · 자치구 집계는 `placeholderData: keepPreviousData` — 지도가 움직이는 동안 비지 않는다 (기술 스택 정의서 4장). `keepPreviousData`는 v5의 함수다. v4의 불리언 옵션을 쓰지 않는다.
 - 커서 목록(관심 매물 · 알림 · 매물 목록)은 `infiniteQueryOptions()`로, `getNextPageParam`은 `hasNext ? nextCursor : undefined`. 응답의 `nextCursor`를 그대로 다음 요청에 넣는다 — 공통 규약 1.4.
 - 뮤테이션 훅은 같은 파일에 두고 `onSuccess`에서 아래 표대로 무효화한다. 화면 컴포넌트가 `queryClient`를 직접 잡고 무효화하지 않는다. 예외는 `app/NotificationStream.tsx` — 수신 이벤트의 무효화가 그것의 일이다.
 - `QueryClient` 기본값(`staleTime` · `retry`)은 `app/queryClient.ts` 한 곳이다. 쿼리별 예외는 그 정의 안에만 적는다.
@@ -218,10 +218,10 @@ TanStack Query v5의 `queryOptions()`로 **엔드포인트마다 정의를 하�
 // queries/property.ts
 export const propertyQueries = {
   all: () => ['property'] as const,
-  markers: (filter: PropertyFilter, bbox: BoundingBox) =>
+  mapClusters: (filter: PropertyFilter, bbox: BoundingBox) =>
     queryOptions({
-      queryKey: [...propertyQueries.all(), 'markers', filter, bbox] as const,
-      queryFn: () => fetchPropertyMarkers(filter, bbox),
+      queryKey: [...propertyQueries.all(), 'mapClusters', filter, bbox] as const,
+      queryFn: () => fetchPropertyMapClusters(filter, bbox),
       placeholderData: keepPreviousData,
     }),
   detail: (propertyId: number) =>
@@ -420,7 +420,7 @@ SDK를 어떻게 부르고 무엇을 그리는지는 `kakao-map` 스킬이 정�
 - 오버레이 내용은 React 컴포넌트를 `createPortal`로 컨테이너 엘리먼트에 그리고, `CustomOverlay`의 생성·제거만 이 폴더가 맡는다. DOM 리스너는 React가 붙이므로 오버레이를 지울 때 엘리먼트와 함께 사라진다.
 
 - `window.kakao`를 읽는 코드는 이 폴더 밖에 없다. 컴포넌트는 이 폴더가 내보낸 함수(지도 생성 · 경계 → 좌표 · 오버레이 생성 · 리스너 등록 해제)를 쓴다.
-- **마커가 겹치면 격자로 묶는다.** 표시 영역을 나눈 셀마다 건수 하나를 그리고, 셀에 한 건이면 개별 마커다. 누르면 그 셀로 확대한다 — 같은 건물의 매물은 좌표가 같아 묶지 않으면 위의 하나만 고를 수 있다. 묶는 규칙은 `features/property/map/cluster.ts`, 격자 칸 수·임계값은 아래 「지도 상수」와 같은 파일이다 (`kakao-map` 7장 (가) 결정)
+- **마커가 겹치면 격자로 묶는다 — 묶는 것은 서버다.** 자치구 단계는 지도 묶음 조회(매물 API 명세 1.12)가 표시 영역을 격자로 나눠 칸마다 건수 하나를, 한 건뿐인 칸은 개별 마커를 돌려준다. 화면은 응답의 칸을 묶음 오버레이의 모양으로 옮겨(`components/markerCluster.ts`) 그대로 그리고, 다시 묶거나 세지 않는다. 누르면 그 칸의 경계로 확대한다 — 같은 건물의 매물은 좌표가 같아 묶지 않으면 위의 하나만 고를 수 있다. 격자 칸 수 · 임계값은 명세가 정하고 화면에 상수로 두지 않는다
 - 마커 오버레이는 `propertyId`로 diff한다 — 새로 온 것만 만들고 사라진 것만 `setMap(null)`, 남은 것은 위치만 옮긴다. 재조회마다 전부 지우고 다시 그리지 않는다. 내용은 포털이 갱신하므로 `setContent`를 쓰지 않는다.
 - 마커 배열 · 자치구 집계에서 파생하는 값(정렬 · 그룹핑 · 좌표 계산)은 `useMemo`다. 컴포넌트 본문에서 매 렌더 계산하지 않는다.
 - **SDK는 지도 화면에 들어갈 때 `map/loader.ts`의 `loadKakaoMaps()`가 동적으로 로드한다** — `autoload=false` 스크립트를 한 번만 넣고 `kakao.maps.load` 콜백에서 준비된다. 번들에 넣지 않고 `index.html`에도 두지 않는다 (`kakao-map` 2장). 지도 생성과 `Geocoder` 조회는 이 로드를 기다린다. 로드 중에는 지도 영역이 비어 있고, 실패하면 지도 영역의 `Alert`다.
