@@ -28,6 +28,9 @@ export type { MapPoint, RawBoundingBox } from './map';
 
 export { isMapSdkReady, loadKakaoMaps } from './loader';
 
+export { toMarkerCluster } from './markerCluster';
+export type { MarkerCluster } from './markerCluster';
+
 export { createOverlayLayer } from './overlay';
 export type { OverlayItem, OverlayLayer } from './overlay';
 

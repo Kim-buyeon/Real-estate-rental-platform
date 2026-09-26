@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { RISK_GRADES, RISK_GRADE_LABEL, riskGradeToken } from '../../../domain/risk';
 import { formatCount } from '../../../lib/format';
-import type { MarkerCluster } from './markerCluster';
+import type { MarkerCluster } from '../map';
 import styles from './MarkerClusterContent.module.css';
 
 /** 토큰 이름 → 이 컴포넌트의 CSS 클래스. 등급 → 토큰은 domain/risk.ts가 갖는다 */

@@ -26,7 +26,7 @@ import { useDistrictPoints } from '../hooks/useDistrictPoints';
 import type { MapStage } from '../hooks/useMapStage';
 import { DistrictOverlayContent } from './DistrictOverlayContent';
 import { MarkerClusterContent } from './MarkerClusterContent';
-import { toMarkerCluster, type MarkerCluster } from './markerCluster';
+import { toMarkerCluster, type MarkerCluster } from '../map';
 import { MarkerPreviewCard } from './MarkerPreviewCard';
 import { PropertyMarkerContent } from './PropertyMarkerContent';
 import styles from './MapExplorer.module.css';
