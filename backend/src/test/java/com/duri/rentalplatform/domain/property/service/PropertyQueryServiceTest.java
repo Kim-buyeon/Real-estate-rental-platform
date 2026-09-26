@@ -146,27 +146,6 @@ class PropertyQueryServiceTest {
     }
 
     @Test
-    @DisplayName("표시 영역 네 값이 모두 있으면 마커 목록과 count를 반환한다")
-    void searchMarkersInBox() {
-        List<PropertyMarkerResponse> markers = List.of(marker(1L, "37.50", "127.00"), marker(2L, "37.51", "127.01"));
-        when(propertyMapper.selectMarkers(any())).thenReturn(markers);
-
-        Object result = service.search(boxRequest(37.0, 38.0, 126.0, 128.0));
-
-        assertThat(result).isInstanceOf(PropertyMarkersResponse.class);
-        PropertyMarkersResponse response = (PropertyMarkersResponse) result;
-        assertThat(response.count()).isEqualTo(2);
-        assertThat(response.items()).containsExactlyElementsOf(markers);
-
-        ArgumentCaptor<PropertySearchCondition> captor = ArgumentCaptor.forClass(PropertySearchCondition.class);
-        verify(propertyMapper).selectMarkers(captor.capture());
-        assertThat(captor.getValue().minLat()).isEqualTo(37.0);
-        assertThat(captor.getValue().maxLat()).isEqualTo(38.0);
-        assertThat(captor.getValue().minLng()).isEqualTo(126.0);
-        assertThat(captor.getValue().maxLng()).isEqualTo(128.0);
-    }
-
-    @Test
     @DisplayName("반경 조건은 바운딩 박스로 1차 조회하고 반경 밖을 제거해 거리순으로 반환한다")
     void searchMarkersInRadiusFiltersAndSortsByDistance() {
         double lat = 37.5;
@@ -195,9 +174,15 @@ class PropertyQueryServiceTest {
     }
 
     @Test
-    @DisplayName("표시 영역 네 값 중 일부만 있으면 INVALID_REQUEST(minLat)다")
-    void rejectsPartialBox() {
-        assertInvalidRequest(boxRequest(37.0, null, null, null), "minLat");
+    @DisplayName("표시 영역 네 값이 모두 있어도 INVALID_REQUEST(minLat)다 — 영역 조회는 1.12 묶음 조회의 몫")
+    void rejectsFullBox() {
+        assertInvalidRequest(boxRequest(37.0, 38.0, 126.0, 128.0), "minLat");
+    }
+
+    @Test
+    @DisplayName("표시 영역 값이 하나만 와도 그 파라미터 이름으로 INVALID_REQUEST다")
+    void rejectsSingleBoxParam() {
+        assertInvalidRequest(boxRequest(null, null, null, 127.0), "maxLng");
     }
 
     @Test
@@ -207,8 +192,8 @@ class PropertyQueryServiceTest {
     }
 
     @Test
-    @DisplayName("표시 영역과 반경을 동시에 모두 채우면 INVALID_REQUEST(minLat)다 — 조건이 모호하다")
-    void rejectsBothBoxAndRadiusFullyGiven() {
+    @DisplayName("반경 조건과 함께 표시 영역이 와도 INVALID_REQUEST(minLat)다")
+    void rejectsBoxEvenWithRadius() {
         PropertySearchRequest request = new PropertySearchRequest(null, null, null, null, null, null,
                 null, null, null, 37.0, 38.0, 126.0, 128.0, 37.5, 127.0, 1.0, null, null, null);
         assertInvalidRequest(request, "minLat");

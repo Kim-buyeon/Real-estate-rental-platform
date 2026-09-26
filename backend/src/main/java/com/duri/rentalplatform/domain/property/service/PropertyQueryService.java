@@ -72,22 +72,30 @@ public class PropertyQueryService {
         });
     }
 
-    /** 좌표 조건이 있으면 마커, 없으면 목록. 반환 형태가 달라 호출자가 그대로 봉투에 담는다. */
+    /**
+     * 반경 조건이 있으면 마커, 없으면 목록. 반환 형태가 달라 호출자가 그대로 봉투에 담는다.
+     * 표시 영역 좌표는 받지 않는다 — 하나라도 오면 INVALID_REQUEST. 명세 1.3.
+     */
     public Object search(PropertySearchRequest request) {
-        boolean anyBox = Stream.of(request.minLat(), request.maxLat(), request.minLng(), request.maxLng())
-                .anyMatch(v -> v != null);
-        boolean fullBox = Stream.of(request.minLat(), request.maxLat(), request.minLng(), request.maxLng())
-                .allMatch(v -> v != null);
+        if (request.minLat() != null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "minLat");
+        }
+        if (request.maxLat() != null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "maxLat");
+        }
+        if (request.minLng() != null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "minLng");
+        }
+        if (request.maxLng() != null) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "maxLng");
+        }
         boolean anyRadius = Stream.of(request.lat(), request.lng(), request.radiusKm())
                 .anyMatch(v -> v != null);
         boolean fullRadius = Stream.of(request.lat(), request.lng(), request.radiusKm())
                 .allMatch(v -> v != null);
 
-        if ((anyBox && !fullBox) || (anyRadius && !fullRadius) || (fullBox && fullRadius)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST, anyBox ? "minLat" : "lat");
-        }
-        if (fullBox) {
-            return searchMarkersInBox(request);
+        if (anyRadius && !fullRadius) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "lat");
         }
         if (fullRadius) {
             return searchMarkersInRadius(request);
@@ -148,13 +156,6 @@ public class PropertyQueryService {
             throw new BusinessException(ErrorCode.PROPERTY_NOT_FOUND);
         }
         return PropertyDetailResponse.from(row);
-    }
-
-    private PropertyMarkersResponse searchMarkersInBox(PropertySearchRequest request) {
-        BoundingBox box = new BoundingBox(
-                request.minLat(), request.maxLat(), request.minLng(), request.maxLng());
-        return PropertyMarkersResponse.of(
-                propertyMapper.selectMarkers(PropertySearchCondition.ofMarkers(request.toFilter(), box)));
     }
 
     /** 바운딩 박스로 1차 조회 → Haversine 으로 반경 밖 제거 → 거리순. 명세 1.3. */
