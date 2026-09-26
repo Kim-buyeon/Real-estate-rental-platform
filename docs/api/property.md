@@ -12,6 +12,7 @@
 | --- | --- | --- | --- | --- |
 | PROP-08 | GET | /api/properties/district-counts | 필터 조건별 자치구 매물 수 집계 | 선택 |
 | PROP-01<br>PROP-02 | GET | /api/properties | 매물 조회. 좌표 조건 유무에 따라 목록 또는 지도 마커 형태로 응답 | 선택 |
+| PROP-02 | GET | /api/properties/map-clusters | 표시 영역을 격자로 묶은 지도 묶음. 자치구 단계의 호출 (1.12) | 선택 |
 | PROP-03 | GET | /api/properties/{propertyId} | 매물 상세 조회 | 선택 |
 | PROP-04 | GET | /api/properties/{propertyId}/ledger | 건축물대장 정보 조회 | 선택 |
 | PROP-05 | GET | /api/me/wishlist | 관심 매물 목록 조회 | 필수 |
@@ -41,7 +42,7 @@
 | 단계 | 호출 | 표시 |
 | --- | --- | --- |
 | 서울 전체 | GET /api/properties/district-counts | 자치구별 매물 수와 위험 등급 분포. 개별 매물 마커는 표시하지 않는다 |
-| 자치구 선택 | GET /api/properties (district + 좌표 조건) | 해당 구의 매물 마커. 지도 이동·확대 시 표시 영역 좌표를 갱신해 재호출한다 |
+| 자치구 선택 | GET /api/properties/map-clusters (district + 표시 영역) | 해당 구의 매물을 격자로 묶은 묶음과 개별 마커(1.12). 지도 이동·확대 시 표시 영역 좌표를 갱신해 재호출한다 |
 | 매물 선택 | GET /api/properties/{propertyId} | 매물 상세 |
 
 필터를 변경하면 현재 단계에 해당하는 엔드포인트를 다시 호출한다. 두 엔드포인트가 동일한 필터 파라미터를 사용하므로 단계를 오갈 때 조건이 그대로 유지된다.
@@ -316,3 +317,64 @@ POST /api/tools/rent-conversion — 요청
   }
 }
 ```
+
+### 1.12 지도 묶음 응답
+
+GET /api/properties/map-clusters — 자치구 단계(1.2)의 호출이다. 표시 영역의 매물을 **서버가 격자로 묶어** 돌려준다. 마커 전량을 내려보내 화면이 묶던 방식은 매물이 많은 구에서 응답이 수천 건 · 1 MB를 넘어 지도 조회가 가장 먼저 처리 한계에 닿았다(2026-09-26 부하 시험 · 용량 산정 리포트).
+
+- 파라미터: 공통 검색 필터(1.1) + 표시 영역 `minLat` · `maxLat` · `minLng` · `maxLng` — **넷 모두 필수**다. 반경 조건은 받지 않는다. 하나라도 없거나 `min`이 `max`보다 크면 `INVALID_REQUEST`(400)
+- 표시 영역을 **12 × 12 칸**으로 나눈다. 칸 번호는 `floor((좌표 − 최소) ÷ 칸 크기)`이고 0 ~ 11로 자른다 — 경계에 걸린 매물은 가장자리 칸에 든다. 영역의 높이나 폭이 0이면(`min` = `max`) 그 축은 모두 0번 칸이다
+- 영역의 매물이 **40건 이하면 묶지 않는다**(`clustered: false`) — 전부 `markers`로 온다
+- 40건을 넘으면 **두 건 이상인 칸은 묶음**(`clusters`), **한 건뿐인 칸은 개별 마커**(`markers`)로 온다
+- 묶음을 선택하면 그 칸의 `bbox`로 지도를 확대하고, 바뀐 표시 영역으로 이 조회를 다시 부른다
+
+| 필드 | 설명 |
+| --- | --- |
+| total | 표시 영역 안 매물 수(필터 적용) |
+| clustered | 격자로 묶었는지 |
+| clusters[].key | 칸 식별자 `행:열`. 같은 표시 영역 안에서만 유일하다 |
+| clusters[].latitude / longitude | 칸 안 매물의 평균 좌표 — 묶음 표시 위치 |
+| clusters[].count | 칸 안 매물 수 |
+| clusters[].gradeCounts | 등급별 매물 수 `SAFE` · `CAUTION` · `DANGER` · `UNANALYZED`(분석 이력 없음) |
+| clusters[].minLat · maxLat · minLng · maxLng | 칸 경계 — 선택 시 확대할 영역 |
+| markers[] | 개별 마커. 필드는 지도 마커 응답(1.4)과 같다 |
+
+GET /api/properties/map-clusters?district=강서구&minLat=37.52&maxLat=37.58&minLng=126.81&maxLng=126.89 — 응답(일부)
+
+```json
+{
+  "success": true,
+  "data": {
+    "total": 6003,
+    "clustered": true,
+    "clusters": [
+      {
+        "key": "5:7",
+        "latitude": 37.5534,
+        "longitude": 126.8561,
+        "count": 214,
+        "gradeCounts": { "SAFE": 80, "CAUTION": 71, "DANGER": 58, "UNANALYZED": 5 },
+        "minLat": 37.545,
+        "maxLat": 37.55,
+        "minLng": 126.8567,
+        "maxLng": 126.8633
+      }
+    ],
+    "markers": [
+      {
+        "propertyId": 41408,
+        "latitude": 37.5791,
+        "longitude": 126.8104,
+        "deposit": 150000000,
+        "riskGrade": "CAUTION",
+        "contractType": "DEPOSIT_ONLY",
+        "monthlyRent": 0,
+        "district": "강서구",
+        "debtRatio": 74.5,
+        "hasSeniorDebt": false
+      }
+    ]
+  }
+}
+```
+
