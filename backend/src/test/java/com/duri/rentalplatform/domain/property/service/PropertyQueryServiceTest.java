@@ -295,7 +295,7 @@ class PropertyQueryServiceTest {
     }
 
     private static MapClusterCellRow cell(int row, int col, long count, long representativeId) {
-        return new MapClusterCellRow(row, col, count, new BigDecimal("37.5534"), new BigDecimal("126.8561"),
+        return new MapClusterCellRow(row, col, count, new BigDecimal("37.5476"), new BigDecimal("126.8601"),
                 count, 0L, 0L, 0L, representativeId);
     }
 
@@ -341,7 +341,7 @@ class PropertyQueryServiceTest {
     @DisplayName("지도 묶음: 임계를 넘으면 두 건 이상인 칸은 묶음, 한 건 칸은 대표 식별자로 마커를 조회한다")
     void mapClustersOverThresholdSplitsClustersAndSingles() {
         when(propertyMapper.selectClusterCells(any())).thenReturn(List.of(
-                new MapClusterCellRow(5, 7, 39L, new BigDecimal("37.5534"), new BigDecimal("126.8561"),
+                new MapClusterCellRow(5, 7, 39L, new BigDecimal("37.5476"), new BigDecimal("126.8601"),
                         20L, 10L, 5L, 4L, 10L),
                 cell(0, 0, 1, 99L),
                 cell(11, 11, 1, 100L)));
@@ -358,8 +358,8 @@ class PropertyQueryServiceTest {
         PropertyMapClustersResponse.Cluster cluster = result.clusters().get(0);
         assertThat(cluster.key()).isEqualTo("5:7");
         assertThat(cluster.count()).isEqualTo(39);
-        assertThat(cluster.latitude()).isEqualByComparingTo("37.5534");
-        assertThat(cluster.longitude()).isEqualByComparingTo("126.8561");
+        assertThat(cluster.latitude()).isEqualByComparingTo("37.5476");
+        assertThat(cluster.longitude()).isEqualByComparingTo("126.8601");
         assertThat(cluster.gradeCounts())
                 .isEqualTo(new PropertyMapClustersResponse.GradeCounts(20, 10, 5, 4));
         // 명세 1.12 응답 예시의 칸 경계 — 37.52 + 5 × 0.005, 126.81 + 7 × (0.08 / 12)

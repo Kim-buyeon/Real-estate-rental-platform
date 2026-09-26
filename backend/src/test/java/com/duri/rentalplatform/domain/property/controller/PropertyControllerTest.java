@@ -148,7 +148,7 @@ class PropertyControllerTest {
     @DisplayName("지도 묶음: 토큰 없이 호출되고 응답 JSON 키가 명세 1.12 예시와 같다(gradeCounts 는 대문자 키)")
     void mapClustersResponseShape() throws Exception {
         PropertyMapClustersResponse.Cluster cluster = new PropertyMapClustersResponse.Cluster("5:7",
-                new BigDecimal("37.5534"), new BigDecimal("126.8561"), 214,
+                new BigDecimal("37.5476"), new BigDecimal("126.8601"), 214,
                 new PropertyMapClustersResponse.GradeCounts(80, 71, 58, 5),
                 new BigDecimal("37.545"), new BigDecimal("37.55"),
                 new BigDecimal("126.8567"), new BigDecimal("126.8633"));
@@ -167,8 +167,8 @@ class PropertyControllerTest {
                 .andExpect(jsonPath("$.data.total").value(6003))
                 .andExpect(jsonPath("$.data.clustered").value(true))
                 .andExpect(jsonPath("$.data.clusters[0].key").value("5:7"))
-                .andExpect(jsonPath("$.data.clusters[0].latitude").value(37.5534))
-                .andExpect(jsonPath("$.data.clusters[0].longitude").value(126.8561))
+                .andExpect(jsonPath("$.data.clusters[0].latitude").value(37.5476))
+                .andExpect(jsonPath("$.data.clusters[0].longitude").value(126.8601))
                 .andExpect(jsonPath("$.data.clusters[0].count").value(214))
                 .andExpect(jsonPath("$.data.clusters[0].gradeCounts.SAFE").value(80))
                 .andExpect(jsonPath("$.data.clusters[0].gradeCounts.CAUTION").value(71))

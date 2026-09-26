@@ -121,7 +121,9 @@
         <choose>
             <when test="cellLat == 0">0</when>
             <otherwise>
-                LEAST(GREATEST(CAST(FLOOR((p.latitude - #{minLat}) / #{cellLat}) AS INTEGER), 0), #{maxCellIndex})
+                CASE WHEN FLOOR((p.latitude - #{minLat}) / #{cellLat}) &lt; 0 THEN 0
+                     WHEN FLOOR((p.latitude - #{minLat}) / #{cellLat}) &gt; #{maxCellIndex} THEN #{maxCellIndex}
+                     ELSE CAST(FLOOR((p.latitude - #{minLat}) / #{cellLat}) AS INTEGER) END
             </otherwise>
         </choose>
     </sql>
@@ -130,7 +132,9 @@
         <choose>
             <when test="cellLng == 0">0</when>
             <otherwise>
-                LEAST(GREATEST(CAST(FLOOR((p.longitude - #{minLng}) / #{cellLng}) AS INTEGER), 0), #{maxCellIndex})
+                CASE WHEN FLOOR((p.longitude - #{minLng}) / #{cellLng}) &lt; 0 THEN 0
+                     WHEN FLOOR((p.longitude - #{minLng}) / #{cellLng}) &gt; #{maxCellIndex} THEN #{maxCellIndex}
+                     ELSE CAST(FLOOR((p.longitude - #{minLng}) / #{cellLng}) AS INTEGER) END
             </otherwise>
         </choose>
     </sql>
@@ -142,10 +146,10 @@
                COUNT(*) AS count,
                ROUND(AVG(g.latitude), 7) AS latitude,
                ROUND(AVG(g.longitude), 7) AS longitude,
-               COUNT(*) FILTER (WHERE g.risk_grade = 'SAFE') AS safe_count,
-               COUNT(*) FILTER (WHERE g.risk_grade = 'CAUTION') AS caution_count,
-               COUNT(*) FILTER (WHERE g.risk_grade = 'DANGER') AS danger_count,
-               COUNT(*) FILTER (WHERE g.risk_grade IS NULL) AS unanalyzed_count,
+               SUM(CASE WHEN g.risk_grade = 'SAFE' THEN 1 ELSE 0 END) AS safe_count,
+               SUM(CASE WHEN g.risk_grade = 'CAUTION' THEN 1 ELSE 0 END) AS caution_count,
+               SUM(CASE WHEN g.risk_grade = 'DANGER' THEN 1 ELSE 0 END) AS danger_count,
+               SUM(CASE WHEN g.risk_grade IS NULL THEN 1 ELSE 0 END) AS unanalyzed_count,
                MIN(g.property_id) AS representative_id
           FROM (SELECT p.property_id,
                        p.latitude,
