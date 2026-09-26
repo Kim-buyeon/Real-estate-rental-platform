@@ -14,12 +14,15 @@ import com.duri.rentalplatform.common.CursorPage;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.domain.property.calculator.GeoDistanceCalculator;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertySearchCondition;
 import com.duri.rentalplatform.domain.property.dto.request.DistrictCountRequest;
+import com.duri.rentalplatform.domain.property.dto.request.PropertyMapClustersRequest;
 import com.duri.rentalplatform.domain.property.dto.request.PropertySearchRequest;
 import com.duri.rentalplatform.domain.property.dto.response.DistrictCountsResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyDetailResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse;
+import com.duri.rentalplatform.domain.property.dto.response.PropertyMapClustersResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkersResponse;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
@@ -27,12 +30,14 @@ import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.property.vo.BoundingBox;
+import com.duri.rentalplatform.domain.property.vo.MapClusterCellRow;
 import com.duri.rentalplatform.domain.property.vo.PropertyDetailRow;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -274,5 +279,145 @@ class PropertyQueryServiceTest {
         assertThat(result.totalCount()).isZero();
         verify(propertyMapper).selectDistrictCounts(any());
         verify(districtCountCacheStore).save(eq(filter), any());
+    }
+
+    // ---------- 지도 묶음 (명세 1.12) ----------
+
+    private static PropertyMapClustersRequest clustersRequest(
+            Double minLat, Double maxLat, Double minLng, Double maxLng) {
+        return new PropertyMapClustersRequest("강서구", null, null, null, null, null, null, null, null,
+                minLat, maxLat, minLng, maxLng);
+    }
+
+    /** 명세 1.12 의 요청 예시 영역. */
+    private static PropertyMapClustersRequest exampleClustersRequest() {
+        return clustersRequest(37.52, 37.58, 126.81, 126.89);
+    }
+
+    private static MapClusterCellRow cell(int row, int col, long count, long representativeId) {
+        return new MapClusterCellRow(row, col, count, new BigDecimal("37.5476"), new BigDecimal("126.8601"),
+                count, 0L, 0L, 0L, representativeId);
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 합계가 임계(40) 이하면 묶지 않고 영역 전량을 마커로 조회한다")
+    void mapClustersAtThresholdReturnsAllMarkers() {
+        when(propertyMapper.selectClusterCells(any())).thenReturn(List.of(
+                cell(0, 0, 39, 1L), cell(3, 3, 1, 2L)));
+        List<PropertyMarkerResponse> all = List.of(marker(1L, "37.53", "126.82"));
+        when(propertyMapper.selectMarkers(any())).thenReturn(all);
+
+        PropertyMapClustersResponse result = service.getMapClusters(exampleClustersRequest());
+
+        assertThat(result.total()).isEqualTo(PropertyQueryService.CLUSTER_THRESHOLD);
+        assertThat(result.clustered()).isFalse();
+        assertThat(result.clusters()).isEmpty();
+        assertThat(result.markers()).isEqualTo(all);
+        ArgumentCaptor<PropertySearchCondition> captor = ArgumentCaptor.forClass(PropertySearchCondition.class);
+        verify(propertyMapper).selectMarkers(captor.capture());
+        assertThat(captor.getValue().district()).isEqualTo("강서구");
+        assertThat(captor.getValue().minLat()).isEqualTo(37.52);
+        assertThat(captor.getValue().maxLng()).isEqualTo(126.89);
+        verify(propertyMapper, never()).selectMarkersByIds(any());
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 격자 집계에 칸 크기 = 영역 ÷ 12, 마지막 칸 번호 11 을 넘긴다")
+    void mapClustersPassesGridToMapper() {
+        when(propertyMapper.selectClusterCells(any())).thenReturn(List.of());
+
+        service.getMapClusters(exampleClustersRequest());
+
+        ArgumentCaptor<PropertySearchCondition> captor = ArgumentCaptor.forClass(PropertySearchCondition.class);
+        verify(propertyMapper).selectClusterCells(captor.capture());
+        PropertySearchCondition condition = captor.getValue();
+        assertThat(condition.cellLat()).isCloseTo((37.58 - 37.52) / 12, Offset.offset(1e-12));
+        assertThat(condition.cellLng()).isCloseTo((126.89 - 126.81) / 12, Offset.offset(1e-12));
+        assertThat(condition.maxCellIndex()).isEqualTo(PropertyQueryService.GRID_DIVISIONS - 1);
+        assertThat(condition.district()).isEqualTo("강서구");
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 임계를 넘으면 두 건 이상인 칸은 묶음, 한 건 칸은 대표 식별자로 마커를 조회한다")
+    void mapClustersOverThresholdSplitsClustersAndSingles() {
+        when(propertyMapper.selectClusterCells(any())).thenReturn(List.of(
+                new MapClusterCellRow(5, 7, 39L, new BigDecimal("37.5476"), new BigDecimal("126.8601"),
+                        20L, 10L, 5L, 4L, 10L),
+                cell(0, 0, 1, 99L),
+                cell(11, 11, 1, 100L)));
+        List<PropertyMarkerResponse> singles = List.of(marker(99L, "37.52", "126.81"),
+                marker(100L, "37.58", "126.89"));
+        when(propertyMapper.selectMarkersByIds(any())).thenReturn(singles);
+
+        PropertyMapClustersResponse result = service.getMapClusters(exampleClustersRequest());
+
+        assertThat(result.total()).isEqualTo(41L);
+        assertThat(result.clustered()).isTrue();
+        assertThat(result.markers()).isEqualTo(singles);
+        assertThat(result.clusters()).hasSize(1);
+        PropertyMapClustersResponse.Cluster cluster = result.clusters().get(0);
+        assertThat(cluster.key()).isEqualTo("5:7");
+        assertThat(cluster.count()).isEqualTo(39);
+        assertThat(cluster.latitude()).isEqualByComparingTo("37.5476");
+        assertThat(cluster.longitude()).isEqualByComparingTo("126.8601");
+        assertThat(cluster.gradeCounts())
+                .isEqualTo(new PropertyMapClustersResponse.GradeCounts(20, 10, 5, 4));
+        // 명세 1.12 응답 예시의 칸 경계 — 37.52 + 5 × 0.005, 126.81 + 7 × (0.08 / 12)
+        assertThat(cluster.minLat()).isEqualByComparingTo("37.545");
+        assertThat(cluster.maxLat()).isEqualByComparingTo("37.55");
+        assertThat(cluster.minLng()).isEqualByComparingTo("126.8566667");
+        assertThat(cluster.maxLng()).isEqualByComparingTo("126.8633333");
+
+        ArgumentCaptor<PropertyIdsCondition> captor = ArgumentCaptor.forClass(PropertyIdsCondition.class);
+        verify(propertyMapper).selectMarkersByIds(captor.capture());
+        assertThat(captor.getValue().propertyIds()).containsExactly(99L, 100L);
+        verify(propertyMapper, never()).selectMarkers(any());
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 임계를 넘어도 한 건 칸이 없으면 식별자 마커 조회를 하지 않는다")
+    void mapClustersWithoutSinglesSkipsIdQuery() {
+        when(propertyMapper.selectClusterCells(any())).thenReturn(List.of(cell(0, 0, 20, 1L), cell(1, 1, 21, 2L)));
+
+        PropertyMapClustersResponse result = service.getMapClusters(exampleClustersRequest());
+
+        assertThat(result.clustered()).isTrue();
+        assertThat(result.clusters()).extracting(PropertyMapClustersResponse.Cluster::key)
+                .containsExactly("0:0", "1:1");
+        assertThat(result.markers()).isEmpty();
+        verify(propertyMapper, never()).selectMarkersByIds(any());
+        verify(propertyMapper, never()).selectMarkers(any());
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 영역에 매물이 없으면 total 0 · 빈 목록이고 마커 조회를 하지 않는다")
+    void mapClustersEmpty() {
+        when(propertyMapper.selectClusterCells(any())).thenReturn(List.of());
+
+        PropertyMapClustersResponse result = service.getMapClusters(exampleClustersRequest());
+
+        assertThat(result.total()).isZero();
+        assertThat(result.clustered()).isFalse();
+        assertThat(result.clusters()).isEmpty();
+        assertThat(result.markers()).isEmpty();
+        verify(propertyMapper, never()).selectMarkers(any());
+        verify(propertyMapper, never()).selectMarkersByIds(any());
+    }
+
+    @Test
+    @DisplayName("지도 묶음: min 이 max 보다 크거나 영역 값이 빠지면 INVALID_REQUEST 이고 조회하지 않는다")
+    void mapClustersRejectsInvalidBox() {
+        List<PropertyMapClustersRequest> invalid = List.of(
+                clustersRequest(37.58, 37.52, 126.81, 126.89),
+                clustersRequest(37.52, 37.58, 126.89, 126.81),
+                clustersRequest(null, 37.58, 126.81, 126.89),
+                clustersRequest(37.52, 37.58, 126.81, null));
+        for (PropertyMapClustersRequest request : invalid) {
+            assertThatThrownBy(() -> service.getMapClusters(request))
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
+                            .isEqualTo(ErrorCode.INVALID_REQUEST));
+        }
+        verify(propertyMapper, never()).selectClusterCells(any());
     }
 }

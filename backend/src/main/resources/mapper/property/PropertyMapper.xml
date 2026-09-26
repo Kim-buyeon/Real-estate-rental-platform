@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!--
-  매물 조회. API 명세서(매물) 1.4 ~ 1.7.
+  매물 조회. API 명세서(매물) 1.4 ~ 1.7 · 1.12.
 
   위험 정보는 최신 분석(is_latest = TRUE)을 LEFT JOIN 한다. 분석 이력이 없는 매물도 조회되며
   risk_grade · lease_ratio 가 NULL 로 나온다.
@@ -76,7 +76,8 @@
         ORDER BY p.district
     </select>
 
-    <select id="selectMarkers" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse">
+    <!-- 지도 마커 응답(명세 1.4)의 컬럼. 바운딩 박스 조회와 식별자 조회가 함께 쓴다. -->
+    <sql id="markerColumns">
         SELECT p.property_id,
                p.latitude,
                p.longitude,
@@ -93,9 +94,73 @@
                                     AND mh.senior_debt_yn = TRUE
                                     AND mh.is_active = TRUE)
                END AS has_senior_debt
+    </sql>
+
+    <select id="selectMarkers" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse">
+        <include refid="markerColumns"/>
         <include refid="fromProperty"/>
         <include refid="filter"/>
         ORDER BY p.property_id
+    </select>
+
+    <select id="selectMarkersByIds" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse">
+        <include refid="markerColumns"/>
+        <include refid="fromProperty"/>
+        WHERE p.property_id IN
+        <foreach collection="propertyIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        ORDER BY p.property_id
+    </select>
+
+    <!--
+      지도 묶음 격자 칸 번호(명세 1.12). floor((좌표 - 최소) / 칸 크기) 를 0 ~ maxCellIndex 로 자른다 —
+      최대 경계 위 좌표는 마지막 칸에 든다. 칸 크기가 0(최소 = 최대)이면 나눌 수 없어 모두 0번 칸이다.
+    -->
+    <sql id="cellRow">
+        <choose>
+            <when test="cellLat == 0">0</when>
+            <otherwise>
+                CASE WHEN FLOOR((p.latitude - #{minLat}) / #{cellLat}) &lt; 0 THEN 0
+                     WHEN FLOOR((p.latitude - #{minLat}) / #{cellLat}) &gt; #{maxCellIndex} THEN #{maxCellIndex}
+                     ELSE CAST(FLOOR((p.latitude - #{minLat}) / #{cellLat}) AS INTEGER) END
+            </otherwise>
+        </choose>
+    </sql>
+
+    <sql id="cellCol">
+        <choose>
+            <when test="cellLng == 0">0</when>
+            <otherwise>
+                CASE WHEN FLOOR((p.longitude - #{minLng}) / #{cellLng}) &lt; 0 THEN 0
+                     WHEN FLOOR((p.longitude - #{minLng}) / #{cellLng}) &gt; #{maxCellIndex} THEN #{maxCellIndex}
+                     ELSE CAST(FLOOR((p.longitude - #{minLng}) / #{cellLng}) AS INTEGER) END
+            </otherwise>
+        </choose>
+    </sql>
+
+    <!-- 미분석은 최신 분석이 없는 매물이다. risk_grade 는 NOT NULL 이라 NULL 이면 LEFT JOIN 에서 빠진 것이다. -->
+    <select id="selectClusterCells" resultType="com.duri.rentalplatform.domain.property.vo.MapClusterCellRow">
+        SELECT g.row_index,
+               g.col_index,
+               COUNT(*) AS count,
+               ROUND(AVG(g.latitude), 7) AS latitude,
+               ROUND(AVG(g.longitude), 7) AS longitude,
+               SUM(CASE WHEN g.risk_grade = 'SAFE' THEN 1 ELSE 0 END) AS safe_count,
+               SUM(CASE WHEN g.risk_grade = 'CAUTION' THEN 1 ELSE 0 END) AS caution_count,
+               SUM(CASE WHEN g.risk_grade = 'DANGER' THEN 1 ELSE 0 END) AS danger_count,
+               SUM(CASE WHEN g.risk_grade IS NULL THEN 1 ELSE 0 END) AS unanalyzed_count,
+               MIN(g.property_id) AS representative_id
+          FROM (SELECT p.property_id,
+                       p.latitude,
+                       p.longitude,
+                       ra.risk_grade,
+                       <include refid="cellRow"/> AS row_index,
+                       <include refid="cellCol"/> AS col_index
+                <include refid="fromProperty"/>
+                <include refid="filter"/>) g
+         GROUP BY g.row_index, g.col_index
+         ORDER BY g.row_index, g.col_index
     </select>
 
     <!-- 목록 정렬 식. 전세가율은 미분석을 대체값으로 바꿔 방향과 무관하게 맨 뒤로 보낸다. -->

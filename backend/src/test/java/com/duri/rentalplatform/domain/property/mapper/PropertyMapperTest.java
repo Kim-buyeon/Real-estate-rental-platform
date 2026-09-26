@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.duri.rentalplatform.TestcontainersConfiguration;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertySearchCondition;
 import com.duri.rentalplatform.domain.property.dto.request.DistrictCountRequest;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse;
@@ -16,6 +17,7 @@ import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import com.duri.rentalplatform.domain.property.vo.BoundingBox;
 import com.duri.rentalplatform.domain.property.vo.DistrictCountRow;
+import com.duri.rentalplatform.domain.property.vo.MapClusterCellRow;
 import com.duri.rentalplatform.domain.property.vo.PropertyDetailRow;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -173,6 +175,135 @@ class PropertyMapperTest {
         assertThat(none.riskGrade()).isNull();
         assertThat(none.debtRatio()).isNull();
         assertThat(none.hasSeniorDebt()).isNull();
+    }
+
+    // ---------- 지도 묶음 ----------
+
+    /**
+     * 지도 묶음 시험 영역. 칸 크기가 0.0625(2 의 거듭제곱 분수)라 칸 경계 좌표가 double 로 정확히 표현된다 —
+     * 경계 위 좌표가 어느 칸에 드는지를 부동소수 오차 없이 본다.
+     */
+    private static final BoundingBox GRID_BOX = new BoundingBox(37.0, 37.75, 127.0, 127.75);
+    private static final double CELL = 0.0625;
+
+    private static PropertySearchCondition clusters(DistrictCountRequest f, BoundingBox box) {
+        return PropertySearchCondition.ofClusters(f, box, (box.maxLat() - box.minLat()) / 12,
+                (box.maxLng() - box.minLng()) / 12, 11);
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 칸 경계 위 좌표는 위쪽 칸에, 바로 아래 좌표는 아래쪽 칸에 든다")
+    void clusterCellBoundaryBelongsToUpperCell() {
+        long below = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.0 + CELL - 0.0000001, 127.0, T0);
+        long onEdge = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.0 + CELL, 127.0 + CELL, T0);
+
+        List<MapClusterCellRow> cells = propertyMapper.selectClusterCells(clusters(filter(D1), GRID_BOX));
+
+        assertThat(cells).extracting(MapClusterCellRow::rowIndex, MapClusterCellRow::colIndex,
+                        MapClusterCellRow::count, MapClusterCellRow::representativeId)
+                .containsExactly(tuple(0, 0, 1L, below), tuple(1, 1, 1L, onEdge));
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 최대 경계 위 좌표는 12번이 아니라 11번 칸에, 최소 경계는 0번 칸에 든다")
+    void clusterMaxEdgeIsClampedToLastCell() {
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.0, 127.0, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.75, 127.75, T0);
+
+        List<MapClusterCellRow> cells = propertyMapper.selectClusterCells(clusters(filter(D1), GRID_BOX));
+
+        assertThat(cells).extracting(MapClusterCellRow::rowIndex, MapClusterCellRow::colIndex)
+                .containsExactly(tuple(0, 0), tuple(11, 11));
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 칸별 건수 · 등급별 건수 · 평균 좌표 · 대표 식별자가 픽스처와 맞고 미분석은 UNANALYZED 로 센다")
+    void clusterAggregatesGradesAndAverage() {
+        long safe1 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.30, 127.30, T0);
+        long safe2 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.31, 127.31, T0);
+        long caution = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.30, 127.30, T0);
+        long danger = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.30, 127.30, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.30, 127.30, T0); // 미분석
+        insertRisk(safe1, "SAFE", "60.00", true, false);
+        insertRisk(safe2, "SAFE", "60.00", true, false);
+        insertRisk(caution, "DANGER", "95.00", false, false); // 최신이 아닌 분석은 세지 않는다
+        insertRisk(caution, "CAUTION", "80.00", true, false);
+        insertRisk(danger, "DANGER", "95.00", true, false);
+
+        List<MapClusterCellRow> cells = propertyMapper.selectClusterCells(clusters(filter(D1), GRID_BOX));
+
+        assertThat(cells).hasSize(1);
+        MapClusterCellRow cell = cells.get(0);
+        // (37.30 - 37.0) / 0.0625 = 4.8, (37.31 - 37.0) / 0.0625 = 4.96 → 둘 다 4
+        assertThat(cell.rowIndex()).isEqualTo(4);
+        assertThat(cell.colIndex()).isEqualTo(4);
+        assertThat(cell.count()).isEqualTo(5L);
+        assertThat(cell.safeCount()).isEqualTo(2L);
+        assertThat(cell.cautionCount()).isEqualTo(1L);
+        assertThat(cell.dangerCount()).isEqualTo(1L);
+        assertThat(cell.unanalyzedCount()).isEqualTo(1L);
+        assertThat(cell.latitude()).isEqualByComparingTo("37.302");
+        assertThat(cell.longitude()).isEqualByComparingTo("127.302");
+        assertThat(cell.representativeId()).isEqualTo(safe1);
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 공통 필터와 표시 영역 밖 매물을 제외하고 센다")
+    void clusterAppliesFilterAndBox() {
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.30, 127.30, T0);       // 대상
+        insertProperty(D1, "MONTHLY_RENT", "APARTMENT", 1L, 500_000L, 37.30, 127.30, T0); // 계약 유형
+        insertProperty(D2, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.30, 127.30, T0);       // 자치구
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.7500001, 127.30, T0);  // 영역 밖
+        long graded = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.30, 127.30, T0);
+        insertRisk(graded, "SAFE", "60.00", true, false);
+
+        DistrictCountRequest f = new DistrictCountRequest(D1, ContractType.DEPOSIT_ONLY, null, null, null, null,
+                null, null, null);
+        assertThat(propertyMapper.selectClusterCells(clusters(f, GRID_BOX)))
+                .extracting(MapClusterCellRow::count).containsExactly(2L);
+
+        DistrictCountRequest safeOnly = new DistrictCountRequest(D1, null, null, null, null, null,
+                List.of(RiskGrade.SAFE), null, null);
+        assertThat(propertyMapper.selectClusterCells(clusters(safeOnly, GRID_BOX)))
+                .extracting(MapClusterCellRow::count, MapClusterCellRow::safeCount,
+                        MapClusterCellRow::unanalyzedCount)
+                .containsExactly(tuple(1L, 1L, 0L));
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 표시 영역의 폭이 0 인 축은 나누지 않고 모두 0번 칸이다")
+    void clusterZeroSpanAxisUsesFirstCell() {
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.30, 127.10, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.30, 127.70, T0);
+
+        List<MapClusterCellRow> cells = propertyMapper.selectClusterCells(
+                clusters(filter(D1), new BoundingBox(37.30, 37.30, 127.0, 127.75)));
+
+        assertThat(cells).extracting(MapClusterCellRow::rowIndex, MapClusterCellRow::colIndex)
+                .containsExactly(tuple(0, 1), tuple(0, 11));
+    }
+
+    @Test
+    @DisplayName("식별자 마커: 목록의 매물만 식별자 순으로, 마커 필드를 채워 돌려준다")
+    void markersByIdsReturnOnlyListed() {
+        long a = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 230_000_000L, 0L, 37.55, 126.85, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.55, 126.85, T0);
+        long c = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.55, 126.85, T0);
+        insertRisk(a, "SAFE", "68.00", true, true);
+
+        List<PropertyMarkerResponse> markers = propertyMapper.selectMarkersByIds(
+                new PropertyIdsCondition(List.of(c, a)));
+
+        assertThat(markers).extracting(PropertyMarkerResponse::propertyId).containsExactly(a, c);
+        PropertyMarkerResponse first = markers.get(0);
+        assertThat(first.deposit()).isEqualTo(230_000_000L);
+        assertThat(first.riskGrade()).isEqualTo(RiskGrade.SAFE);
+        assertThat(first.contractType()).isEqualTo(ContractType.DEPOSIT_ONLY);
+        assertThat(first.district()).isEqualTo(D1);
+        assertThat(first.debtRatio()).isEqualByComparingTo("68.00");
+        assertThat(first.hasSeniorDebt()).isTrue();
+        assertThat(first.latitude()).isEqualByComparingTo("37.55");
+        assertThat(markers.get(1).riskGrade()).isNull();
     }
 
     // ---------- 목록 ----------

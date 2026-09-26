@@ -1,6 +1,8 @@
 package com.duri.rentalplatform.domain.property.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -13,9 +15,16 @@ import com.duri.rentalplatform.common.GlobalExceptionHandler;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.common.security.StreamTicketStore;
 import com.duri.rentalplatform.config.SecurityConfig;
+import com.duri.rentalplatform.domain.property.dto.request.PropertyMapClustersRequest;
 import com.duri.rentalplatform.domain.property.dto.request.PropertySearchRequest;
+import com.duri.rentalplatform.domain.property.dto.response.PropertyMapClustersResponse;
+import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse;
+import com.duri.rentalplatform.domain.property.enums.ContractType;
+import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import com.duri.rentalplatform.domain.property.service.PropertyQueryService;
+import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -117,6 +126,62 @@ class PropertyControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+    }
+
+    // ---------- 지도 묶음 (명세 1.12) ----------
+
+    @Test
+    @DisplayName("지도 묶음: 표시 영역 값이 하나라도 없으면 400 INVALID_REQUEST 이고 서비스를 부르지 않는다")
+    void mapClustersMissingBoxReturns400() throws Exception {
+        mockMvc.perform(get("/api/properties/map-clusters")
+                        .param("district", "강서구")
+                        .param("minLat", "37.52").param("maxLat", "37.58").param("minLng", "126.81"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.error.field").value("maxLng"));
+
+        verify(queryService, never()).getMapClusters(any());
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 토큰 없이 호출되고 응답 JSON 키가 명세 1.12 예시와 같다(gradeCounts 는 대문자 키)")
+    void mapClustersResponseShape() throws Exception {
+        PropertyMapClustersResponse.Cluster cluster = new PropertyMapClustersResponse.Cluster("5:7",
+                new BigDecimal("37.5476"), new BigDecimal("126.8601"), 214,
+                new PropertyMapClustersResponse.GradeCounts(80, 71, 58, 5),
+                new BigDecimal("37.545"), new BigDecimal("37.55"),
+                new BigDecimal("126.8567"), new BigDecimal("126.8633"));
+        PropertyMarkerResponse marker = new PropertyMarkerResponse(41408L, new BigDecimal("37.5791"),
+                new BigDecimal("126.8104"), 150_000_000L, RiskGrade.CAUTION, ContractType.DEPOSIT_ONLY, 0L,
+                "강서구", new BigDecimal("74.5"), false);
+        when(queryService.getMapClusters(any(PropertyMapClustersRequest.class)))
+                .thenReturn(PropertyMapClustersResponse.clustered(6003L, List.of(cluster), List.of(marker)));
+
+        mockMvc.perform(get("/api/properties/map-clusters")
+                        .param("district", "강서구")
+                        .param("minLat", "37.52").param("maxLat", "37.58")
+                        .param("minLng", "126.81").param("maxLng", "126.89"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.total").value(6003))
+                .andExpect(jsonPath("$.data.clustered").value(true))
+                .andExpect(jsonPath("$.data.clusters[0].key").value("5:7"))
+                .andExpect(jsonPath("$.data.clusters[0].latitude").value(37.5476))
+                .andExpect(jsonPath("$.data.clusters[0].longitude").value(126.8601))
+                .andExpect(jsonPath("$.data.clusters[0].count").value(214))
+                .andExpect(jsonPath("$.data.clusters[0].gradeCounts.SAFE").value(80))
+                .andExpect(jsonPath("$.data.clusters[0].gradeCounts.CAUTION").value(71))
+                .andExpect(jsonPath("$.data.clusters[0].gradeCounts.DANGER").value(58))
+                .andExpect(jsonPath("$.data.clusters[0].gradeCounts.UNANALYZED").value(5))
+                .andExpect(jsonPath("$.data.clusters[0].gradeCounts.safe").doesNotExist())
+                .andExpect(jsonPath("$.data.clusters[0].minLat").value(37.545))
+                .andExpect(jsonPath("$.data.clusters[0].maxLat").value(37.55))
+                .andExpect(jsonPath("$.data.clusters[0].minLng").value(126.8567))
+                .andExpect(jsonPath("$.data.clusters[0].maxLng").value(126.8633))
+                .andExpect(jsonPath("$.data.markers[0].propertyId").value(41408))
+                .andExpect(jsonPath("$.data.markers[0].riskGrade").value("CAUTION"))
+                .andExpect(jsonPath("$.data.markers[0].hasSeniorDebt").value(false));
     }
 
     @TestConfiguration
