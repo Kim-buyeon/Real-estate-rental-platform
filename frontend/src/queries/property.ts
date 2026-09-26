@@ -15,7 +15,7 @@ import {
   fetchDistrictCounts,
   fetchPropertyDetail,
   fetchPropertyList,
-  fetchPropertyMarkers,
+  fetchPropertyMapClusters,
   fetchWishlist,
   removeWishlist,
   type BoundingBox,
@@ -55,12 +55,15 @@ export const propertyQueries = {
       getNextPageParam: (lastPage) => (lastPage.hasNext ? lastPage.nextCursor : undefined),
     }),
 
-  /** PROP-02 지도 마커. 표시 영역 좌표도 요청을 바꾸므로 키에 들어간다 (kakao-map 4장) */
-  markers: (filter: PropertyFilter, bbox: BoundingBox) =>
+  /**
+   * PROP-02 지도 묶음 — 자치구 단계 (명세 1.12). 표시 영역 좌표도 요청을 바꾸므로 키에 들어간다 (kakao-map 4장).
+   * 루트 아래에 두므로 property 루트 무효화(등급이 바뀐 재분석)에 함께 걸린다 — 묶음의 등급별 건수가 바뀐다.
+   */
+  mapClusters: (filter: PropertyFilter, bbox: BoundingBox) =>
     queryOptions({
-      queryKey: [...propertyQueries.all(), 'markers', filter, bbox] as const,
-      queryFn: () => fetchPropertyMarkers(filter, bbox),
-      // 지도를 움직이는 동안 이전 마커를 유지한다
+      queryKey: [...propertyQueries.all(), 'mapClusters', filter, bbox] as const,
+      queryFn: () => fetchPropertyMapClusters(filter, bbox),
+      // 지도를 움직이는 동안 이전 묶음 · 마커를 유지한다
       placeholderData: keepPreviousData,
     }),
 

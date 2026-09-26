@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { RISK_GRADES, RISK_GRADE_LABEL, riskGradeToken } from '../../../domain/risk';
 import { formatCount } from '../../../lib/format';
-import type { MarkerCluster } from '../map';
+import type { MarkerCluster } from './markerCluster';
 import styles from './MarkerClusterContent.module.css';
 
 /** 토큰 이름 → 이 컴포넌트의 CSS 클래스. 등급 → 토큰은 domain/risk.ts가 갖는다 */
@@ -19,7 +19,7 @@ interface MarkerClusterContentProps {
 
 /**
  * 겹친 매물 묶음. 같은 건물의 매물은 좌표가 같아 포개지므로 건수로 보이고,
- * 누르면 그 셀로 확대해 들어간다 (kakao-map 7장 — 클라이언트 격자 묶음으로 정했다).
+ * 누르면 그 칸으로 확대해 들어간다. 묶는 것은 서버다 — 매물 API 명세 1.12.
  */
 export const MarkerClusterContent = memo(function MarkerClusterContent({
   cluster,
