@@ -118,7 +118,7 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 | --- | --- | --- |
 | 서비스 기능 | `USER-01` · `PROP-02` · `RISK-05` · `LOAN-01` · `NOTI-02` · `ADMIN-01` | `docs/features/` |
 | 인프라 기능 | `INF-01` ~ `INF-09` | `docs/features/infra.md` |
-| 부하 프로파일 | `T1` ~ `T7` | `docs/infra/traffic.md` — 차기 범위 |
+| 부하 프로파일 | `T1` ~ `T7` | `docs/infra/traffic.md` — 부하 시험만 범위(2026-09-26). 장애 주입은 차기 범위 |
 
 - 기능별 추적에 사용한다. `git log --oneline | grep RISK-05`
 - 장애 시나리오 9종은 별도 ID를 두지 않고 `INF-06`으로 묶는다
@@ -180,8 +180,9 @@ Nginx는 upstream 호스트명을 설정 로드 시점에 한 번만 해석한�
 | 셸 스크립트 | `bash -n` |
 | Prometheus agent 설정 | 기동 셸로 자리표시자를 채운 사본에 `promtool check config` — 저장소 파일은 자리표시자가 든 틀이다 |
 | Vector 설정 | `vector validate --no-environment` — 환경 변수는 더미로 준다 |
+| 부하 시험 설정(`chaos-harness/load/`) | `k6 inspect <스크립트>` |
 
-부하 시험 설정(k6)의 확인 명령은 그 작업이 차기 범위라 뺐다 — git 이력에 있다. 관측 수집기의 확인 명령은 수집기가 정해져(인프라 기술 스택 4.1) 위 표에 더했다 — exporter는 Compose 서비스라 `docker compose config`에 이미 걸린다. Rocky 노드 설정은 이 PC에서 적용해 볼 수 없는 것이 많다. **문법만 본 것과 노드에서 동작을 본 것을 구분해 적는다.**
+부하 시험 설정(k6)의 확인 명령은 부하 시험이 범위로 돌아와(2026-09-26) 위 표에 되살렸다. 관측 수집기의 확인 명령은 수집기가 정해져(인프라 기술 스택 4.1) 위 표에 더했다 — exporter는 Compose 서비스라 `docker compose config`에 이미 걸린다. Rocky 노드 설정은 이 PC에서 적용해 볼 수 없는 것이 많다. **문법만 본 것과 노드에서 동작을 본 것을 구분해 적는다.**
 
 ---
 
