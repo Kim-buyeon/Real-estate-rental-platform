@@ -6,18 +6,22 @@ import com.duri.rentalplatform.common.CursorPage;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.domain.property.calculator.GeoDistanceCalculator;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertySearchCondition;
 import com.duri.rentalplatform.domain.property.dto.request.DistrictCountRequest;
+import com.duri.rentalplatform.domain.property.dto.request.PropertyMapClustersRequest;
 import com.duri.rentalplatform.domain.property.dto.request.PropertySearchRequest;
 import com.duri.rentalplatform.domain.property.dto.response.DistrictCountsResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyDetailResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse;
+import com.duri.rentalplatform.domain.property.dto.response.PropertyMapClustersResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkersResponse;
 import com.duri.rentalplatform.domain.property.enums.PropertySortKey;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.property.vo.BoundingBox;
+import com.duri.rentalplatform.domain.property.vo.MapClusterCellRow;
 import com.duri.rentalplatform.domain.property.vo.PropertyDetailRow;
 import java.math.BigDecimal;
 import java.time.DateTimeException;
@@ -31,7 +35,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 매물 조회. API 명세서(매물) 1.4 ~ 1.7. */
+/** 매물 조회. API 명세서(매물) 1.4 ~ 1.7 · 1.12. */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -47,6 +51,12 @@ public class PropertyQueryService {
     static final BigDecimal NULL_DEBT_RATIO_DESC = new BigDecimal("-1000");
 
     private static final PropertySortKey DEFAULT_SORT_KEY = PropertySortKey.REGISTERED_AT;
+
+    /** 지도 묶음의 격자 — 표시 영역을 가로 · 세로 이 수만큼 나눈다. API 명세서(매물) 1.12. */
+    static final int GRID_DIVISIONS = 12;
+
+    /** 지도 묶음 임계 — 영역의 매물이 이 수 이하면 묶지 않고 전부 마커로 보낸다. API 명세서(매물) 1.12. */
+    static final int CLUSTER_THRESHOLD = 40;
 
     private final PropertyMapper propertyMapper;
     private final DistrictCountCacheStore districtCountCacheStore;
@@ -83,6 +93,53 @@ public class PropertyQueryService {
             return searchMarkersInRadius(request);
         }
         return searchList(request);
+    }
+
+    /**
+     * 지도 묶음. 격자 칸 집계를 먼저 하고, 합계가 임계 이하면 영역 전량을 마커로, 넘으면 두 건 이상인 칸은
+     * 묶음 · 한 건뿐인 칸은 마커로 돌려준다. API 명세서(매물) 1.12.
+     */
+    public PropertyMapClustersResponse getMapClusters(PropertyMapClustersRequest request) {
+        BoundingBox box = validBox(request);
+        DistrictCountRequest filter = request.toFilter();
+        double cellLat = (box.maxLat() - box.minLat()) / GRID_DIVISIONS;
+        double cellLng = (box.maxLng() - box.minLng()) / GRID_DIVISIONS;
+
+        List<MapClusterCellRow> cells = propertyMapper.selectClusterCells(
+                PropertySearchCondition.ofClusters(filter, box, cellLat, cellLng, GRID_DIVISIONS - 1));
+        long total = cells.stream().mapToLong(MapClusterCellRow::count).sum();
+
+        if (total <= CLUSTER_THRESHOLD) {
+            List<PropertyMarkerResponse> markers = total == 0
+                    ? List.of()
+                    : propertyMapper.selectMarkers(PropertySearchCondition.ofMarkers(filter, box));
+            return PropertyMapClustersResponse.unclustered(total, markers);
+        }
+
+        List<PropertyMapClustersResponse.Cluster> clusters = cells.stream()
+                .filter(cell -> cell.count() > 1)
+                .map(cell -> PropertyMapClustersResponse.Cluster.of(
+                        cell, box.minLat(), box.minLng(), cellLat, cellLng))
+                .toList();
+        List<Long> singleIds = cells.stream()
+                .filter(cell -> cell.count() == 1)
+                .map(MapClusterCellRow::representativeId)
+                .toList();
+        List<PropertyMarkerResponse> markers = singleIds.isEmpty()
+                ? List.of()
+                : propertyMapper.selectMarkersByIds(new PropertyIdsCondition(singleIds));
+        return PropertyMapClustersResponse.clustered(total, clusters, markers);
+    }
+
+    /** 표시 영역 네 값이 모두 있고 {@code min ≤ max} 여야 한다. 아니면 INVALID_REQUEST. */
+    private static BoundingBox validBox(PropertyMapClustersRequest request) {
+        if (request.minLat() == null || request.maxLat() == null || request.minLat() > request.maxLat()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "minLat");
+        }
+        if (request.minLng() == null || request.maxLng() == null || request.minLng() > request.maxLng()) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "minLng");
+        }
+        return new BoundingBox(request.minLat(), request.maxLat(), request.minLng(), request.maxLng());
     }
 
     public PropertyDetailResponse getDetail(Long propertyId, Long userId) {
