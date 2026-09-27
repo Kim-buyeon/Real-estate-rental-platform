@@ -31,7 +31,7 @@ description: 바꾼 것과 문서가 어긋나지 않았는지 확인한다. 변
 | 바뀐 것 | 볼 문서 | 어긋나는 것 |
 | --- | --- | --- |
 | Controller 매핑 | `docs/api/<영역>.md` | 경로 · 메서드 · 요청/응답 필드 · 오류 코드 |
-| 엔드포인트 신설 | `docs/infra/traffic.md`(차기 범위) | 부하 시험이 돌아오면 요청 조합과 비중에 넣는다. 지금은 대조하지 않는다 |
+| 엔드포인트 신설 | 트래픽 정의서 | 요청 조합과 비중에 들어 있는가. 빠졌으면 다음 부하 시험 전에 넣는다 |
 | `ErrorCode` | `docs/api/common.md` | 코드 값과 메시지 |
 | DTO 필드 · enum 상수 | `docs/conventions.md` · `docs/api/<영역>.md` | 도메인 용어와 1:1인가. 표기 규칙 |
 | 마이그레이션 · 엔티티 | `docs/architecture/database.md` · `docs/conventions.md` | 테이블 · 컬럼 · 인덱스 · 제약. 소문자 스네이크 |
