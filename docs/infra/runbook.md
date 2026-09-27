@@ -74,6 +74,8 @@
 
 **경보가 울리면(메일 「rental-<노드>-instance-check-reboot」 ALARM)** — ① `aws cloudwatch describe-alarm-history --alarm-name <경보>`로 재부팅이 실행됐는지 ② 그 노드가 돌아왔는지 — 1장 재부팅 표의 기동 뒤 확인(APP 노드는 API 200 · 슬롯 readiness, DB-01은 복제 `streaming`, DB-02는 복제 수신) ③ 이전 부팅의 커널 로그(`journalctl -k -b -1`)에서 원인(OOM · hung task)을 찾는다 ④ 7장 장애 대응 흐름과 장애 보고서로 잇는다 — 자동 복구는 원인을 없애지 않는다. **메일 알림은 SNS 주제 `rental-node-alarms`의 이메일 구독이 확인돼야 온다**(스크립트 실행 뒤 AWS 확인 메일의 링크).
 
+**질의 통계 — DB CPU를 어느 질의가 쓰는가**(2026-09-27 · #270). primary · standby 모두 `pg_stat_statements`를 적재한다(`x-postgres-command` 주석). 뷰는 **`postgres` 데이터베이스**에 한 번 만든다 — `docker compose exec postgres psql -U "$POSTGRES_USER" -d postgres -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'`(앱 DB · Flyway를 건드리지 않는다. 수집은 클러스터 전체다). 보는 법 — 같은 접속에서 `SELECT calls, round(total_exec_time) AS total_ms, round(mean_exec_time::numeric, 2) AS mean_ms, rows, left(query, 120) FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10`. 구간을 재려면 시작 전에 `SELECT pg_stat_statements_reset()`. 부하 시험의 결과는 용량 산정 리포트가 갖는다.
+
 **대시보드**(`rental` 폴더 — Node Exporter Full · JVM (Micrometer) · NGINX exporter · Redis · PostgreSQL)의 데이터 소스는 `grafanacloud-whitemocha1136-prom`(UID `grafanacloud-prom`)이다. 가져온 공개 대시보드가 빈 화면이던 원인은 셋이다(#253) — NGINX · Node · PostgreSQL은 데이터 소스 변수가 목록 첫 항목(`grafanacloud-usage`)으로 잡혔다. JVM은 패널 일부가 없는 변수 `${DS_PROMETHEUS}`를 가리켰고, `application` 라벨로 거르는데 앱 지표에 그 라벨이 없어 `job="app"`으로 바꿨다. Redis는 처음부터 맞았다.
 
 
