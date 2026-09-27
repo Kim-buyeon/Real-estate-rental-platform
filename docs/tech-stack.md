@@ -51,6 +51,7 @@
 | MyBatis | 스타터 4.1.x | **화면에 전달할 데이터를 반환하는 조회를 담당한다.** 매물 검색의 동적 조건 조합은 동적 SQL로, 순위번호 기준 선순위채권 합산과 자치구 집계는 SQL을 직접 작성해 실행 계획을 통제한다. 경계는 반환 타입으로 나눈다 — 엔티티가 필요하면 JPA, 화면 전달용이면 MyBatis. 역할 분담은 `docs/architecture/persistence.md`를 따른다. **스타터 4.1.x가 Spring Boot 4.1 대응 라인이다** — 4.0.x는 Boot 4.0용. 코어 MyBatis 버전은 스타터가 고정한다 |
 | Spring Boot Mail (JavaMailSender) | Boot BOM | 비밀번호 재설정 메일(USER-06). 운영은 Gmail SMTP(앱 비밀번호) — 도메인 없이 보낼 수 있고 일 발송 한도가 이 규모에 충분하다. 외부 연동 규칙대로 Mock(링크를 로그로) · Real · Fault 세 구현을 두고 발송은 응답 뒤 비동기다. 모드는 `external.mail.mode`(기본 mock). 환경 변수 `MAIL_HOST` · `MAIL_PORT` · `MAIL_USERNAME` · `MAIL_PASSWORD`(Gmail 앱 비밀번호) · `MAIL_FROM`, 메일 링크의 화면 기준 주소 `APP_BASE_URL` — 값은 `.env` |
 | Spring Security + JWT | — | 액세스·리프레시 토큰 발급과 회전. 토큰은 Redis에 보관한다. `USER_AUTH`의 `auth_type`·`provider_id` 컬럼은 소셜 로그인 확장 지점으로 남긴다 |
+| 암호화 · 해싱 라이브러리 | **미확정** | 비밀번호 해싱(Argon2id 후보) · JWT 서명 · 컬럼 암호화(AES-256-GCM 후보)의 구현 라이브러리와 추가 의존성은 보안 · 암호화 설계서의 측정(시험 계획서 9장) 뒤 정한다. JDK 표준(`javax.crypto`)으로 되는 것은 의존성을 늘리지 않는다 |
 | RestClient | Spring Framework 7 | 외부 API 연동용. 동기식이지만 가상 스레드 위에서 동작하므로 병렬 호출에 문제가 없고 WebClient 대비 코드가 단순하다. **연동 대상별로 인터페이스를 두고 Mock·Real·Fault 세 구현을 둔다** |
 | Resilience4j | — | 등기 API 한 곳의 장애가 매물 조회 전체를 멈추게 해서는 안 되므로 타임아웃·재시도·서킷 브레이커와 대상별 폴백을 적용한다. 서킷 상태는 자동 구성이 지표로 낸다(아래 Actuator 행) |
 | Spring Batch + `@Scheduled` | — | 등기 변동 감지 → `RISK_ANALYSIS` 재계산 → 등급 변동 시 알림 생성이 전형적인 배치 파이프라인이다. **두 인스턴스에서 중복 실행되므로 Redis 분산 락으로 단일 실행을 보장한다** |
