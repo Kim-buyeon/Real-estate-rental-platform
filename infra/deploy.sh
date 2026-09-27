@@ -41,6 +41,13 @@ REPO_ROOT=""                             # 드리프트 가드가 채운다. 비
 UP_REL=""                                # 저장소 루트 기준의 UP 경로
 DRAIN=${DRAIN:-30}                       # 제외 뒤 진행 중인 요청이 끝나기를 기다리는 초 — graceful 30초와 같다
 WARMUP=${WARMUP:-60}                     # 첫 슬롯 복귀 뒤 JIT 워밍업 — 3.3
+# 복귀 전 예열 — 슬롯마다 upstream 에 넣기 전에 주요 조회를 직접 보낸다(#273). 부하 중 배포(T6, 2026-09-27)에서 새로 뜬 JVM 이
+# 받은 첫 요청들이 최대 4 ~ 6초 걸렸다(p99 는 그대로). readiness 는 앱이 떴다는 것만 보고 JIT · 커넥션 풀은 차갑다.
+# 결과는 보지 않는다 — 판정은 readiness · 첫 슬롯 관찰(smoke.sh)이 한다. 0 이면 끈다. 요청마다 상한 3초(readiness 와 같다) —
+# 최악(응답이 매달림) 20회 × 3경로 × 3초 ≈ 180초, 패킷이 버려지면 × 2초 ≈ 120초
+WARM_ROUNDS=${WARM_ROUNDS:-20}
+WARM_PATHS=("/api/properties/district-counts" "/api/properties?size=20"
+  "/api/properties/map-clusters?district=%EA%B0%95%EC%84%9C%EA%B5%AC&minLat=37.41&maxLat=37.72&minLng=126.73&maxLng=127.27")
 
 log() { printf '%s >>> %s\n' "$(date '+%F %T')" "$*"; }
 
@@ -259,6 +266,15 @@ for slot in "${SLOTS[@]}"; do
     fi
   fi
   FIRST=0
+
+  if [ "$WARM_ROUNDS" -gt 0 ]; then
+    log "[$ID] 예열 ${WARM_ROUNDS}회 × ${#WARM_PATHS[@]}경로"
+    for i in $(seq 1 "$WARM_ROUNDS"); do
+      for p in "${WARM_PATHS[@]}"; do
+        curl -s -o /dev/null --connect-timeout 2 -m 3 "http://$ADDR:$PORT$p" || true
+      done
+    done
+  fi
 
   log "[$ID] upstream 복귀"
   up_slot "$ADDR" "$PORT"
