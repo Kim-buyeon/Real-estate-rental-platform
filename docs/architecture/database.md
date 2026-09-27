@@ -142,6 +142,8 @@
 | Longitude | longitude |  |  | NUMERIC | 10 | 7 | — | 경도 |
 | Registered At | registered_at |  | ● | TIMESTAMP | — | — | now() | 매물 등록일시 |
 
+인덱스 — (latitude, longitude): 좌표 범위 조회(V3). (district, latitude, longitude): 자치구 + 좌표 범위인 지도 묶음 · 마커 조회(V15). (district, registered_at DESC, property_id DESC): 목록 기본 정렬을 인덱스 순서로 읽고 LIMIT 에서 멈춘다(V15). 근거는 부하 시험의 질의 통계(용량 산정 리포트, #270).
+
 ### 5. SEARCH_HISTORY — 검색 이력
 
 | 속성명 | 컬럼명 | 실질 식별자 | Not Null | 데이터타입 | 길이 | 소수점 | 기본값 | 설명 |
@@ -207,6 +209,8 @@
 | Is Current | is_current |  | ● | BOOLEAN | 1 | — | TRUE | 현재 소유자 여부 — 소유권 외 등기면 말소되지 않았는지 |
 | Recorded At | recorded_at |  | ● | TIMESTAMP | — | — | now() | 등기 기록일시 |
 
+인덱스 — (registry_id): 등기 이력 조회 · 위험도 분석이 등기 ID 로 찾는다. FK 는 인덱스를 만들지 않는다(V15).
+
 ### 9. MORTGAGE_HISTORY — 을구 — 채무 이력
 
 | 속성명 | 컬럼명 | 실질 식별자 | Not Null | 데이터타입 | 길이 | 소수점 | 기본값 | 설명 |
@@ -227,6 +231,8 @@
 | Senior Debt YN | senior_debt_yn |  | ● | BOOLEAN | 1 | — | FALSE | 선순위 채권 해당 여부 |
 | Is Active | is_active |  | ● | BOOLEAN | 1 | — | TRUE | 현재 유효한 채무 여부 |
 | Recorded At | recorded_at |  | ● | TIMESTAMP | — | — | now() | 등기 기록일시 |
+
+인덱스 — (registry_id): 등기 이력 조회 · 위험도 분석과 마커의 선순위 채무 EXISTS 가 등기 ID 로 찾는다(V15).
 
 ### 10. GUARANTEE_CRITERIA — 보증보험 공통 기준
 
