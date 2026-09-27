@@ -314,6 +314,7 @@ APP-02의 firewalld는 ssh만 연다 — 슬롯 포트는 위 이유로 여기�
 | Docker 설치 | 공식 저장소 `docker-ce` · `containerd.io` · compose 플러그인 | 2장. **Rocky 3노드에 적용했다**(2026-09-25) — `download.docker.com/linux/rhel` 저장소로 Docker 29.8.1 · Compose v5.5.1, firewalld 연동(`docker` 영역). 옛 AL2023 노드는 자체 저장소의 Docker 그대로 |
 | 컨테이너 로그 | Docker 로그 드라이버(`json-file`)에 크기 · 개수 상한 | 모니터링이 없으므로 로그가 디스크를 채우는 것을 사전에 막는다. **서비스마다 Compose의 `logging`으로 준다** — 노드 수준(`daemon.json`)이 아니라 구성 파일에 두어야 로컬과 운영이 같은 값을 쓰고 형상 관리에 남는다. 값은 운영 Compose가 갖는다 |
 | 저널 | `journald` 영구 저장 + 용량 상한 **1 GB(잠정)** | 정기 작업 결과 확인의 자리다(7.1). 상한은 월간 운영 보고가 한 달을 봐야 하는 데서 온다 — 옛 APP-01 실측 약 19 MB/일(2026-09-22 ~ 25, 설치 작업이 몰린 기간)이면 31일 ≈ 0.6 GB다. 기본값(파일시스템의 10%)은 옛 단일 노드에서 볼륨을 나누기 전이라 Docker · 백업과 같은 루트를 나눠 쓰므로 좁혔다 — 3노드는 데이터 볼륨이 분리돼 있으나(4.1) 같은 조각을 쓴다(운영 절차서 9.1 3노드 표 5). 운영 1개월 뒤 다시 본다. 값의 자리는 `infra/os/journald/` |
+| cloud-init | **첫 부팅이 끝나면 끈다**(`/etc/cloud/cloud-init.disabled`) | 첫 부팅에 SSH 키 · 사용자 · 네트워크를 적고 나면 할 일이 없는데 매 부팅 돈다. 2026-09-27 17:23 APP-02 가 `cloud-init-local` 의 IMDS `instance-id` 요청에서 응답 없이 **34분** 멈췄고 sshd 가 그 뒤라 SSH · 앱이 연결 거부였다 — **EC2 상태 검사는 ok 라 자동 복구 경보가 울리지 않는다**(#279). 끄는 방법은 [cloud-init 「How to disable cloud-init」](https://docs.cloud-init.io/en/latest/howto/disable_cloud_init.html) — 이 파일이 있으면 init 시스템이 cloud-init 을 시작하지 않는다. **대가** — 키 페어 교체 · 인스턴스 유형 · ENI 변경을 cloud-init 이 다시 반영하지 않는다(사람이 한다). 이 노드로 AMI 를 떠 새 노드를 만들면 그 노드도 꺼진 채 뜨므로 **AMI 를 뜨기 전에 파일을 지운다**. 되돌리기는 파일 삭제 뒤 재부팅. **네 노드에 적용했다**(2026-09-27 19:30) |
 
 ---
 
