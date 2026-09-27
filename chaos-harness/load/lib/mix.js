@@ -173,8 +173,9 @@ function sampleEvenly(arr, n) {
 /**
  * setup() 에서 한 번 부른다. 측정 대상이 아니다(phase 태그가 없어 임계 · 요약 집계에 들지 않는다).
  *   1. district-counts 로 자치구별 매물 수 → 상위 3개 자치구
- *   2. 자치구마다 서울 전체 범위의 마커 조회 → 실제 매물 좌표의 5~95 분위로 자치구 경계(바운딩 박스)와 중심,
- *      상세 · 위험도 첫 호출에 쓸 시드 매물 ID, 대출 한도에 쓸 SAFE 매물 ID
+ *   2. 자치구마다 서울 전체 범위의 묶음 조회 → 칸 평균 · 낱개 마커 좌표의 5~95 분위로 자치구 경계(바운딩 박스)와 중심
+ *      (건수 가중 없음 — 칸이 약 3 × 4 km 라 전량 마커 때보다 거칠다), 목록 조회(등록순 100건) → 상세 · 위험도 첫 호출에
+ *      쓸 시드 매물 ID, 대출 한도에 쓸 SAFE 매물 ID
  * 반환값은 setup 데이터로 모든 VU 에 복사되므로 작게 둔다(구당 ID 40 + SAFE 20).
  */
 export function prepareGeo() {
@@ -196,11 +197,18 @@ export function prepareGeo() {
 
   const districts = [];
   Object.keys(FALLBACK_CENTERS).forEach(function (name) {
-    const url = BASE_URL + '/api/properties' + qs(Object.assign({ district: name }, SEOUL_BOUNDS));
-    const res = http.get(url, { tags: setupTags, timeout: '60s' });
+    // 좌표 영역 마커 조회(전량 응답)는 #268 에서 막혔다(400) — 좌표는 묶음 조회의 칸 평균 · 낱개 마커로, 시드 매물은 목록 조회
+    // (등록순 100건)로 구한다. 둘 다 화면이 실제로 부르는 조회다
+    const mc = http.get(BASE_URL + '/api/properties/map-clusters' + qs(Object.assign({ district: name }, SEOUL_BOUNDS)),
+      { tags: setupTags, timeout: '60s' });
+    const mcBody = body(mc);
+    const mcData = mc.status === 200 && mcBody && mcBody.data ? mcBody.data : null;
+    const withCoord = mcData && Array.isArray(mcData.clusters) && Array.isArray(mcData.markers)
+      ? mcData.clusters.concat(mcData.markers).filter(function (m) { return m.latitude !== null && m.longitude !== null; })
+      : [];
+    const res = http.get(BASE_URL + '/api/properties' + qs({ district: name, size: 100 }), { tags: setupTags, timeout: '60s' });
     const b = body(res);
     const items = res.status === 200 && b && b.data && Array.isArray(b.data.items) ? b.data.items : [];
-    const withCoord = items.filter(function (m) { return m.latitude !== null && m.longitude !== null; });
     let entry;
     if (withCoord.length >= 5) {
       const lats = withCoord.map(function (m) { return Number(m.latitude); }).sort(function (x, y) { return x - y; });
