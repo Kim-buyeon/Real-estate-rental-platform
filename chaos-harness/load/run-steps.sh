@@ -10,7 +10,7 @@ k6 run -q -e LT_PASSWORD=$LT_PASSWORD -e START=1    -e COUNT=100 -e OUT=tokens.j
 # SSE 풀은 VU 수만큼 있어야 한다 — 앞단 상한에 가입이 429 로 빠지면 다시 돈다(이미 있는 계정은 로그인만 한다)
 for try in 1 2 3; do
   k6 run -q -e LT_PASSWORD=$LT_PASSWORD -e START=1001 -e COUNT=250 -e OUT=tokens-sse.json -e CONCURRENCY=3 make-tokens.js >> results/$N-toksse.log 2>&1
-  [ "$(python3 -c 'import json;print(len(json.load(open("tokens-sse.json"))))')" -ge 250 ] && break
+  [ "$(python3 -c 'import json;print(len(json.load(open("tokens-sse.json"))["tokens"]))')" -ge 250 ] && break
   sleep 10
 done
 echo "tokens done $(date +%T)" > results/$N.marks
