@@ -13,8 +13,9 @@
 | `lib/mix.js` · `lib/tokens.js` · `lib/summary.js` | 공용 모듈 | — |
 | `run-steps.sh` | T2 한 회차 — 토큰 풀 두 개 → SSE 250 → (SSE 가 떠 있을 때만) steps.js. SSE 가 곧바로 끝나면 본 프로파일을 시작하지 않는다 | — |
 | `tools/stages.py` | `--out csv` 시계열의 단계별 집계 — 상태 코드 분포, 받아들인(2xx · 3xx) 처리량 · p95 · p99, 지도 2단계 p95. `python3 tools/stages.py results/t2.csv.gz` | — |
+| `soak.js` | T4 지속 15 RPS · 기본 2시간(`DURATION` 으로 지정) — 토큰 풀을 최대 VU(약 320) 만큼 만든다(한계 1 · 용량 산정 리포트 한계 3) | constant-arrival-rate |
 
-T4(`soak.js`)는 아직 없다.
+**T5**(캐시 콜드)는 `steady.js` 배경 중 자치구 집계 캐시 키만 지운다 — 트래픽 정의서 4장. **T7**(배치 동시)은 `steady.js` 배경 중 등기 재조회 배치를 두 앱 노드 `.env` 의 `RISK_BATCH_REGISTRYREFRESH_CRON`(고정 시각 하나)으로 한 번 돌린다 — 끝나면 줄을 지우고 재배포한다(용량 산정 리포트 T7).
 
 ## 필요한 것
 
@@ -42,7 +43,8 @@ k6 run -e SUMMARY_DIR=results baseline.js                       # T1
 k6 run -e SUMMARY_DIR=results steps.js                          # T2
 k6 run -e MAX_STEP=3 -e SUMMARY_DIR=results steps.js            # T2 50 RPS 까지(예비 측정, 5.1 1번)
 k6 run -e DURATION=20m -e PROFILE=T3 -e SUMMARY_DIR=results steady.js
-redis-cli FLUSHALL && k6 run -e DURATION=10m -e PROFILE=T5 -e SUMMARY_DIR=results steady.js
+k6 run -e DURATION=15m -e PROFILE=T5 -e SUMMARY_DIR=results steady.js   # T5 — 5분 뒤 APP-01 에서 캐시 키만 지운다(위 표 아래 T5 문단)
+k6 run -e TOKENS=tokens-t4.json -e SUMMARY_DIR=results soak.js     # T4 — 기본 2h. 토큰 풀은 COUNT=320 으로 따로(tokens-t4.json)
 ```
 
 시계열이 필요하면(`dropped_iterations` 가 난 구간 찾기 등) `--out csv=results/t2.csv` 를 더한다.
@@ -54,7 +56,7 @@ redis-cli FLUSHALL && k6 run -e DURATION=10m -e PROFILE=T5 -e SUMMARY_DIR=result
 | `BASE_URL` | `http://10.20.0.10` | 전부 | 앞단 주소 |
 | `TOKENS` | `./tokens.json` · `./tokens-sse.json` | 본 · SSE | 토큰 파일. 상대 경로는 진입 스크립트 기준 |
 | `SUMMARY_DIR` | 현재 디렉터리 | 전부 | 요약 JSON 을 쓸 곳(미리 만든다) |
-| `DURATION` | (steady 필수) · `45m`(sse) | steady · sse | `600`, `20m`, `1h30m` |
+| `DURATION` | (steady 필수) · `45m`(sse) · `2h`(soak) | steady · sse · soak | `600`, `20m`, `1h30m` |
 | `PROFILE` | `T3` | steady | 요약 파일 이름에만 쓴다 |
 | `MAX_STEP` | `5` | steps | 앞 N 단계만 |
 | `THINK` / `THINK_MIN` / `THINK_MAX` | on / 3 / 10 | 본 | think time(초). `THINK=0` 이면 끈다 |

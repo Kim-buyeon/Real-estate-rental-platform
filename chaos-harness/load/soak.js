@@ -1,19 +1,17 @@
-// T3 정상 부하 — 25 RPS 고정, 길이는 시험에 맞춘다 (트래픽 정의서 4장 · 8장, constant-arrival-rate).
-// 장애 주입의 배경 부하이며 T5 · T6 · T7 도 이 스크립트로 돈다(8장):
-//   T5 캐시 콜드 — 실행 중 자치구 집계 캐시 키만 삭제(FLUSHALL 아님 — 트래픽 정의서 4장 「T5의 실행 방법」)
-//   T6 배포 중   — 실행 중 deploy.sh
-//   T7 배치 동시 — 실행 중 등기 재조회 배치를 고정 시각 하나로 한 번(하네스 README)
-// PROFILE 은 요약 파일 이름에만 쓴다(인가량은 바뀌지 않는다). DURATION 은 초 또는 k6 형식(예: 20m, 1h30m).
+// T4 지속 — 15 RPS 고정 · 2시간 (트래픽 정의서 4장 · 8장, constant-arrival-rate). 메모리 · 커넥션 누수 확인.
+// think time 은 켠다(기본) — 2시간이라 액세스 토큰 만료가 실제로 일어나고, 조합의 토큰 갱신이 Redis 경로를 유지한다(트래픽 정의서 3.1 「토큰 갱신을 조합에 넣는 이유」).
+// 판정은 응답 시간보다 **추이**다 — 노드 자원 기록(힙 · RSS · Hikari · PostgreSQL 연결 수)이 시간에 따라 계속 오르는지 본다.
+// DURATION 을 주면 그 길이로 돈다(시험 준비 · 짧은 확인용). 기본 2h.
 //
-//   k6 run -e DURATION=20m -e PROFILE=T3 -e SUMMARY_DIR=results steady.js
+//   k6 run -e SUMMARY_DIR=results soak.js
+//   k6 run -e DURATION=10m -e SUMMARY_DIR=results soak.js
 
 import { loadTokenPool, inspectPool } from './lib/tokens.js';
 import { prepareGeo, iterate, singlePhase, buildThresholds, vuBudget, SUMMARY_TREND_STATS, WARMUP_SEC } from './lib/mix.js';
 import { makeHandleSummary } from './lib/summary.js';
 
-const RATE = 25;
-const PROFILE = __ENV.PROFILE || 'T3';
-const PHASE = 't3_25rps';
+const RATE = 15;
+const PHASE = 't4_15rps';
 
 function toSeconds(s) {
   if (/^\d+$/.test(s)) return Number(s);
@@ -25,14 +23,11 @@ function toSeconds(s) {
     total += Number(match[1]) * (match[2] === 'h' ? 3600 : match[2] === 'm' ? 60 : 1);
     consumed += match[0];
   }
-  if (consumed !== s || total === 0) throw new Error('DURATION 형식을 읽지 못했다: ' + s + ' (예: 600, 20m, 1h30m)');
+  if (consumed !== s || total === 0) throw new Error('DURATION 형식을 읽지 못했다: ' + s + ' (예: 600, 20m, 2h)');
   return total;
 }
 
-if (!__ENV.DURATION) {
-  throw new Error('DURATION 이 필요하다 — T3 는 시험 길이에 맞춘다(트래픽 정의서 4장). 예: -e DURATION=20m');
-}
-const DURATION_SEC = toSeconds(__ENV.DURATION);
+const DURATION_SEC = toSeconds(__ENV.DURATION || '2h');
 if (DURATION_SEC <= WARMUP_SEC) throw new Error('DURATION 은 워밍업(60초)보다 길어야 한다');
 
 const POOL = loadTokenPool('tokens', __ENV.TOKENS || './tokens.json', function (p) { return open(p); });
@@ -40,7 +35,7 @@ const VUS = vuBudget(RATE);
 
 export const options = {
   scenarios: {
-    t3: {
+    t4: {
       executor: 'constant-arrival-rate',
       rate: RATE,
       timeUnit: '1s',
@@ -70,4 +65,4 @@ export default function (data) {
 
 const phaseSeconds = {};
 phaseSeconds[PHASE] = DURATION_SEC - WARMUP_SEC;
-export const handleSummary = makeHandleSummary('steady', PROFILE, phaseSeconds);
+export const handleSummary = makeHandleSummary('soak', 'T4', phaseSeconds);
