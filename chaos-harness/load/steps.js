@@ -15,9 +15,13 @@ import { loadTokenPool, inspectPool } from './lib/tokens.js';
 import { prepareGeo, iterate, buildThresholds, vuBudget, SUMMARY_TREND_STATS, WARMUP_SEC } from './lib/mix.js';
 import { makeHandleSummary } from './lib/summary.js';
 
-const ALL_RATES = [10, 25, 50, 100, 200];
+// RATES=50,60,75,100,125 처럼 주면 그 단계로 돈다 — 포화점을 촘촘히 잴 때(리포트 한계 4). 기본은 트래픽 정의서 4장의 다섯 단계
+const ALL_RATES = (__ENV.RATES || '10,25,50,100,200').split(',').map(function (v) { return Number(v.trim()); });
+if (!ALL_RATES.every(function (r, i) { return Number.isInteger(r) && r > 0 && (i === 0 || r > ALL_RATES[i - 1]); })) {
+  throw new Error('RATES 는 오름차순 양의 정수 목록 — 예: 50,60,75,100,125(VU 예산을 마지막 단계로 잡는다)');
+}
 const MAX_STEP = Number(__ENV.MAX_STEP || ALL_RATES.length);
-if (!(MAX_STEP >= 1 && MAX_STEP <= ALL_RATES.length)) throw new Error('MAX_STEP 은 1~5');
+if (!(MAX_STEP >= 1 && MAX_STEP <= ALL_RATES.length)) throw new Error('MAX_STEP 은 1 ~ 단계 수');
 const RATES = ALL_RATES.slice(0, MAX_STEP);
 
 const HOLD_SEC = 300;
