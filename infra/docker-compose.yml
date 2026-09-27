@@ -50,7 +50,7 @@ x-logging: &logging
 #   서비스        mem_limit   상한 전   반영 후   조회 중   상한의 근거
 #   app-1             600m    454 MiB   424 MiB   445 MiB   힙 360m(60%) + non-heap 240m
 #   app-2             600m    455 MiB   423 MiB   446 MiB   위와 같음
-#   postgres          256m     89 MiB    56 MiB    87 MiB   최악값은 담지 못한다 — postgres 서비스 주석
+#   postgres          256m     89 MiB    56 MiB    87 MiB   최악값은 담지 못한다 — postgres 서비스 주석. DB 노드는 PG_MEM_LIMIT(768m)
 #   redis             112m    4.6 MiB   3.6 MiB   4.0 MiB   maxmemory 64mb + 단편화 · AOF 버퍼 · 출력 버퍼
 #   nginx              48m    3.7 MiB   3.4 MiB   3.4 MiB   SSE 는 proxy_buffering off 라 연결당 버퍼 없음
 #   web                32m    4.2 MiB   3.4 MiB   3.4 MiB   정적 파일 서빙 nginx
@@ -80,7 +80,7 @@ x-logging: &logging
 # 복제 standby(INF-03) — 같은 노드의 컨테이너다. 트래픽을 받지 않고 WAL 재생만 한다.
 #
 #   서비스              mem_limit   실측              상한의 근거
-#   postgres-standby        256m   (노드 적용 뒤)    primary 와 같다 — 승격되면 primary 역할을 한다
+#   postgres-standby        256m   (노드 적용 뒤)    primary 와 같다 — 승격되면 primary 역할을 한다. DB 노드는 PG_MEM_LIMIT
 #   ──────────────────────────────────────────────
 #   위 두 표와 더해 상한 합 2396m. 노드 실사용은 이만큼 순증한다(로컬 Docker 에서 빈 DB 로 띄운 값은 17 MiB 였다 —
 #   이 노드 · 이 DB 크기의 값이 아니다).
@@ -509,7 +509,12 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     logging: *logging
-    mem_limit: 256m
+    # 기본 256m 은 단일 노드(APP-01 에 앱 · Redis 와 함께) 배분이다. **3노드의 DB 노드는 PostgreSQL 혼자라 PG_MEM_LIMIT 로 올린다**
+    # (#276 — DB-01 · DB-02 .env 768m). 부하 시험(INF-06, 2026-09-26 ~ 27)에서 DB-01 의 이 컨테이너가 256m 에 붙어 있었다 —
+    # 샘플 최대 250.8 MiB, 여덟 회차 중 일곱이 240 MiB 이상(OOM 은 없었다). 파일 캐시가 이 상한에 과금되므로(머리 주석)
+    # 상한에 닿으면 회수에 몰린다. 768m 은 DB 노드 가용(1905 − OS 약 264 − 수집기 214 ≈ 1427)의 약 절반 — 나머지는
+    # 커널 page cache · 백업 스크립트 몫이다. standby 도 같은 값이다(승격 뒤 primary)
+    mem_limit: ${PG_MEM_LIMIT:-256m}
     # 저장소 자원 상한 — 시스템 구성서 3장. 이미지 기본값(shared_buffers 128MB · max_connections 100)은
     # 이 노드에 들어오지 않는다.
     #
@@ -592,8 +597,8 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     logging: *logging
-    # primary 와 같다 — 승격되면 primary 역할을 한다
-    mem_limit: 256m
+    # primary 와 같다 — 승격되면 primary 역할을 한다. DB 노드는 PG_MEM_LIMIT(postgres 서비스 주석)
+    mem_limit: ${PG_MEM_LIMIT:-256m}
     # 초기화 — 데이터 디렉터리가 비었을 때만 primary(postgres)에서 슬롯 standby_1 로 받는다. 받는 방법 · 복제 비밀번호를
     # 볼륨에 남기지 않는 이유는 초기화 스크립트(infra/postgres/bootstrap.sh) 머리 주석. postgres 와 같은 스크립트다.
     tmpfs:
