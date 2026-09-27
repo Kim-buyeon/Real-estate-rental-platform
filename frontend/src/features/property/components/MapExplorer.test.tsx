@@ -7,7 +7,8 @@
 // PropertyDetailPanel.test.tsx는 SDK 없음(window.kakao undefined) 경로를 검증하므로 이 파일의
 // 가짜는 여기 하나에만 설치 · 해제한다 — 전역 기본값을 바꾸지 않는다.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   KakaoAddressSearchResult,
@@ -19,7 +20,7 @@ import type {
 import type { MapStage } from '../hooks/useMapStage';
 import { FakeKakaoCustomOverlay, installFakeKakaoMaps, getKakaoMapInstances } from '../../../test/kakao';
 import { installFakeResizeObserver, getResizeObserverInstances } from '../../../test/resizeObserver';
-import { propertyHandlers } from '../../../test/msw/handlers/property';
+import { MAP_CLUSTERS, propertyHandlers } from '../../../test/msw/handlers/property';
 import { server } from '../../../test/msw/server';
 import { MapExplorer } from './MapExplorer';
 
@@ -258,6 +259,54 @@ describe('MapExplorer SDK가 렌더 뒤에 준비될 때', () => {
     for (const overlay of createdOverlays) {
       expect(overlay.setMap).toHaveBeenCalledWith(map);
     }
+  });
+
+  it('자치구 단계는 지도 묶음을 조회해 서버의 묶음과 개별 마커를 그리고, 묶음을 누르면 그 칸으로 확대한다', async () => {
+    const requested: URL[] = [];
+    server.use(
+      http.get('/api/properties/map-clusters', ({ request }) => {
+        requested.push(new URL(request.url));
+        return HttpResponse.json({ success: true, data: MAP_CLUSTERS });
+      }),
+    );
+    // 자치구 좌표는 map 모듈이 캐시하므로 이 파일의 다른 테스트가 쓰지 않는 구를 쓴다
+    renderAt({ type: 'district', district: '마포구' });
+
+    await finishSdkLoad();
+
+    await waitFor(() => expect(getKakaoMapInstances()).toHaveLength(1));
+    const map = getKakaoMapInstances()[0]!;
+    const clusterButton = () =>
+      createdOverlays
+        .map((overlay) => overlay.getContent().querySelector<HTMLButtonElement>('button[aria-label*="묶음"]'))
+        .find((button) => button !== null);
+    await waitFor(() => expect(clusterButton()).toBeDefined());
+
+    // 요청은 새 경로 하나에 자치구와 표시 영역 넷을 싣는다 (명세 1.12)
+    const params = requested.at(-1)!.searchParams;
+    expect(params.get('district')).toBe('마포구');
+    for (const name of ['minLat', 'maxLat', 'minLng', 'maxLng']) {
+      expect(params.has(name)).toBe(true);
+    }
+
+    // 묶음 하나 + 개별 마커 하나. 서버가 묶은 것을 다시 묶지 않는다
+    const contents = createdOverlays.map((overlay) => overlay.getContent());
+    expect(contents.filter((content) => content.querySelector('button[aria-label*="묶음"]'))).toHaveLength(1);
+    expect(clusterButton()!.getAttribute('aria-label')).toContain('214');
+    expect(contents.filter((content) => content.querySelector('button:not([aria-label])'))).toHaveLength(1);
+
+    map.setBounds.mockClear();
+    fireEvent.click(clusterButton()!);
+
+    expect(map.setBounds).toHaveBeenCalledTimes(1);
+    const bounds = map.setBounds.mock.calls[0]![0] as {
+      getSouthWest(): { getLat(): number; getLng(): number };
+      getNorthEast(): { getLat(): number; getLng(): number };
+    };
+    expect(bounds.getSouthWest().getLat()).toBe(37.545);
+    expect(bounds.getSouthWest().getLng()).toBe(126.8567);
+    expect(bounds.getNorthEast().getLat()).toBe(37.55);
+    expect(bounds.getNorthEast().getLng()).toBe(126.8633);
   });
 
   it('로드 중에 언마운트하면 로드가 끝나도 지도를 만들지 않고 조회도 하지 않는다', async () => {

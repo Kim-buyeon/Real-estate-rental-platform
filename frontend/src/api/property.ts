@@ -1,6 +1,7 @@
-// 매물 API 명세 — 명세 표의 행 하나 = 함수 하나. 지금은 자치구 집계(PROP-08) · 매물 조회(PROP-01 목록 ·
-// PROP-02 지도 마커) · 상세(PROP-03) · 건축물대장(PROP-04) · 관심 매물 3행(PROP-05)이다.
-// 매물 조회만 한 행에 함수가 둘이다 — 좌표 조건의 유무로 응답 형태가 갈려 타입이 다르다 (명세 1.3).
+// 매물 API 명세 — 명세 표의 행 하나 = 함수 하나. 지금은 자치구 집계(PROP-08) · 매물 목록(PROP-01) ·
+// 지도 묶음(PROP-02) · 상세(PROP-03) · 건축물대장(PROP-04) · 관심 매물 3행(PROP-05)이다.
+// 매물 조회(GET /api/properties)의 좌표 조건 형태(명세 1.3 마커 응답)는 화면이 쓰지 않는다 — 지도 자치구 단계는
+// 지도 묶음 조회(명세 1.12)로 옮겨 갔다. 쓰는 화면이 없는 형태에 함수를 두지 않는다.
 import type { ContractType, PropertySort, PropertyType } from '../domain/property';
 import type { PriceType, RiskGrade } from '../domain/risk';
 import { request } from './client';
@@ -26,7 +27,7 @@ export interface PropertyFilter {
   areaMax?: number;
 }
 
-/** 지도 표시 영역 좌표 — 명세 1.3. 이 조건이 있으면 응답이 목록이 아니라 마커 형태다 */
+/** 지도 표시 영역 좌표 — 명세 1.12. 지도 묶음 조회의 필수 파라미터다 */
 export interface BoundingBox {
   minLat: number;
   maxLat: number;
@@ -34,7 +35,10 @@ export interface BoundingBox {
   maxLng: number;
 }
 
-/** 지도 마커 응답 항목 — 명세 1.4. 분석 이력이 없는 매물은 riskGrade · debtRatio가 null이다 */
+/**
+ * 지도 마커 응답 항목 — 명세 1.4. 지도 묶음 응답(1.12)의 markers가 이 필드 그대로다.
+ * 분석 이력이 없는 매물은 riskGrade · debtRatio가 null이다
+ */
 export interface PropertyMarker {
   propertyId: number;
   latitude: number;
@@ -51,10 +55,35 @@ export interface PropertyMarker {
   hasSeniorDebt: boolean;
 }
 
-/** 표시 영역 전체를 그려야 하므로 커서 페이지네이션을 쓰지 않는다 — 명세 1.3 */
-export interface PropertyMarkerList {
-  items: PropertyMarker[];
+/**
+ * 격자 한 칸의 묶음 — 명세 1.12 clusters[]. 칸에 매물이 두 건 이상일 때만 온다.
+ * gradeCounts의 UNANALYZED는 분석 이력이 없는 매물 수다 — 열거값이 아니라 이 응답의 키다.
+ */
+export interface PropertyMapCluster {
+  /** 칸 식별자 `행:열`. 같은 표시 영역 안에서만 유일하다 */
+  key: string;
+  /** 칸 안 매물의 평균 좌표 — 묶음 표시 위치 */
+  latitude: number;
+  longitude: number;
   count: number;
+  gradeCounts: Record<RiskGrade | 'UNANALYZED', number>;
+  /** 칸 경계 — 선택 시 확대할 영역 */
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}
+
+/**
+ * 지도 묶음 응답 — 명세 1.12. 표시 영역의 매물이 40건 이하면 clustered가 false이고 전부 markers로 온다.
+ * 넘으면 두 건 이상인 칸은 clusters, 한 건뿐인 칸은 markers다. 묶는 규칙은 서버가 갖는다.
+ */
+export interface PropertyMapClusters {
+  /** 표시 영역 안 매물 수(필터 적용) */
+  total: number;
+  clustered: boolean;
+  clusters: PropertyMapCluster[];
+  markers: PropertyMarker[];
 }
 
 /** 자치구 하나의 집계 — 명세 1.5. gradeCounts는 건수가 0인 등급이 빠질 수 있다 */
@@ -75,9 +104,9 @@ export interface DistrictCountList {
 export const fetchDistrictCounts = (filter: PropertyFilter) =>
   request<DistrictCountList>({ url: '/properties/district-counts', params: { ...filter } });
 
-/** PROP-02 · GET /api/properties (좌표 조건 있음 → 마커 형태) — 자치구 단계 */
-export const fetchPropertyMarkers = (filter: PropertyFilter, bbox: BoundingBox) =>
-  request<PropertyMarkerList>({ url: '/properties', params: { ...filter, ...bbox } });
+/** PROP-02 · GET /api/properties/map-clusters — 지도 자치구 단계. 표시 영역 넷 모두 필수 (명세 1.12) */
+export const fetchPropertyMapClusters = (filter: PropertyFilter, bbox: BoundingBox) =>
+  request<PropertyMapClusters>({ url: '/properties/map-clusters', params: { ...filter, ...bbox } });
 
 /**
  * 목록 조회 응답 항목 — 명세 1.6. 좌표 조건 없이 조회했을 때의 형태이며 마커 응답(1.4)과 필드가 다르다.
@@ -106,8 +135,8 @@ export interface PropertyListItem {
 /**
  * PROP-01 · GET /api/properties (좌표 조건 없음 → 목록 형태) — 지도 옆 패널의 목록 탭.
  *
- * 마커 조회와 같은 경로다. 좌표를 보내면 마커 형태로 응답하므로(명세 1.3) 여기서는 보내지 않는다 —
- * PropertyFilter에 좌표가 없는 것이 그 보장이고, BoundingBox는 마커 함수만 받는다.
+ * 좌표를 보내면 마커 형태로 응답하므로(명세 1.3) 여기서는 보내지 않는다 —
+ * PropertyFilter에 좌표가 없는 것이 그 보장이고, BoundingBox는 지도 묶음 함수만 받는다.
  * 정렬을 지정하지 않으면 서버가 등록일 내림차순을 적용한다(명세 1.3) — 화면이 기본값을 박지 않는다.
  * size도 보내지 않는다 — 공통 규약 1.4의 기본값 20을 쓴다 (fetchWishlist와 같은 판단).
  */

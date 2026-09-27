@@ -81,7 +81,7 @@ export function lockSeoulView(map: KakaoMap): void {
   map.setMaxLevel(map.getLevel());
 }
 
-/** 특정 영역으로 확대해 들어간다 — 클러스터를 눌렀을 때 그 셀로 */
+/** 특정 영역으로 확대해 들어간다 — 묶음을 눌렀을 때 그 칸으로 */
 export function fitBoundingBox(map: KakaoMap, bbox: BoundingBox): void {
   const maps = requireMaps();
   map.setBounds(

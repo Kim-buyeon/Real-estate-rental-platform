@@ -11,7 +11,6 @@ import {
   createOverlayLayer,
   fitBoundingBox,
   fitSeoul,
-  groupMarkers,
   isMapSdkReady,
   loadKakaoMaps,
   lockSeoulView,
@@ -20,15 +19,14 @@ import {
   readBoundingBox,
   relayoutMap,
   searchDistrictPoint,
-  type GroupedMarkers,
   type KakaoMap,
-  type MarkerCluster,
   type OverlayLayer,
 } from '../map';
 import { useDistrictPoints } from '../hooks/useDistrictPoints';
 import type { MapStage } from '../hooks/useMapStage';
 import { DistrictOverlayContent } from './DistrictOverlayContent';
 import { MarkerClusterContent } from './MarkerClusterContent';
+import { toMarkerCluster, type MarkerCluster } from '../map';
 import { MarkerPreviewCard } from './MarkerPreviewCard';
 import { PropertyMarkerContent } from './PropertyMarkerContent';
 import styles from './MapExplorer.module.css';
@@ -223,8 +221,8 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
   );
   // 이번 단계에서 읽은 표시 영역이 있을 때만 조회한다 — 단계가 바뀐 직후의 한 번을 막는다
   const stageBbox = view?.stageKey === stageKey ? view.bbox : null;
-  const markersQuery = useQuery({
-    ...propertyQueries.markers(markerFilter, stageBbox ?? PENDING_BBOX),
+  const mapClustersQuery = useQuery({
+    ...propertyQueries.mapClusters(markerFilter, stageBbox ?? PENDING_BBOX),
     enabled: !isSeoul && stageBbox !== null,
   });
 
@@ -252,17 +250,15 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     fitBoundingBox(map, cluster.bbox);
   }, []);
 
-  const markers = markersQuery.data?.items;
+  const mapClusters = mapClustersQuery.data;
+  const markers = mapClusters?.markers;
   const previewMarker = useMemo(
     () => (previewId === null ? null : (markers?.find((marker) => marker.propertyId === previewId) ?? null)),
     [markers, previewId],
   );
 
-  /** 묶음은 마커와 표시 영역에만 달려 있다. 미리보기 상태가 바뀔 때마다 다시 묶지 않는다 */
-  const grouped = useMemo<GroupedMarkers>(() => {
-    if (isSeoul || !stageBbox) return { clusters: [], singles: markers ?? [] };
-    return groupMarkers(markers ?? [], stageBbox);
-  }, [isSeoul, markers, stageBbox]);
+  /** 묶음은 서버가 만든다(명세 1.12). 응답이 바뀔 때만 옮긴다 — 미리보기 상태가 바뀔 때마다 다시 만들지 않는다 */
+  const clusters = useMemo<MarkerCluster[]>(() => (mapClusters?.clusters ?? []).map(toMarkerCluster), [mapClusters]);
 
   const overlayItems = useMemo<OverlayItem[]>(() => {
     if (isSeoul) {
@@ -288,14 +284,14 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
         .filter((item): item is OverlayItem => item !== null);
     }
 
-    const items: OverlayItem[] = grouped.clusters.map((cluster) => ({
+    const items: OverlayItem[] = clusters.map((cluster) => ({
       key: cluster.key,
       lat: cluster.lat,
       lng: cluster.lng,
       node: <MarkerClusterContent cluster={cluster} onSelect={handleSelectCluster} />,
     }));
 
-    for (const marker of grouped.singles) {
+    for (const marker of markers ?? []) {
       items.push({
         key: `marker:${marker.propertyId}`,
         lat: marker.latitude,
@@ -329,7 +325,7 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     districtCountsQuery.data,
     districtPoints,
     districtRank,
-    grouped,
+    clusters,
     frontDistrict,
     handleClosePreview,
     handleHoverDistrict,
@@ -337,6 +333,7 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     handleSelectCluster,
     handleSelectMarker,
     isSeoul,
+    markers,
     onOpenDetail,
     onSelectDistrict,
     previewId,
@@ -376,7 +373,7 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     }
   }, [containers, elementFor, overlayItems]);
 
-  const queryError = districtCountsQuery.error ?? markersQuery.error;
+  const queryError = districtCountsQuery.error ?? mapClustersQuery.error;
 
   return (
     <div className={styles.wrapper}>

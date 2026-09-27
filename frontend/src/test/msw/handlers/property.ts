@@ -1,10 +1,11 @@
-// 매물 도메인 MSW 핸들러. 응답은 매물 API 명세 1.5 · 1.6 · 1.7 · 1.8 · 1.9의 예시 그대로다 (frontend/CLAUDE.md 폴더 구조).
+// 매물 도메인 MSW 핸들러. 응답은 매물 API 명세 1.5 · 1.6 · 1.7 · 1.8 · 1.9 · 1.12의 예시 그대로다 (frontend/CLAUDE.md 폴더 구조).
 import { http, HttpResponse } from 'msw';
 import type {
   BuildingLedger,
   DistrictCountList,
   PropertyDetail,
   PropertyListItem,
+  PropertyMapClusters,
   WishlistItem,
 } from '../../../api/property';
 import type { CursorPage } from '../../../api/types';
@@ -16,6 +17,39 @@ const DISTRICT_COUNTS: DistrictCountList = {
   ],
   totalCount: 540,
   aggregatedAt: '2026-07-29T10:05:00+09:00',
+};
+
+/** 매물 API 명세 1.12 응답 예시 그대로 — 묶음 하나와 개별 마커 하나. MapExplorer 테스트가 쓴다 */
+export const MAP_CLUSTERS: PropertyMapClusters = {
+  total: 6003,
+  clustered: true,
+  clusters: [
+    {
+      key: '5:7',
+      latitude: 37.5534,
+      longitude: 126.8561,
+      count: 214,
+      gradeCounts: { SAFE: 80, CAUTION: 71, DANGER: 58, UNANALYZED: 5 },
+      minLat: 37.545,
+      maxLat: 37.55,
+      minLng: 126.8567,
+      maxLng: 126.8633,
+    },
+  ],
+  markers: [
+    {
+      propertyId: 41408,
+      latitude: 37.5791,
+      longitude: 126.8104,
+      deposit: 150000000,
+      riskGrade: 'CAUTION',
+      contractType: 'DEPOSIT_ONLY',
+      monthlyRent: 0,
+      district: '강서구',
+      debtRatio: 74.5,
+      hasSeniorDebt: false,
+    },
+  ],
 };
 
 /** 매물 API 명세 1.7 응답 예시 그대로 — PropertyDetailPanel 테스트가 쓴다 */
@@ -159,6 +193,8 @@ export const PROPERTY_LIST_PAGE_2: CursorPage<PropertyListItem> = {
  */
 export const propertyHandlers = [
   http.get('/api/properties/district-counts', () => HttpResponse.json({ success: true, data: DISTRICT_COUNTS })),
+  // :propertyId보다 앞에 둔다 — 뒤에 두면 map-clusters가 매물 id로 잡힌다
+  http.get('/api/properties/map-clusters', () => HttpResponse.json({ success: true, data: MAP_CLUSTERS })),
   http.get('/api/properties/:propertyId/ledger', () => HttpResponse.json({ success: true, data: BUILDING_LEDGER })),
   http.get('/api/properties/:propertyId', () => HttpResponse.json({ success: true, data: PROPERTY_DETAIL })),
   http.get('/api/properties', ({ request }) => {

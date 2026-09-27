@@ -218,6 +218,28 @@ class SchemaMigrationTest {
     }
 
     @Test
+    @DisplayName("V15: 매물은 자치구 + 좌표 · 자치구 + 등록순, 등기 이력 둘은 registry_id 인덱스다")
+    void queryIndexes() {
+        Map<String, String> indexDefs = jdbcTemplate.queryForList(
+                        """
+                        SELECT indexname, indexdef FROM pg_indexes
+                        WHERE schemaname = 'public'
+                          AND indexname IN ('idx_property_district_lat_lng', 'idx_property_district_registered',
+                                            'idx_ownership_history_registry', 'idx_mortgage_history_registry')
+                        """)
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        r -> (String) r.get("indexname"), r -> (String) r.get("indexdef")));
+
+        assertThat(indexDefs).hasSize(4);
+        assertThat(indexDefs.get("idx_property_district_lat_lng")).contains("property", "(district, latitude, longitude)");
+        assertThat(indexDefs.get("idx_property_district_registered"))
+                .contains("property", "(district, registered_at DESC, property_id DESC)");
+        assertThat(indexDefs.get("idx_ownership_history_registry")).contains("ownership_history", "(registry_id)");
+        assertThat(indexDefs.get("idx_mortgage_history_registry")).contains("mortgage_history", "(registry_id)");
+    }
+
+    @Test
     @DisplayName("V6: 위험 등급 기준은 CAUTION 경계가 깡통전세 선 이상이면 거부된다")
     void riskCriteriaRejectsNonMonotonicThresholds() {
         assertThatThrownBy(() -> jdbcTemplate.update(

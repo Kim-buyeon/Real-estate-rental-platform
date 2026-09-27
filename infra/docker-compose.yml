@@ -235,6 +235,14 @@ x-postgres-command: &postgres-command
   - maintenance_work_mem=16MB
   - -c
   - autovacuum_max_workers=2
+  # 질의 통계(#270) — 어느 질의가 DB CPU 를 쓰는지 합계 · 호출 수 · 평균으로 본다. 부하 시험 T2-⑤(100 RPS 에서 DB-01 CPU
+  # 0.83 ~ 0.94)의 원인을 가리려고 넣었고, 운영 중 느린 질의를 찾는 수단으로 남긴다(운영 절차서 2장 「질의 통계」).
+  # 공유 메모리에 적재돼야 수집하므로 **서버 기동 시점에만** 켜진다 — 바꾸면 재생성한다. 확장(뷰)은 앱 DB 가 아니라 postgres
+  # 데이터베이스에 만든다 — 수집은 클러스터 전체라 어디서 보든 같고, 앱 스키마 · Flyway 를 건드리지 않는다.
+  # 대가 — 공유 메모리 수 MB(기본 pg_stat_statements.max 5000 항목)와 질의마다 해시 · 누적의 작은 부담.
+  # track 은 기본값 top 에 기댄다 — 함수 안 질의는 이 앱에 없다. standby 도 같은 목록이다(승격 뒤 같은 수단으로 본다).
+  - -c
+  - shared_preload_libraries=pg_stat_statements
   # 페일백에서 pg_rewind 를 쓰려면 이 설정이 **장애 전에** 켜져 있어야 한다 — 운영 절차서 6.2 의
   # 재구축 수단 판정표가 「wal_log_hints = on 또는 데이터 체크섬 활성」을 조건으로 두고, 인프라 기술
   # 스택 3장이 「장애 발생 후에는 선택할 수 없다」고 못 박았다. 꺼져 있으면 구 primary 를 되돌리는 데
@@ -510,6 +518,7 @@ services:
     #   백엔드마다 relcache · plan cache 가 따로 잡힌다(커넥션당 1.5~3 MiB)
     #   work_mem 은 커넥션당이 아니라 질의 안의 정렬 · 해시 노드마다 잡힌다
     #   Flyway 의 CREATE INDEX 는 autovacuum 과 별개로 maintenance_work_mem 을 한 번 더 잡는다
+    #   pg_stat_statements(#270)의 공유 메모리와 질의 문자열 파일 — **미확정**, 노드 반영 뒤 pg_shmem_allocations 로 재서 적는다
     # 전부 더한 최악은 300~360 MiB 이고 256m 으로 담을 수 없다. **담으려면 앱 슬롯을 실측에 더 가깝게
     # 조여야 하는데, 둘 다 담을 수 있는 배분은 이 노드 크기에 없다**(2026-09-23 결정).
     #

@@ -113,7 +113,7 @@
 | NOTIFICATION_NOT_FOUND | 404 | 존재하지 않거나 다른 사용자의 알림 |
 | LOAN_PROPERTY_NOT_ELIGIBLE | 422 | 보증보험 가입 불가 매물로 한도 계산 · 추천 대상 아님 |
 | CONSULT_QUOTA_EXCEEDED | 429 | 상담 호출 한도 초과 |
-| TOO_MANY_REQUESTS | 429 | 앞단 처리 한도 초과 — 앱이 아니라 앞단 Nginx가 낸다(`/api/` 전체 초당 상한, 운영 절차서 4.2). `retryAfter` 없이 `Retry-After: 1` 헤더를 준다 |
+| TOO_MANY_REQUESTS | 429 | 앞단 처리 한도 초과 — 앱이 아니라 앞단 Nginx가 낸다(`/api/` 전체 초당 상한 또는 클라이언트(IP)별 상한 — 먼저 닿는 쪽, 운영 절차서 4.2). `retryAfter` 없이 `Retry-After: 1` 헤더를 준다 |
 | CONSULT_OUT_OF_SCOPE | 200 | 응답 범위 밖. 오류가 아닌 안내로 처리 |
 | EXTERNAL_API_UNAVAILABLE | 503 | 외부 연동 장애 |
 | INTERNAL_ERROR | 500 | 예상하지 못한 내부 오류. 내부 메시지는 응답에 노출하지 않는다 |
