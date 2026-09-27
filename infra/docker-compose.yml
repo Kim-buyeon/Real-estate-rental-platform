@@ -518,6 +518,7 @@ services:
     #   백엔드마다 relcache · plan cache 가 따로 잡힌다(커넥션당 1.5~3 MiB)
     #   work_mem 은 커넥션당이 아니라 질의 안의 정렬 · 해시 노드마다 잡힌다
     #   Flyway 의 CREATE INDEX 는 autovacuum 과 별개로 maintenance_work_mem 을 한 번 더 잡는다
+    #   pg_stat_statements(#270)의 공유 메모리와 질의 문자열 파일 — **미확정**, 노드 반영 뒤 pg_shmem_allocations 로 재서 적는다
     # 전부 더한 최악은 300~360 MiB 이고 256m 으로 담을 수 없다. **담으려면 앱 슬롯을 실측에 더 가깝게
     # 조여야 하는데, 둘 다 담을 수 있는 배분은 이 노드 크기에 없다**(2026-09-23 결정).
     #
