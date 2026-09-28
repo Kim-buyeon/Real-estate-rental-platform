@@ -34,6 +34,9 @@ const POOL = loadTokenPool('tokens', __ENV.TOKENS || './tokens.json', function (
 const VUS = vuBudget(RATE);
 
 export const options = {
+  // 앞단이 HTTPS 다(2026-09-28 · #288). IP 인증서는 공인 IP 이름이라 사설 주소(10.20.0.10)로 붙으면 이름 검증이 실패한다 —
+  // 검증만 끈다(서버의 TLS 비용은 그대로다). 운영 설정과 다른 점이다(스킬 crypto-cost-check 3장)
+  insecureSkipTLSVerify: true,
   scenarios: {
     t4: {
       executor: 'constant-arrival-rate',

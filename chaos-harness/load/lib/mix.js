@@ -12,7 +12,7 @@ import { Rate, Counter } from 'k6/metrics';
 import { getSession, authHeaders, reissue } from './tokens.js';
 
 // ── 실행 환경 ────────────────────────────────────────────────────────────
-export const BASE_URL = (__ENV.BASE_URL || 'http://10.20.0.10').replace(/\/+$/, '');
+export const BASE_URL = (__ENV.BASE_URL || 'https://10.20.0.10').replace(/\/+$/, '');
 
 // 요청 하나의 클라이언트 쪽 상한(초). 스스로 정한 값 — 앞단 Nginx 의 /api/ proxy_read_timeout 은 30초지만,
 // 포화 판정 기준(p95 500ms)의 20배면 이미 포화 구간이고, 길게 두면 arrival-rate 가 VU 를 그만큼 더 잡아

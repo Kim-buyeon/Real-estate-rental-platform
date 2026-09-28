@@ -27,6 +27,9 @@ const events = new Counter('lt_sse_events');
 const lifeSec = new Trend('lt_sse_conn_life_s');
 
 export const options = {
+  // 앞단이 HTTPS 다(2026-09-28 · #288). IP 인증서는 공인 IP 이름이라 사설 주소(10.20.0.10)로 붙으면 이름 검증이 실패한다 —
+  // 검증만 끈다(서버의 TLS 비용은 그대로다). 운영 설정과 다른 점이다(스킬 crypto-cost-check 3장)
+  insecureSkipTLSVerify: true,
   scenarios: { sse: { executor: 'constant-vus', vus: SSE_VUS, duration: DURATION, gracefulStop: '5s' } },
   setupTimeout: '1m',
   thresholds: { lt_sse_hold_ok: ['rate>0.99'], lt_sse_heartbeat_ok: ['rate>0.99'] },
