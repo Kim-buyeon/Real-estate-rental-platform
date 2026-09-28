@@ -5,7 +5,7 @@
   "tags": [
     "rental"
   ],
-  "description": "관리자용 운영 요약 — 서비스 · 요청 · 자원 · 백업 · 복제 · 경보를 한 화면에. 정의는 저장소 infra/grafana/dashboards/ops-summary.json 이고 infra/grafana/apply.sh 로 반영한다. 화면에서 고치면 저장소에도 옮긴다.",
+  "description": "관리자용 운영 요약 — 서비스 · 요청 · 자원 · 백업 · 복제 · 인증서 · 경보를 한 화면에. 정의는 저장소 infra/grafana/dashboards/ops-summary.json 이고 infra/grafana/apply.sh 로 반영한다. 화면에서 고치면 저장소에도 옮긴다.",
   "editable": true,
   "graphTooltip": 1,
   "refresh": "1m",
@@ -41,7 +41,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**초록 = 정상 · 노랑 = 지켜볼 것 · 빨강 = 조치.** 위에서 아래로 — 서비스가 닿는가 → 요청이 느린가 · 실패하는가 → 자원이 모자라는가 → 백업 · 복제가 도는가 → 지금 울리는 경보.\n\n**노드를 꺼 둔 동안(작업할 때만 켠다)에는 전부 빨강 · No data 가 정상이다.** 패널 제목의 (i)에 무엇 · 위험 값 · 할 일이 있다. 자세한 것은 같은 `rental` 폴더의 가져온 대시보드(Node Exporter Full · JVM · NGINX · Redis · PostgreSQL). 경보별 조치는 운영 절차서 2장."
+        "content": "**초록 = 정상 · 노랑 = 지켜볼 것 · 빨강 = 조치.** 위에서 아래로 — 서비스가 닿는가 → 요청이 느린가 · 실패하는가 → 자원이 모자라는가 → 백업 · 복제가 도는가 → 입구 인증서가 살아 있는가 → 지금 울리는 경보.\n\n**노드를 꺼 둔 동안(작업할 때만 켠다)에는 전부 빨강 · No data 가 정상이다.** 패널 제목의 (i)에 무엇 · 위험 값 · 할 일이 있다. 자세한 것은 같은 `rental` 폴더의 가져온 대시보드(Node Exporter Full · JVM · NGINX · Redis · PostgreSQL). 경보별 조치는 운영 절차서 2장."
       }
     },
     {
@@ -1121,13 +1121,168 @@
       }
     },
     {
+      "id": 14,
+      "type": "stat",
+      "title": "인증서 남은 시간",
+      "description": "무엇: 입구(APP-01 앞단 Nginx)가 내보내는 HTTPS 인증서의 남은 시간과, 그것이 임시 자체 서명인지. Let's Encrypt IP 주소 인증서는 유효 160시간이고 72시간 남았을 때 갱신한다(issue-cert.sh — rental-tls.timer, 12시간마다).\n\n위험: 남은 시간 노랑 72시간(갱신이 시작됐어야 할 때) · 빨강 48시간(알림 규칙 인증서 만료 임박과 같은 기준). 만료되면 입구 전면 장애다(보안 · 암호화 설계서 5장). 자체 서명 「예」는 발급이 아직 안 됐거나 실패하는 중이다 — 30분 넘으면 알림 규칙 자체 서명 인증서 사용 중.\n\n할 일: APP-01 에서 systemctl status rental-tls.service · journalctl -u rental-tls. 손으로 한 번 돌릴 때는 systemctl start rental-tls.service — 운영 절차서 2장 경보별 조치.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(max(rental_tls_cert_expiry_timestamp_seconds) - time()) / 3600",
+          "legendFormat": "남은 시간",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max(rental_tls_cert_self_signed)",
+          "legendFormat": "자체 서명",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "남은 시간"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 48
+                    },
+                    {
+                      "color": "green",
+                      "value": 72
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "자체 서명"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "아니오",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "예",
+                        "color": "yellow",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
       "id": 13,
       "type": "alertlist",
       "title": "지금 울리는 경보",
       "description": "무엇: rental 폴더 알림 규칙 중 지금 발생(Firing) · 대기(Pending) · 오류(Error) · 해소 직후(Recovering)인 것.\n\n위험: 목록에 무엇이든 있으면 조치 대상이다. 노드를 꺼 둔 동안에는 「수집 끊김」이 정상이다(무음을 걸어 둔다).\n\n할 일: 규칙별 조치는 운영 절차서 2장 「경보별 조치」 — 메일의 「할 일」과 같다.",
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 33,
         "w": 24,
         "h": 10
       },

@@ -1,0 +1,51 @@
+[Unit]
+# 입구 HTTPS 인증서 발급 · 갱신 — 보안 · 암호화 설계서 4.1 · 4.5 · 5장(INF-07, 이슈 #288). **APP-01 에만 둔다** — 앞단 Nginx 가 그 노드에만 있다.
+# timer 가 부른다. 직접 한 번 돌릴 때는 systemctl start rental-tls.service
+#
+# 설치(infra/backup/ 유닛과 같은 방식 — 운영 절차서 9.3. 체크아웃은 deploy 홈 — 운영 절차서 9장):
+#   sudo install -D -o root -g root -m 755 /home/deploy/rental/infra/tls/issue-cert.sh /opt/rental/infra/tls/issue-cert.sh   스크립트가 바뀌면 다시 실행한다
+#   systemd-analyze verify /home/deploy/rental/infra/tls/rental-tls.{service,timer}
+#   sudo cp /home/deploy/rental/infra/tls/rental-tls.{service,timer} /etc/systemd/system/ && sudo systemctl daemon-reload
+#   sudo systemctl start rental-tls.service     첫 1회를 손으로 — journalctl -u rental-tls 로 발급 · reload 를 본다
+#   sudo systemctl enable --now rental-tls.timer
+Description=Rental front TLS certificate (Let's Encrypt IP address, shortlived)
+# 발급에 docker(certbot 컨테이너 · Nginx reload)와 인터넷(Let's Encrypt)이 필요하다. After= 는 순서만 정한다 —
+# docker 가 떠도 Nginx 컨테이너가 80 을 받기까지는 더 걸리므로, 그 대기는 스크립트가 한다(앞단 80 응답 대기, #286 과 같은 함정)
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+# 재시도 상한 — 아래 Restart=on-failure 가 5분마다 다시 부른다. 2시간 안에 5번 시작하면 멈추고 다음 timer(12시간 뒤)를 기다린다.
+# 이유: Let's Encrypt 는 한 계정 · 한 식별자의 검증 실패를 1시간 5회로 막는다(https://letsencrypt.org/docs/rate-limits/, 2026-09-28 확인).
+# 원인이 남은 채(보안 그룹의 80 이 닫힘 등) 5분마다 부르면 그 한도에 닿기만 한다. 5회는 그 한도와 같은 수라 넘지 않는다.
+# 멈춘 동안은 Grafana 경보(자체 서명 사용 중 · 인증서 만료 임박)가 알린다. 스스로 정한 잠정값이다.
+# 한도에 걸려 멈춘(start-limit-hit) 뒤 2시간이 지나 timer 가 다시 부를 때 시작되는지는 노드에서 미확인이다 —
+# 안 되면 systemctl reset-failed rental-tls.service 로 푼다
+StartLimitIntervalSec=2h
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+# User= 를 두지 않는다 — root 로 돈다. 인증서 디렉터리(root 0700) · docker 소켓을 다룬다. docker 그룹은 root 와 같은 권한이라
+# 별도 계정에 docker 를 주는 것이 root 로 도는 것보다 나을 것이 없다(서버 운영 기반 설계서 6.2 의 docker 그룹 판단과 같은 이유)
+
+# ExecStart 는 체크아웃이 아니라 설치한 사본(root 소유 755)을 가리킨다 — 백업 유닛과 같은 관례(infra/backup/rental-backup.service 주석).
+# 스크립트가 바뀌면 다시 설치한다. 설정은 모두 스크립트 기본값이다 — 바꿀 때(KEY_TYPE · LE_STAGING · RENTAL_DIR)는 Environment= 를
+# 여기에 더하지 말고 drop-in(systemctl edit rental-tls.service)으로 둔다. 시크릿은 없다
+ExecStart=/opt/rental/infra/tls/issue-cert.sh
+
+# 실행 시간 상한 — 네트워크 너머(Let's Encrypt · 이미지 레지스트리)에 기대는 정기 작업이라 멈춘 전송에서 끝나지 않으면 실패가 남지 않는다
+# (서버 운영 기반 설계서 5.3 의 상한 요구와 같은 이유). 앞단 80 대기 최대 5분 + 이미지 받기 · 발급(수십 초 예상 — 미측정)을 넉넉히 덮는다.
+# 스스로 정한 잠정값이다. 첫 반영 실측(2026-09-28, #288) — 발급 10 ~ 14초, 발급하지 않는 확인 0.3초. 80 대기 최대 5분이 대부분이라 그대로 둔다
+TimeoutStartSec=15min
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rental-tls
+
+PrivateTmp=true
+
+# 실패하면 5분 뒤 다시 — 부팅 직후 Nginx 가 아직 뜨지 않아 80 대기가 끝난 경우 등, 곧 풀리는 원인이 많다.
+# Type=oneshot 에 Restart=on-failure 를 쓸 수 있는가 — Rocky 9 의 systemd 252 는 oneshot 에서 always · on-success 만 거부한다
+# (systemd v252 src/core/service.c service_verify: "Restart= set to either always or on-success, which isn't allowed for Type=oneshot").
+# on-failure 는 받는다. 노드에서 systemd-analyze verify 로 다시 본다
+Restart=on-failure
+RestartSec=300
