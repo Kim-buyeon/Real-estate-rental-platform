@@ -16,7 +16,7 @@
 | 네트워크 격리(VPC · 서브넷 · NAT · 접근 통제) · 네트워크 이중화 | 모니터링 · 알림 — **이 문서가 다루지 않는다.** INF-05 는 2026-09-23 에 범위로 돌아왔고 수집 방식은 인프라 기술 스택 4장이 갖는다 |
 | 파일시스템 구성(EBS · XFS) | 애플리케이션 · DB 설계 — 지금 설계 그대로(INF-01 ~ 04) |
 | NAS(NFS) — 백업 저장소 | 부하 · 장애 시험(INF-06 — 부하 시험은 2026-09-26 범위, 장애 주입은 차기) |
-| 계정 관리(AWS · OS) | 도메인 · TLS(공인 IP + HTTP 유지) |
+| 계정 관리(AWS · OS) | 도메인(공인 IP 유지 — TLS 는 IP 인증서, 보안 · 암호화 설계서 4.1) |
 | 정기 작업 스케줄링 · OS 보안 기준 · 이전 절차 | |
 
 **각 결정은 조사한 근거를 함께 적는다.** 근거 없이 그럴듯한 값을 적지 않고, 정할 수 없는 값은 「미확정」과 확정 시점을 적는다.
@@ -292,6 +292,7 @@ APP-02의 firewalld는 ssh만 연다 — 슬롯 포트는 위 이유로 여기�
 | WAL 전송 | DB-01 · DB-02 | 매분 | 노드 로컬 WAL 아카이브의 새 세그먼트를 암호화해 S3 `wal/`로(#241). 노드 소실 RPO에 이 주기가 더해진다(시스템 구성서 5.1) |
 | NAS → S3 사본(3노드: 없음) | NAS-01 | 매주 일 04:00 | 암호화 후 S3로(키는 백업 복호화 키와 분리 보관 — 기술 스택 3장). 옛 설계 — 3노드는 각 작업이 S3로 직접 보낸다 |
 | 설정 사본 | APP-01 | 매주 일 01:00 | `infra/` · 암호화한 `.env` → **APP-01 로컬 + S3 `config/`**(#245). 옛 설계 · 옛 단일 노드는 NAS |
+| 입구 인증서 확인 · 발급 | APP-01 | 부팅 20초 뒤 · 그 뒤 12시간마다 | `rental-tls.timer` → `issue-cert.sh` — IP 가 바뀌었거나 · 자체 서명이거나 · 만료가 가까우면 Let's Encrypt IP 인증서 발급, 아니면 확인만(2026-09-28 · #288, 운영 절차서 4.3). **부팅 뒤 앞단이 뜰 때까지 기다린다** — 위 백업들처럼 준비 전에 돌아 실패하지 않게 |
 | 이미지 정리 | APP-01 | 매주 | 배포 스크립트가 남긴 3세대 밖의 이미지 · 중지된 컨테이너 정리 |
 | 보안 갱신 | 전 노드 | 매일(분산) | `dnf-automatic` — **보안 갱신만 설치, 자동 재부팅 안 함.** 커널 갱신은 월 1회 계획 재부팅(운영 절차서 2장). AL2023 노드에는 이 작업이 없다 — 8장 패키지 갱신 행 |
 
@@ -308,7 +309,7 @@ APP-02의 firewalld는 ssh만 연다 — 슬롯 포트는 위 이유로 여기�
 | 항목 | 기준 | 근거 |
 |---|---|---|
 | SELinux | **enforcing** | Rocky 기본이다. 끄지 않는다. **AL2023은 기본이 permissive다**([AWS AL2023 안내서 「Setting SELinux modes」](https://docs.aws.amazon.com/linux/al2023/ug/selinux-modes.html)) — 옛 APP-01도 permissive였고 **2026-09-25에 enforcing으로 바꿨다** — 재부팅 뒤 유지, 전환 뒤 · 부팅 이후 거부 0건(#223, 순서와 실측은 운영 절차서 9.1). 전환 근거는 permissive에서 쌓인 거부 로그가 0건이라는 것이다(2026-09-22 ~ 25) — permissive는 거부를 막지 않고 기록만 한다. **다만 컨테이너는 제한 대상이 아니다.** Docker가 `selinux-enabled`가 아니라 컨테이너 프로세스가 비제한 유형(`spc_t`)으로 돈다 — enforcing이 막는 것은 호스트 프로세스(sshd · systemd 작업)다. 컨테이너까지 제한하려면 바인드 마운트마다 `:z` · `:Z` 레이블이 필요하고, `/`를 마운트하는 exporter는 그것을 붙이면 안 된다(운영 Compose 주석) — 별도 판단으로 남긴다 |
-| firewalld | 활성 · 노드별 필요한 포트만 | 3.3. **Rocky 3노드에 적용했다**(2026-09-25 · #233) — APP-01은 ssh · http + 영역 내 전달 · 마스커레이드(NAT 겸임), DB 노드는 ssh · postgresql. APP-02는 ssh만(2026-09-26 · #255 — `infra/os/firewalld/app-node.sh`). 옛 AL2023 노드에는 세우지 않는다(3.3) |
+| firewalld | 활성 · 노드별 필요한 포트만 | 3.3. **Rocky 3노드에 적용했다**(2026-09-25 · #233) — APP-01은 ssh · http · https(2026-09-28 · #288) + 영역 내 전달 · 마스커레이드(NAT 겸임), DB 노드는 ssh · postgresql. APP-02는 ssh만(2026-09-26 · #255 — `infra/os/firewalld/app-node.sh`). 옛 AL2023 노드에는 세우지 않는다(3.3) |
 | 패키지 갱신 | `dnf-automatic` 보안 갱신 | 7.2. **Rocky 3노드에 적용했다**(2026-09-25) — `infra/os/dnf/automatic.conf`, 배포판 timer 매일 06:00 + 최대 60분 무작위(03:00 배치와 겹치지 않는다). **AL2023에서는 성립하지 않는다 — Rocky 이전에 매인 행이다.** AL2023은 저장소 버전이 설치된 `system-release`에 잠겨 있어 `dnf-automatic`은 그 버전 안의 갱신만 받는다 — 새 보안 갱신은 새 버전 저장소에 나온다([AWS AL2023 안내서 「Deterministic upgrades」](https://docs.aws.amazon.com/linux/al2023/ug/deterministic-upgrades-usage.html)). 잠금을 영구 해제(`releasever=latest`)하는 길은 AWS가 운영 환경에서 위험하다고 명시하고, 권장 수단(Patch Manager)은 관리형 의존이다(인프라 기술 스택 1.1). **그래서 옛 AL2023 APP-01(점검 모드)은 월 1회 계획 재부팅 때 사람이 올린다** — 운영 절차서 2장 |
 | 시간 동기화 | `chrony` + **Amazon Time Sync Service(169.254.169.123)** | 링크 로컬 주소라 사설 서브넷에서도 인터넷 없이 쓴다(AWS 문서). 복제 · 로그 · 토큰 만료가 시각에 기대므로 노드 간 시각이 어긋나면 안 된다. AL2023은 기본 설정으로 이 주소를 쓴다 — 옛 APP-01에서 선택된 원천(`^*`)으로 확인했다(2026-09-25). Rocky 3노드도 이미지가 DHCP로 이 주소를 받아 선택한다(운영 절차서 9.1 3노드 표 7) |
 | Docker 설치 | 공식 저장소 `docker-ce` · `containerd.io` · compose 플러그인 | 2장. **Rocky 3노드에 적용했다**(2026-09-25) — `download.docker.com/linux/rhel` 저장소로 Docker 29.8.1 · Compose v5.5.1, firewalld 연동(`docker` 영역). 옛 AL2023 노드는 자체 저장소의 Docker 그대로 |

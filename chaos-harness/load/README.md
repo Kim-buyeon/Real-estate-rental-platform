@@ -13,6 +13,7 @@
 | `lib/mix.js` · `lib/tokens.js` · `lib/summary.js` | 공용 모듈 | — |
 | `run-steps.sh` | T2 한 회차 — 토큰 풀 두 개 → SSE 250 → (SSE 가 떠 있을 때만) steps.js. SSE 가 곧바로 끝나면 본 프로파일을 시작하지 않는다 | — |
 | `tools/stages.py` | `--out csv` 시계열의 단계별 집계 — 상태 코드 분포, 받아들인(2xx · 3xx) 처리량 · p95 · p99, 지도 2단계 p95. `python3 tools/stages.py results/t2.csv.gz` | — |
+| `tls.js` | C-2 입구 TLS 비용(시험 계획서 9장) — 정적 `/` 계단 50 · 100 · 200 · 400 RPS 각 2분, 요청마다 새 연결(`NEW_CONN=0` 이면 재사용). 인증서 이름 검증을 끈다 | ramping-arrival-rate |
 | `soak.js` | T4 지속 15 RPS · 기본 2시간(`DURATION` 으로 지정) — 토큰 풀을 최대 VU(약 320) 만큼 만든다(한계 1 · 용량 산정 리포트 한계 3) | constant-arrival-rate |
 
 **T5**(캐시 콜드)는 `steady.js` 배경 중 자치구 집계 캐시 키만 지운다 — 트래픽 정의서 4장. **T7**(배치 동시)은 `steady.js` 배경 중 등기 재조회 배치를 두 앱 노드 `.env` 의 `RISK_BATCH_REGISTRYREFRESH_CRON`(고정 시각 하나)으로 한 번 돌린다 — 끝나면 줄을 지우고 재배포한다(용량 산정 리포트 T7).
@@ -22,7 +23,7 @@
 - **k6 v2.x**(2.0 이상). 본 스크립트는 v1.x 에서도 돈다. `sse.js` 는 커뮤니티 확장 [xk6-sse](https://github.com/phymbert/xk6-sse) 가 필요하다.
   - **자동 확장 해석은 이 확장을 받지 못한다**(2026-09-26 LOAD-01 실측, k6 v2.3.0 — `unknown dependency : k6/x/sse` 로 곧바로 끝난다). 반드시 아래처럼 빌드한 바이너리로 돌린다. **SSE 실행 로그의 첫 줄을 확인한다** — SSE 가 곧바로 끝나도 본 프로파일은 그대로 돌아, 연결 점유 없이 측정된다(그날 T2 재측정 두 번이 그랬다).
   - 빌드: `xk6 build --with github.com/phymbert/xk6-sse@v0.2.0` 으로 빌드한 바이너리를 옮긴다(xk6-sse v0.2.0 은 k6 v2 대상, k6 v1.x 라면 v0.1.12).
-- 대상 앞단 주소 `BASE_URL`(기본 `http://10.20.0.10` — APP-01 사설 IP의 앞단 Nginx).
+- 대상 앞단 주소 `BASE_URL`(기본 `https://10.20.0.10` — APP-01 사설 IP의 앞단 Nginx). 앞단이 HTTPS 라(2026-09-28 · #288) 모든 스크립트가 인증서 이름 검증을 끈다(`insecureSkipTLSVerify`) — IP 인증서는 공인 IP 이름이다. 80 은 301 로 넘기므로 `http://` 로 돌리면 요청마다 넘기기를 한 번 더 탄다. `sse.js` 의 xk6-sse 확장이 이 옵션을 따르는지는 **미확인**이다 — 첫 SSE 실행 로그에서 인증서 오류를 본다. **2026-09-28 이후 결과는 HTTPS 조건이다** — 그 전(HTTP) 회차와 비교할 때 이 차이를 적는다(입구 비용은 연결 재사용이면 같다 — 용량 산정 리포트 C-2).
 - 매물 데이터가 적재돼 있어야 한다(트래픽 정의서 6장). setup 이 자치구별 묶음 조회로 좌표 경계를, 목록 조회로 시드 매물을 구한다.
 
 ## 실행 순서
@@ -53,7 +54,7 @@ k6 run -e TOKENS=tokens-t4.json -e SUMMARY_DIR=results soak.js     # T4 — 기�
 
 | 변수 | 기본 | 쓰는 곳 | 뜻 |
 |---|---|---|---|
-| `BASE_URL` | `http://10.20.0.10` | 전부 | 앞단 주소 |
+| `BASE_URL` | `https://10.20.0.10` | 전부 | 앞단 주소 |
 | `TOKENS` | `./tokens.json` · `./tokens-sse.json` | 본 · SSE | 토큰 파일. 상대 경로는 진입 스크립트 기준 |
 | `SUMMARY_DIR` | 현재 디렉터리 | 전부 | 요약 JSON 을 쓸 곳(미리 만든다) |
 | `DURATION` | (steady 필수) · `45m`(sse) · `2h`(soak) | steady · sse · soak | `600`, `20m`, `1h30m` |

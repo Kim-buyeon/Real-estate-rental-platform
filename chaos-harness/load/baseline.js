@@ -1,7 +1,7 @@
 // T1 기준선 — 10 RPS 고정 10분 (트래픽 정의서 4장 · 8장, constant-arrival-rate).
 // 정상 상태 확인 · 회귀 비교의 기준값. 프로파일을 즉석으로 바꾸지 않는다(8장) — 인가량과 길이는 여기 고정이다.
 //
-//   k6 run -e BASE_URL=http://10.20.0.10 -e SUMMARY_DIR=results baseline.js
+//   k6 run -e BASE_URL=https://10.20.0.10 -e SUMMARY_DIR=results baseline.js
 
 import { loadTokenPool, inspectPool } from './lib/tokens.js';
 import { prepareGeo, iterate, singlePhase, buildThresholds, vuBudget, SUMMARY_TREND_STATS, WARMUP_SEC } from './lib/mix.js';
@@ -15,6 +15,9 @@ const POOL = loadTokenPool('tokens', __ENV.TOKENS || './tokens.json', function (
 const VUS = vuBudget(RATE);
 
 export const options = {
+  // 앞단이 HTTPS 다(2026-09-28 · #288). IP 인증서는 공인 IP 이름이라 사설 주소(10.20.0.10)로 붙으면 이름 검증이 실패한다 —
+  // 검증만 끈다(서버의 TLS 비용은 그대로다). 운영 설정과 다른 점이다(스킬 crypto-cost-check 3장)
+  insecureSkipTLSVerify: true,
   scenarios: {
     t1: {
       executor: 'constant-arrival-rate',

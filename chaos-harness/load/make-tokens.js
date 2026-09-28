@@ -19,7 +19,7 @@
 import http from 'k6/http';
 import { sleep } from 'k6';
 
-const BASE_URL = (__ENV.BASE_URL || 'http://10.20.0.10').replace(/\/+$/, '');
+const BASE_URL = (__ENV.BASE_URL || 'https://10.20.0.10').replace(/\/+$/, '');
 const PASSWORD = __ENV.LT_PASSWORD;
 const START = Number(__ENV.START || 1);
 const COUNT = Number(__ENV.COUNT || 100);
@@ -33,6 +33,9 @@ if (!PASSWORD) throw new Error('LT_PASSWORD 가 필요하다 (8~64자)');
 if (PASSWORD.length < 8 || PASSWORD.length > 64) throw new Error('LT_PASSWORD 는 8~64자 — @PasswordPolicy');
 
 export const options = {
+  // 앞단이 HTTPS 다(2026-09-28 · #288). IP 인증서는 공인 IP 이름이라 사설 주소(10.20.0.10)로 붙으면 이름 검증이 실패한다 —
+  // 검증만 끈다(서버의 TLS 비용은 그대로다). 운영 설정과 다른 점이다(스킬 crypto-cost-check 3장)
+  insecureSkipTLSVerify: true,
   scenarios: { once: { executor: 'shared-iterations', vus: 1, iterations: 1, maxDuration: '1m' } },
   setupTimeout: __ENV.SETUP_TIMEOUT || '30m',
   // 준비 단계라 임계를 걸지 않는다

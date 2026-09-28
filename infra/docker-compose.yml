@@ -350,6 +350,16 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d
       # 점검 모드 표시 파일 — maintenance.sh
       - ./nginx/maintenance:/etc/nginx/maintenance:ro
+      # HTTPS(INF-07, 보안 · 암호화 설계서 4.1) — 인증서와 ACME 웹루트. 둘 다 체크아웃 밖 호스트 경로다 — 인증서 · 개인키를 저장소에 두지 않고,
+      # 호스트의 정기 작업(infra/tls/issue-cert.sh — rental-tls.timer, root)이 쓴다. 컨테이너는 읽기만 한다.
+      # 폴더째 마운트한다 — 스크립트가 파일을 새로 만들어 바꿔 넣으므로(임시 파일 → mv) 파일 단위면 옛 파일이 보인다(이 목록 첫 줄 주석과 같은 이유).
+      # 호스트 네트워크라 443 도 게시 없이 호스트에서 받는다 — 밖에서 닿는 범위는 보안 그룹 · firewalld(app-01.sh)가 정한다.
+      # **순서** — 호스트에 /etc/rental/tls 가 없으면 Docker 가 root 소유 빈 디렉터리를 만들어 붙이고, Nginx 는 인증서가 없어
+      # 설정을 싣지 못해 80 까지 뜨지 않는다(재시작만 반복한다). 그래서 이 서비스를 이 마운트로 처음 다시 만들기 전에
+      # PREPARE_ONLY=1 issue-cert.sh 로 임시 자체 서명을 먼저 둔다. 그 뒤 up 하면 Nginx 가 뜨고, rental-tls.service 가 발급해 바꿔 끼운다
+      # (반영 순서는 운영 절차서에 둔다 — 이슈 #288)
+      - /etc/rental/tls:/etc/rental/tls:ro
+      - /var/lib/rental-acme:/var/lib/rental-acme:ro
     depends_on:
       - app-1
       - app-2

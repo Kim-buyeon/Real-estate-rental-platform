@@ -1,0 +1,19 @@
+[Unit]
+# 입구 HTTPS 인증서 발급 · 갱신 타이머 — 보안 · 암호화 설계서 4.1(켤 때마다 발급 · 6일 안에 갱신). APP-01 에만 둔다. 설치는 rental-tls.service 머리 주석
+Description=Rental front TLS certificate timer (20 s after boot, then every 12h)
+
+[Timer]
+# 켤 때마다 공인 IP 가 바뀐다 — 부팅 뒤 곧 한 번 돈다. 앞단 80 이 실제로 응답하는지는 스크립트가 따로 기다리므로(최대 5분)
+# 여기서 오래 기다릴 이유가 없다. 이 시간 동안 입구는 옛 IP 의 인증서를 내보내 브라우저가 이름 불일치 경고를 띄운다 —
+# 2026-09-28 APP-01 stop/start 실측(#288): OnBootSec=2min · AccuracySec=1min 이면 부팅 15:21:45 → 실행 15:23:50 → 새 인증서 15:24:01(경고 구간 약 2분 16초).
+# 그래서 20초로 줄이고 AccuracySec 도 1초로 둔다(기본 1분 — 실행 시각을 그만큼 늦출 수 있다)
+OnBootSec=20s
+# 그 뒤 12시간마다 — 유효 160시간 · 갱신 기준 72시간(issue-cert.sh 주석)이면 만료 전에 여섯 번 시도한다. 발급이 필요 없으면 확인만 하고 끝난다
+OnUnitActiveSec=12h
+# Persistent= 는 두지 않는다 — OnCalendar= 에만 작용한다(systemd.timer). 이 timer 는 부팅 · 마지막 실행 기준(단조 시각)이라
+# 꺼져 있던 동안의 실행을 따라잡을 필요가 없고, 부팅 뒤 실행은 OnBootSec 이 만든다
+AccuracySec=1s
+Unit=rental-tls.service
+
+[Install]
+WantedBy=timers.target

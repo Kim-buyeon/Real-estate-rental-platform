@@ -447,6 +447,184 @@
         "description": "물리 백업은 매주 일요일 01:30 에 primary DB 노드에서 돈다. 8일 넘게 성공이 없으면 한 주를 거른 것이다 — 시점 복구(PITR)의 기준점이 오래돼 복구에 재생할 WAL 이 늘고, 오래된 WAL 아카이브 정리도 멈춘다.",
         "action": "primary(보통 DB-01, 페일오버 뒤에는 DB-02)에서 systemctl list-timers rental-basebackup.timer · journalctl -u rental-basebackup --since -8days 로 실패 원인을 본다. 고친 뒤 systemctl start rental-basebackup.service 로 한 번 돌린다. 운영 절차서 5장 · 9.3."
       }
+    },
+    {
+      "uid": "rentaltlsexp01",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-backup",
+      "title": "인증서 만료 임박",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "rental_tls_cert_expiry_timestamp_seconds - time()\nunless on(node) rental_tls_cert_self_signed == 1",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    172800
+                  ],
+                  "type": "lt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "5m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "{{ $labels.node }} 입구 HTTPS 인증서가 {{ humanizeDuration $values.A.Value }} 뒤 만료된다",
+        "description": "앞단 Nginx 가 내보내는 Let's Encrypt 인증서(유효 160시간)의 남은 시간이 48시간 아래로 내려갔다. 갱신은 72시간 남았을 때 시작하므로(issue-cert.sh), 적어도 24시간 동안 갱신이 실패한 것이다. 만료되면 브라우저 · 클라이언트가 접속을 거부한다 — 입구 전면 장애다(보안 · 암호화 설계서 5장). 0 아래(음수)면 이미 만료됐다.",
+        "action": "APP-01 에서 systemctl status rental-tls.service rental-tls.timer · journalctl -u rental-tls --since -1day 로 실패 원인을 본다 — 앞단 80 응답(ACME 확인 경로), 보안 그룹 · firewalld 의 80, Let's Encrypt 발급 · 검증 실패 한도, certbot 이미지 받기. 고친 뒤 systemctl start rental-tls.service 로 한 번 돌리고(재시도 한도에 걸려 있으면 먼저 systemctl reset-failed rental-tls.service), openssl s_client -connect <공인 IP>:443 로 새 만료 시각을 본다. 운영 절차서 2장 경보별 조치."
+      }
+    },
+    {
+      "uid": "rentaltlsself01",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-backup",
+      "title": "자체 서명 인증서 사용 중",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "rental_tls_cert_self_signed",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    0
+                  ],
+                  "type": "gt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "30m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "{{ $labels.node }} 입구가 30분 넘게 임시 자체 서명 인증서로 받고 있다",
+        "description": "issue-cert.sh 는 인증서가 없을 때 Nginx 가 뜰 수 있게 임시 자체 서명(유효 2일)을 두고, 곧 Let's Encrypt 발급으로 바꾼다. 30분 넘게 그대로면 발급이 계속 실패하는 것이다. 브라우저는 자체 서명을 신뢰하지 않아 사용자에게 경고 화면이 뜬다 — 사실상 입구 장애다.",
+        "action": "APP-01 에서 journalctl -u rental-tls --since -2h 로 certbot 출력을 본다 — 앞단 80 응답(ACME 확인 경로), 보안 그룹 rental-app 의 80 인바운드, Let's Encrypt 검증 실패 한도(1시간 5회). 고친 뒤 systemctl reset-failed rental-tls.service · systemctl start rental-tls.service. 운영 절차서 2장 경보별 조치."
+      }
     }
   ]
 }

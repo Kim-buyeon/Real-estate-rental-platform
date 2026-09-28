@@ -41,7 +41,7 @@
 
 **3노드에는 NFS가 없다** — 일일 점검의 디스크 확인은 세 노드의 `df -h`다. **옛 단일 노드 한정** — NAS가 멈추면 NFS 경로를 건드리는 명령이 멈춘다(기본 hard 마운트). 그 노드의 디스크 확인은 `df -h -x nfs4`로 로컬 볼륨만 보고, NAS는 NAS-01에서 직접 본다.
 
-**알림은 아래 다섯 규칙뿐이다 — 나머지 점검은 사람이 확인하는 것이다**(INF-05). 백업 · WAL 전송 · 수집 끊김은 메일로 오지만 디스크 · 메모리 · 컨테이너 상태에는 규칙이 없어, 위 표의 확인을 거르면 디스크가 차도 알 수 없다. 외부 경로 감시(HetrixTools) 일시정지 규칙은 관측을 세울 때 되살린다.
+**알림은 아래 일곱 규칙뿐이다 — 나머지 점검은 사람이 확인하는 것이다**(INF-05). 백업 · WAL 전송 · 수집 끊김 · 입구 인증서는 메일로 오지만 디스크 · 메모리 · 컨테이너 상태에는 규칙이 없어, 위 표의 확인을 거르면 디스크가 차도 알 수 없다. 외부 경로 감시(HetrixTools) 일시정지 규칙은 관측을 세울 때 되살린다.
 
 **알림 규칙 — Grafana Cloud(`rental` 폴더 · `rental-backup` 그룹)에 걸려 있다**(2026-09-26, #253). **정의는 `infra/grafana/`에 있고 운영자 PC에서 `apply.sh`로 올린다**(2026-09-28 · #286 — 전에는 화면에서 걸었다). 노드의 수집 토큰은 쓰기 전용이라 규칙을 만들 수 없다(#243) — 서비스 계정(Editor) 토큰을 쓴다. 실행법은 스크립트 머리 주석. **화면에서 고치면 다음 `apply.sh`가 덮는다** — 고친 것은 저장소 정의에 옮긴다. 평가 1분 · 대기(`for`) 5분 · 연락처 `bu2000kim`(메일 — 제목 · 본문은 템플릿 `rental`). 지표 이름은 인프라 API 명세 1장.
 
@@ -52,6 +52,8 @@
 | 논리 백업 누락 | `time() - max(rental_job_last_success_timestamp_seconds{task="logical_backup"}) > 26*3600` | 매일 02:00 — 두 DB 노드 중 primary만 쓰므로 `max` |
 | 물리 백업 누락 | `time() - max(rental_job_last_success_timestamp_seconds{task="physical_backup"}) > 8*86400` | 매주 일 01:30 |
 | 수집 끊김 | `up < 1` 또는 노드별 `absent(up{node="app-01", job="node"}) * 0`(app-02 · db-01 · db-02도 같은 모양 — 노드 넷) — 임계 `< 1`, 데이터 없음 → OK | 노드 · 수집기가 멈추면 위 규칙도 침묵한다 |
+| 인증서 만료 임박 | A = `rental_tls_cert_expiry_timestamp_seconds - time() unless on(node) rental_tls_cert_self_signed == 1`, 임계 A < 48\*3600(critical) | 72시간 전부터 갱신하므로 48시간이면 하루 넘게 실패한 것 — 만료는 입구 전면 장애(4.3, 2026-09-28 · #288). 식 안에서 비교하지 않고 임계로 둔다 — 이미 만료된(음수) 경우도 울리게. 자체 서명은 뺀다(임시 인증서는 처음부터 2일이라 바로 울린다 — 아래 규칙이 맡는다) |
+| 자체 서명 인증서 사용 중 | `rental_tls_cert_self_signed > 0`, 대기 30분(critical) | 발급이 계속 실패해 임시 자체 서명으로 받는 중 — 브라우저가 경고하므로 사실상 입구 장애다 |
 
 **`up == 0` 하나로는 울리지 않는다.** 결과 값이 0이라 임계를 `> 0`으로 두면 늘 거짓이다. 식이 `up`이어도 노드가 통째로 꺼지면 그 노드의 시계열이 사라질 뿐 0이 되지 않고, Grafana는 사라진 시계열의 알림을 해소로 처리한다(2026-09-26 14:47 규칙 이력의 `Normal (MissingSeries)`로 관찰). 그래서 노드 이름을 박은 `absent`를 더한다(2026-09-26 DB-02 node exporter를 14:54:04에 멈춰 15:00:00 Firing · 메일 발송을 확인, #253). 노드를 늘리면 이 식에 한 줄을 더한다 — **APP-02의 `app-02` 줄을 더했다**(2026-09-26 · #255). 그 노드의 `up{node="app-02"}`가 `job="app"` 둘 · `job="node"` 하나로 들어오는 것은 확인했다. APP-02 인스턴스를 멈춘 리허설(9.1 APP-02)에서 app-02 줄은 **Pending까지 갔고 Firing · 메일은 확인하지 못했다** — 다시 켜서 Normal로 돌아갔다.
 
@@ -66,7 +68,7 @@
 
 **옛 노드(학교 계정 3.36.74.44)의 수집기(prom-agent · vector)는 2026-09-26 15:06:50에 멈췄다**(#253). 옛 노드도 `node="app-01"` 라벨로 보내고 있어, 켜 두면 새 APP-01이 꺼져도 app-01의 `absent`가 울리지 않고 대시보드의 app-01 패널에 두 노드가 섞인다. 옛 노드를 다시 쓸 일이 있어도 수집기는 띄우지 않는다.
 
-**다섯 규칙 모두 데이터 없음을 OK로 둔다.** 정상일 때 이 식들은 결과가 비어 있다 — 데이터 없음을 Alerting으로 두면 정상 상태에서 울린다(2026-09-26 14:38 · 14:51 수집 끊김에서 겪었다). 노드가 꺼져 앞의 네 규칙이 침묵하는 공백은 수집 끊김의 `absent`가 알린다.
+**일곱 규칙 모두 데이터 없음을 OK로 둔다.** 정상일 때 이 식들은 결과가 비어 있다 — 데이터 없음을 Alerting으로 두면 정상 상태에서 울린다(2026-09-26 14:38 · 14:51 수집 끊김에서 겪었다). 노드가 꺼져 수집 끊김 말고 여섯 규칙(백업 · WAL 넷과 입구 인증서 둘)이 침묵하는 공백은 수집 끊김의 `absent`가 알린다.
 
 **노드를 끄기 전(본인 계정 — 작업할 때만 켠다)에는 무음(Silence)을 건다** — 끄면 수집 끊김이 노드마다 울린다. 무음은 `alertname=수집 끊김`에 다음 작업 시각까지 건다.
 
@@ -87,6 +89,8 @@
 | `[경보] 논리 백업 누락` · `물리 백업 누락`(Grafana) | 정기 백업이 기한을 넘겼다 | primary에서 `journalctl -u rental-backup` / `rental-basebackup` — 9.3. **노드를 꺼 둔 채 02:00을 넘기면 켠 뒤 약 5분에 울린다** — 켤 때의 따라잡기 실행이 DB 기동 전이라 실패한다(5장 「3노드의 정기 백업」). `systemctl start rental-backup.service`로 한 번 돌리면 해소된다(2026-09-28 11:08 발생 → 11:09 수동 실행 · 성공, #286). 물리 백업은 기준이 8일이라 일요일 한 번을 걸러도 바로 울리지 않는다 |
 | `ALARM: "rental-<노드>-instance-check-reboot"` · `system-check-recover`(AWS SNS) | OS 또는 AWS 호스트가 응답하지 않아 자동 재부팅 · recover가 걸렸다 | 아래 「노드 자동 복구」 ① ~ ④ |
 | `ALARM: "rental-APP-01-stall-reboot"`(AWS SNS) | 상태 검사는 ok인데 APP-01 송신이 끊겼다 — 자동 재부팅 | 아래 「APP-01 멈춤 경보」 — 멈춤인지 오탐인지 가린다 |
+| `[경보] 인증서 만료 임박 (app-01)`(Grafana) | 입구 HTTPS 인증서가 48시간 안에 만료된다 — 72시간 전부터 갱신하므로 하루 넘게 갱신이 실패한 것. **만료되면 입구 전면 장애** | 4.3 「실패하면」 |
+| `[경보] 자체 서명 인증서 사용 중 (app-01)`(Grafana) | 발급이 30분 넘게 실패해 임시 자체 서명으로 받고 있다 — 브라우저가 경고한다 | 4.3 「실패하면」 |
 
 **노드를 끄기 전 무음을 빠뜨리면 「수집 끊김」이 노드마다 울리고 4시간마다 다시 온다**(기본 정책 `repeat_interval` 4h — 2026-09-27 22:19 정지 뒤 무음 없이 다음 날 켤 때까지 울렸다).
 
@@ -100,6 +104,7 @@
 | 메모리 여유 빨강 60MiB · 노랑 150MiB | **잠정** — 부하 중 APP-01 가용 최소 60 ~ 131MB(용량 산정 리포트), 9/26 사고 ① · ②가 메모리 고갈. 사고 표본이 적다 |
 | 디스크 여유 빨강 10% · 노랑 20% | **잠정** — 문서에 기준이 없다. 디스크 알림 규칙을 만들 때 함께 정한다 |
 | 백업 · WAL 경과 | 위 알림 규칙과 같은 기준 |
+| 인증서 남은 시간 빨강 48시간 · 노랑 72시간 | 72시간은 갱신을 시작하는 기준(`issue-cert.sh`), 48시간은 알림 규칙과 같다(4.3) |
 
 **가져온 대시보드**(`rental` 폴더 — Node Exporter Full · JVM (Micrometer) · NGINX exporter · Redis · PostgreSQL)의 데이터 소스는 `grafanacloud-whitemocha1136-prom`(UID `grafanacloud-prom`)이다. 가져온 공개 대시보드가 빈 화면이던 원인은 셋이다(#253) — NGINX · Node · PostgreSQL은 데이터 소스 변수가 목록 첫 항목(`grafanacloud-usage`)으로 잡혔다. JVM은 패널 일부가 없는 변수 `${DS_PROMETHEUS}`를 가리켰고, `application` 라벨로 거르는데 앱 지표에 그 라벨이 없어 `job="app"`으로 바꿨다. Redis는 처음부터 맞았다.
 
@@ -226,7 +231,7 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 
 ### 4.2 서버 블록
 
-설정 파일은 `infra/nginx/conf.d/default.conf`(서버 블록)와 `infra/nginx/main/nginx.conf`(main · http 문맥)다. **공인 IP + HTTP이므로 `listen 80`이다**(시스템 구성서 2.1절). 도메인을 붙이면 443 블록과 80 → 443 리다이렉트를 더한다.
+설정 파일은 `infra/nginx/conf.d/default.conf`(서버 블록)와 `infra/nginx/main/nginx.conf`(main · http 문맥)다. **서비스는 `listen 443 ssl` + HTTP/2 서버가 받고, `listen 80` 서버는 ACME 확인 경로와 443 넘기기(301)만 한다**(2026-09-28 · #288 — 시스템 구성서 2.1절 · 보안 · 암호화 설계서 4.1). 아래 표는 443 서버다. 80 서버도 `/actuator`는 404 로 먼저 끊는다. 점검 모드 판정은 443 서버에만 있다 — 80 은 301 로 넘기고 443 이 503 을 낸다. TLS 설정(프로토콜 · 암호군 · 세션)의 값과 근거는 설정 파일 주석이 갖는다.
 
 | 경로 | 전달 | 요점 |
 |---|---|---|
@@ -252,6 +257,28 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 `proxy_next_upstream`이 실질적인 무손실 장치다. 한 슬롯이 죽어 502를 반환하면 Nginx가 동일 요청을 다른 슬롯으로 재시도한다. **다만 POST 등 비멱등 요청은 기본적으로 재시도하지 않는다**(중복 처리 방지). 따라서 "요청 손실 0건"은 조회 요청에 대한 서술이며, 쓰기 요청은 극소수 실패할 수 있다. 장애 시험 결과서에는 이 구분을 그대로 기록한다.
 
 ---
+
+### 4.3 HTTPS 인증서 — 발급 · 갱신
+
+**Let's Encrypt IP 주소 인증서**(`shortlived` 프로필 · 유효 160시간 · ECDSA P-256)를 `infra/tls/issue-cert.sh` 가 발급한다(2026-09-28 · #288, 설계서 4.1). APP-01 에만 있다. 발급 조건 · 기다리는 것 · 한도 보호 · 지표는 스크립트 머리 주석이 갖는다 — 여기에 옮기지 않는다.
+
+**설치(APP-01, 한 번)** — 2026-09-28 에 밟은 순서다.
+
+| # | 명령 | 확인 |
+|---|---|---|
+| 1 | 보안 그룹 `rental-app` 에 TCP 443 `0.0.0.0/0` 인바운드(80 은 유지 — http-01 확인) | `sgr-0a001771a39c94cb2` |
+| 2 | `sudo bash infra/os/firewalld/app-01.sh` | `firewall-cmd --list-services` 에 `https` |
+| 3 | `sudo install -D -o root -g root -m 755 …/infra/tls/issue-cert.sh /opt/rental/infra/tls/issue-cert.sh` → `sudo PREPARE_ONLY=1 /opt/rental/infra/tls/issue-cert.sh` | `/etc/rental/tls` 에 임시 자체 서명 — **Nginx 를 다시 만들기 전에 한다**(인증서가 없으면 443 서버가 뜨지 않는다) |
+| 4 | `docker compose up -d nginx`(마운트가 바뀌어 재생성) | `nginx -t` 통과, `curl -I http://127.0.0.1/` → 301. **공백 약 1.5초**(0.2초 간격 조회, 2026-09-28) |
+| 5 | 유닛 둘을 `/etc/systemd/system/` 에 → `daemon-reload` → (처음이면 `sudo LE_STAGING=1 /opt/rental/infra/tls/issue-cert.sh` 로 시험 서버 발급) → `sudo systemctl start rental-tls.service` | `journalctl -u rental-tls` 에 발급 · reload. 발급 10 ~ 14초. 밖에서 `curl -v https://<IP>/` 가 `-k` 없이 통과 |
+| 6 | `sudo systemctl enable --now rental-tls.timer` → 한 번 더 `start` | 「발급하지 않는다」(0.3초) |
+| 7 | 운영자 PC 에서 `infra/grafana/apply.sh` | 대시보드 「인증서 남은 시간」, 규칙 둘 |
+
+**켤 때마다(IP 가 바뀐다)** — 사람 손이 필요 없다. timer 가 부팅 20초 뒤 돌아 IP 가 바뀐 것을 보고 발급한다. **실측(2026-09-28 APP-01 stop/start)** — 부팅 15:25:46 → 발급 시작 15:26:06 → 새 인증서 · reload 15:26:18(**약 32초**), start 명령에서 밖의 검증 통과까지 42초. 그 32초 동안은 옛 IP 의 인증서라 브라우저가 이름 불일치 경고를 띄운다. 첫 시도(OnBootSec 2분 · AccuracySec 1분)에서는 이 구간이 2분 16초라 줄였다(timer 주석).
+
+**실패하면**(경보 「인증서 만료 임박」 · 「자체 서명 인증서 사용 중」) — ① `journalctl -u rental-tls -b` 로 어디서 멈췄는지(80 대기 · certbot · 복사 · `nginx -t`) ② 80 이 밖에서 닿는지(`curl -I http://<IP>/.well-known/acme-challenge/x` → 404, 보안 그룹 · firewalld) ③ 고친 뒤 `sudo systemctl start rental-tls.service`. **Let's Encrypt 한도** — 같은 IP 로 7일 5장, 검증 실패 1시간 5회. 유닛이 2시간에 5회까지만 재시도하게 묶여 있다(`rental-tls.service`) — 넘으면 `systemctl reset-failed rental-tls` 뒤 다시. 시험은 `LE_STAGING=1`(시험 서버 — 한도가 따로다).
+
+**인증서를 손으로 바꿔 끼울 때**(측정 등) — `sudo systemctl stop rental-tls.timer` 먼저. 안 멈추면 스크립트가 자체 서명 · 다른 인증서를 보고 곧바로 다시 발급한다. 끝나면 원래 쌍을 되돌리고 reload → timer 를 다시 켠다.
 
 ## 5. 백업 및 시점 복구
 
@@ -537,7 +564,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 5 | sshd · journald 조각(AL2023 표와 같은 파일) | `permitrootlogin no` |
 | 6 | 계정 — `backup`(2001) 먼저 → `buyeon` · `deploy`(9.2) | 세 노드 모두 2001 · 2002 · 2003 — 옛 노드와 같다. `rocky`는 자동화용으로 남긴다 — **잠그지 않았다.** `buyeon`의 sudo 비밀번호가 정해지기 전에는 무비밀번호 sudo를 가진 계정이 `rocky`뿐이다(옛 노드 `ec2-user`와 같은 결정 — 설계서 6.2 적용 상태 행) |
 | 7 | chrony — **할 일 없음.** 이미지가 DHCP로 169.254.169.123을 받아 선택한다 | `chronyc sources`에 `^* 169.254.169.123` |
-| 8 | firewalld — **이미지에 없다.** `dnf install firewalld` → `enable --now` → APP-01 `infra/os/firewalld/app-01.sh`(ssh · http · 영역 내 전달 · 마스커레이드), DB `infra/os/firewalld/db.sh`(ssh · postgresql) | APP-01 `forward: yes` · `masquerade: yes` · `ip_forward = 1`, **DB 노드에서 NAT로 나간다**(`curl` 200 · `dnf makecache`) |
+| 8 | firewalld — **이미지에 없다.** `dnf install firewalld` → `enable --now` → APP-01 `infra/os/firewalld/app-01.sh`(ssh · http · https · 영역 내 전달 · 마스커레이드), DB `infra/os/firewalld/db.sh`(ssh · postgresql) | APP-01 `forward: yes` · `masquerade: yes` · `ip_forward = 1`, **DB 노드에서 NAT로 나간다**(`curl` 200 · `dnf makecache`) |
 | 9 | SELinux — 이미지 기본 Enforcing | `getenforce` |
 | 10 | `dnf install dnf-automatic` → `infra/os/dnf/automatic.conf`로 대체(키는 배포판 파일과 대조 — 이 판에 `reboot` 키가 있다) → `enable --now dnf-automatic.timer` | 다음 실행 06:00 + 무작위 |
 | 11 | Docker — `dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo` → `docker-ce docker-ce-cli containerd.io docker-compose-plugin` → `enable --now docker`. **`systemctl enable --now …`의 출력을 `tail -0` 같은 파이프에 흘리지 않는다** — 파이프가 먼저 닫혀 systemctl이 중간에 죽고 서비스가 꺼진 채 남았다 | Docker 29.8.1 · Compose v5.5.1, `Firewall Backend: iptables+firewalld`, `hello-world`. APP-01에서 Docker가 뜬 뒤에도 DB 노드의 NAT가 된다 |
@@ -545,7 +572,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 **메모리** — Rocky 9.8 이미지는 **kdump용으로 192 MB를 예약한다**(`crashkernel=1G-4G:192M`) — t3.small의 `free` total이 **1713 MiB**(AL2023 1909)로 보이고, 서비스를 올린 APP-01의 available이 150 MiB까지 내려갔다. **세 노드에서 끈다** — `sudo grubby --update-kernel=ALL --remove-args=crashkernel` → `sudo systemctl disable --now kdump` → 재부팅(2026-09-25, 사용자 승인). 뒤에 total **1905 MiB**, APP-01 available **386 MiB**. 대가는 커널 패닉 때 덤프를 못 남기는 것이다. **새 커널이 설치되면 예약이 다시 붙는다** — 2026-09-26 보안 갱신(5.14.0-687.51.1)이 `crashkernel=…2G-64G:256M`을 달고 들어왔고, 재부팅 뒤 APP-01 total이 1649 MiB로 줄어 부하 아래 메모리가 말라 노드가 멈췄다(#258). `grubby --update-kernel=ALL`은 그때 있던 커널에만 걸리므로 **세 가지를 함께 둔다** — `/etc/kdump.conf`의 `auto_reset_crashkernel no`, `/etc/default/grub`의 `GRUB_CMDLINE_LINUX`에서 `crashkernel=` 제거, `grubby --update-kernel=ALL --remove-args=crashkernel`. 네 노드에 반영했고(2026-09-26 20:2x) APP-01 · DB-02는 재부팅으로 1905 MiB를 확인했다. 확인은 `grep -c crashkernel /proc/cmdline`이 0. 운영 Compose의 메모리 상한(1909 기준)은 그대로 맞는다.
 
-**켜고 끄기(본인 계정 — 작업할 때만 켠다)** — **네 노드(APP-02 포함, #255)를 함께 켜고 끈다**(2026-09-26 결정). 끌 때 `aws ec2 stop-instances --instance-ids <네 ID>`, 켤 때 `start-instances` → `wait instance-status-ok` → `describe-instances --query '…PublicIpAddress'`로 **APP-01의 새 공인 주소**를 얻어 SSH 설정의 `HostName`을 고친다(Elastic IP를 쓰지 않는다 — 시스템 구성서 2.1). 사설 IP는 바뀌지 않는다. **정지해도 EBS는 과금된다.** APP-02만 멈춘 동안은 upstream 네 줄을 그대로 두고(4.1), 배포는 `APP_NODE_SSH=`로 한다(3.2) — 원격 슬롯으로 간 요청이 연결 시간 초과 2초만큼 늦는 것은 받아들인다(같은 결정).
+**켜고 끄기(본인 계정 — 작업할 때만 켠다)** — **네 노드(APP-02 포함, #255)를 함께 켜고 끈다**(2026-09-26 결정). 끌 때 `aws ec2 stop-instances --instance-ids <네 ID>`, 켤 때 `start-instances` → `wait instance-status-ok` → `describe-instances --query '…PublicIpAddress'`로 **APP-01의 새 공인 주소**를 얻어 SSH 설정의 `HostName`을 고친다(Elastic IP를 쓰지 않는다 — 시스템 구성서 2.1). 사설 IP는 바뀌지 않는다. **정지해도 EBS는 과금된다.** APP-02만 멈춘 동안은 upstream 네 줄을 그대로 두고(4.1), 배포는 `APP_NODE_SSH=`로 한다(3.2) — 원격 슬롯으로 간 요청이 연결 시간 초과 2초만큼 늦는 것은 받아들인다(같은 결정). **켠 뒤 확인할 것(2026-09-28 추가)** — ① HTTPS 인증서는 부팅 약 32초 뒤 새 IP 로 자동 발급된다(4.3) — `https://<새 IP>` 로 접속을 확인한다. 카카오맵 사이트 도메인도 새 주소로 다시 등록한다(`https://` 를 넣어야 하는지는 미확인 — 설계서 4.1) ② 꺼 둔 동안 02:00 을 넘겼으면 논리 백업을 손으로 한 번(5장 「3노드의 정기 백업」) ③ **켠 직후 `dnf-automatic` 이 놓친 06:00 실행을 따라잡아 보안 갱신을 설치한다** — 2026-09-28 APP-01 은 부팅 약 35분 뒤 14:47 ~ 14:48:42 에 커널을 설치하며(dracut) 노드 CPU 를 크게 썼다(부하 측정 한 단계를 오염시켜 다시 쟀다, #288). 측정 · 배포는 `systemctl status dnf-automatic` 이 끝난(inactive) 뒤에 한다. 커널이 바뀌었으면 다음 재부팅에 반영된다.
 
 **앱 노드 APP-02 준비 — 실제로 밟은 순서**(사용자 본인 계정 · 서울 · 2026-09-26, #255). 3노드 표를 그대로 밟았다. 값(서브넷 · 사설 IP · 보안 그룹)은 시스템 구성서 3 · 4장, 계정 · 신뢰 경로 · Redis TLS의 이유는 설계서 3.3 · 3.6 · 6.2가 갖는다.
 
