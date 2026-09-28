@@ -1,0 +1,12 @@
+{
+  "uid": "efzdy1y03n8xsb",
+  "name": "bu2000kim",
+  "type": "email",
+  "settings": {
+    "addresses": "${GRAFANA_ALERT_EMAIL}",
+    "singleEmail": false,
+    "subject": "{{ template \"rental.subject\" . }}",
+    "message": "{{ template \"rental.message\" . }}"
+  },
+  "disableResolveMessage": false
+}

@@ -1,0 +1,452 @@
+{
+  "title": "rental-backup",
+  "folderUid": "fq8pjr",
+  "interval": 60,
+  "rules": [
+    {
+      "uid": "ffzdzqt566cqod",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-backup",
+      "title": "수집 끊김",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "up < 1\nor absent(up{node=\"app-01\", job=\"node\"}) * 0\nor absent(up{node=\"app-02\", job=\"node\"}) * 0\nor absent(up{node=\"db-01\", job=\"node\"}) * 0\nor absent(up{node=\"db-02\", job=\"node\"}) * 0",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    1
+                  ],
+                  "type": "lt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "5m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "{{ $labels.node }} 의 {{ $labels.job }} 수집이 끊겼다{{ if $labels.instance }}({{ $labels.instance }}){{ end }}",
+        "description": "{{ $labels.node }} 에서 {{ $labels.job }} 지표가 5분 넘게 들어오지 않는다. 노드가 꺼졌거나 그 노드의 수집기 · exporter 가 멈췄다. 이 동안 그 노드의 다른 규칙(백업 · WAL 전송)도 함께 침묵한다 — 이 경보가 그 공백을 알린다. 알림까지 수집 대상 정지는 약 5 ~ 6분, 노드 통째 정지는 약 10분 걸린다.",
+        "action": "① 계획된 정지(작업이 끝나 노드를 끈 것)면 alertname=수집 끊김 에 다음 작업 시각까지 무음을 건다. ② 아니면 EC2 상태(aws ec2 describe-instance-status)와 SSH 접속을 본다 — EC2 상태 검사 경보 메일이 함께 왔으면 자동 복구가 도는 중이다. ③ 노드가 살아 있으면 docker compose ps 로 수집기(prom-agent*) · exporter 컨테이너를 보고 다시 띄운다. 운영 절차서 2장 경보별 조치."
+      }
+    },
+    {
+      "uid": "afzdz41i04irkf",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-backup",
+      "title": "WAL 전송 멈춤",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "time() - rental_job_last_success_timestamp_seconds{task=\"wal_ship\"} >\n300",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    0
+                  ],
+                  "type": "gt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "5m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "{{ $labels.node }} WAL 전송이 {{ humanizeDuration $values.A.Value }} 동안 성공하지 않았다",
+        "description": "매분 도는 WAL 오프사이트 전송이 5분 넘게 성공하지 않았다. 이 동안의 WAL 은 노드 로컬 아카이브에만 있어, 노드를 잃으면 그만큼 데이터가 사라진다 — 노드 소실 RPO(최대 약 5분, 시스템 구성서 5.1)가 늘고 있다.",
+        "action": "{{ $labels.node }} 에서 systemctl status rental-wal-ship.timer · journalctl -u rental-wal-ship --since -30min 으로 실패 원인을 본다 — S3 쓰기(인스턴스 역할 자격), 인터넷 출구(APP-01 NAT), gpg 키 파일. 고친 뒤 다음 분 실행이 밀린 것을 이어 보낸다. 운영 절차서 5장 · 9.3."
+      }
+    },
+    {
+      "uid": "cfzdzbcd4ydc0c",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-backup",
+      "title": "WAL 전송 밀림",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "rental_wal_ship_pending_files > 3",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    0
+                  ],
+                  "type": "gt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "5m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "warning"
+      },
+      "annotations": {
+        "summary": "{{ $labels.node }} 보내지 못한 WAL 세그먼트 {{ $values.A.Value }}개",
+        "description": "로컬 아카이브에서 S3 로 아직 가지 않은 세그먼트가 기준(3개)을 넘어 5분 넘게 남아 있다. 쌓인 만큼 노드 소실 때 잃는 범위가 늘고, 이어지면 아카이브 볼륨이 찬다.",
+        "action": "{{ $labels.node }} 에서 journalctl -u rental-wal-ship --since -30min 으로 실패인지 느린 것인지 본다(실패면 WAL 전송 멈춤과 같은 조치). df -h 로 아카이브 볼륨 여유를 본다. 운영 절차서 5장 · 9.3."
+      }
+    },
+    {
+      "uid": "bfzdzfxu5szk0f",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-backup",
+      "title": "논리 백업 누락",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "time() -max(rental_job_last_success_timestamp_seconds{task=\"logical_backup\"}) > 26*3600",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    0
+                  ],
+                  "type": "gt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "5m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "warning"
+      },
+      "annotations": {
+        "summary": "논리 백업이 {{ humanizeDuration $values.A.Value }} 동안 성공하지 않았다",
+        "description": "논리 백업은 매일 02:00 에 primary DB 노드에서 돈다. 26시간 넘게 성공이 없으면 하루치를 거른 것이다 — 되돌릴 수 있는 가장 최근 논리 백업이 그만큼 오래됐다.",
+        "action": "primary(보통 DB-01, 페일오버 뒤에는 DB-02)에서 systemctl list-timers rental-backup.timer · journalctl -u rental-backup --since yesterday 로 실패 원인을 본다. 고친 뒤 systemctl start rental-backup.service 로 한 번 돌리고, 로컬 파일과 S3 사본(운영자 자격으로 aws s3 ls)을 확인한다. 운영 절차서 9.3."
+      }
+    },
+    {
+      "uid": "afzdzm8wm0o3kc",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-backup",
+      "title": "물리 백업 누락",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "time() - max(rental_job_last_success_timestamp_seconds{task=\"physical_backup\"}) > 8 *86400",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    0
+                  ],
+                  "type": "gt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "5m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "warning"
+      },
+      "annotations": {
+        "summary": "물리 백업이 {{ humanizeDuration $values.A.Value }} 동안 성공하지 않았다",
+        "description": "물리 백업은 매주 일요일 01:30 에 primary DB 노드에서 돈다. 8일 넘게 성공이 없으면 한 주를 거른 것이다 — 시점 복구(PITR)의 기준점이 오래돼 복구에 재생할 WAL 이 늘고, 오래된 WAL 아카이브 정리도 멈춘다.",
+        "action": "primary(보통 DB-01, 페일오버 뒤에는 DB-02)에서 systemctl list-timers rental-basebackup.timer · journalctl -u rental-basebackup --since -8days 로 실패 원인을 본다. 고친 뒤 systemctl start rental-basebackup.service 로 한 번 돌린다. 운영 절차서 5장 · 9.3."
+      }
+    }
+  ]
+}
