@@ -44,7 +44,8 @@
 │   ├── aws/                계정 수준 설정 스크립트 — 노드 자동 복구 경보. 백업 전용 정책은 backup/aws/
 │   ├── os/                 노드 설정 조각 — sshd · journald. firewalld · NFS 공유 · 노드 정기 작업은 미작성
 │   ├── prometheus/ · vector/   관측 수집기 — 지표 · 로그를 노드 밖으로 보낸다. exporter는 Compose 서비스다
-│   └── alertmanager/ · grafana/   자체 호스팅으로 되돌릴 때의 자리 — 지금은 없다
+│   ├── grafana/            Grafana Cloud 정의 — 운영 요약 대시보드 · 알림 규칙 · 메일 템플릿과 반영 스크립트
+│   └── alertmanager/       자체 호스팅으로 되돌릴 때의 자리 — 지금은 없다
 │
 ├── chaos-harness/        시험 실행 — 부하 시험만. 장애 주입은 차기 범위
 │   ├── load/               k6 프로파일과 토큰 풀

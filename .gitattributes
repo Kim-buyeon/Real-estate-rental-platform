@@ -13,3 +13,5 @@ infra/vector/** text eol=lf
 infra/postgres/** text eol=lf
 # 노드 설정 조각 — sshd · systemd 는 값 끝의 \r 를 값의 일부로 읽는다.
 infra/os/** text eol=lf
+# Grafana 정의 — 운영자 PC 에서 apply.sh 가 올린다. 셸 스크립트와 같은 이유로 LF 로 둔다.
+infra/grafana/** text eol=lf

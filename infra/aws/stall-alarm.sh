@@ -35,7 +35,7 @@ case "$TOPIC" in arn:*) ;; *) echo "알림 주제 rental-node-alarms 가 없다 
 
 aws cloudwatch put-metric-alarm --region "$REGION" \
   --alarm-name "rental-APP-01-stall-reboot" \
-  --alarm-description "APP-01 NetworkOut 5분 합 ${THRESHOLD_BYTES} 바이트 미만 3구간 연속 → 재부팅(#266). 상태 검사가 못 잡는 멈춤" \
+  --alarm-description "APP-01 살아 있지만 멈춤 의심 — NetworkOut 5분 합 ${THRESHOLD_BYTES} 바이트 미만 3구간(15분) 연속(평소 유휴 약 780 ~ 960 KB). 상태 검사가 못 잡는 멈춤이라 ALARM 이면 자동 재부팅된다. 할 일: 몇 분 뒤 API 200 확인, 직전 한 시간 NetworkOut 으로 멈춤인지 오탐인지 가리고 이전 부팅 커널 로그(journalctl -k -b -1)로 원인 — 운영 절차서 2장 APP-01 멈춤 경보(#266)" \
   --namespace AWS/EC2 --metric-name NetworkOut --dimensions Name=InstanceId,Value="$ID" \
   --statistic Sum --period 300 --evaluation-periods 3 --datapoints-to-alarm 3 \
   --threshold "$THRESHOLD_BYTES" --comparison-operator LessThanThreshold --treat-missing-data notBreaching \

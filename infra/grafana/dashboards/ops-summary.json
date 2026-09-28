@@ -1,0 +1,1155 @@
+{
+  "id": null,
+  "uid": "rental-ops-summary",
+  "title": "운영 요약",
+  "tags": [
+    "rental"
+  ],
+  "description": "관리자용 운영 요약 — 서비스 · 요청 · 자원 · 백업 · 복제 · 경보를 한 화면에. 정의는 저장소 infra/grafana/dashboards/ops-summary.json 이고 infra/grafana/apply.sh 로 반영한다. 화면에서 고치면 저장소에도 옮긴다.",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "liveNow": false,
+  "fiscalYearStartMonth": 0,
+  "weekStart": "",
+  "version": 0,
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "이 화면 보는 법",
+      "description": "무엇: 이 대시보드를 읽는 순서와 색의 뜻.\n\n위험: 없음 — 안내 글이다.\n\n할 일: 경보가 왔으면 맨 아래 「지금 울리는 경보」에서 규칙을 보고 운영 절차서 2장 「경보별 조치」를 따른다.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**초록 = 정상 · 노랑 = 지켜볼 것 · 빨강 = 조치.** 위에서 아래로 — 서비스가 닿는가 → 요청이 느린가 · 실패하는가 → 자원이 모자라는가 → 백업 · 복제가 도는가 → 지금 울리는 경보.\n\n**노드를 꺼 둔 동안(작업할 때만 켠다)에는 전부 빨강 · No data 가 정상이다.** 패널 제목의 (i)에 무엇 · 위험 값 · 할 일이 있다. 자세한 것은 같은 `rental` 폴더의 가져온 대시보드(Node Exporter Full · JVM · NGINX · Redis · PostgreSQL). 경보별 조치는 운영 절차서 2장."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "서비스",
+      "description": "무엇: 입구 Nginx · 앱 슬롯 하나 이상 · DB · Redis 가 모두 수집기에 닿는지. 넷 중 하나라도 빠지면 「장애」. APP-01 의 수집기가 이 값을 보내므로 APP-01 이 멈추면 0 이다.\n\n위험: 「장애」(0) — 사용자 요청이 실패하고 있을 가능성이 크다.\n\n할 일: 오른쪽 「노드 수집」 · 「앱 슬롯」에서 어느 쪽인지 좁히고, APP-01 에서 docker compose ps 로 nginx · app · postgres-exporter · redis-exporter 상태를 본다 — 운영 절차서 2장 · 7장 장애 대응.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(max(up{job=\"nginx\"}) or vector(0)) * (clamp_max(sum(up{job=\"app\"}), 1) or vector(0)) * (max(pg_up) or vector(0)) * (max(redis_up) or vector(0))",
+          "legendFormat": "서비스",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "정상",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "장애",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "노드 수집",
+      "description": "무엇: 노드 넷의 node exporter 지표가 들어오는지. 노드 자체 · 그 노드의 수집기가 살아 있는지를 본다.\n\n위험: 「끊김」(0) — 노드가 꺼졌거나 수집기가 멈췄다. 그 노드의 백업 · WAL 지표도 함께 멈춘다.\n\n할 일: 운영 절차서 2장 「수집 끊김」 경보와 같은 조치 — 계획된 정지인지, 아니면 EC2 상태 · SSH · docker compose ps.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 4,
+        "w": 12,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max(up{job=\"node\",node=\"app-01\"}) or vector(0)",
+          "legendFormat": "APP-01",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max(up{job=\"node\",node=\"app-02\"}) or vector(0)",
+          "legendFormat": "APP-02",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max(up{job=\"node\",node=\"db-01\"}) or vector(0)",
+          "legendFormat": "DB-01",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max(up{job=\"node\",node=\"db-02\"}) or vector(0)",
+          "legendFormat": "DB-02",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "수집 중",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "끊김",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "앱 슬롯",
+      "description": "무엇: 응답하는 앱 슬롯 수. 슬롯은 넷(APP-01 · APP-02 각 둘). 하나 둘 빠져도 서비스는 되지만 여유가 준다.\n\n위험: 노랑 2 ~ 3개 · 빨강 2개 미만. 배포 중에는 잠깐 줄어드는 것이 정상이다.\n\n할 일: 운영 절차서 3장 배포 확인(슬롯별 readiness)으로 빠진 슬롯을 찾는다. APP-02 둘이 함께 빠졌으면 APP-02 노드를 본다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 4,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(up{job=\"app\"}) or vector(0)",
+          "legendFormat": "슬롯",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: / 4",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "green",
+                "value": 4
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "응답 p95",
+      "description": "무엇: 앱 API 요청의 95번째 백분위 응답 시간(5분). /actuator · 알림 SSE 스트림(수십 초 열려 있다) · UNKNOWN 은 뺐다. 앱은 구간 100ms · 300ms · 500ms · 1s · 3s 만 내므로 값은 구간 사이 보간 — 대략값이다.\n\n위험: 노랑 300ms · 빨강 500ms — 500ms 는 시험 계획서 2.3 의 포화점 판정 기준.\n\n할 일: 「포화점 대비 부하」 · 「DB 노드 CPU」를 같이 본다 — 부하가 높으면 용량, 부하가 낮은데 느리면 질의(운영 절차서 2장 질의 통계).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"app\",uri!~\"/actuator.*|/api/notifications/stream|UNKNOWN\"}[5m])))",
+          "legendFormat": "p95",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.3
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "요청 없음",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "5xx 비율",
+      "description": "무엇: 앱 API 요청 중 5xx 응답의 비율(5분). p95 와 같은 경로를 뺐다. 요청이 없으면 값이 없다.\n\n위험: 노랑 0.1% · 빨강 1% — 1% 는 시험 계획서 2.3 의 기준.\n\n할 일: Loki 에서 앱 로그의 ERROR 를 본다 — Explore 에서 {service=~\"app-[12]\"} |= \"ERROR\"(노드는 node 라벨 app-01 · app-02). 운영 절차서 7장 장애 대응.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 9,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(sum(rate(http_server_requests_seconds_count{job=\"app\",uri!~\"/actuator.*|/api/notifications/stream|UNKNOWN\",status=~\"5..\"}[5m])) or vector(0)) / sum(rate(http_server_requests_seconds_count{job=\"app\",uri!~\"/actuator.*|/api/notifications/stream|UNKNOWN\"}[5m]))",
+          "legendFormat": "5xx",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.001
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "요청 없음",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 7,
+      "type": "gauge",
+      "title": "포화점 대비 부하",
+      "description": "무엇: 앱 API 요청률(5분, p95 와 같은 경로 제외)을 150 RPS 로 나눈 값. 150 RPS 는 용량 산정 리포트(2026-09-26)의 기준 안 최대 부하다 — 175 RPS 에서 p95 가 기준을 넘었다.\n\n위험: 노랑 70% · 빨강 100%. 100% 에 가까우면 응답이 급격히 느려진다.\n\n할 일: 앞단 Nginx 요청 상한(429)이 막고 있는지 본다. 이 수준이 이어지면 증설을 판단한다 — 먼저 한계에 닿는 자원은 DB-01 CPU(용량 산정 리포트).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 9,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_requests_seconds_count{job=\"app\",uri!~\"/actuator.*|/api/notifications/stream|UNKNOWN\"}[5m])) / 150",
+          "legendFormat": "부하",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1.2,
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "sizing": "auto"
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "DB 노드 CPU",
+      "description": "무엇: DB 노드 둘의 CPU 사용률(5분). 부하 시험에서 먼저 한계에 닿은 자원이다. primary 는 보통 DB-01(페일오버 뒤에는 DB-02).\n\n위험: 노랑 50% · 빨강 68% — 기준을 넘은 175 RPS 에서 DB-01 이 0.68 이었다(용량 산정 리포트).\n\n할 일: 운영 절차서 2장 질의 통계(pg_stat_statements)로 어느 질의가 쓰는지 본다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 6,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "1 - avg by (node) (rate(node_cpu_seconds_total{mode=\"idle\",node=~\"db-0[12]\"}[5m]))",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "red",
+                "value": 0.68
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "메모리 여유",
+      "description": "무엇: 노드별 가용 메모리(MemAvailable). 9/26 사고 ① · ②(APP-01 멈춤)의 원인이 메모리 고갈이었다. 부하 중 APP-01 최소 60 ~ 131MB 를 관찰했다.\n\n위험: 노랑 150MiB 미만 · 빨강 60MiB 미만. **경계는 잠정** — 사고 표본이 적다.\n\n할 일: 그 노드에서 free -m · docker stats --no-stream 으로 커지는 컨테이너를 찾는다. 운영 절차서 2장 · 7장.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 15,
+        "w": 9,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "node_memory_MemAvailable_bytes",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 62914560
+              },
+              {
+                "color": "green",
+                "value": 157286400
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "디스크 여유",
+      "description": "무엇: 노드별로 가장 찬 볼륨(/ · /srv/pgdata · /var/lib/docker, xfs)의 남은 비율.\n\n위험: 노랑 20% 미만 · 빨강 10% 미만. **경계는 잠정** — 문서에 기준이 없다.\n\n할 일: 그 노드에서 df -h 로 어느 볼륨인지 본다. DB 노드면 WAL 적체(「백업 · WAL 경과」 · WAL 전송 밀림 경보), 앱 노드면 로그 · 도커 이미지(운영 절차서 3.4 이미지 태그 보존).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 15,
+        "w": 9,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "min by (node) (node_filesystem_avail_bytes{fstype=\"xfs\",mountpoint=~\"/|/srv/pgdata|/var/lib/docker\"} / node_filesystem_size_bytes{fstype=\"xfs\",mountpoint=~\"/|/srv/pgdata|/var/lib/docker\"})",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "green",
+                "value": 0.2
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "백업 · WAL 경과",
+      "description": "무엇: 마지막 성공 뒤 지난 시간 — WAL 전송(매분) · 논리 백업(매일 02:00) · 물리 백업(매주 일 01:30). 두 DB 노드 중 최근 값.\n\n위험: WAL 전송 노랑 2분 · 빨강 5분, 논리 백업 노랑 25시간 · 빨강 26시간, 물리 백업 노랑 7일 · 빨강 8일. 빨강은 알림 규칙 WAL 전송 멈춤 · 논리 / 물리 백업 누락과 같은 기준이다.\n\n할 일: primary DB 노드에서 systemctl list-timers · journalctl -u rental-wal-ship / rental-backup / rental-basebackup — 운영 절차서 2장 경보별 조치 · 9.3.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "time() - max(rental_job_last_success_timestamp_seconds{task=\"wal_ship\"})",
+          "legendFormat": "WAL 전송",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(time() - max(rental_job_last_success_timestamp_seconds{task=\"logical_backup\"})) / 3600",
+          "legendFormat": "논리 백업",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(time() - max(rental_job_last_success_timestamp_seconds{task=\"physical_backup\"})) / 3600",
+          "legendFormat": "물리 백업",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "WAL 전송"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 120
+                    },
+                    {
+                      "color": "red",
+                      "value": 300
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "논리 백업"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "h"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 25
+                    },
+                    {
+                      "color": "red",
+                      "value": 26
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "물리 백업"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "h"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 168
+                    },
+                    {
+                      "color": "red",
+                      "value": 192
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "복제",
+      "description": "무엇: standby(DB-02)가 primary 를 따라 적고 있는지 — 연결 수와 primary 기준 지연(바이트).\n\n위험: 「끊김」(연결 0) — primary 를 잃으면 승격할 대상이 없다. 지연은 문서에 기준이 없어 색을 두지 않았다 — 계속 커지면 standby 가 따라오지 못하는 것이다.\n\n할 일: 운영 절차서 6장 — DB-01 에서 pg_stat_replication 의 state 가 streaming 인지, DB-02 의 postgres-standby 컨테이너 로그.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "count(pg_stat_replication_pg_wal_lsn_diff) or vector(0)",
+          "legendFormat": "연결",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max(pg_stat_replication_pg_wal_lsn_diff) or vector(0)",
+          "legendFormat": "지연(바이트)",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "연결"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "끊김",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "연결",
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "지연(바이트)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 13,
+      "type": "alertlist",
+      "title": "지금 울리는 경보",
+      "description": "무엇: rental 폴더 알림 규칙 중 지금 발생(Firing) · 대기(Pending) · 오류(Error) · 해소 직후(Recovering)인 것.\n\n위험: 목록에 무엇이든 있으면 조치 대상이다. 노드를 꺼 둔 동안에는 「수집 끊김」이 정상이다(무음을 걸어 둔다).\n\n할 일: 규칙별 조치는 운영 절차서 2장 「경보별 조치」 — 메일의 「할 일」과 같다.",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 10
+      },
+      "options": {
+        "viewMode": "list",
+        "groupMode": "default",
+        "groupBy": [],
+        "maxItems": 20,
+        "sortOrder": 1,
+        "dashboardAlerts": false,
+        "alertName": "",
+        "alertInstanceLabelFilter": "{grafana_folder=\"rental\"}",
+        "showInstances": true,
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "noData": false,
+          "normal": false,
+          "error": true,
+          "recovering": true
+        }
+      }
+    }
+  ]
+}

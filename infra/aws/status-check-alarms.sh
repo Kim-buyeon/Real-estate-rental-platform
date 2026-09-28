@@ -42,7 +42,7 @@ for row in "${NODES[@]}"; do
   read -r ID NAME <<< "$row"
   aws cloudwatch put-metric-alarm --region "$REGION" \
     --alarm-name "rental-${NAME}-instance-check-reboot" \
-    --alarm-description "${NAME} 인스턴스 상태 검사 3분 연속 실패 → 재부팅(#258)" \
+    --alarm-description "${NAME} OS 응답 없음 — 인스턴스 상태 검사 3분 연속 실패. ALARM 이면 자동 재부팅된다. 할 일: 몇 분 뒤 서비스 복귀 확인(APP 노드는 API 200 · 슬롯 readiness, DB 노드는 복제), 이전 부팅 커널 로그(journalctl -k -b -1)로 원인(OOM · hung task)을 찾는다 — 운영 절차서 2장 노드 자동 복구(#258)" \
     --namespace AWS/EC2 --metric-name StatusCheckFailed_Instance --dimensions Name=InstanceId,Value="$ID" \
     --statistic Maximum --period 60 --evaluation-periods 3 --datapoints-to-alarm 3 \
     --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching \
@@ -50,7 +50,7 @@ for row in "${NODES[@]}"; do
     --tags Key=Project,Value=rental
   aws cloudwatch put-metric-alarm --region "$REGION" \
     --alarm-name "rental-${NAME}-system-check-recover" \
-    --alarm-description "${NAME} 시스템 상태 검사 2분 연속 실패 → recover(#258)" \
+    --alarm-description "${NAME} AWS 호스트 쪽 장애 — 시스템 상태 검사 2분 연속 실패. ALARM 이면 자동 recover(같은 인스턴스를 다른 호스트로 옮긴다)된다. 할 일: describe-alarm-history 로 recover 실행을 확인하고, 몇 분 뒤 인스턴스 running · 서비스 복귀(APP 노드는 API 200, DB 노드는 복제)를 본다 — 운영 절차서 2장 노드 자동 복구(#258)" \
     --namespace AWS/EC2 --metric-name StatusCheckFailed_System --dimensions Name=InstanceId,Value="$ID" \
     --statistic Maximum --period 60 --evaluation-periods 2 --datapoints-to-alarm 2 \
     --threshold 1 --comparison-operator GreaterThanOrEqualToThreshold --treat-missing-data notBreaching \

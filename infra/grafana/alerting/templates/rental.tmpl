@@ -1,0 +1,33 @@
+{{/*
+  알림 메일 제목 · 본문 템플릿(INF-05) — Grafana Cloud 알림 템플릿 「rental」. 운영 절차서 2장.
+
+  연락처 bu2000kim(contact-point-email.json)의 subject · message 가 부른다 — {{ template "rental.subject" . }} · {{ template "rental.message" . }}.
+  반영은 infra/grafana/apply.sh 가 한다(화면에서 고치면 저장소가 모른다 — #253).
+
+  본문의 요약 · 설명 · 할 일은 규칙의 주석 summary · description · action 이다(rules-rental-backup.json).
+  시각은 KST 로 적는다 — .StartsAt 는 UTC 이고, .StartsAt.Local 은 Grafana Cloud 서버의 시간대라 쓰지 않는다.
+  9시간(32400000000000 나노초 — Time.Add 는 time.Duration 을 받는다)을 더해 벽시계 숫자만 옮긴다.
+  없는 라벨 · 주석은 if 로 거른다 — 그대로 찍으면 「<no value>」가 나온다.
+*/}}
+
+{{ define "rental.subject" -}}
+{{ if eq .Status "firing" }}[경보]{{ else }}[해소]{{ end }} {{ .CommonLabels.alertname }}
+{{- if .CommonLabels.node }} ({{ .CommonLabels.node }}){{ else }}{{ with index .Alerts 0 }}{{ if .Labels.node }} ({{ .Labels.node }}){{ end }}{{ end }}{{ end }}
+{{- if gt (len .Alerts) 1 }} 외 {{ len (slice .Alerts 1) }}건{{ end }}
+{{- end }}
+
+{{ define "rental.message" -}}
+{{ range .Alerts -}}
+■ {{ if eq .Status "firing" }}발생{{ else }}해소{{ end }} — {{ .Labels.alertname }}{{ if .Labels.node }} ({{ .Labels.node }}){{ end }}{{ if .Labels.severity }} [{{ .Labels.severity }}]{{ end }}
+{{ if .Annotations.summary }}요약: {{ .Annotations.summary }}
+{{ end -}}
+{{ if .Annotations.description }}설명: {{ .Annotations.description }}
+{{ end -}}
+{{ if .Annotations.action }}할 일: {{ .Annotations.action }}
+{{ end -}}
+시각: 발생 {{ (.StartsAt.Add 32400000000000).Format "2006-01-02 15:04" }} KST
+{{- if eq .Status "resolved" }} · 해소 {{ (.EndsAt.Add 32400000000000).Format "2006-01-02 15:04" }} KST{{ end }}
+
+{{ end -}}
+운영 요약 대시보드: {{ reReplaceAll "/$" "" .ExternalURL }}/d/rental-ops-summary
+{{- end }}
