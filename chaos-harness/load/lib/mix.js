@@ -303,8 +303,9 @@ function remember(items) {
 /**
  * 상세 · 위험도 · 관심 매물에 쓸 ID. 여정 규칙(3.1) — 이 VU 가 지도 조회에서 받은 ID 를 우선 쓴다.
  * 아직 지도 조회를 안 한 첫 반복만 setup 이 실제 마커 조회로 받아 둔 시드 ID 를 쓴다(존재하는 ID 다).
+ * 성능 카드(card.js)의 등기 · 대장 회차도 이것을 쓴다 — 지도 조회가 없어 늘 시드 ID 다.
  */
-function pickPropertyId(geo, safeOnly) {
+export function pickPropertyId(geo, safeOnly) {
   const seen = safeOnly ? vu.seen.filter(function (s) { return s.safe; }) : vu.seen;
   if (seen.length) return randomOf(seen).id;
   const d = pickDistrict(geo);
@@ -313,6 +314,49 @@ function pickPropertyId(geo, safeOnly) {
   // 그 구에 없으면 아무 구에서
   const any = geo.districts.filter(function (x) { return (safeOnly ? x.safe : x.ids).length; });
   return any.length ? randomOf(safeOnly ? randomOf(any).safe : randomOf(any).ids) : null;
+}
+
+/**
+ * 매물 한 건이 VU 필터(FILTER_PRESETS 의 params)에 걸리는가. 성능 카드의 3단계 시드를 고를 때 쓴다 —
+ * 3단계 반경 조회는 같은 필터로 보내므로, 필터에 맞는 매물의 좌표를 중심으로 해야 결과가 최소 1건(자기 자신)이다.
+ *   p — { contractType, deposit }. 모르는 필터 키는 판정할 수 없으므로 멈춘다(FILTER_PRESETS 를 바꾸면 여기도 고친다).
+ */
+export function matchesFilter(p, f) {
+  const keys = Object.keys(f || {});
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    if (k === 'contractType') {
+      if (p.contractType !== f.contractType) return false;
+    } else if (k === 'depositMax') {
+      if (p.deposit === null || p.deposit === undefined || p.deposit > f.depositMax) return false;
+    } else {
+      throw new Error('matchesFilter: 모르는 필터 키 ' + k);
+    }
+  }
+  return true;
+}
+
+// 성능 카드 3단계 시드 수 — VU 가 처음 가진 좌표 개수. 스스로 정한 값(T2 의 2단계 한 번이 기억하는 최대치 20 과 같게).
+const SEED_N = 20;
+
+/**
+ * 성능 카드(fixedEp = map_s3) 전용 — 이 VU 의 seen 을 setup 이 받아 둔 매물 좌표(geo.districts[].points,
+ * card.js setup 이 채운다)로 미리 채운다. 2단계(map-clusters)를 대신 부르지 않게 하려는 것이다.
+ * 자치구는 pickDistrict 로 골라 DIST(지역 분포)를 따르고, 그 구에 필터에 맞는 좌표가 없으면 모든 구에서 고른다.
+ * 조합 부하(T2)는 부르지 않는다.
+ */
+function seedSeen(geo) {
+  const all = [];
+  geo.districts.forEach(function (d) {
+    (d.points || []).forEach(function (p) { if (matchesFilter(p, vu.filter)) all.push(p); });
+  });
+  if (all.length === 0) return;
+  for (let i = 0; i < SEED_N; i++) {
+    const d = pickDistrict(geo);
+    const own = (d.points || []).filter(function (p) { return matchesFilter(p, vu.filter); });
+    const p = randomOf(own.length ? own : all);
+    vu.seen.push({ id: p.id, lat: p.lat, lng: p.lng, district: p.district, safe: p.safe });
+  }
 }
 
 function roundOutward(minLat, maxLat, minLng, maxLng) {
@@ -425,10 +469,12 @@ function mapStage2(s, geo) {
   if (ok) remember(body(res).data.markers);
 }
 
-function mapStage3(s, geo) {
+function mapStage3(s, geo, fixed) {
   // GET /api/properties?district&lat&lng&radiusKm — 바운딩 박스 1차 조회 + Haversine 거리 계산 · 거리순
   // 중심은 이 VU 가 이미 받은 마커 좌표다 — 같은 필터로 받은 매물이므로 결과가 최소 1건이다.
   if (vu.seen.length === 0) {
+    // 성능 카드(fixed)는 2단계를 섞지 않는다 — iterate 가 seedSeen 으로 미리 채운다. 비었으면 시드가 없는 것이다
+    if (fixed) throw new Error('map_s3 단독: 이 VU 의 필터(' + JSON.stringify(vu.filter) + ')에 맞는 시드 좌표가 없다');
     mapStage2(s, geo); // 아직 본 마커가 없으면 구 단계부터(여정 순서)
     return;
   }
@@ -570,8 +616,9 @@ function pickEndpoint(s, poolSize) {
  *   data    — setup() 반환값 { geo, ... }
  *   pool    — 토큰 풀(SharedArray)
  *   phaseOf — 시나리오 시작 후 경과 초 → { phase, warmup }. 태그로 붙어 단계별 · 워밍업 제외 집계가 된다.
+ *   fixedEp — (선택) 조합에서 고르지 않고 이 ep 만 부른다. 성능 카드(card.js — 단일 엔드포인트, #290)가 쓴다. 이때 think time 은 두지 않는다
  */
-export function iterate(data, pool, phaseOf) {
+export function iterate(data, pool, phaseOf, fixedEp) {
   const elapsed = (Date.now() - exec.scenario.startTime) / 1000;
   const ph = phaseOf(elapsed);
   exec.vu.metrics.tags.phase = ph.phase;
@@ -581,13 +628,16 @@ export function iterate(data, pool, phaseOf) {
   const s = getSession(pool);
   const geo = data.geo;
 
-  let ep = pickEndpoint(s, pool.length);
+  // 성능 카드의 3단계 단독 — 처음 한 번 시드 좌표로 seen 을 채운다(mapStage3 가 2단계를 대신 부르지 않게)
+  if (fixedEp === 'map_s3' && vu.seen.length === 0) seedSeen(geo);
+
+  let ep = fixedEp || pickEndpoint(s, pool.length);
   if (ep === 'map') ep = pickWeighted(MAP_STAGES);
 
   switch (ep) {
     case 'map_s1': districtCounts(s, 'map_s1'); break;
     case 'map_s2': mapStage2(s, geo); break;
-    case 'map_s3': mapStage3(s, geo); break;
+    case 'map_s3': mapStage3(s, geo, !!fixedEp); break;
     case 'district_counts': districtCounts(s, 'district_counts'); break;
     case 'prop_detail': propDetail(s, geo); break;
     case 'risk': risk(s, geo); break;
@@ -601,7 +651,7 @@ export function iterate(data, pool, phaseOf) {
     default: throw new Error('알 수 없는 ep: ' + ep);
   }
 
-  if (THINK_MAX > 0) sleep(THINK_MIN + Math.random() * (THINK_MAX - THINK_MIN));
+  if (THINK_MAX > 0 && !fixedEp) sleep(THINK_MIN + Math.random() * (THINK_MAX - THINK_MIN));
 }
 
 /** 단계가 하나인 프로파일(T1 · T3)의 phaseOf. */
