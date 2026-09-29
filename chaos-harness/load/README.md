@@ -13,7 +13,7 @@
 | `lib/mix.js` · `lib/tokens.js` · `lib/summary.js` | 공용 모듈 | — |
 | `run-steps.sh` | T2 한 회차 — 토큰 풀 두 개 → SSE 250 → (SSE 가 떠 있을 때만) steps.js. SSE 가 곧바로 끝나면 본 프로파일을 시작하지 않는다 | — |
 | `tools/stages.py` | `--out csv` 시계열의 단계별 집계 — 상태 코드 분포, 받아들인(2xx · 3xx) 처리량 · p95 · p99, 지도 2단계 p95. `python3 tools/stages.py results/t2.csv.gz` | — |
-| `card.js` | 성능 카드(시험 계획서 7.3) — `EP=` 한 엔드포인트만 계단(`RATES` 기본 10,25,50,100,150 · `HOLD_SEC` 기본 120). `DIST=uniform|hot` · `CONTEND=1`(자체 EP만) · `DEPTH`(listdeep) · `LT_PASSWORD` · `LOGIN_START` · `LOGIN_COUNT`(login). EP 목록과 B 회차(reissue · login · wishwrite · reanalyze)의 부작용은 파일 머리 주석 — **login · reissue 회차 뒤에는 `make-tokens.js` 를 다시 돈다.** 요청 모양은 `lib/mix.js` 와 같다(`iterate` 의 `fixedEp`), think time 없음 | ramping-arrival-rate |
+| `card.js` | 성능 카드(시험 계획서 7.3) — `EP=` 한 엔드포인트만 계단(`RATES` 기본 10,25,50,100,150 · `HOLD_SEC` 기본 120). `DIST=uniform|hot` · `CONTEND=1`(자체 EP만) · `DEPTH`(listdeep) · `LT_PASSWORD` · `LOGIN_START` · `LOGIN_COUNT`(login). EP 목록과 B 회차(reissue · login · wishwrite · reanalyze)의 부작용은 파일 머리 주석 — **login · reissue 회차 뒤에는 `make-tokens.js` 를 다시 돈다.** 요청 모양은 `lib/mix.js` 와 같다(`iterate` 의 `fixedEp`) — 지도 3단계(`markers`)만 setup 이 받은 시드 좌표에서 시작해 2단계를 섞지 않는다. think time 없음 | ramping-arrival-rate |
 | `tls.js` | C-2 입구 TLS 비용(시험 계획서 9장) — 정적 `/` 계단 50 · 100 · 200 · 400 RPS 각 2분, 요청마다 새 연결(`NEW_CONN=0` 이면 재사용). 인증서 이름 검증을 끈다 | ramping-arrival-rate |
 | `soak.js` | T4 지속 15 RPS · 기본 2시간(`DURATION` 으로 지정) — 토큰 풀을 최대 VU(약 320) 만큼 만든다(한계 1 · 용량 산정 리포트 한계 3) | constant-arrival-rate |
 
