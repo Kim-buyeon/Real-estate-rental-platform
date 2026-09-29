@@ -4,6 +4,7 @@
 #
 #   SSH_CONFIG=<ssh 설정> bash collect-rc.sh start       <LABEL> [OUTDIR]              회차 직전
 #   SSH_CONFIG=<ssh 설정> bash collect-rc.sh end         <LABEL> [OUTDIR]              회차 직후
+#   SSH_CONFIG=<ssh 설정> bash collect-rc.sh ae          <LABEL> [OUTDIR]              auto_explain 나중 회수(end 를 RC_SKIP_AE=1 로 돌렸을 때)
 #   SSH_CONFIG=<ssh 설정> bash collect-rc.sh explain-cmp <LABEL> <sql 파일> [OUTDIR]   계획 비교(읽기 전용)
 #
 # 호스트 — SSH_CONFIG 의 app01 · app02 · db01. OUTDIR 기본 results-rc, 결과는 OUTDIR/LABEL/. LABEL 은 영문 · 숫자 · . _ - 만.
@@ -24,10 +25,14 @@
 #   tables-*.csv · indexes-*.csv · tables-diff.csv · indexes-diff.csv    end − start(바뀐 것만)
 #   activity.csv · activity-summary.txt   대기 이벤트 비율(active 행 기준, 대기 없음 = CPU 로 센다)
 #   mem-app01.txt · mem-app02.txt
-#   auto-explain.txt · auto-explain-summary.txt   postgres 컨테이너 docker logs --since <start> 에서 auto_explain 블록
+#   end-utc.txt             끝 시각(db01 시계, UTC — 샘플러를 멈추기 전)
+#   auto-explain.txt · auto-explain-summary.txt   postgres 컨테이너 docker logs --since <start> --until <end> 에서 auto_explain 블록
 #                           (「duration: … plan:」 줄에서 다음 로그 줄 전까지). 원시 로그는 저장하지 않는다 — 「Query Parameters:」 줄은
-#                           지운다(가입 · 로그인 질의의 파라미터가 개인정보다). 요약 — 블록 수 · 계획 안에 $n 이 있는 블록 수(= 일반 계획.
-#                           질의 문장 쪽의 $n 은 세지 않는다) · 조인 방식별 수 · 질의별 수.
+#                           지운다(가입 · 로그인 질의의 파라미터가 개인정보다). 요약 — 블록 수 · 계획 본문(Query Text 줄들을 뺀 나머지)에
+#                           $n 이 있는 블록 수(= 일반 계획. 질의 문장 쪽의 $n 은 세지 않는다) · 조인 방식별 수 · 질의별 수.
+#   RC_SKIP_AE=1            auto_explain 가져오기를 건너뛰고 끝 시각을 end-utc-local.txt 에 남긴다 — 나중에 ae 로 회수한다.
+# ae    — OUTDIR/LABEL/start-utc.txt ~ end-utc-local.txt(없으면 환경 변수 AE_UNTIL, UTC YYYY-MM-DDTHH:MM:SSZ) 구간의 postgres 컨테이너
+#         docker logs 를 받아 end 와 같은 파서로 auto-explain.txt · auto-explain-summary.txt 를 만든다.
 # explain-cmp — sql 파일은 PREPARE q(…) AS …; 와 「-- EXEC: EXECUTE q(값들);」 한 줄을 담는다(예: sql/map-clusters.sql). 세 방식을 각각
 #         다른 연결 · 읽기 전용 트랜잭션에서 EXPLAIN (ANALYZE, BUFFERS) EXECUTE 한다. 방식마다 한 번 먼저 실행해(출력 버림) 캐시를 데운 뒤 잰다.
 #   explain-custom.txt   SET LOCAL plan_cache_mode = force_custom_plan
@@ -38,7 +43,7 @@
 # 앱 역할이다(collect-card.sh 머리 주석). 이름 · 비밀번호를 명령줄 · 출력에 옮기지 않는다.
 set -euo pipefail
 
-CMD=${1:?start · end · explain-cmp}
+CMD=${1:?start · end · ae · explain-cmp}
 LABEL=${2:?LABEL}
 SSH_CONFIG=${SSH_CONFIG:?SSH_CONFIG — app01 · app02 · db01 호스트가 있는 ssh 설정}
 PG=${PG_CONTAINER:-rental-prod-postgres-1}
@@ -150,6 +155,65 @@ fetch() {
   fi
 }
 
+# auto_explain — end · ae 가 함께 쓴다. 원시 로그는 파일로 남기지 않고 바로 거른다(파라미터 줄 제거)
+AE_PY=$(cat <<'PY'
+import re, sys, os
+from collections import Counter
+d = sys.argv[1]
+text = sys.stdin.buffer.read().decode('utf-8', 'replace').splitlines()
+head = re.compile(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}')   # 기본 log_line_prefix '%m [%p] ' — 로그 줄 시작
+blocks, cur, other_duration = [], None, 0
+for line in text:
+    if head.match(line):
+        if cur is not None:
+            blocks.append(cur); cur = None
+        if 'duration:' in line and 'plan:' in line:
+            cur = [line]
+        elif 'duration:' in line:
+            other_duration += 1
+    elif cur is not None:
+        cur.append(line)
+if cur is not None:
+    blocks.append(cur)
+param = re.compile(r'^\s*(Query )?Parameters:')
+node = re.compile(r'\((cost|actual)[= ]')
+dollar = re.compile(r'\$\d+')
+join = re.compile(r'(Nested Loop|Hash(?: \w+)? Join|Merge(?: \w+)? Join)')
+generic, joins_blocks, joins_nodes, by_query = 0, Counter(), Counter(), Counter()
+with open(os.path.join(d, 'auto-explain.txt'), 'w', encoding='utf-8') as f:
+    for b in blocks:
+        b = [l for l in b if not param.match(l)]
+        f.write('\n'.join(b) + '\n\n')
+        # 질의 문장 — 「Query Text:」 줄부터 첫 계획 노드 줄 전까지(여러 줄일 수 있다). 계획 본문은 그 줄들을 뺀 나머지(머리 줄 제외)다 —
+        # 질의 문장의 $n 은 일반 계획의 증거가 아니다(custom 계획에서도 질의 문장에는 $n 이 그대로 남는다)
+        qi = next((i for i, l in enumerate(b) if 'Query Text:' in l), None)
+        if qi is None:
+            plan, qt = b[1:], ''
+        else:
+            qend = next((i for i in range(qi + 1, len(b)) if node.search(b[i])), len(b))
+            plan = b[1:qi] + b[qend:]
+            qt = ' '.join((b[qi].split('Query Text:', 1)[1] + ' ' + ' '.join(b[qi + 1:qend])).split())[:80]
+        is_generic = any(dollar.search(l) for l in plan)
+        generic += is_generic
+        kinds = set()
+        for l in plan:
+            for m in join.findall(l):
+                k = 'Nested Loop' if m.startswith('Nested') else ('Hash Join' if m.startswith('Hash') else 'Merge Join')
+                joins_nodes[k] += 1; kinds.add(k)
+        for k in kinds:
+            joins_blocks[k] += 1
+        by_query[(qt, is_generic)] += 1
+with open(os.path.join(d, 'auto-explain-summary.txt'), 'w', encoding='utf-8') as f:
+    f.write('auto_explain 블록 %d · 계획에 $n 이 있는 블록(일반 계획) %d · 계획 없는 duration 줄 %d\n' % (len(blocks), generic, other_duration))
+    f.write('\n조인 방식 — 블록 수 / 노드 수\n')
+    for k in ('Nested Loop', 'Hash Join', 'Merge Join'):
+        f.write('  %-11s  %6d / %6d\n' % (k, joins_blocks[k], joins_nodes[k]))
+    f.write('\n질의별(Query Text 앞 80자) — 블록 수 · 일반 계획 여부\n')
+    for (q, g), v in sorted(by_query.items(), key=lambda x: -x[1]):
+        f.write('  %6d  %-7s  %s\n' % (v, 'generic' if g else 'custom', q))
+PY
+)
+
 case "$CMD" in
   start)
     echo "SELECT pg_stat_statements_reset();" | psql_ postgres > /dev/null
@@ -163,6 +227,9 @@ case "$CMD" in
   end)
     [ -s "$D/start-utc.txt" ] || { echo "$D/start-utc.txt 가 없다 — 같은 LABEL · OUTDIR 로 start 했는가" >&2; exit 1; }
     START=$(cat "$D/start-utc.txt")
+    # 끝 시각 — 샘플러를 멈추기 전 db01 시계(UTC). auto_explain 을 이 시각까지만 담는다 — end 가 늦게 돌아도 회차 뒤 블록이 섞이지 않게
+    END=$(ssh_ db01 "date -u +%Y-%m-%dT%H:%M:%SZ" | tr -d '\r')
+    echo "$END" > "$D/end-utc.txt"
     stop_db01
     for h in $APPS; do stop_app "$h"; done
     { echo "ts,state,wait_event_type,wait_event,query"; } > "$D/activity.csv"
@@ -253,62 +320,10 @@ with open(os.path.join(d, 'activity-summary.txt'), 'w', encoding='utf-8') as f:
         f.write('  %5.1f%%  %6d  %s\n' % (100 * v / (len(active) or 1), v, k))
 PY
 
-    # auto_explain — 원시 로그는 파일로 남기지 않고 바로 거른다(파라미터 줄 제거)
-    AE_PY=$(cat <<'PY'
-import re, sys, os
-from collections import Counter
-d = sys.argv[1]
-text = sys.stdin.buffer.read().decode('utf-8', 'replace').splitlines()
-head = re.compile(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}')   # 기본 log_line_prefix '%m [%p] ' — 로그 줄 시작
-blocks, cur, other_duration = [], None, 0
-for line in text:
-    if head.match(line):
-        if cur is not None:
-            blocks.append(cur); cur = None
-        if 'duration:' in line and 'plan:' in line:
-            cur = [line]
-        elif 'duration:' in line:
-            other_duration += 1
-    elif cur is not None:
-        cur.append(line)
-if cur is not None:
-    blocks.append(cur)
-param = re.compile(r'^\s*(Query )?Parameters:')
-node = re.compile(r'\((cost|actual)[= ]')
-dollar = re.compile(r'\$\d+')
-join = re.compile(r'(Nested Loop|Hash(?: \w+)? Join|Merge(?: \w+)? Join)')
-generic, joins_blocks, joins_nodes, by_query = 0, Counter(), Counter(), Counter()
-with open(os.path.join(d, 'auto-explain.txt'), 'w', encoding='utf-8') as f:
-    for b in blocks:
-        b = [l for l in b if not param.match(l)]
-        f.write('\n'.join(b) + '\n\n')
-        start = next((i for i, l in enumerate(b) if node.search(l)), len(b))
-        plan = b[start:]
-        qi = next((i for i, l in enumerate(b[:start]) if 'Query Text:' in l), None)
-        qt = '' if qi is None else ' '.join((b[qi].split('Query Text:', 1)[1] + ' ' + ' '.join(b[qi + 1:start])).split())[:80]
-        is_generic = any(dollar.search(l) for l in plan)
-        generic += is_generic
-        kinds = set()
-        for l in plan:
-            for m in join.findall(l):
-                k = 'Nested Loop' if m.startswith('Nested') else ('Hash Join' if m.startswith('Hash') else 'Merge Join')
-                joins_nodes[k] += 1; kinds.add(k)
-        for k in kinds:
-            joins_blocks[k] += 1
-        by_query[(qt, is_generic)] += 1
-with open(os.path.join(d, 'auto-explain-summary.txt'), 'w', encoding='utf-8') as f:
-    f.write('auto_explain 블록 %d · 계획에 $n 이 있는 블록(일반 계획) %d · 계획 없는 duration 줄 %d\n' % (len(blocks), generic, other_duration))
-    f.write('\n조인 방식 — 블록 수 / 노드 수\n')
-    for k in ('Nested Loop', 'Hash Join', 'Merge Join'):
-        f.write('  %-11s  %6d / %6d\n' % (k, joins_blocks[k], joins_nodes[k]))
-    f.write('\n질의별(Query Text 앞 80자) — 블록 수 · 일반 계획 여부\n')
-    for (q, g), v in sorted(by_query.items(), key=lambda x: -x[1]):
-        f.write('  %6d  %-7s  %s\n' % (v, 'generic' if g else 'custom', q))
-PY
-)
-    # 부하 직후 이 가져오기가 SSH 째로 매달린 적이 있다(9/29 — timeout 도 끊지 못했다). RC_SKIP_AE=1 이면 건너뛰고, 회차 구간(start-utc.txt ~ 끝 시각)으로 나중에 회수한다
-    if [ "${RC_SKIP_AE:-0}" = 1 ]; then date -u +%Y-%m-%dT%H:%M:%SZ > "$D/end-utc-local.txt"; else
-    ssh_ db01 "sudo docker logs --since $START $PG 2>&1" | "$PY" -c "$AE_PY" "$D"
+    # 부하 직후 이 가져오기가 SSH 째로 매달린 적이 있다(9/29 — timeout 도 끊지 못했다). RC_SKIP_AE=1 이면 건너뛰고, 회차 구간
+    # (start-utc.txt ~ end-utc-local.txt)으로 나중에 「collect-rc.sh ae <LABEL> [OUTDIR]」로 회수한다
+    if [ "${RC_SKIP_AE:-0}" = 1 ]; then echo "$END" > "$D/end-utc-local.txt"; else
+    ssh_ db01 "sudo docker logs --since $START --until $END $PG 2>&1" | "$PY" -c "$AE_PY" "$D"
     fi
     echo "end $LABEL $(date '+%F %T') — $D"
     [ -f "$D/auto-explain-summary.txt" ] && head -n 1 "$D/auto-explain-summary.txt"; true
@@ -332,5 +347,19 @@ PY
     echo "explain-cmp $LABEL — $D/explain-custom.txt · explain-generic.txt · explain-planner.txt"
     ;;
 
-  *) echo "start · end · explain-cmp" >&2; exit 2 ;;
+  ae)
+    # 회차 구간의 auto_explain 을 나중에 회수한다 — end 를 RC_SKIP_AE=1 로 돌렸거나 다시 만들 때
+    [ -s "$D/start-utc.txt" ] || { echo "$D/start-utc.txt 가 없다 — 같은 LABEL · OUTDIR 로 start 했는가" >&2; exit 1; }
+    START=$(tr -d '\r' < "$D/start-utc.txt")
+    if [ -s "$D/end-utc-local.txt" ]; then UNTIL=$(tr -d '\r' < "$D/end-utc-local.txt")
+    else UNTIL=${AE_UNTIL:?$D/end-utc-local.txt 가 없다 — AE_UNTIL=<끝 시각 UTC, 예 2026-09-29T12:34:56Z> 로 준다}; fi
+    for t in "$START" "$UNTIL"; do   # 원격 명령줄에 들어간다 — 형식을 확인한다
+      [[ "$t" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || { echo "시각 형식이 아니다: $t (YYYY-MM-DDTHH:MM:SSZ)" >&2; exit 2; }
+    done
+    ssh_ db01 "sudo docker logs --since $START --until $UNTIL $PG 2>&1" | "$PY" -c "$AE_PY" "$D"
+    echo "ae $LABEL $START ~ $UNTIL — $D/auto-explain.txt · auto-explain-summary.txt"
+    head -n 1 "$D/auto-explain-summary.txt"
+    ;;
+
+  *) echo "start · end · ae · explain-cmp" >&2; exit 2 ;;
 esac
