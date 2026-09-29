@@ -7,6 +7,10 @@
 #
 # 카드 항목 — ③ 요청당 질의 수(상위 질의 calls 합 ÷ k6 요청 수) · ⑤ 상위 질의 · ⑥ 전체 스캔(tables-diff 의 seq_scan) · 버퍼 적중.
 # pg_stat_statements 뷰는 primary 의 postgres DB 에 있다(운영 절차서 2장 「질의 통계」) — 초기화 · 조회는 거기서, 결과는 앱 DB(dbname)로 거른다.
+# 상위 질의는 앱 DB 사용자의 것만 본다 — postgres exporter(모니터 역할 POSTGRES_MONITOR_USER)가 같은 앱 DB 에 붙어 상위 칸을 차지해 앱
+# 질의가 잘렸다(9/28). 앱은 POSTGRES_USER 로 붙고(application.yml datasource.username) 이 스크립트의 psql 도 컨테이너의 같은
+# $POSTGRES_USER 로 붙으므로 current_user 가 곧 앱 사용자다 — 이름을 명령줄에 옮기지 않는다. 이 스크립트가 앱 DB 에서 뜨는 테이블 ·
+# 입출력 통계 질의도 같은 사용자라 pg_stat(io)_user_tables 를 읽는 질의는 뺀다. 칸은 100 개(앱 질의 종류가 20 을 넘는다).
 # 테이블 통계(pg_stat_user_tables)는 앱 DB 에서 본다 — 초기화하지 않고 전후 차이로 잰다(pg_stat_reset 은 다른 관측도 지운다).
 # Redis 는 APP-01 의 redis 컨테이너 — 비밀번호는 컨테이너 환경 변수(REDIS_PASSWORD)를 REDISCLI_AUTH 로 넘겨 출력 · 명령줄에 남기지 않는다.
 set -euo pipefail
@@ -53,8 +57,9 @@ case "$CMD" in
     db=$(appdb | tr -d '\r')
     echo "SELECT s.calls, round(s.total_exec_time::numeric,1) AS total_ms, round(s.mean_exec_time::numeric,3) AS mean_ms, s.rows,
       s.shared_blks_hit, s.shared_blks_read, replace(left(regexp_replace(s.query, '\\s+', ' ', 'g'), 200), ',', ';') AS query
-      FROM pg_stat_statements s JOIN pg_database d ON d.oid = s.dbid WHERE d.datname = '$db'
-      ORDER BY s.total_exec_time DESC LIMIT 20;" | psql_ postgres > "$D/top-queries.csv"
+      FROM pg_stat_statements s JOIN pg_database d ON d.oid = s.dbid JOIN pg_roles r ON r.oid = s.userid
+      WHERE d.datname = '$db' AND r.rolname = current_user AND s.query !~ 'pg_stat(io)?_user_tables'
+      ORDER BY s.total_exec_time DESC LIMIT 100;" | psql_ postgres > "$D/top-queries.csv"
     redis_ SLOWLOG GET 20 > "$D/redis-slowlog.txt"
     # 테이블 통계 차이 — 같은 relname 끼리 end - start. 한 번도 안 바뀐 테이블은 뺀다
     PY=""

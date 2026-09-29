@@ -2,6 +2,7 @@
 //
 // 섞은 부하(T2)는 1위 병목에 가려 다른 경로의 한계가 안 보인다. 여기서는 EP 하나만 쳐서 그 경로의 기준 응답 · 단독 한계를
 // 잰다. 요청 모양은 lib/mix.js 의 것을 그대로 쓴다(iterate 의 fixedEp) — 조합 부하와 같은 요청이다. think time 은 두지 않는다.
+// markers(map_s3) 는 2단계(map-clusters)를 섞지 않는다 — setup 이 시드 매물의 좌표를 상세 조회로 받아 VU 의 seen 을 미리 채운다(9/28 A-markers 에서 약 9% 섞였다).
 // DB · Redis 통계는 chaos-harness/report/collect-card.sh 가 회차 전후로 뜬다(요청당 질의 수 = 질의 통계 호출 수 ÷ 이 요청 수).
 //
 //   k6 run -e EP=clusters -e LABEL=clusters -e TOKENS=tokens.json -e SUMMARY_DIR=results card.js
@@ -53,7 +54,7 @@ import { check } from 'k6';
 import exec from 'k6/execution';
 import { Trend } from 'k6/metrics';
 import { loadTokenPool, inspectPool, getSession, authHeaders } from './lib/tokens.js';
-import { prepareGeo, iterate, pickPropertyId, lt5xx, BASE_URL, REQ_TIMEOUT_SEC } from './lib/mix.js';
+import { prepareGeo, iterate, pickPropertyId, matchesFilter, lt5xx, FILTER_PRESETS, BASE_URL, REQ_TIMEOUT_SEC } from './lib/mix.js';
 import { makeHandleSummary } from './lib/summary.js';
 
 const EP = __ENV.EP;
@@ -174,7 +175,46 @@ export function setup() {
     geo.districts = top;
     geo.top = [geo.top[0]];
   }
+  if (EP === 'markers') seedPoints(geo);
   return { geo: geo, tokenReport: inspectPool(POOL, MAX_VUS, RATES.length * PERIOD) };
+}
+
+// markers 회차의 3단계 시드 — 구마다 시드 매물(d.ids, DIST 적용 뒤)을 상세 조회해 좌표 · 계약 형태 · 보증금을 받는다.
+// prepareGeo 의 ids 는 목록 조회라 좌표가 없고, 묶음 조회의 칸 좌표는 평균이라 반경 안에 매물이 있다는 보장이 없다.
+// 상세 좌표를 중심으로 같은 구 · 같은 필터로 반경 조회하면 최소 1건(그 매물)이다. 측정 대상이 아니다(setup 태그).
+function seedPoints(geo) {
+  const setupTags = { ep: 'setup', name: 'setup' };
+  geo.districts.forEach(function (d) {
+    const reqs = d.ids.map(function (id) {
+      return { method: 'GET', url: BASE_URL + '/api/properties/' + id, params: { tags: setupTags, timeout: '60s' } };
+    });
+    const points = [];
+    http.batch(reqs).forEach(function (res) {
+      if (res.status !== 200) return;
+      let b;
+      try { b = res.json().data; } catch (e) { return; }
+      if (!b || b.latitude === null || b.longitude === null || b.district !== d.name) return;
+      points.push({
+        id: b.propertyId,
+        lat: Number(b.latitude),
+        lng: Number(b.longitude),
+        district: b.district,
+        safe: !!(b.riskSummary && b.riskSummary.riskGrade === 'SAFE'),
+        contractType: b.contractType,
+        deposit: b.deposit,
+      });
+    });
+    d.points = points;
+  });
+  // 필터 조합마다 맞는 시드가 하나는 있어야 한다 — 없으면 그 필터를 받은 VU 가 멈춘다(mix.js mapStage3)
+  FILTER_PRESETS.forEach(function (f) {
+    const n = geo.districts.reduce(function (a, d) {
+      return a + d.points.filter(function (p) { return matchesFilter(p, f.params); }).length;
+    }, 0);
+    if (n === 0) throw new Error('setup: 필터 ' + JSON.stringify(f.params) + ' 에 맞는 시드 좌표가 없다');
+  });
+  const total = geo.districts.reduce(function (a, d) { return a + d.points.length; }, 0);
+  console.log('[card] markers 시드 좌표 ' + total + '건 · 구 ' + geo.districts.length + '개');
 }
 
 function session() {
