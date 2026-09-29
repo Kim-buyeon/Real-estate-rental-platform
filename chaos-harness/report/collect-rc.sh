@@ -228,8 +228,15 @@ case "$CMD" in
     [ -s "$D/start-utc.txt" ] || { echo "$D/start-utc.txt 가 없다 — 같은 LABEL · OUTDIR 로 start 했는가" >&2; exit 1; }
     START=$(cat "$D/start-utc.txt")
     # 끝 시각 — 샘플러를 멈추기 전 db01 시계(UTC). auto_explain 을 이 시각까지만 담는다 — end 가 늦게 돌아도 회차 뒤 블록이 섞이지 않게
-    END=$(ssh_ db01 "date -u +%Y-%m-%dT%H:%M:%SZ" | tr -d '\r')
-    echo "$END" > "$D/end-utc.txt"
+    # 받기가 실패해도(set -e) 샘플러 정지 · 회수는 반드시 진행한다 — 여기서 끝나면 샘플러가 상한까지 남고 노드 /tmp 파일도 남는다
+    END=$(ssh_ db01 "date -u +%Y-%m-%dT%H:%M:%SZ" | tr -d '\r' || true)
+    # START · END 는 원격 명령줄(docker logs --since/--until)에 들어간다 — ae 와 같은 형식 검사를 통과할 때만 쓴다
+    TS_OK=1
+    for t in "$START" "$END"; do
+      [[ "$t" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || TS_OK=0
+    done
+    if [ "$TS_OK" = 1 ]; then echo "$END" > "$D/end-utc.txt"
+    else echo "경고: 시각 형식이 아니다(start=$START end=$END) — auto_explain 가져오기를 건너뛴다. 샘플러 정지 · 회수는 진행한다" >&2; fi
     stop_db01
     for h in $APPS; do stop_app "$h"; done
     { echo "ts,state,wait_event_type,wait_event,query"; } > "$D/activity.csv"
@@ -322,7 +329,9 @@ PY
 
     # 부하 직후 이 가져오기가 SSH 째로 매달린 적이 있다(9/29 — timeout 도 끊지 못했다). RC_SKIP_AE=1 이면 건너뛰고, 회차 구간
     # (start-utc.txt ~ end-utc-local.txt)으로 나중에 「collect-rc.sh ae <LABEL> [OUTDIR]」로 회수한다
-    if [ "${RC_SKIP_AE:-0}" = 1 ]; then echo "$END" > "$D/end-utc-local.txt"; else
+    # 끝 시각을 못 받았으면(TS_OK=0) 건너뛴다 — 나중에 「AE_UNTIL=<끝 시각 UTC> collect-rc.sh ae <LABEL> [OUTDIR]」로 회수한다
+    if [ "$TS_OK" != 1 ]; then echo "auto_explain 건너뜀 — 끝 시각을 못 받았다. AE_UNTIL 을 주고 ae 로 회수한다" >&2
+    elif [ "${RC_SKIP_AE:-0}" = 1 ]; then echo "$END" > "$D/end-utc-local.txt"; else
     ssh_ db01 "sudo docker logs --since $START --until $END $PG 2>&1" | "$PY" -c "$AE_PY" "$D"
     fi
     echo "end $LABEL $(date '+%F %T') — $D"
