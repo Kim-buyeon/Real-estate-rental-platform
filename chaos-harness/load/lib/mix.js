@@ -303,8 +303,9 @@ function remember(items) {
 /**
  * 상세 · 위험도 · 관심 매물에 쓸 ID. 여정 규칙(3.1) — 이 VU 가 지도 조회에서 받은 ID 를 우선 쓴다.
  * 아직 지도 조회를 안 한 첫 반복만 setup 이 실제 마커 조회로 받아 둔 시드 ID 를 쓴다(존재하는 ID 다).
+ * 성능 카드(card.js)의 등기 · 대장 회차도 이것을 쓴다 — 지도 조회가 없어 늘 시드 ID 다.
  */
-function pickPropertyId(geo, safeOnly) {
+export function pickPropertyId(geo, safeOnly) {
   const seen = safeOnly ? vu.seen.filter(function (s) { return s.safe; }) : vu.seen;
   if (seen.length) return randomOf(seen).id;
   const d = pickDistrict(geo);
@@ -570,8 +571,9 @@ function pickEndpoint(s, poolSize) {
  *   data    — setup() 반환값 { geo, ... }
  *   pool    — 토큰 풀(SharedArray)
  *   phaseOf — 시나리오 시작 후 경과 초 → { phase, warmup }. 태그로 붙어 단계별 · 워밍업 제외 집계가 된다.
+ *   fixedEp — (선택) 조합에서 고르지 않고 이 ep 만 부른다. 성능 카드(card.js — 단일 엔드포인트, #290)가 쓴다. 이때 think time 은 두지 않는다
  */
-export function iterate(data, pool, phaseOf) {
+export function iterate(data, pool, phaseOf, fixedEp) {
   const elapsed = (Date.now() - exec.scenario.startTime) / 1000;
   const ph = phaseOf(elapsed);
   exec.vu.metrics.tags.phase = ph.phase;
@@ -581,7 +583,7 @@ export function iterate(data, pool, phaseOf) {
   const s = getSession(pool);
   const geo = data.geo;
 
-  let ep = pickEndpoint(s, pool.length);
+  let ep = fixedEp || pickEndpoint(s, pool.length);
   if (ep === 'map') ep = pickWeighted(MAP_STAGES);
 
   switch (ep) {
@@ -601,7 +603,7 @@ export function iterate(data, pool, phaseOf) {
     default: throw new Error('알 수 없는 ep: ' + ep);
   }
 
-  if (THINK_MAX > 0) sleep(THINK_MIN + Math.random() * (THINK_MAX - THINK_MIN));
+  if (THINK_MAX > 0 && !fixedEp) sleep(THINK_MIN + Math.random() * (THINK_MAX - THINK_MIN));
 }
 
 /** 단계가 하나인 프로파일(T1 · T3)의 phaseOf. */
