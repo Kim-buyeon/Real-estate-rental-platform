@@ -171,7 +171,10 @@ export function setup() {
     geo.top = [];                       // pickDistrict 가 25개 구를 균등하게 고른다
   } else if (DIST === 'hot') {
     const top = geo.districts.filter(function (d) { return d.name === geo.top[0]; });
-    top.forEach(function (d) { d.ids = d.ids.slice(0, 5); d.safe = d.safe.slice(0, 5); });
+    // 매물 5건으로 좁히는 것은 상세 · 위험 판정의 같은 행 쏠림용이다. 지도 3단계는 구 하나로 좁히는 것이 쏠림이라 시드를 남긴다 —
+    // 5건이면 필터(전세만 등)에 맞는 시드가 없어 setup 이 멈췄다(9/29)
+    const keep = EP === 'markers' ? 40 : 5;
+    top.forEach(function (d) { d.ids = d.ids.slice(0, keep); d.safe = d.safe.slice(0, keep); });
     geo.districts = top;
     geo.top = [geo.top[0]];
   }
