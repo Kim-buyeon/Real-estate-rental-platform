@@ -358,12 +358,15 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 | Product Name | product_name |  | ● | VARCHAR | 100 | — | — | 상품명 |
 | Loan Type | loan_type |  | ● | VARCHAR | 30 | — | — | 상품 유형 |
 | Interest Rate | interest_rate |  | ● | NUMERIC | 5 | 3 | — | 금리 (%) |
-| Rate Type | rate_type |  | ● | VARCHAR | 10 | — | — | 금리 유형 |
+| Rate Type | rate_type |  |  | VARCHAR | 10 | — | — | 금리 유형. HF 금리 API 행은 NULL(제공처가 주지 않는다) |
 | Max Limit | max_limit |  | ● | BIGINT | 15 | — | — | 최대 대출 한도 |
-| Loan Term | loan_term |  | ● | INTEGER | 4 | — | — | 대출 기간 (년) — DSR 원리금 계산용 |
+| Loan Term | loan_term |  |  | INTEGER | 4 | — | — | 대출 기간 (년) — DSR 원리금 계산용. HF 금리 API 행은 NULL |
 | Repayment Type | repayment_type |  | ● | VARCHAR | 20 | — | — | 상환방식 (EQUAL_PI/EQUAL_PRINCIPAL/BULLET) |
 | Income Condition | income_condition |  |  | BIGINT | 15 | — | — | 소득 조건 |
 | House Ownership Condition | house_ownership_condition |  | ● | BOOLEAN | 1 | — | FALSE | 주택 보유 조건 |
+| House Type | house_type |  |  | VARCHAR | 20 | — | — | 매물 유형(APARTMENT · OFFICETEL). HF 금리 API 행만 채운다 — (bank_name, house_type) 유일(house_type IS NOT NULL) |
+| Base Month | base_month |  |  | DATE | — | — | — | 금리 기준월(1일) |
+| Loan Amount | loan_amount |  |  | BIGINT | — | — | — | 기준월 대출실행금액(원) — 대표 행 선택 기준 |
 | Updated At | updated_at |  | ● | TIMESTAMP | — | — | now() | 상품 정보 갱신일시 |
 
 ### 19. INTEREST_RATE_HISTORY — 금리 변동 이력
