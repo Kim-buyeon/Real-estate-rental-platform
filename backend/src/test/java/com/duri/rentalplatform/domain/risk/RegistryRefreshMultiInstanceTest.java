@@ -117,7 +117,8 @@ class RegistryRefreshMultiInstanceTest {
                 "--spring.data.redis.port=" + redisContainer.getMappedPort(REDIS_EXPOSED_PORT),
                 "--spring.data.redis.password=",
                 // 스케줄이 테스트 도중 돌지 않게 한다. Gradle 실행은 시스템 속성으로 이미 끄지만 IDE 실행에도 걸리게 둔다.
-                "--risk.batch.registry-refresh.enabled=false"
+                "--risk.batch.registry-refresh.enabled=false",
+                "--property.batch.refresh.enabled=false"
         };
     }
 

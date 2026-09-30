@@ -104,7 +104,8 @@ class NotificationStreamMultiInstanceTest {
                 "--spring.data.redis.host=" + redisContainer.getHost(),
                 "--spring.data.redis.port=" + redisContainer.getMappedPort(REDIS_EXPOSED_PORT),
                 "--spring.data.redis.password=",
-                "--risk.batch.registry-refresh.enabled=false"
+                "--risk.batch.registry-refresh.enabled=false",
+                "--property.batch.refresh.enabled=false"
         };
     }
 
