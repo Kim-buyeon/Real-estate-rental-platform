@@ -74,8 +74,54 @@ const APPLICABILITY_LABEL: Record<'applicable' | 'notApplicable', string> = {
   notApplicable: '해당 없음',
 };
 
-export const applicabilityLabel = (isApplicable: boolean) =>
-  isApplicable ? APPLICABILITY_LABEL.applicable : APPLICABILITY_LABEL.notApplicable;
+/**
+ * 대장 값이 없을 때(null)의 문구 — 명세 1.8. 대장을 찾지 못했거나 대장이 그 항목을 주지 않은 것이다.
+ * 「해당 없음」 · 0 · 빈칸으로 보이면 확인하지 못한 것이 확인된 것처럼 읽힌다.
+ */
+export const LEDGER_UNVERIFIABLE_LABEL = '확인 불가';
+
+/**
+ * 위반건축물을 확인하지 못했을 때의 문구. 위반건축물은 보증보험 집 단위 조건이라(RISK-05) 확인 불가를
+ * 「위반 없음」으로 넘기면 안 되고, 사용자가 직접 대장을 떼어 봐야 한다는 것까지 알린다.
+ */
+export const VIOLATION_BUILDING_UNVERIFIABLE_LABEL = '확인 불가 — 계약 전 건축물대장 열람 필요';
+
+/** 주거용처럼 해당 여부를 나타내는 대장 값. null은 「확인 불가」다 */
+export const applicabilityLabel = (isApplicable: boolean | null) => {
+  if (isApplicable === null) return LEDGER_UNVERIFIABLE_LABEL;
+  return isApplicable ? APPLICABILITY_LABEL.applicable : APPLICABILITY_LABEL.notApplicable;
+};
+
+/** 위반건축물 — null이면 대장 열람 안내까지 붙는다. 참 · 거짓은 applicabilityLabel과 같은 문구다 */
+export const violationBuildingLabel = (violationBuilding: boolean | null) =>
+  violationBuilding === null ? VIOLATION_BUILDING_UNVERIFIABLE_LABEL : applicabilityLabel(violationBuilding);
+
+/**
+ * 값이 있으면 표기 함수로 바꾸고 없으면(null) 「확인 불가」다 — 주용도 · 면적 · 사용승인일 · 수집 시각.
+ * 컴포넌트마다 `value ?? …`나 삼항을 적지 않게 여기서 처리한다.
+ */
+export const ledgerValueLabel = <T>(value: T | null, format: (value: T) => string): string =>
+  value === null ? LEDGER_UNVERIFIABLE_LABEL : format(value);
+
+/** 면적 (㎡) 표기 — ledgerValueLabel의 format으로 넘긴다 */
+export const areaLabel = (squareMeters: number) => `${squareMeters}㎡`;
+
+/**
+ * 건축물대장 수집 경로 — 명세 1.8 dataSource. 대장을 찾지 못하면 null로 온다.
+ * 값이 늘면 백엔드 · 명세와 함께 여기에 추가한다.
+ */
+export const LEDGER_DATA_SOURCES = ['MOCK', 'BUILDING_HUB'] as const;
+export type LedgerDataSource = (typeof LEDGER_DATA_SOURCES)[number];
+
+/** 대장을 찾지 못했을 때 대장 섹션의 안내 문구 */
+export const LEDGER_MISSING_NOTICE = '건축물대장을 조회하지 못했습니다.';
+
+/**
+ * 대장 없음 판정 — 명세 1.8 「대장이 없으면 propertyId만 있고 나머지 전부 null」. 필드 하나가 null인 것은
+ * 대장 없음이 아니다(그 항목만 확인 불가). 도메인 모듈은 api를 import하지 않으므로 형태만 받는다.
+ */
+export const isLedgerMissing = (ledger: object) =>
+  Object.entries(ledger).every(([key, value]) => key === 'propertyId' || value === null);
 
 /**
  * 목록 정렬 기준 — 명세 1.3이 보증금 · 전세가율 · 등록일 셋으로 정한다. 값의 형태는 명세 1.6 예시의

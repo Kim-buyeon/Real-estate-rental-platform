@@ -74,8 +74,12 @@ export const PROPERTY_DETAIL: PropertyDetail = {
   registeredAt: '2026-07-20T14:03:00+09:00',
 };
 
-/** 매물 API 명세 1.8 응답 예시 그대로 — BuildingLedgerSection 테스트가 쓴다 */
-export const BUILDING_LEDGER: BuildingLedger = {
+/**
+ * 매물 API 명세 1.8 응답 예시 기반의 참 · 거짓 경우(Mock 대장) — BuildingLedgerSection · PropertyDetailPanel 테스트가 쓴다.
+ * 명세 예시(건축HUB 실연동 — 위반건축물 · 전용면적 null)는 아래 BUILDING_LEDGER_UNVERIFIED 가 맡는다.
+ * `satisfies`로 두어 필드 타입이 좁게 남는다 — 테스트가 mainPurpose를 문자열로 바로 찾는다.
+ */
+export const BUILDING_LEDGER = {
   propertyId: 1024,
   mainPurpose: '공동주택',
   isResidential: true,
@@ -83,8 +87,37 @@ export const BUILDING_LEDGER: BuildingLedger = {
   totalFloorArea: 480.2,
   exclusiveArea: 42.5,
   approvalDate: '2015-04-18',
+  dataSource: 'MOCK',
   collectedAt: '2026-07-28T02:10:00+09:00',
+} satisfies BuildingLedger;
+
+/**
+ * 대장은 찾았으나 주거용 · 위반건축물을 확인하지 못한 경우 — 명세 1.8의 두 필드가 null이다.
+ * 확인 불가가 「해당 없음」으로 보이지 않는지 본다. 나머지 값은 BUILDING_LEDGER와 같다.
+ */
+export const BUILDING_LEDGER_UNVERIFIED: BuildingLedger = {
+  ...BUILDING_LEDGER,
+  isResidential: null,
+  violationBuilding: null,
+  dataSource: 'BUILDING_HUB',
 };
+
+/** 대장을 찾지 못한 경우 — 명세 1.8: 200에 propertyId만 있고 나머지는 전부 null */
+export const BUILDING_LEDGER_MISSING: BuildingLedger = {
+  propertyId: 1024,
+  mainPurpose: null,
+  isResidential: null,
+  violationBuilding: null,
+  totalFloorArea: null,
+  exclusiveArea: null,
+  approvalDate: null,
+  dataSource: null,
+  collectedAt: null,
+};
+
+/** 대장 조회 응답을 바꿔 끼우는 핸들러 — server.use(buildingLedgerHandler(BUILDING_LEDGER_MISSING)) */
+export const buildingLedgerHandler = (ledger: BuildingLedger) =>
+  http.get('/api/properties/:propertyId/ledger', () => HttpResponse.json({ success: true, data: ledger }));
 
 /**
  * 관심 매물 목록 첫 쪽 — 명세 1.9. 첫 항목은 명세 예시 그대로(propertyId 1024)다.
@@ -195,7 +228,7 @@ export const propertyHandlers = [
   http.get('/api/properties/district-counts', () => HttpResponse.json({ success: true, data: DISTRICT_COUNTS })),
   // :propertyId보다 앞에 둔다 — 뒤에 두면 map-clusters가 매물 id로 잡힌다
   http.get('/api/properties/map-clusters', () => HttpResponse.json({ success: true, data: MAP_CLUSTERS })),
-  http.get('/api/properties/:propertyId/ledger', () => HttpResponse.json({ success: true, data: BUILDING_LEDGER })),
+  buildingLedgerHandler(BUILDING_LEDGER),
   http.get('/api/properties/:propertyId', () => HttpResponse.json({ success: true, data: PROPERTY_DETAIL })),
   http.get('/api/properties', ({ request }) => {
     const url = new URL(request.url);
