@@ -228,9 +228,9 @@ GET /api/properties/1024
     "propertyId": 1024,
     "mainPurpose": "공동주택",
     "isResidential": true,
-    "violationBuilding": false,
+    "violationBuilding": null,
     "totalFloorArea": 480.2,
-    "exclusiveArea": 42.5,
+    "exclusiveArea": null,
     "approvalDate": "2015-04-18",
     "dataSource": "BUILDING_HUB",
     "collectedAt": "2026-07-28T02:10:00+09:00"
