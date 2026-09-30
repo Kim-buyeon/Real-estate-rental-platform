@@ -147,7 +147,7 @@
 | Bun | bun |  |  | VARCHAR | 4 | — | — | 번(0 채움) |
 | Ji | ji |  |  | VARCHAR | 4 | — | — | 지(0 채움) |
 
-인덱스 — (latitude, longitude): 좌표 범위 조회(V3). (district, latitude, longitude): 자치구 + 좌표 범위인 지도 묶음 · 마커 조회(V15). (district, registered_at DESC, property_id DESC): 목록 기본 정렬을 인덱스 순서로 읽고 LIMIT 에서 멈춘다(V15). 근거는 부하 시험의 질의 통계(용량 산정 리포트, #270).
+인덱스 — (latitude, longitude): 좌표 범위 조회(V3). (district, latitude, longitude): 자치구 + 좌표 범위인 지도 묶음 · 마커 조회(V15). (district, registered_at DESC, property_id DESC): 목록 기본 정렬을 인덱스 순서로 읽고 LIMIT 에서 멈춘다(V15). (registered_at DESC, property_id DESC): 자치구 없는 목록의 기본 정렬 — 같은 이유(V19). 근거는 부하 시험의 질의 통계(용량 산정 리포트, #270)와 운영 측정(V19 주석).
 
 ### 5. SEARCH_HISTORY — 검색 이력
 
@@ -233,11 +233,11 @@
 | Prior Tenant Deposit | prior_tenant_deposit |  |  | BIGINT | 15 | — | 0 | 선순위 임차보증금액 (다가구 등 선순위 세입자 보증금) |
 | Lease Right YN | lease_right_yn |  | ● | BOOLEAN | 1 | — | FALSE | 전세권(Lease) 설정 여부 |
 | Tenancy Right YN | tenancy_right_yn |  | ● | BOOLEAN | 1 | — | FALSE | 임차권(Tenancy) 설정 여부 ⚠️ |
-| Senior Debt YN | senior_debt_yn |  | ● | BOOLEAN | 1 | — | FALSE | 선순위 채권 해당 여부 |
+| Senior Debt YN | senior_debt_yn |  | ● | BOOLEAN | 1 | — | FALSE | 선순위 채권 해당 여부. 현재 수집 경로에서는 늘 TRUE — 계약 전 조회 기준 |
 | Is Active | is_active |  | ● | BOOLEAN | 1 | — | TRUE | 현재 유효한 채무 여부 |
 | Recorded At | recorded_at |  | ● | TIMESTAMP | — | — | now() | 등기 기록일시 |
 
-인덱스 — (registry_id): 등기 이력 조회 · 위험도 분석과 마커의 선순위 채무 EXISTS 가 등기 ID 로 찾는다(V15).
+인덱스 — (registry_id): 등기 이력 조회 · 위험도 분석이 등기 ID 로 찾는다(V15). / (registry_id) WHERE is_active: 마커의 선순위 채무 EXISTS 가 유효 항목만 인덱스 전용 스캔으로 찾는다(V19).
 
 ### 10. GUARANTEE_CRITERIA — 보증보험 공통 기준
 
@@ -335,7 +335,7 @@
 | Is Latest | is_latest |  | ● | BOOLEAN | 1 | — | TRUE | 최신 분석 결과 여부 |
 | Analyzed At | analyzed_at |  | ● | TIMESTAMP | — | — | now() | 분석 일시 |
 
-인덱스 — (property_id) WHERE is_latest UNIQUE: 매물마다 최신 분석은 하나다. 두 인스턴스의 동시 첫 분석을 DB 가 막고, 목록 · 지도 · 집계의 최신 분석 조인을 겸한다.
+인덱스 — (property_id) INCLUDE (risk_id, risk_grade, lease_ratio, registry_id) WHERE is_latest UNIQUE: 매물마다 최신 분석은 하나다. 두 인스턴스의 동시 첫 분석을 DB 가 막고, 목록 · 지도 · 집계의 최신 분석 조인을 겸한다. INCLUDE 열은 지도가 읽는 판정 열이라 지도의 조인이 인덱스 전용 스캔이 된다(V9 → V19 교체, 이름 `uq_risk_analysis_latest` 유지). / (ledger_id): 대장을 떼거나 지울 때 참조하는 분석 행을 찾는다. FK 는 인덱스를 만들지 않는다(V19).
 
 ### 17. LOAN_REGULATION — 대출 규제
 
@@ -437,7 +437,9 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 | Alert Condition | alert_condition |  | ● | VARCHAR | 50 | — | — | 알림 조건 |
 | Created At | created_at |  | ● | TIMESTAMP | — | — | now() | 등록일시 |
 
-인덱스 — (user_id, property_id) UNIQUE: 한 사용자는 한 매물을 한 번만 등록한다. 두 인스턴스의 동시 등록을 DB 가 막고, 사용자별 목록 조회 · 해제의 인덱스를 겸한다.
+인덱스 — (user_id, property_id) UNIQUE: 한 사용자는 한 매물을 한 번만 등록한다. 두 인스턴스의 동시 등록을 DB 가 막고, 해제의 인덱스를 겸한다.
+
+인덱스 — (user_id, wish_id DESC): 사용자별 관심 목록의 커서 조회 · 정렬(V19).
 
 인덱스 — (property_id): 관심 매물 모니터링 알림의 대상(매물의 관심 등록자)을 고른다. 위 UNIQUE 는 선행 컬럼이 user_id 라 매물 기준 조회에 쓰이지 않는다.
 
@@ -522,7 +524,7 @@ LTV 한도 · Stress DSR 한도(%) 컬럼은 두지 않는다. LTV는 주택담�
 
 관심 매물 해제가 알림 이력을 지우거나 막지 않도록 wish_id 는 삭제 시 NULL 이 되고, 매물은 property_id 로 계속 가리킨다 — 알림 목록 조회가 완전한 확인 수단이다.
 
-인덱스 — (notif_id): 알림 목록이 공통 행 한 페이지에 상세 행을 붙이는 조인. FK 는 인덱스를 만들지 않는다.
+인덱스 — (notif_id): 알림 목록이 공통 행 한 페이지에 상세 행을 붙이는 조인. FK 는 인덱스를 만들지 않는다. / (wish_id): 관심 해제의 ON DELETE SET NULL 이 참조하는 알림 행을 찾는다(V19).
 
 ### 30. REGION_STATS — 지역 시세 통계
 

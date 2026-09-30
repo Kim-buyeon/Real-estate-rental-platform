@@ -145,7 +145,53 @@ class PropertyMapperTest {
     }
 
     @Test
-    @DisplayName("마커: 모든 필드가 매핑되고 선순위채권은 활성 · 선순위 이력이 있을 때만 true")
+    @DisplayName("마커: 소수 7자리 경계 좌표는 네 변 모두 포함되고 한 자리 벗어난 좌표는 빠진다")
+    void markersBoundingBoxKeepsSevenDecimalEdges() {
+        double minLat = 37.5000001;
+        double maxLat = 37.6000009;
+        double minLng = 126.8000001;
+        double maxLng = 126.9000009;
+        long onMinLat = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, minLat, 126.85, T0);
+        long onMaxLat = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, maxLat, 126.85, T0);
+        long onMinLng = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.55, minLng, T0);
+        long onMaxLng = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.55, maxLng, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5000000, 126.85, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.6000010, 126.85, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.55, 126.8000000, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.55, 126.9000010, T0);
+
+        List<PropertyMarkerResponse> markers = propertyMapper.selectMarkers(PropertySearchCondition.ofMarkers(
+                filter(D1), new BoundingBox(minLat, maxLat, minLng, maxLng)));
+
+        assertThat(markers).extracting(PropertyMarkerResponse::propertyId)
+                .containsExactlyInAnyOrder(onMinLat, onMaxLat, onMinLng, onMaxLng);
+    }
+
+    @Test
+    @DisplayName("마커: 활성 근저당이면 선순위 여부 표지와 무관하게 선순위채권이 true, 말소뿐이면 false")
+    void markersSeniorDebtDependsOnlyOnActiveMortgage() {
+        long activeNonSenior = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.55, 126.85, T0);
+        long onlyCancelled = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.56, 126.85, T0);
+        insertRisk(activeNonSenior, "CAUTION", "85.00", true, false);
+        insertRisk(onlyCancelled, "CAUTION", "85.00", true, false);
+        long registryId = jdbc.queryForObject(
+                "SELECT registry_id FROM building_registry WHERE property_id = ?", Long.class, activeNonSenior);
+        jdbc.update("""
+                INSERT INTO mortgage_history (registry_id, priority_no, right_type, senior_debt_yn, is_active)
+                VALUES (?, 3, 'MORTGAGE', FALSE, TRUE)
+                """, registryId);
+
+        List<PropertyMarkerResponse> markers = propertyMapper.selectMarkers(PropertySearchCondition.ofMarkers(
+                filter(D1), new BoundingBox(37.0, 38.0, 126.0, 127.0)));
+
+        assertThat(markers).extracting(PropertyMarkerResponse::propertyId, PropertyMarkerResponse::hasSeniorDebt)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(activeNonSenior, true),
+                        org.assertj.core.groups.Tuple.tuple(onlyCancelled, false));
+    }
+
+    @Test
+    @DisplayName("마커: 모든 필드가 매핑되고 선순위채권은 활성 이력이 있을 때만 true")
     void markersMapAllFields() {
         long analyzed = insertProperty(D1, "SEMI_DEPOSIT", "APARTMENT", 230_000_000L, 100_000L, 37.55, 126.85, T0);
         long noSenior = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, null, 37.55, 126.85, T0);

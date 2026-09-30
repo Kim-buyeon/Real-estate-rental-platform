@@ -240,6 +240,35 @@ class SchemaMigrationTest {
     }
 
     @Test
+    @DisplayName("V19: 최신 분석 인덱스는 유일 + INCLUDE 커버링 부분 인덱스고, 신규 다섯 인덱스가 정의대로 있다")
+    void indexOptimizationIndexes() {
+        Map<String, String> indexDefs = jdbcTemplate.queryForList(
+                        """
+                        SELECT indexname, indexdef FROM pg_indexes
+                        WHERE schemaname = 'public'
+                          AND indexname IN ('uq_risk_analysis_latest', 'idx_mortgage_history_registry_active',
+                                            'idx_property_registered', 'idx_wishlist_user_wish',
+                                            'idx_risk_analysis_ledger', 'idx_wishlist_notification_wish')
+                        """)
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        r -> (String) r.get("indexname"), r -> (String) r.get("indexdef")));
+
+        assertThat(indexDefs).hasSize(6);
+        assertThat(indexDefs.get("uq_risk_analysis_latest"))
+                .contains("CREATE UNIQUE INDEX", "risk_analysis", "(property_id)",
+                        "INCLUDE (risk_id, risk_grade, lease_ratio, registry_id)", "WHERE", "is_latest");
+        assertThat(indexDefs.get("idx_mortgage_history_registry_active"))
+                .contains("mortgage_history", "(registry_id)", "WHERE", "is_active");
+        assertThat(indexDefs.get("idx_property_registered"))
+                .contains("property", "(registered_at DESC, property_id DESC)");
+        assertThat(indexDefs.get("idx_wishlist_user_wish")).contains("wishlist", "(user_id, wish_id DESC)");
+        assertThat(indexDefs.get("idx_risk_analysis_ledger")).contains("risk_analysis", "(ledger_id)");
+        assertThat(indexDefs.get("idx_wishlist_notification_wish"))
+                .contains("wishlist_notification", "(wish_id)");
+    }
+
+    @Test
     @DisplayName("V6: 위험 등급 기준은 CAUTION 경계가 깡통전세 선 이상이면 거부된다")
     void riskCriteriaRejectsNonMonotonicThresholds() {
         assertThatThrownBy(() -> jdbcTemplate.update(
