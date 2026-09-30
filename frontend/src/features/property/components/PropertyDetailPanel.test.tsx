@@ -10,7 +10,12 @@ import { QueryClient, QueryClientProvider, useInfiniteQuery, useQuery } from '@t
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
-import { gradeReasonLabel, ownershipRightTypeLabel, riskGradeLabel } from '../../../domain/risk';
+import {
+  gradeReasonLabel,
+  LANDLORD_NAME_SOURCE_NOTE,
+  ownershipRightTypeLabel,
+  riskGradeLabel,
+} from '../../../domain/risk';
 import { propertyQueries, wishlistQueries } from '../../../queries/property';
 import { setTokens } from '../../../session/store';
 import {
@@ -93,6 +98,16 @@ describe('PropertyDetailPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '상세 닫기' }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('임대인 행에 값과 함께 「등기 연동 전 예시」 보조 문구가 보인다', async () => {
+    server.use(...propertyHandlers, ...riskHandlers);
+    renderPanel();
+
+    // 문구는 domain/risk.ts 상수로 확인한다 — 문구가 바뀌면 테스트도 함께 따라간다
+    const note = await screen.findByText(LANDLORD_NAME_SOURCE_NOTE);
+    // 보조 문구는 임대인 값과 같은 칸(시세 행의 출처 문구와 같은 방식)에 있다
+    expect(note.parentElement).toHaveTextContent(PROPERTY_DETAIL.landlordName);
   });
 
   it('위험도가 RISK_NOT_ANALYZED로 오면 안내를 보여주고 매물 기본 정보는 그대로 보인다', async () => {

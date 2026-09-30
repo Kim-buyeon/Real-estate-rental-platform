@@ -3,7 +3,13 @@ import { useState } from 'react';
 import type { ApiError } from '../../../api/client';
 import { Alert, Badge, Button, Disclosure, KvRow, KvRowList } from '../../../components/ui';
 import { contractTypeLabel, propertyTypeLabel } from '../../../domain/property';
-import { debtRatioLabel, priceTypeLabel, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
+import {
+  debtRatioLabel,
+  LANDLORD_NAME_SOURCE_NOTE,
+  priceTypeLabel,
+  riskGradeLabel,
+  riskGradeToken,
+} from '../../../domain/risk';
 import { formatDate, formatWon } from '../../../lib/format';
 import { propertyQueries } from '../../../queries/property';
 import { riskQueries } from '../../../queries/risk';
@@ -96,7 +102,11 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
                 {detail.monthlyRent > 0 && <KvRow label="월세">{formatWon(detail.monthlyRent)}</KvRow>}
                 <KvRow label="전용면적">{detail.areaSqm}㎡</KvRow>
                 <KvRow label="층">{detail.floor}층</KvRow>
-                <KvRow label="임대인">{detail.landlordName}</KvRow>
+                {/* 임대인은 아직 예시 등기와 대조되는 값이다 — 시세 행의 출처 문구와 같은 방식으로 알린다 */}
+                <KvRow label="임대인">
+                  {detail.landlordName}
+                  <span className={`${styles.source} type-body-sm`}>{LANDLORD_NAME_SOURCE_NOTE}</span>
+                </KvRow>
                 {/* 시세는 산출 근거와 기준일을 함께 적는다 (PROP-03 · 매물 명세 1.7). 미분석 매물은
                     위험도 응답이 없으므로 여기가 근거를 보여 주는 유일한 자리다 */}
                 <KvRow label="시세">
