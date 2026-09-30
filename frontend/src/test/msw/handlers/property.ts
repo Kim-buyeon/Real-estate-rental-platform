@@ -75,7 +75,8 @@ export const PROPERTY_DETAIL: PropertyDetail = {
 };
 
 /**
- * 매물 API 명세 1.8 응답 예시 그대로 — BuildingLedgerSection · PropertyDetailPanel 테스트가 쓴다.
+ * 매물 API 명세 1.8 응답 예시 기반의 참 · 거짓 경우(Mock 대장) — BuildingLedgerSection · PropertyDetailPanel 테스트가 쓴다.
+ * 명세 예시(건축HUB 실연동 — 위반건축물 · 전용면적 null)는 아래 BUILDING_LEDGER_UNVERIFIED 가 맡는다.
  * `satisfies`로 두어 필드 타입이 좁게 남는다 — 테스트가 mainPurpose를 문자열로 바로 찾는다.
  */
 export const BUILDING_LEDGER = {
