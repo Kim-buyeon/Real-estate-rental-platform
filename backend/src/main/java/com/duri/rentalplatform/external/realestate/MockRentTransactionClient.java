@@ -26,10 +26,11 @@ public class MockRentTransactionClient implements RentTransactionClient {
     /** 한 시군구 · 한 달에 만들어 내는 거래 건수. 면적 구간별 중앙값이 잡힐 만큼은 되어야 한다. */
     private static final int TRANSACTIONS_PER_MONTH = 48;
 
-    private static final List<String> LEGAL_DONG_NAMES = List.of("가상1동", "가상2동", "가상3동");
+    /** 매매 Mock({@link MockSaleTransactionClient})도 이 목록을 쓴다 — 매물과 시세 표본이 같은 동끼리 묶여야 한다. */
+    static final List<String> LEGAL_DONG_NAMES = List.of("가상1동", "가상2동", "가상3동");
 
-    /** 전용면적(㎡) 후보. 면적 구간(AreaBand) 다섯 개에 고르게 걸치도록 골랐다. */
-    private static final List<BigDecimal> AREA_CANDIDATES = List.of(
+    /** 전용면적(㎡) 후보. 면적 구간(AreaBand) 다섯 개에 고르게 걸치도록 골랐다. 매매 Mock 도 같은 후보를 쓴다. */
+    static final List<BigDecimal> AREA_CANDIDATES = List.of(
             new BigDecimal("29.50"), new BigDecimal("38.20"),
             new BigDecimal("45.90"), new BigDecimal("52.40"),
             new BigDecimal("59.80"), new BigDecimal("72.30"),
