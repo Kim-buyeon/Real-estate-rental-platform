@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.duri.rentalplatform.TestcontainersConfiguration;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.PriceChangedPropertyCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertySearchCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyCondition;
@@ -494,6 +495,72 @@ class PropertyMapperTest {
                 new UnanalyzedPropertyCondition(null, (int) count));
 
         assertThat(ids).contains(id).isSorted();
+    }
+
+    // ---------- 재분석 대기 매물(매물 갱신 배치 RISK-08, V18) ----------
+    // 위 미판정 조회와 같이 이 테스트가 넣은 첫 매물의 바로 앞 식별자를 커서로 준다.
+
+    @Test
+    @DisplayName("재분석 대기: 표시가 선 매물만 판정 유무와 무관하게 식별자 순으로 나온다")
+    void priceChangedSelectsOnlyPendingProperties() {
+        long pendingAnalyzed = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long notPending = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long pendingUnanalyzed = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        insertRisk(pendingAnalyzed, "SAFE", "60.00", true, false);
+        insertRisk(notPending, "SAFE", "60.00", true, false);
+        markReanalysisPending(pendingAnalyzed);
+        markReanalysisPending(pendingUnanalyzed);
+
+        List<Long> ids = propertyMapper.selectPriceChangedPropertyIds(
+                new PriceChangedPropertyCondition(pendingAnalyzed - 1, 100));
+
+        assertThat(ids).containsExactly(pendingAnalyzed, pendingUnanalyzed);
+    }
+
+    @Test
+    @DisplayName("재분석 대기: 커서 다음부터 limit 건만, 마지막 페이지는 limit 보다 적게 나온다")
+    void priceChangedPagesByIdCursor() {
+        long first = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long second = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long third = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        List.of(first, second, third).forEach(this::markReanalysisPending);
+
+        List<Long> firstPage = propertyMapper.selectPriceChangedPropertyIds(
+                new PriceChangedPropertyCondition(first - 1, 2));
+        List<Long> lastPage = propertyMapper.selectPriceChangedPropertyIds(
+                new PriceChangedPropertyCondition(firstPage.getLast(), 2));
+
+        assertThat(firstPage).containsExactly(first, second);
+        assertThat(lastPage).containsExactly(third);
+    }
+
+    @Test
+    @DisplayName("재분석 대기: 커서가 없으면 처음부터 읽는다 — 이 테스트가 넣은 매물은 대상에 든다")
+    void priceChangedWithoutCursorStartsFromBeginning() {
+        long id = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        markReanalysisPending(id);
+        long count = jdbc.queryForObject("SELECT count(*) FROM property", Long.class);
+
+        List<Long> ids = propertyMapper.selectPriceChangedPropertyIds(
+                new PriceChangedPropertyCondition(null, (int) count));
+
+        assertThat(ids).contains(id).isSorted();
+    }
+
+    @Test
+    @DisplayName("미판정: 재분석 대기 매물은 판정이 없어도 빠진다 — 재분석 대기 갈래가 내주므로 두 갈래가 겹치지 않는다")
+    void unanalyzedExcludesReanalysisPending() {
+        long pending = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long plain = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        markReanalysisPending(pending);
+
+        List<Long> ids = propertyMapper.selectUnanalyzedPropertyIds(new UnanalyzedPropertyCondition(pending - 1, 100));
+
+        assertThat(ids).containsExactly(plain);
+    }
+
+    private void markReanalysisPending(long propertyId) {
+        jdbc.update("UPDATE property SET is_reanalysis_pending = TRUE WHERE property_id = ?", propertyId);
     }
 
     // ---------- 픽스처 ----------

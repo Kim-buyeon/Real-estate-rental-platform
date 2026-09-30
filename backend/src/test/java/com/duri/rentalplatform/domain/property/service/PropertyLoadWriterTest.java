@@ -191,7 +191,7 @@ class PropertyLoadWriterTest {
     }
 
     @Test
-    @DisplayName("갱신: 시세를 반영하고 금액이 바뀐 매물만 돌려준다 — 기준일만 바뀐 매물은 저장값만 바뀌고 돌려주지 않는다")
+    @DisplayName("갱신: 시세를 반영하고 금액이 바뀐 매물만 재분석 대기로 표시해 돌려준다 — 기준일만 바뀐 매물은 저장값만 바뀐다")
     void updatesPricesAndReturnsOnlyAmountChanges() {
         LocalDate oldDate = LocalDate.of(2026, 8, 1);
         LocalDate newDate = LocalDate.of(2026, 8, 20);
@@ -210,6 +210,10 @@ class PropertyLoadWriterTest {
         assertThat(amountChanged.getPriceDate()).isEqualTo(newDate);
         assertThat(dateOnly.getPriceDate()).isEqualTo(newDate);
         assertThat(same.getMarketPrice()).isEqualTo(300_000_000L);
+        // 금액이 바뀐 매물만 재분석 대기로 표시된다 — 판정 단계가 이 표시로 재분석 대상을 DB 에서 읽는다(V18).
+        assertThat(amountChanged.isReanalysisPending()).isTrue();
+        assertThat(dateOnly.isReanalysisPending()).isFalse();
+        assertThat(same.isReanalysisPending()).isFalse();
         // 변경은 변경 감지가 반영한다 — save 를 다시 부르지 않는다.
         verify(propertyRepository, never()).saveAll(any());
     }
@@ -223,6 +227,29 @@ class PropertyLoadWriterTest {
                 new MarketPriceUpdate(9L, 300_000_000L, PriceType.ACTUAL_TRANSACTION, LocalDate.of(2026, 8, 20))));
 
         assertThat(priceChanged).isEmpty();
+    }
+
+    @Test
+    @DisplayName("재분석 완료: 재분석 대기 표시를 내린다")
+    void completeReanalysisClearsPending() {
+        LocalDate date = LocalDate.of(2026, 8, 1);
+        Property property = storedProperty(1L, "주소1", 280_000_000L, date);
+        property.refreshMarketPrice(300_000_000L, PriceType.ACTUAL_TRANSACTION, date);
+        when(propertyRepository.findById(1L)).thenReturn(Optional.of(property));
+
+        writer.completeReanalysis(1L);
+
+        assertThat(property.isReanalysisPending()).isFalse();
+    }
+
+    @Test
+    @DisplayName("재분석 완료: 그 사이 지워진 매물은 아무것도 하지 않는다")
+    void completeReanalysisIgnoresMissingProperty() {
+        when(propertyRepository.findById(9L)).thenReturn(Optional.empty());
+
+        writer.completeReanalysis(9L);
+
+        verify(propertyRepository, never()).saveAll(any());
     }
 
     // ---------- 건축물대장 조회 키(PROP-04) ----------

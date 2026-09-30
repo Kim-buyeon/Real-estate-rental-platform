@@ -2,6 +2,7 @@ package com.duri.rentalplatform.domain.risk.service;
 
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
+import com.duri.rentalplatform.domain.property.service.PropertyLoadWriter;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshAttempt;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshTarget;
 import org.springframework.stereotype.Service;
@@ -25,15 +26,23 @@ import org.springframework.stereotype.Service;
  *
  * <p><b>실패</b> — 락 안의 예외는 잡아 결과에 담는다. 그래서 이 메서드 밖으로 나오는 예외는 락 획득 단계의 것뿐이다.
  *
- * <p><b>트랜잭션</b> — 열지 않는다. 첫 판정은 등기 · 대장 수집(외부 호출)을 포함하고, 판정 서비스가 경계를 긋는다.
+ * <p><b>재분석 대기 표시</b> — 시세 변경 재분석은 판정을 마치면 매물의 재분석 대기 표시(V18)를 내린다. 판정 단계는 이 표시로
+ * 대상을 DB 에서 읽으므로, 내리지 않으면 결론이 같아 판정 행이 늘지 않는 매물까지 매 회차 다시 나온다. 판정이 실패하면 내리지 않아
+ * 다음 회차가 다시 잡는다. 내리는 호출은 판정 저장과 별도 트랜잭션이다 — 실패하면 다음 회차에 한 번 더 판정할 뿐이다.
+ *
+ * <p><b>트랜잭션</b> — 열지 않는다. 첫 판정은 등기 · 대장 수집(외부 호출)을 포함하고, 판정 서비스 · 적재 쓰기 서비스가 각자 경계를
+ * 긋는다.
  */
 @Service
 public class PropertyRefreshAnalysisExecutor {
 
     private final RiskAnalysisCommandService riskAnalysisCommandService;
+    private final PropertyLoadWriter propertyLoadWriter;
 
-    public PropertyRefreshAnalysisExecutor(RiskAnalysisCommandService riskAnalysisCommandService) {
+    public PropertyRefreshAnalysisExecutor(RiskAnalysisCommandService riskAnalysisCommandService,
+                                           PropertyLoadWriter propertyLoadWriter) {
         this.riskAnalysisCommandService = riskAnalysisCommandService;
+        this.propertyLoadWriter = propertyLoadWriter;
     }
 
     /**
@@ -50,6 +59,9 @@ public class PropertyRefreshAnalysisExecutor {
     public PropertyRefreshAttempt analyze(PropertyRefreshTarget target) {
         try {
             riskAnalysisCommandService.analyze(target.propertyId());
+            if (target.priceChanged()) {
+                propertyLoadWriter.completeReanalysis(target.propertyId());
+            }
             return PropertyRefreshAttempt.analyzed(target);
         } catch (RuntimeException e) {
             return PropertyRefreshAttempt.failed(target, e);

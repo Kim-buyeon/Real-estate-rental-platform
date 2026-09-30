@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
+import com.duri.rentalplatform.domain.property.dto.condition.PriceChangedPropertyCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyCondition;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.service.PropertyLoadService;
@@ -80,7 +81,8 @@ class PropertyRefreshJobLauncherTest {
     @Test
     @DisplayName("적재 뒤 시세 변경 매물은 재분석, 미판정 매물은 첫 판정으로 청크를 넘어 전부 처리하고 회차 집계로 돌려준다")
     void loadsThenAnalyzesAllTargets() {
-        loadReturns(List.of(21L, 22L), List.of(5L));
+        loadReturns(2, 1);
+        priceChangedPage(null, 5L);
         page(null, 1L, 21L);
         page(21L, 22L);
 
@@ -93,7 +95,7 @@ class PropertyRefreshJobLauncherTest {
         order.verify(executor).analyze(PropertyRefreshTarget.unanalyzed(21L));
         order.verify(executor).analyze(PropertyRefreshTarget.unanalyzed(22L));
         assertThat(report.getNewProperties()).isEqualTo(2);
-        assertThat(report.getPriceChangedPropertyIds()).containsExactly(5L);
+        assertThat(report.getPriceChangedProperties()).isEqualTo(1);
         assertThat(report.getAnalysisTargets()).isEqualTo(4);
         assertThat(report.getReanalyzed()).isEqualTo(1);
         assertThat(report.getFirstAnalyzed()).isEqualTo(3);
@@ -104,7 +106,8 @@ class PropertyRefreshJobLauncherTest {
     @Test
     @DisplayName("매물 락 경합은 건너뜀, 판정 실패 · 락 오류는 실패로 세고 나머지는 계속 처리한다")
     void contentionAndFailuresDoNotStopTheRun() {
-        loadReturns(List.of(), List.of(1L, 2L));
+        loadReturns(0, 2);
+        priceChangedPage(null, 1L, 2L);
         page(null, 3L, 4L);
         page(4L);
         when(executor.analyze(PropertyRefreshTarget.priceChanged(1L)))
@@ -133,13 +136,14 @@ class PropertyRefreshJobLauncherTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasRootCause(failure);
         verify(executor, never()).analyze(any());
+        verify(propertyMapper, never()).selectPriceChangedPropertyIds(any());
         verify(propertyMapper, never()).selectUnanalyzedPropertyIds(any());
     }
 
     @Test
     @DisplayName("미판정 조회가 실패하면 스텝이 멈추고 예외로 알린다 — 조용히 빈 회차로 끝나지 않는다")
     void readerFailurePropagates() {
-        loadReturns(List.of(), List.of());
+        loadReturns(0, 0);
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException("db down");
         when(propertyMapper.selectUnanalyzedPropertyIds(any())).thenThrow(failure);
 
@@ -151,7 +155,7 @@ class PropertyRefreshJobLauncherTest {
     @Test
     @DisplayName("같은 날짜라도 실행 시각이 다르면 다시 돌고, 회차마다 집계가 따로다")
     void sameDateRerunsWithNewLaunchTime() {
-        loadReturns(List.of(), List.of());
+        loadReturns(0, 0);
         page(null, 1L);
 
         PropertyRefreshReport first = launcher(AT_0200).run(DATE);
@@ -166,7 +170,7 @@ class PropertyRefreshJobLauncherTest {
     @Test
     @DisplayName("날짜와 실행 시각이 모두 같으면 Batch 가 완료된 인스턴스로 거절한다 — 실행 시각을 파라미터에 넣는 이유")
     void identicalParametersAreRejected() {
-        loadReturns(List.of(), List.of());
+        loadReturns(0, 0);
         page(null);
         launcher(AT_0200).run(DATE);
 
@@ -178,7 +182,7 @@ class PropertyRefreshJobLauncherTest {
     @Test
     @DisplayName("회차가 COMPLETED 로 끝나면 그 날짜의 성공 기록을 남긴다")
     void recordsSuccessWhenCompleted() {
-        loadReturns(List.of(), List.of());
+        loadReturns(0, 0);
         page(null);
 
         launcher(AT_0200).run(DATE);
@@ -224,9 +228,16 @@ class PropertyRefreshJobLauncherTest {
         return new PropertyRefreshJobLauncher(jobOperator, jobFactory, successStore, clock);
     }
 
-    private void loadReturns(List<Long> newIds, List<Long> priceChangedIds) {
+    private void loadReturns(int newProperties, int priceChangedProperties) {
         when(propertyLoadService.refresh(eq(MONTHS), any()))
-                .thenReturn(new PropertyRefreshResult(newIds, priceChangedIds));
+                .thenReturn(new PropertyRefreshResult(newProperties, priceChangedProperties));
+    }
+
+    /** 시세 변경 매물 한 페이지. 조회를 심지 않은 페이지는 목 기본값인 빈 목록이다. */
+    private void priceChangedPage(Long lastPropertyId, Long... propertyIds) {
+        when(propertyMapper.selectPriceChangedPropertyIds(
+                new PriceChangedPropertyCondition(lastPropertyId, CHUNK_SIZE)))
+                .thenReturn(List.of(propertyIds));
     }
 
     private void page(Long lastPropertyId, Long... propertyIds) {
