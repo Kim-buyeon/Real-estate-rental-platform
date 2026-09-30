@@ -48,7 +48,7 @@ x-logging: &logging
 # (2026-09-23 17:10). 상한은 그 시점의 컨테이너별 실사용(RSS)에서 역산했고, 반영 뒤 다시 쟀다.
 #
 #   서비스        mem_limit   상한 전   반영 후   조회 중   상한의 근거
-#   app-1             600m    454 MiB   424 MiB   445 MiB   힙 360m(60%) + non-heap 240m
+#   app-1             600m    454 MiB   424 MiB   445 MiB   힙 210m(35%) + non-heap · 네이티브 390m — 2026-09-30 재배분(x-app 주석)
 #   app-2             600m    455 MiB   423 MiB   446 MiB   위와 같음
 #   postgres          256m     89 MiB    56 MiB    87 MiB   최악값은 담지 못한다 — postgres 서비스 주석. DB 노드는 PG_MEM_LIMIT(768m)
 #   redis             112m    4.6 MiB   3.6 MiB   4.0 MiB   maxmemory 64mb + 단편화 · AOF 버퍼 · 출력 버퍼
@@ -141,6 +141,7 @@ x-logging: &logging
 #   docker stats --no-stream                          컨테이너 RSS
 #   docker exec <슬롯> grep VmRSS /proc/1/status      같은 값을 프로세스 쪽에서
 #
+# **(2026-09-30 이후) 지표로 나눠 잰다** — /actuator/prometheus 의 jvm_memory_*_bytes{area} 가 힙 · 힙 밖을 준다(x-app 주석의 실측). 아래는 그 전의 기록이다.
 # **그래서 non-heap 240m 이 적정한지는 아직 답할 수 없다.** 조회 중 RSS 445 MiB 가 상한의 74% 라
 # 당장 위험하지 않다는 것까지만 확인됐다. 나눠 재려면 셋 중 하나가 필요한데 전부 대가가 있어 **미확정**으로 둔다 —
 #   실행 이미지를 JDK 로 바꾼다        이미지가 커지고 공격면이 넓어진다
@@ -173,7 +174,7 @@ x-app: &app
     # 앱 로그(KST)와 9시간 어긋나 대조가 되지 않는다.
     TZ: Asia/Seoul
     # 컨테이너 메모리 제한이 없으면 JVM 은 호스트 전체를 기준으로 잡는다 — 제한을 걸기 전 노드에서 힙 상한이
-    # 478 MiB(호스트 1.865 GiB 의 25%)로 잡혀 있었다. mem_limit 600m 기준 60% = 360m 이 힙이고 나머지 240m 이
+    # 478 MiB(호스트 1.865 GiB 의 25%)로 잡혀 있었다. mem_limit 600m 기준 35% = 210m 이 힙이고 나머지 390m 이
     # non-heap 몫이다.
     #
     # UseG1GC 를 명시하는 이유 — JVM 의 server-class 판정은 2 CPU 이상 **이고** 메모리 1792 MB 이상일 때만 통과하는데,
@@ -185,10 +186,17 @@ x-app: &app
     #
     # 힙 밖 상한 두 가지(2026-09-30 · #314) — 12개월 갱신 배치가 판정 단계에 들어가는 순간 컨테이너 RSS 가 600m 을 넘어
     # 커널이 죽였다(anon-rss 605,272kB, 힙 OOM 아님 · 힙 덤프 없음). 힙 밖을 나눠 재지 못해 원인 비중은 모른다 — 흔한 두 요인만 묶는다.
-    #   MaxDirectMemorySize 64m — 기본값이 힙 최대(360m)와 같아 Redis 클라이언트(Netty) 직접 버퍼가 non-heap 몫을 넘볼 수 있다
+    #   MaxDirectMemorySize 64m — 기본값이 힙 최대와 같아 Redis 클라이언트(Netty) 직접 버퍼가 non-heap 몫을 넘볼 수 있다
     #   MALLOC_ARENA_MAX 2      — glibc 가 스레드마다 arena 를 늘려(기본 코어 × 8) 네이티브 RSS 가 부푼다
     # 값은 미확정 — 다음 갱신 배치 회차의 docker stats RSS 로 확정한다.
-    JAVA_TOOL_OPTIONS: "-XX:+UseG1GC -XX:MaxRAMPercentage=60.0 -XX:MaxDirectMemorySize=64m -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp"
+    #
+    # 힙 비율 60 → 35(2026-09-30 16:41 두 번째 OOM kill 뒤 · #314). 쉬는 슬롯 실측(/actuator/prometheus + docker stats):
+    #   RSS 516MiB = 힙 committed 158MiB + 힙 밖 committed 214MiB(그중 Metaspace 약 151 — 재시작 직후 다른 슬롯에서 잰 값) + 그 밖 네이티브 약 144MiB
+    # 힙 밖 + 네이티브만 약 358MB 라 힙 상한 360m 이면 힙이 약 240MB 를 넘는 순간 600m 을 넘는다 — 갱신 배치가 적재 중 힙을 키우며
+    # 두 번 죽었다(anon-rss 605,272 · 608,300kB). 40%(240m)면 합이 약 598 로 여유가 2MiB 뿐이라 35% = 210m(여유 약 32MiB — 네이티브는
+    # 쉬는 슬롯 값이라 배치 중엔 더 늘 수 있다)로 둔다. 배치가 그보다 힙을 더 쓰면 커널 kill 대신 자바
+    # OOM 이 나고 힙 덤프(/tmp)가 남아 무엇이 쓰는지 볼 수 있다. 값은 미확정 — 다음 회차의 힙 사용량으로 확정한다.
+    JAVA_TOOL_OPTIONS: "-XX:+UseG1GC -XX:MaxRAMPercentage=35.0 -XX:MaxDirectMemorySize=64m -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp"
     MALLOC_ARENA_MAX: "2"
   depends_on:
     # required: false — 3노드에서는 postgres 가 다른 노드(DB-01)라 이 노드의 활성 프로필에 없다. 없으면 기다리지 않고
