@@ -26,7 +26,8 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
  *       {@link PropertyRefreshReportWriter}. 청크 크기는 대상 식별자 페이지 크기와 같다</li>
  * </ol>
  *
- * <p>적재 스텝이 실패하면 Job 이 멈추고 판정 스텝은 돌지 않는다. 판정은 적재가 남긴 시세 변경 식별자를 이어받기 때문이다.
+ * <p>적재 스텝이 실패하면 Job 이 멈추고 판정 스텝은 돌지 않는다 — 적재가 어디까지 되었는지 모르는 채로 판정하지 않는다. 판정 스텝은
+ * 적재가 DB 에 남긴 것(신규 매물 · 재분석 대기 표시)을 읽을 뿐 적재 스텝에서 메모리로 넘겨받는 것이 없다.
  *
  * <p><b>전용 저장소</b> — 앱이 가진 Job 저장소 빈을 쓰지 않고 이 배치만의 resourceless 저장소를 둔다. resourceless 저장소는 Job
  * 인스턴스 · 실행을 하나만 들고 스레드 안전하지 않다(Spring Batch 6.0.5 {@code ResourcelessJobRepository} 주석). 이 배치가
@@ -92,7 +93,7 @@ public class PropertyRefreshJobFactory {
 
         Step analysisStep = new StepBuilder(ANALYSIS_STEP_NAME, jobRepository)
                 .<PropertyRefreshTarget, PropertyRefreshAttempt>chunk(chunkSize)
-                .reader(new PropertyRefreshTargetReader(propertyMapper, report, chunkSize))
+                .reader(new PropertyRefreshTargetReader(propertyMapper, chunkSize))
                 .processor(new PropertyRefreshItemProcessor(executor))
                 .writer(new PropertyRefreshReportWriter(report))
                 .transactionManager(analysisTransactionManager)

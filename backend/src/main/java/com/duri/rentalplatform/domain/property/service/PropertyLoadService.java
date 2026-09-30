@@ -69,8 +69,8 @@ import org.springframework.stereotype.Service;
  *
  * <p><b>초기 적재와 갱신 적재</b> — 수집 · 정규화 · 시세 산출 · 신규 저장은 같다. 다른 것은 자연키가 같은 기존 매물을 만났을
  * 때다. 초기 적재({@link #load})는 건너뛰기만 하고, 갱신 적재({@link #refresh}, 갱신 배치 RISK-08)는 새로 계산한 시세 ·
- * 기준일이 저장값과 다를 때만 시세를 갱신한다 — 데이터 적재 설계서 1.5. 갱신 적재는 신규 매물과 시세 금액이 바뀐 매물의
- * 식별자를 돌려주어 판정 단계가 이어받게 한다.
+ * 기준일이 저장값과 다를 때만 시세를 갱신한다 — 데이터 적재 설계서 1.5. 갱신 적재는 신규 매물 · 시세 금액이 바뀐 매물의
+ * <b>건수만</b> 돌려준다. 판정 단계는 대상을 DB 에서 읽는다({@link PropertyRefreshResult} 주석) — 식별자를 회차 내내 모아 두지 않는다.
  */
 @Slf4j
 @Service
@@ -118,16 +118,16 @@ public class PropertyLoadService {
      *
      * @param months 초기 적재와 같은 뜻의 기간(개월)
      * @param report 적재 결과 집계. 호출자가 만들어 넘긴다 — {@link #load} 와 같은 이유
-     * @return 새로 저장한 매물과 시세 금액이 바뀐 매물의 식별자
+     * @return 새로 저장한 매물 수와 시세 금액이 바뀐 매물 수
      */
     public PropertyRefreshResult refresh(int months, PropertyLoadReport report) {
         RefreshTargets targets = new RefreshTargets();
         loadAll(months, report, targets);
-        return new PropertyRefreshResult(targets.newPropertyIds, targets.priceChangedPropertyIds);
+        return new PropertyRefreshResult(targets.newProperties, targets.priceChangedProperties);
     }
 
     /**
-     * @param refreshTargets 갱신 적재면 식별자를 모을 자리, 초기 적재면 null. null 이면 기존 매물을 건너뛰기만 한다
+     * @param refreshTargets 갱신 적재면 건수를 셀 자리, 초기 적재면 null. null 이면 기존 매물을 건너뛰기만 한다
      */
     private void loadAll(int months, PropertyLoadReport report, RefreshTargets refreshTargets) {
         List<YearMonth> targetMonths = recentMonths(months);
@@ -484,7 +484,7 @@ public class PropertyLoadService {
         }
         report.addSaved(savedIds.size());
         if (refreshTargets != null) {
-            refreshTargets.newPropertyIds.addAll(savedIds);
+            refreshTargets.newProperties += savedIds.size();
         }
     }
 
@@ -506,7 +506,7 @@ public class PropertyLoadService {
         }
         report.addPriceUpdated(pending.size());
         report.addPriceChanged(priceChangedIds.size());
-        refreshTargets.priceChangedPropertyIds.addAll(priceChangedIds);
+        refreshTargets.priceChangedProperties += priceChangedIds.size();
     }
 
     /**
@@ -532,11 +532,12 @@ public class PropertyLoadService {
     }
 
     /**
-     * 갱신 적재가 모으는 식별자. 한 번의 {@link #refresh} 동안만 산다 — 인스턴스 간에 공유할 상태가 아니다.
+     * 갱신 적재가 세는 건수. 한 번의 {@link #refresh} 동안만 산다 — 인스턴스 간에 공유할 상태가 아니다. 식별자는 모으지 않는다 —
+     * 신규 매물 수만큼 회차 내내 메모리에 남는다({@link PropertyRefreshResult} 주석).
      */
     private static final class RefreshTargets {
-        private final List<Long> newPropertyIds = new ArrayList<>();
-        private final List<Long> priceChangedPropertyIds = new ArrayList<>();
+        private int newProperties;
+        private int priceChangedProperties;
     }
 
     private LocalDate basePriceDate(LocalDate baseDate) {

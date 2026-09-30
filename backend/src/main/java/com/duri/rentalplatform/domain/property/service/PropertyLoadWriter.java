@@ -92,7 +92,10 @@ public class PropertyLoadWriter {
      * <p>값이 같은지는 엔티티가 한 번 더 본다 — 같으면 손대지 않으므로 UPDATE 도 나가지 않는다. 변경은 변경 감지가 반영한다.
      * 그 사이 지워진 매물은 조회되지 않아 건너뛴다.
      *
-     * @return 시세 금액이 바뀐 매물 식별자. 기준일만 바뀐 매물은 들지 않는다
+     * <p>금액이 바뀐 매물은 엔티티가 재분석 대기로 표시한다(V18) — 판정 단계가 그 표시로 재분석 대상을 DB 에서 읽는다. 식별자를
+     * 메모리에 모아 넘기지 않는다(회차 동안 쌓이지 않게).
+     *
+     * @return 시세 금액이 바뀐 매물 식별자. 기준일만 바뀐 매물은 들지 않는다. 호출자는 건수만 쓴다
      */
     @Transactional
     public List<Long> updateMarketPrices(List<MarketPriceUpdate> updates) {
@@ -106,6 +109,18 @@ public class PropertyLoadWriter {
             }
         }
         return priceChanged;
+    }
+
+    /**
+     * 갱신 배치(RISK-08)가 시세 변경 재분석을 마친 매물의 재분석 대기 표시를 내린다. 이 메서드 하나가 트랜잭션 경계다. 그 사이
+     * 지워진 매물은 조회되지 않아 아무것도 하지 않는다.
+     *
+     * <p>판정 저장과 한 트랜잭션으로 묶지 않는다 — 판정은 외부 호출을 포함하고 판정 서비스가 자기 경계를 긋는다. 판정 뒤 이 호출이
+     * 실패하면 표시가 남아 다음 회차에 한 번 더 판정할 뿐이다(결론이 같으면 판정 행도 늘지 않는다).
+     */
+    @Transactional
+    public void completeReanalysis(Long propertyId) {
+        propertyRepository.findById(propertyId).ifPresent(Property::completeReanalysis);
     }
 
     /**

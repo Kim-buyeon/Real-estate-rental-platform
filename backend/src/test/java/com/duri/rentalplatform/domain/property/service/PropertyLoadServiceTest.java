@@ -642,15 +642,15 @@ class PropertyLoadServiceTest {
     }
 
     @Test
-    @DisplayName("갱신: 새 매물은 저장하고 그 식별자를 신규로 돌려준다 — 시세 갱신은 없다")
-    void refreshReturnsNewPropertyIds() {
+    @DisplayName("갱신: 새 매물은 저장하고 신규 건수로 돌려준다 — 시세 갱신은 없다")
+    void refreshReturnsNewPropertyCount() {
         fetchesDefaultTransaction();
 
         PropertyLoadReport report = new PropertyLoadReport();
         PropertyRefreshResult result = service.refresh(1, report);
 
-        assertThat(result.newPropertyIds()).containsExactly(1L);
-        assertThat(result.priceChangedPropertyIds()).isEmpty();
+        assertThat(result.newProperties()).isEqualTo(1);
+        assertThat(result.priceChangedProperties()).isZero();
         assertThat(report.getSaved()).isEqualTo(1);
         verify(propertyLoadWriter, never()).updateMarketPrices(anyList());
     }
@@ -666,8 +666,8 @@ class PropertyLoadServiceTest {
 
         verify(propertyLoadWriter, never()).updateMarketPrices(anyList());
         verify(propertyLoadWriter, never()).saveAll(anyList());
-        assertThat(result.newPropertyIds()).isEmpty();
-        assertThat(result.priceChangedPropertyIds()).isEmpty();
+        assertThat(result.newProperties()).isZero();
+        assertThat(result.priceChangedProperties()).isZero();
         assertThat(report.getSkippedDuplicate()).isEqualTo(1);
         assertThat(report.getPriceUpdated()).isZero();
     }
@@ -685,7 +685,7 @@ class PropertyLoadServiceTest {
         verify(propertyLoadWriter).updateMarketPrices(List.of(new MarketPriceUpdate(
                 STORED_ID, SALE_PRICE, PriceType.ACTUAL_TRANSACTION, SALE_DATE)));
         verify(propertyLoadWriter, never()).saveAll(anyList());
-        assertThat(result.priceChangedPropertyIds()).containsExactly(STORED_ID);
+        assertThat(result.priceChangedProperties()).isEqualTo(1);
         assertThat(report.getPriceUpdated()).isEqualTo(1);
         assertThat(report.getPriceChanged()).isEqualTo(1);
         assertThat(report.getSkippedDuplicate()).isEqualTo(1);
@@ -702,7 +702,7 @@ class PropertyLoadServiceTest {
         PropertyRefreshResult result = service.refresh(1, report);
 
         verify(propertyLoadWriter).updateMarketPrices(anyList());
-        assertThat(result.priceChangedPropertyIds()).isEmpty();
+        assertThat(result.priceChangedProperties()).isZero();
         assertThat(report.getPriceUpdated()).isEqualTo(1);
         assertThat(report.getPriceChanged()).isZero();
     }
@@ -720,7 +720,7 @@ class PropertyLoadServiceTest {
         PropertyRefreshResult result = service.refresh(1, report);
 
         verify(propertyLoadWriter).updateMarketPrices(argThat(updates -> updates.size() == 1));
-        assertThat(result.priceChangedPropertyIds()).containsExactly(STORED_ID);
+        assertThat(result.priceChangedProperties()).isEqualTo(1);
         assertThat(report.getSkippedDuplicate()).isEqualTo(2);
     }
 
@@ -738,9 +738,9 @@ class PropertyLoadServiceTest {
         PropertyRefreshResult result = service.refresh(1, report);
 
         verify(propertyLoadWriter, never()).updateMarketPrices(anyList());
-        assertThat(result.priceChangedPropertyIds()).isEmpty();
+        assertThat(result.priceChangedProperties()).isZero();
         // 200-2 는 새 매물이라 초기 적재와 같이 저장한다. 100-1 은 기존 매물이라 저장하지 않는다.
-        assertThat(result.newPropertyIds()).containsExactly(1L);
+        assertThat(result.newProperties()).isEqualTo(1);
         assertThat(report.getSkippedDuplicate()).isEqualTo(1);
         assertThat(report.getFailedExternal()).isEqualTo(1);
     }
@@ -761,8 +761,8 @@ class PropertyLoadServiceTest {
 
         // 덜 모은 매매 표본의 시세(5억)로 저장된 시세(2억8천)를 덮지 않는다.
         verify(propertyLoadWriter, never()).updateMarketPrices(anyList());
-        assertThat(result.priceChangedPropertyIds()).isEmpty();
-        assertThat(result.newPropertyIds()).containsExactly(1L);
+        assertThat(result.priceChangedProperties()).isZero();
+        assertThat(result.newProperties()).isEqualTo(1);
         assertThat(report.getSkippedDuplicate()).isEqualTo(1);
         assertThat(report.getFailedExternal()).isEqualTo(1);
     }
@@ -777,7 +777,7 @@ class PropertyLoadServiceTest {
         PropertyLoadReport report = new PropertyLoadReport();
         PropertyRefreshResult result = service.refresh(1, report);
 
-        assertThat(result.priceChangedPropertyIds()).isEmpty();
+        assertThat(result.priceChangedProperties()).isZero();
         assertThat(report.getFailedUnexpected()).isEqualTo(1);
         assertThat(report.getFailures()).anyMatch(reason -> reason.contains("시세 갱신 실패"));
         assertThat(report.getPriceUpdated()).isZero();
