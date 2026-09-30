@@ -250,6 +250,21 @@ x-postgres-command: &postgres-command
   - maintenance_work_mem=16MB
   - -c
   - autovacuum_max_workers=2
+  # 준비 문장도 매번 맞춤 계획(파라미터 값을 보고 짜는 계획)으로 짠다(#321, INF-01). 앱(pgjdbc 42.7.13)은 prepareThreshold 가
+  # 기본 5 라(설치본 소스 PGProperty 확인) 같은 SQL 을 한 연결에서 5번 실행하면 서버 준비 문장으로 바꾼다. PostgreSQL 은
+  # 준비 문장의 처음 5번을 맞춤 계획으로 짠 뒤 평균 비용을 보고 일반 계획(파라미터 값을 모르는 계획)으로 바꿀 수 있다
+  # (plan_cache_mode=auto 기본).
+  # 운영 DB-01 측정(2026-09-30 21시대, 매물 298,443건, 강남 지도 2단계 묶음 질의 같은 값, PREPARE 후 EXPLAIN ANALYZE 8회) —
+  # 1 ~ 5회 맞춤 계획 97 ~ 108ms, 6 ~ 8회 일반 계획 144 ~ 165ms(generic_plans 3 · custom_plans 5). force_custom_plan 으로
+  # 8회 모두 맞춤 98 ~ 115ms. 지도 3단계 핀도 일반 계획에서 17 → 24 ~ 27ms 로 느려졌다.
+  # 같은 측정에서 random_page_cost 1.1 · effective_cache_size 512MB · jit off 는 맞춤 계획 고정 시 기본 대비 ±3% 안
+  # (지도 2단계 99.4 / 97.5 / 97.7 / 98.3ms)이라 바꾸지 않는다 — 원자료 Documents\rental-idx-20260930\stage4b-settings.txt ·
+  # plancache-c2.txt(요약은 #321 PR 본문).
+  # 대가 — 매 실행 계획을 다시 짠다. 지도 2단계 계획 시간 1 ~ 3ms. 짧은 기본 키 조회도 매번 계획한다.
+  # 반영 — -c 인자라 컨테이너 재생성이 필요하다(standby 먼저, primary 는 점검 모드 안 — 운영 절차서의 primary 재생성 절차).
+  # 세션에서도 바꿀 수 있는 설정이라 복제 조건(위 머리 주석)에는 영향이 없다. standby 도 같은 목록이다.
+  - -c
+  - plan_cache_mode=force_custom_plan
   # 질의 통계(#270) — 어느 질의가 DB CPU 를 쓰는지 합계 · 호출 수 · 평균으로 본다. 부하 시험 T2-⑤(100 RPS 에서 DB-01 CPU
   # 0.83 ~ 0.94)의 원인을 가리려고 넣었고, 운영 중 느린 질의를 찾는 수단으로 남긴다(운영 절차서 2장 「질의 통계」).
   # 공유 메모리에 적재돼야 수집하므로 **서버 기동 시점에만** 켜진다 — 바꾸면 재생성한다. 확장(뷰)은 앱 DB 가 아니라 postgres
