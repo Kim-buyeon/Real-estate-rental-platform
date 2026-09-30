@@ -243,4 +243,24 @@
         <include refid="fromProperty"/>
         WHERE p.property_id = #{propertyId}
     </select>
+
+    <!--
+      최신 판정이 없는 매물 — 매물 갱신 배치(RISK-08)의 판정 대상. 신규 매물과, 판정이 실패해 남은 매물이 함께 나온다.
+      전체 매물을 읽어 메모리에서 거르지 않고 NOT EXISTS 로 DB 가 거른다. 하위 질의는 부분 유일 인덱스
+      uq_risk_analysis_latest (property_id) WHERE is_latest (V9) 로 풀리고, 바깥은 PK 순서라 식별자 커서에 인덱스가 따로 필요 없다.
+      실행 계획은 미검증 — 운영 규모 더미로 EXPLAIN 을 돌리지 않았다.
+    -->
+    <select id="selectUnanalyzedPropertyIds" resultType="java.lang.Long">
+        SELECT p.property_id
+        FROM property p
+        <where>
+            NOT EXISTS (SELECT 1 FROM risk_analysis ra
+                         WHERE ra.property_id = p.property_id AND ra.is_latest = TRUE)
+            <if test="lastPropertyId != null">
+                AND p.property_id &gt; #{lastPropertyId}
+            </if>
+        </where>
+        ORDER BY p.property_id
+        LIMIT #{limit}
+    </select>
 </mapper>

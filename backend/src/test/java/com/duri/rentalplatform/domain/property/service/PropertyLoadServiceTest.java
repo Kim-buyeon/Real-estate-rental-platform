@@ -14,10 +14,14 @@ import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.domain.property.calculator.LandlordNameGenerator;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
+import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.enums.SeoulDistrict;
+import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
 import com.duri.rentalplatform.domain.property.vo.PropertyLoadReport;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
+import com.duri.rentalplatform.domain.property.vo.PropertyPriceSnapshot;
+import com.duri.rentalplatform.domain.property.vo.PropertyRefreshResult;
 import com.duri.rentalplatform.domain.property.vo.PropertyRegistration;
 import com.duri.rentalplatform.external.address.AddressNormalizeClient;
 import com.duri.rentalplatform.external.address.Coordinates;
@@ -28,11 +32,14 @@ import com.duri.rentalplatform.external.realestate.RentTransaction;
 import com.duri.rentalplatform.external.realestate.RentTransactionClient;
 import com.duri.rentalplatform.external.realestate.RentTransactionQuery;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.LongStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -88,9 +95,14 @@ class PropertyLoadServiceTest {
         when(geocodeClient.geocode(anyString())).thenReturn(Optional.of(new Coordinates(
                 new BigDecimal("37.5000000"), new BigDecimal("127.0000000"), "TEST_GEO")));
         when(propertyLoadWriter.saveAll(anyList()))
-                .thenAnswer(invocation -> ((List<?>) invocation.getArgument(0)).size());
+                .thenAnswer(invocation -> idsFor(invocation.getArgument(0)));
         // findLoadedNaturalKeys · findRentTransactions 는 Mockito 기본값이 이미 빈 Set · 빈 List라
         // 스텁하지 않은 자치구 · 서비스구분은 자동으로 0건 처리된다.
+    }
+
+    /** 저장 스텁의 반환값 — 저장한 건수만큼 식별자를 지어 준다. */
+    private static List<Long> idsFor(List<?> registrations) {
+        return LongStream.rangeClosed(1, registrations.size()).boxed().toList();
     }
 
     private RentTransactionQuery queryOf(SeoulDistrict district, RentBuildingType buildingType) {
@@ -372,7 +384,7 @@ class PropertyLoadServiceTest {
             if (isPrimaryChunk) {
                 throw new RuntimeException("DB 커넥션 끊김");
             }
-            return registrations.size();
+            return idsFor(registrations);
         });
 
         PropertyLoadReport report = new PropertyLoadReport();
@@ -432,5 +444,157 @@ class PropertyLoadServiceTest {
         ArgumentCaptor<List<PropertyRegistration>> captor = ArgumentCaptor.forClass(List.class);
         verify(propertyLoadWriter).saveAll(captor.capture());
         assertThat(captor.getValue().get(0).propertyType()).isEqualTo(PropertyType.OFFICETEL);
+    }
+
+    // ---------- 갱신 적재(RISK-08) ----------
+
+    private static final String NORMALIZED_ADDRESS = "정규화-서울특별시 강남구 역삼동 100-1";
+    private static final long STORED_ID = 77L;
+
+    /** 기본 거래(100-1 · 59.90㎡ · 3층 · 3억 전세)의 자연키와 저장된 시세. 표본이 그 거래 하나라 새 시세는 3억 · 기준일은 계약일이다. */
+    private void storedPrice(Long marketPrice, LocalDate priceDate) {
+        PropertyNaturalKey key = new PropertyNaturalKey(NORMALIZED_ADDRESS, new BigDecimal("59.90"), 3, 300_000_000L, 0L);
+        when(propertyLoadWriter.findLoadedPrices(PRIMARY.getDistrictName())).thenReturn(Map.of(key,
+                new PropertyPriceSnapshot(STORED_ID, marketPrice, PriceType.ACTUAL_TRANSACTION, priceDate)));
+    }
+
+    private void fetchesDefaultTransaction() {
+        when(rentTransactionClient.findRentTransactions(queryOf(PRIMARY, APARTMENT)))
+                .thenReturn(List.of(validTransaction("100-1", new BigDecimal("59.90"), 3)));
+    }
+
+    @Test
+    @DisplayName("갱신: 새 매물은 저장하고 그 식별자를 신규로 돌려준다 — 시세 갱신은 없다")
+    void refreshReturnsNewPropertyIds() {
+        fetchesDefaultTransaction();
+
+        PropertyLoadReport report = new PropertyLoadReport();
+        PropertyRefreshResult result = service.refresh(1, report);
+
+        assertThat(result.newPropertyIds()).containsExactly(1L);
+        assertThat(result.priceChangedPropertyIds()).isEmpty();
+        assertThat(report.getSaved()).isEqualTo(1);
+        verify(propertyLoadWriter, never()).updateMarketPrices(anyList());
+    }
+
+    @Test
+    @DisplayName("갱신: 기존 매물의 시세 · 기준일이 저장값과 같으면 손대지 않는다 — 값이 동일하면 재분석하지 않는다")
+    void refreshLeavesSamePriceUntouched() {
+        fetchesDefaultTransaction();
+        storedPrice(300_000_000L, TARGET_MONTH.atDay(10));
+
+        PropertyLoadReport report = new PropertyLoadReport();
+        PropertyRefreshResult result = service.refresh(1, report);
+
+        verify(propertyLoadWriter, never()).updateMarketPrices(anyList());
+        verify(propertyLoadWriter, never()).saveAll(anyList());
+        assertThat(result.newPropertyIds()).isEmpty();
+        assertThat(result.priceChangedPropertyIds()).isEmpty();
+        assertThat(report.getSkippedDuplicate()).isEqualTo(1);
+        assertThat(report.getPriceUpdated()).isZero();
+    }
+
+    @Test
+    @DisplayName("갱신: 기존 매물의 시세가 다르면 새 시세로 갱신을 넘기고, 금액이 바뀐 매물을 시세 변경으로 돌려준다")
+    void refreshUpdatesChangedPrice() {
+        fetchesDefaultTransaction();
+        storedPrice(280_000_000L, TARGET_MONTH.atDay(10));
+        when(propertyLoadWriter.updateMarketPrices(anyList())).thenReturn(List.of(STORED_ID));
+
+        PropertyLoadReport report = new PropertyLoadReport();
+        PropertyRefreshResult result = service.refresh(1, report);
+
+        verify(propertyLoadWriter).updateMarketPrices(List.of(new MarketPriceUpdate(
+                STORED_ID, 300_000_000L, PriceType.ACTUAL_TRANSACTION, TARGET_MONTH.atDay(10))));
+        verify(propertyLoadWriter, never()).saveAll(anyList());
+        assertThat(result.priceChangedPropertyIds()).containsExactly(STORED_ID);
+        assertThat(report.getPriceUpdated()).isEqualTo(1);
+        assertThat(report.getPriceChanged()).isEqualTo(1);
+        assertThat(report.getSkippedDuplicate()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("갱신: 기준일만 다르면 저장값 갱신은 넘기되, 쓰기 서비스가 금액 변경으로 돌려주지 않으면 시세 변경에 넣지 않는다")
+    void refreshUpdatesDateOnlyWithoutMarkingPriceChanged() {
+        fetchesDefaultTransaction();
+        storedPrice(300_000_000L, TARGET_MONTH.atDay(1));
+        when(propertyLoadWriter.updateMarketPrices(anyList())).thenReturn(List.of());
+
+        PropertyLoadReport report = new PropertyLoadReport();
+        PropertyRefreshResult result = service.refresh(1, report);
+
+        verify(propertyLoadWriter).updateMarketPrices(anyList());
+        assertThat(result.priceChangedPropertyIds()).isEmpty();
+        assertThat(report.getPriceUpdated()).isEqualTo(1);
+        assertThat(report.getPriceChanged()).isZero();
+    }
+
+    @Test
+    @DisplayName("갱신: 같은 자연키가 한 회차에 두 번 나와도 시세 비교 · 갱신은 한 번뿐이다")
+    void refreshComparesEachExistingPropertyOnce() {
+        when(rentTransactionClient.findRentTransactions(queryOf(PRIMARY, APARTMENT))).thenReturn(List.of(
+                validTransaction("100-1", new BigDecimal("59.90"), 3),
+                validTransaction("100-1", new BigDecimal("59.90"), 3)));
+        storedPrice(280_000_000L, TARGET_MONTH.atDay(10));
+        when(propertyLoadWriter.updateMarketPrices(anyList())).thenReturn(List.of(STORED_ID));
+
+        PropertyLoadReport report = new PropertyLoadReport();
+        PropertyRefreshResult result = service.refresh(1, report);
+
+        verify(propertyLoadWriter).updateMarketPrices(argThat(updates -> updates.size() == 1));
+        assertThat(result.priceChangedPropertyIds()).containsExactly(STORED_ID);
+        assertThat(report.getSkippedDuplicate()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("갱신: 자치구의 실거래가 수집이 일부 실패하면 기존 매물 시세는 갱신하지 않고, 새 매물은 저장한다")
+    void refreshSkipsPriceUpdatesWhenFetchIsIncomplete() {
+        when(rentTransactionClient.findRentTransactions(queryOf(PRIMARY, APARTMENT))).thenReturn(List.of(
+                validTransaction("100-1", new BigDecimal("59.90"), 3),
+                validTransaction("200-2", new BigDecimal("59.90"), 5)));
+        when(rentTransactionClient.findRentTransactions(queryOf(PRIMARY, RentBuildingType.OFFICETEL)))
+                .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
+        storedPrice(280_000_000L, TARGET_MONTH.atDay(10));
+
+        PropertyLoadReport report = new PropertyLoadReport();
+        PropertyRefreshResult result = service.refresh(1, report);
+
+        verify(propertyLoadWriter, never()).updateMarketPrices(anyList());
+        assertThat(result.priceChangedPropertyIds()).isEmpty();
+        // 200-2 는 새 매물이라 초기 적재와 같이 저장한다. 100-1 은 기존 매물이라 저장하지 않는다.
+        assertThat(result.newPropertyIds()).containsExactly(1L);
+        assertThat(report.getSkippedDuplicate()).isEqualTo(1);
+        assertThat(report.getFailedExternal()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("갱신: 시세 갱신 덩어리가 실패하면 기록하고 시세 변경으로 넘기지 않는다")
+    void refreshRecordsPriceUpdateFailure() {
+        fetchesDefaultTransaction();
+        storedPrice(280_000_000L, TARGET_MONTH.atDay(10));
+        when(propertyLoadWriter.updateMarketPrices(anyList())).thenThrow(new RuntimeException("DB 커넥션 끊김"));
+
+        PropertyLoadReport report = new PropertyLoadReport();
+        PropertyRefreshResult result = service.refresh(1, report);
+
+        assertThat(result.priceChangedPropertyIds()).isEmpty();
+        assertThat(report.getFailedUnexpected()).isEqualTo(1);
+        assertThat(report.getFailures()).anyMatch(reason -> reason.contains("시세 갱신 실패"));
+        assertThat(report.getPriceUpdated()).isZero();
+    }
+
+    @Test
+    @DisplayName("초기 적재는 기존 매물의 시세를 읽지도 갱신하지도 않는다 — 기존 동작 유지")
+    void initialLoadNeverUpdatesPrices() {
+        fetchesDefaultTransaction();
+        PropertyNaturalKey key = new PropertyNaturalKey(NORMALIZED_ADDRESS, new BigDecimal("59.90"), 3, 300_000_000L, 0L);
+        when(propertyLoadWriter.findLoadedNaturalKeys(PRIMARY.getDistrictName())).thenReturn(Set.of(key));
+
+        PropertyLoadReport report = new PropertyLoadReport();
+        service.load(1, report);
+
+        verify(propertyLoadWriter, never()).findLoadedPrices(anyString());
+        verify(propertyLoadWriter, never()).updateMarketPrices(anyList());
+        assertThat(report.getSkippedDuplicate()).isEqualTo(1);
     }
 }

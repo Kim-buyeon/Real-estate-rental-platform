@@ -26,7 +26,10 @@ public class PropertyLoadReport {
     /** 저장한 건수. */
     private int saved;
 
-    /** 이미 있는 매물이라 건너뛴 건수. 재실행하면 이 값이 곧 전체 건수가 된다. */
+    /**
+     * 이미 있는 매물이라 새로 저장하지 않은 건수. 재실행하면 이 값이 곧 전체 건수가 된다. 갱신 적재에서 시세를 비교한 기존
+     * 매물도 여기에 센다 — 저장하지 않은 것은 같다.
+     */
     private int skippedDuplicate;
 
     /** 주소 정규화 결과가 없어 건너뛴 건수. */
@@ -47,6 +50,15 @@ public class PropertyLoadReport {
     /** 저장 덩어리 실패 · 자치구 중단처럼 예상하지 못한 자리에서 난 실패 건수. */
     private int failedUnexpected;
 
+    /**
+     * 갱신 적재(RISK-08)에서 저장된 시세 · 기준일이 새로 계산한 값과 달라 갱신한 기존 매물 수. 초기 적재에서는 늘 0 이다 —
+     * 초기 적재는 기존 매물을 건너뛰기만 한다.
+     */
+    private int priceUpdated;
+
+    /** 위 갱신 중 시세 금액까지 바뀐 매물 수. 재분석 대상이다. 기준일만 바뀐 매물은 들지 않는다. */
+    private int priceChanged;
+
     /** 실패 사유 목록. 어느 구 · 어느 달에서 무엇이 났는지 남긴다. */
     private final List<String> failures = new ArrayList<>();
 
@@ -56,6 +68,14 @@ public class PropertyLoadReport {
 
     public void addSaved(int count) {
         saved += count;
+    }
+
+    public void addPriceUpdated(int count) {
+        priceUpdated += count;
+    }
+
+    public void addPriceChanged(int count) {
+        priceChanged += count;
     }
 
     public void skipDuplicate() {
@@ -91,10 +111,10 @@ public class PropertyLoadReport {
 
     public String summary() {
         return ("받은 %d건 · 저장 %d건 · 중복 %d건 · 주소없음 %d건 · 좌표없음 %d건 · 시세없음 %d건"
-                + " · 연동실패 %d건 · 자료이상 %d건 · 처리실패 %d건")
+                + " · 연동실패 %d건 · 자료이상 %d건 · 처리실패 %d건 · 시세갱신 %d건 · 시세변경 %d건")
                 .formatted(fetched, saved, skippedDuplicate, skippedAddressNotFound,
                         skippedCoordinatesNotFound, skippedMarketPriceNotFound, failedExternal,
-                        failedInvalidData, failedUnexpected);
+                        failedInvalidData, failedUnexpected, priceUpdated, priceChanged);
     }
 
     /**

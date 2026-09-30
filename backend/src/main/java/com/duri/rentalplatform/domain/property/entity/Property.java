@@ -18,6 +18,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -135,6 +136,26 @@ public class Property extends CreatedAtEntity {
         property.latitude = registration.latitude();
         property.longitude = registration.longitude();
         return property;
+    }
+
+    /**
+     * 갱신 배치(RISK-08)가 새로 계산한 시세로 바꾼다. 금액 · 산출 근거 · 기준일이 모두 저장값과 같으면 손대지 않는다 —
+     * 데이터 적재 설계서 1.5 「값이 동일하면 재분석하지 않는다」.
+     *
+     * <p>기준일만 바뀌어도 저장한다. 화면이 시세와 함께 기준일을 표시하기 때문이다(같은 설계서 1.4). 다만 판정에 쓰이는 값은
+     * 금액뿐이므로 <b>금액이 바뀐 경우만 참</b>을 돌려 재분석 대상으로 표시하게 한다.
+     *
+     * @return 시세 금액이 바뀌었는가. 참이면 위험도 재분석 대상이다
+     */
+    public boolean refreshMarketPrice(Long newMarketPrice, PriceType newPriceType, LocalDate newPriceDate) {
+        boolean amountChanged = !Objects.equals(marketPrice, newMarketPrice);
+        if (!amountChanged && priceType == newPriceType && Objects.equals(priceDate, newPriceDate)) {
+            return false;
+        }
+        marketPrice = newMarketPrice;
+        priceType = newPriceType;
+        priceDate = newPriceDate;
+        return amountChanged;
     }
 
     /** 중복 적재 차단에 쓰는 자연키. */

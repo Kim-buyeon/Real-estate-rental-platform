@@ -17,17 +17,21 @@ import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.repository.PropertyCodeRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
+import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
+import com.duri.rentalplatform.domain.property.vo.PropertyPriceSnapshot;
 import com.duri.rentalplatform.domain.property.vo.PropertyRegistration;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * {@link PropertyLoadWriter} 검증. 저장은 JPA(스텁 저장소로 확인)이고, 이 클래스가 실제로 하는 일은
@@ -106,7 +110,7 @@ class PropertyLoadWriterTest {
     }
 
     @Test
-    @DisplayName("saveAll은 등록값을 코드가 연결된 매물로 변환해 저장하고 건수를 반환한다")
+    @DisplayName("saveAll은 등록값을 코드가 연결된 매물로 변환해 저장하고 저장한 매물의 식별자를 건수만큼 반환한다")
     void mapsRegistrationsToPropertiesWithResolvedCodesAndReturnsCount() {
         PropertyCode contractCode = mock(PropertyCode.class);
         PropertyCode propertyTypeCode = mock(PropertyCode.class);
@@ -127,9 +131,9 @@ class PropertyLoadWriterTest {
         List<PropertyRegistration> registrations =
                 List.of(registrationOf("서울특별시 강남구 역삼동 100-1", 3));
 
-        int saved = writer.saveAll(registrations);
+        List<Long> saved = writer.saveAll(registrations);
 
-        assertThat(saved).isEqualTo(1);
+        assertThat(saved).hasSize(1);
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<Property>> captor = ArgumentCaptor.forClass(List.class);
         verify(propertyRepository).saveAll(captor.capture());
@@ -154,5 +158,68 @@ class PropertyLoadWriterTest {
         Set<PropertyNaturalKey> naturalKeys = writer.findLoadedNaturalKeys("강남구");
 
         assertThat(naturalKeys).containsExactlyInAnyOrder(reg1.naturalKey(), reg2.naturalKey());
+    }
+
+    // ---------- 갱신 적재(RISK-08) ----------
+
+    private Property storedProperty(long propertyId, String address, long marketPrice, LocalDate priceDate) {
+        PropertyCode anyCode = mock(PropertyCode.class);
+        PropertyRegistration registration = new PropertyRegistration(
+                address, "강남구", "김민준", ContractType.DEPOSIT_ONLY, PropertyType.APARTMENT,
+                300_000_000L, 0L, marketPrice, PriceType.ACTUAL_TRANSACTION, priceDate,
+                new BigDecimal("59.90"), 3, 2005,
+                new BigDecimal("37.5000000"), new BigDecimal("127.0000000"));
+        Property property = Property.register(registration, anyCode, anyCode, anyCode);
+        // 식별자는 IDENTITY 라 저장 때 채워진다. 저장소가 스텁이라 직접 넣는다.
+        ReflectionTestUtils.setField(property, "propertyId", propertyId);
+        return property;
+    }
+
+    @Test
+    @DisplayName("갱신: 자치구의 기존 매물을 자연키 → 저장된 시세(식별자 · 금액 · 근거 · 기준일)로 바꾼다")
+    void mapsExistingPropertiesToStoredPrices() {
+        LocalDate priceDate = LocalDate.of(2026, 8, 20);
+        Property property = storedProperty(5L, "주소1", 280_000_000L, priceDate);
+        when(propertyRepository.findAllByDistrict("강남구")).thenReturn(List.of(property));
+
+        Map<PropertyNaturalKey, PropertyPriceSnapshot> prices = writer.findLoadedPrices("강남구");
+
+        assertThat(prices).containsExactly(Map.entry(property.naturalKey(),
+                new PropertyPriceSnapshot(5L, 280_000_000L, PriceType.ACTUAL_TRANSACTION, priceDate)));
+    }
+
+    @Test
+    @DisplayName("갱신: 시세를 반영하고 금액이 바뀐 매물만 돌려준다 — 기준일만 바뀐 매물은 저장값만 바뀌고 돌려주지 않는다")
+    void updatesPricesAndReturnsOnlyAmountChanges() {
+        LocalDate oldDate = LocalDate.of(2026, 8, 1);
+        LocalDate newDate = LocalDate.of(2026, 8, 20);
+        Property amountChanged = storedProperty(1L, "주소1", 280_000_000L, oldDate);
+        Property dateOnly = storedProperty(2L, "주소2", 300_000_000L, oldDate);
+        Property same = storedProperty(3L, "주소3", 300_000_000L, newDate);
+        when(propertyRepository.findAllById(Set.of(1L, 2L, 3L))).thenReturn(List.of(amountChanged, dateOnly, same));
+
+        List<Long> priceChanged = writer.updateMarketPrices(List.of(
+                new MarketPriceUpdate(1L, 300_000_000L, PriceType.ACTUAL_TRANSACTION, newDate),
+                new MarketPriceUpdate(2L, 300_000_000L, PriceType.ACTUAL_TRANSACTION, newDate),
+                new MarketPriceUpdate(3L, 300_000_000L, PriceType.ACTUAL_TRANSACTION, newDate)));
+
+        assertThat(priceChanged).containsExactly(1L);
+        assertThat(amountChanged.getMarketPrice()).isEqualTo(300_000_000L);
+        assertThat(amountChanged.getPriceDate()).isEqualTo(newDate);
+        assertThat(dateOnly.getPriceDate()).isEqualTo(newDate);
+        assertThat(same.getMarketPrice()).isEqualTo(300_000_000L);
+        // 변경은 변경 감지가 반영한다 — save 를 다시 부르지 않는다.
+        verify(propertyRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("갱신: 그 사이 지워진 매물은 조회되지 않아 건너뛴다")
+    void skipsPropertiesThatNoLongerExist() {
+        when(propertyRepository.findAllById(Set.of(9L))).thenReturn(List.of());
+
+        List<Long> priceChanged = writer.updateMarketPrices(List.of(
+                new MarketPriceUpdate(9L, 300_000_000L, PriceType.ACTUAL_TRANSACTION, LocalDate.of(2026, 8, 20))));
+
+        assertThat(priceChanged).isEmpty();
     }
 }
