@@ -443,7 +443,7 @@ public class PropertyLoadService {
                 transaction.buildYear(),
                 coordinates.get().latitude(),
                 coordinates.get().longitude(),
-                // 시군구 코드는 실거래 응답, 법정동 코드는 주소 정규화 응답에서 온다. 못 만들면 null 로 두고 매물은 저장한다 —
+                // 시군구 코드는 실거래 조회 요청의 지역 코드(LAWD_CD), 법정동 코드는 주소 정규화 응답에서 온다. 못 만들면 null 로 두고 매물은 저장한다 —
                 // 대장 조회 키는 대장을 뗄 때만 쓰이고 매물 탐색 · 시세와 무관하다.
                 LedgerLookupKey.of(transaction.lawdCode(), normalized.get().legalDongCode(), transaction.jibun())
                         .orElse(null));
