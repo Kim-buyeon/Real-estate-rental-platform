@@ -4,12 +4,15 @@ import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.domain.property.entity.BuildingLedger;
 import com.duri.rentalplatform.domain.property.entity.Property;
+import com.duri.rentalplatform.domain.property.enums.LedgerReplacementOutcome;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.repository.BuildingLedgerRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
+import com.duri.rentalplatform.domain.property.vo.LedgerReplacement;
 import com.duri.rentalplatform.external.address.AddressNormalizeClient;
 import com.duri.rentalplatform.external.address.NormalizedAddress;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerClient;
+import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDailyQuota;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDocument;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerLookup;
 import java.util.Optional;
@@ -40,6 +43,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p><b>동시 첫 조회</b> — {@code building_ledger.property_id} 의 UNIQUE 제약이 늦은 쪽을 막고, 늦은 쪽은 먼저
  * 저장된 것을 그대로 쓴다. 같은 매물은 같은 대장이 나오므로 어느 쪽이 남아도 내용이 같다.
+ *
+ * <p><b>Mock 대장 교체</b> — 수집은 「없을 때만」이라 연동을 real 로 바꿔도 이미 저장된 Mock 대장은 그대로 남는다. 교체 배치가
+ * {@link #fetchMockReplacement} 로 대장을 다시 떼어 보고, 뗐으면 {@link #replaceMock} 으로 같은 행을 바꾼다. 뗄 대장이 없을 때
+ * 행을 지우는 일은 분석 이력의 참조를 함께 끊어야 해서 배치 쪽(위험도 도메인)이 한 트랜잭션으로 한다. 외부 호출과 저장을 나눈
+ * 이유는 수집과 같다.
  */
 @Service
 public class LedgerCommandService {
@@ -48,6 +56,7 @@ public class LedgerCommandService {
     private final AddressNormalizeClient addressNormalizeClient;
     private final PropertyRepository propertyRepository;
     private final BuildingLedgerRepository buildingLedgerRepository;
+    private final BuildingLedgerDailyQuota dailyQuota;
     private final TransactionTemplate readTransaction;
     private final TransactionTemplate writeTransaction;
 
@@ -56,11 +65,13 @@ public class LedgerCommandService {
             AddressNormalizeClient addressNormalizeClient,
             PropertyRepository propertyRepository,
             BuildingLedgerRepository buildingLedgerRepository,
+            BuildingLedgerDailyQuota dailyQuota,
             PlatformTransactionManager transactionManager) {
         this.buildingLedgerClient = buildingLedgerClient;
         this.addressNormalizeClient = addressNormalizeClient;
         this.propertyRepository = propertyRepository;
         this.buildingLedgerRepository = buildingLedgerRepository;
+        this.dailyQuota = dailyQuota;
         this.readTransaction = new TransactionTemplate(transactionManager);
         this.readTransaction.setReadOnly(true);
         this.writeTransaction = new TransactionTemplate(transactionManager);
@@ -95,19 +106,89 @@ public class LedgerCommandService {
         }
     }
 
-    /** 수집할 매물이면 조회 값을, 이미 수집했으면 빈 값을 돌려준다. 매물 유형은 지연 로딩이라 트랜잭션 안에서 꺼낸다. */
+    /**
+     * Mock 대장을 교체하려고 대장을 다시 떼어 본다. 저장하지 않는다.
+     *
+     * <p>일일 상한과 「뗄 대장 없음」은 클라이언트에서 같은 빈 값으로 온다. 조회 키가 있는 매물에서 빈 값이 왔고 그 뒤 상한이 남아
+     * 있지 않으면 상한으로 본다 — 마지막 한 칸으로 「없음」을 받은 경우도 여기에 들지만, 그 매물은 Mock 을 남겨 다음 회차에 다시
+     * 본다. 반대로 보면 상한에 걸린 매물의 Mock 행을 「없음」으로 지우게 된다. 조회 키가 없으면 클라이언트가 부르지 않으므로 상한과
+     * 무관하게 「없음」이다.
+     *
+     * @throws BusinessException {@link ErrorCode#PROPERTY_NOT_FOUND} — 매물이 없을 때,
+     *                           {@link ErrorCode#EXTERNAL_API_UNAVAILABLE} — 대장 · 주소 정규화 연동이 실패했을 때
+     */
+    public LedgerReplacement fetchMockReplacement(Long propertyId) {
+        Optional<BuildingLedgerLookup> lookup = readTransaction.execute(status -> findMockLedgerLookup(propertyId));
+        if (lookup == null || lookup.isEmpty()) {
+            return LedgerReplacement.of(LedgerReplacementOutcome.NOT_MOCK);
+        }
+        boolean keyed = lookup.get().ledgerKey() != null;
+        if (keyed && dailyQuota.remaining() <= 0) {
+            return LedgerReplacement.of(LedgerReplacementOutcome.QUOTA_EXHAUSTED);
+        }
+
+        Optional<BuildingLedgerDocument> fetched = buildingLedgerClient.fetch(lookup.get());
+        if (fetched.isEmpty()) {
+            boolean quotaExhausted = keyed && dailyQuota.remaining() <= 0;
+            return LedgerReplacement.of(quotaExhausted
+                    ? LedgerReplacementOutcome.QUOTA_EXHAUSTED : LedgerReplacementOutcome.NOT_FOUND);
+        }
+        return LedgerReplacement.fetched(normalizeAddress(fetched.get()));
+    }
+
+    /**
+     * 매물의 Mock 대장을 뗀 대장으로 바꾼다. 그 사이 다른 경로가 행을 지웠거나 이미 Mock 이 아니면 손대지 않는다.
+     *
+     * @param document {@link #fetchMockReplacement} 가 돌려준 대장
+     * @return 바꿨으면 참
+     */
+    public boolean replaceMock(Long propertyId, BuildingLedgerDocument document) {
+        Boolean replaced = writeTransaction.execute(status -> buildingLedgerRepository.findByPropertyId(propertyId)
+                .filter(BuildingLedger::isMock)
+                .map(ledger -> {
+                    ledger.replaceWith(
+                            document.ledgerAddress(),
+                            document.ownerName(),
+                            document.buildingPurpose(),
+                            document.buildingStructure(),
+                            document.buildingArea(),
+                            document.totalFloorArea(),
+                            document.exclusiveArea(),
+                            document.approvalDate(),
+                            document.violation(),
+                            document.dataSource());
+                    return true;
+                })
+                .orElse(false));
+        return Boolean.TRUE.equals(replaced);
+    }
+
+    /** 대장이 Mock 이면 조회 값을, 대장이 없거나 Mock 이 아니면 빈 값을 돌려준다. */
+    private Optional<BuildingLedgerLookup> findMockLedgerLookup(Long propertyId) {
+        Property property = propertyRepository.findById(propertyId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PROPERTY_NOT_FOUND));
+        boolean mock = buildingLedgerRepository.findByPropertyId(propertyId).map(BuildingLedger::isMock).orElse(false);
+        return mock ? Optional.of(lookupOf(property)) : Optional.empty();
+    }
+
+    /** 수집할 매물이면 조회 값을, 이미 수집했으면 빈 값을 돌려준다. */
     private Optional<BuildingLedgerLookup> findUncollected(Long propertyId) {
         Property property = propertyRepository.findById(propertyId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROPERTY_NOT_FOUND));
         if (buildingLedgerRepository.existsByPropertyId(propertyId)) {
             return Optional.empty();
         }
-        return Optional.of(new BuildingLedgerLookup(
+        return Optional.of(lookupOf(property));
+    }
+
+    /** 매물에서 조회 값을 만든다. 매물 유형은 지연 로딩이라 트랜잭션 안에서 부른다. */
+    private static BuildingLedgerLookup lookupOf(Property property) {
+        return new BuildingLedgerLookup(
                 property.getPropertyId(),
                 property.naturalKey(),
                 property.getLandlordName(),
                 PropertyType.valueOf(property.getPropertyTypeCode().getCodeValue()),
-                property.ledgerKey()));
+                property.ledgerKey());
     }
 
     /** 출처가 원문 주소를 주면 도로명 주소로 바꾼다. 정규화 결과가 없으면 원문 그대로다. */

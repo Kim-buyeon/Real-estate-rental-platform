@@ -2,6 +2,10 @@ package com.duri.rentalplatform.external.buildingledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -219,6 +223,73 @@ class RealBuildingLedgerClientTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
+    // ---------- 일일 상한(PROP-04) ----------
+
+    @Test
+    @DisplayName("일일 상한에 닿아 있으면 제공처를 부르지 않고 빈 값이다 — 예외(503 · 서킷 실패)가 아니다")
+    void quotaExhaustedCallsNothing() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+        when(quota.tryAcquire()).thenReturn(false);
+
+        Optional<BuildingLedgerDocument> document =
+                clientOf(builder, ENCODED_KEY, quota).fetch(lookup(PropertyType.APARTMENT, KEY));
+
+        server.verify();
+        assertThat(document).isEmpty();
+        verify(quota, times(1)).tryAcquire();
+    }
+
+    @Test
+    @DisplayName("요청(페이지)마다 상한 한 칸을 쓴다 — 두 페이지면 두 번")
+    void countsEveryPage() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(uriOf(1))).andRespond(withSuccess(body(2,
+                item("주차장", "1", "자동차관련시설", "", "900.00", "19921125")), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(uriOf(2))).andRespond(withSuccess(body(2,
+                item("101동", "0", "공동주택", "", "14544.66", "19921125")), MediaType.APPLICATION_JSON));
+        BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+        when(quota.tryAcquire()).thenReturn(true);
+
+        Optional<BuildingLedgerDocument> document =
+                clientOf(builder, ENCODED_KEY, quota).fetch(lookup(PropertyType.APARTMENT, KEY));
+
+        server.verify();
+        assertThat(document).isPresent();
+        verify(quota, times(2)).tryAcquire();
+    }
+
+    @Test
+    @DisplayName("둘째 페이지 앞에서 상한에 닿으면 첫 페이지 행(공동주택 주건축물)으로 고르지 않고 빈 값이다")
+    void quotaExhaustedMidwayDiscardsPartialRows() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(uriOf(1))).andRespond(withSuccess(body(2,
+                item("101동", "0", "공동주택", "", "14544.66", "19921125")), MediaType.APPLICATION_JSON));
+        BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+        when(quota.tryAcquire()).thenReturn(true, false);
+
+        Optional<BuildingLedgerDocument> document =
+                clientOf(builder, ENCODED_KEY, quota).fetch(lookup(PropertyType.APARTMENT, KEY));
+
+        server.verify();
+        assertThat(document).isEmpty();
+    }
+
+    @Test
+    @DisplayName("조회 키가 없으면 상한을 쓰지 않는다")
+    void noKeyDoesNotCount() {
+        BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+
+        Optional<BuildingLedgerDocument> document =
+                clientOf(RestClient.builder(), ENCODED_KEY, quota).fetch(lookup(PropertyType.APARTMENT, null));
+
+        assertThat(document).isEmpty();
+        verify(quota, times(0)).tryAcquire();
+    }
+
     // ---------- 픽스처 ----------
 
     private RealBuildingLedgerClient clientOf(RestClient.Builder builder) {
@@ -226,10 +297,17 @@ class RealBuildingLedgerClientTest {
     }
 
     private RealBuildingLedgerClient clientOf(RestClient.Builder builder, String apiKey) {
+        BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+        when(quota.tryAcquire()).thenReturn(true);
+        return clientOf(builder, apiKey, quota);
+    }
+
+    private RealBuildingLedgerClient clientOf(RestClient.Builder builder, String apiKey,
+            BuildingLedgerDailyQuota quota) {
         ExternalApiProperties.ClientSettings settings =
                 new ExternalApiProperties.ClientSettings("real", BASE_URL, apiKey, null, null, null);
         return new RealBuildingLedgerClient(
-                builder.build(), new ExternalApiProperties(null, null, null, settings, null, null));
+                builder.build(), new ExternalApiProperties(null, null, null, settings, null, null), quota);
     }
 
     private static BuildingLedgerLookup lookup(PropertyType type, LedgerLookupKey key) {
