@@ -61,6 +61,7 @@ spring:
         # @Scheduled 실행 스레드 수. Boot 기본은 1 이다. 등기 재조회 배치(03:00)는 끝날 때까지 스레드를 쥐고 있으므로, 1 이면 그동안
         # SSE 하트비트(notification.sse.heartbeat-interval)가 멈춰 프록시가 유휴 연결을 끊는다. 스케줄이 셋(하트비트 · 등기 재조회 ·
         # 매물 갱신)이라 3 으로 둔다 — 매물 갱신이 길어져 등기 재조회와 한 인스턴스에서 겹쳐도 하트비트 스레드가 남는다.
+        # 대출 금리 갱신(loan.batch.rate-refresh.cron)은 월 1회 · 외부 호출 두 번이라 스레드를 늘리지 않는다.
         size: 3
   # 비밀번호 재설정 메일(USER-06)의 SMTP. external.mail.mode=real 일 때만 쓰인다 — 기본 mock 은 접속하지 않는다.
   # 운영은 Gmail SMTP(기술 스택 정의서 2장). 계정 · 앱 비밀번호는 .env 에 둔다. 호스트 · 포트 기본값은 Gmail 의 STARTTLS 포트다.
@@ -221,6 +222,28 @@ risk:
       # 풀려야 하므로 하루보다 짧게 둔다. 미확정 — 23시간. 배치가 끝나면 해제되므로 소요(T7 31초)와 무관하다. 실 연동 때 다시 확정.
       lock-lease-time: PT23H
 
+# 대출 한도 조회(LOAN-01)의 금리 · 상품 한도 입력 — 대출 상품(loan_product).
+loan:
+  product:
+    # HF 금리 API 로 넣는 행의 상품 한도(원). 한국주택금융공사 일반전세자금보증 「보증과목별 보증한도 : 4억원」
+    # (https://www.hf.go.kr/ko/sub02/sub02_01_02.do, 확인일 2026-09-30). loan_regulation.guarantee_cap_no_house(V10)와 같은 출처의
+    # 같은 값이다 — HF 보증 대출의 한도가 곧 보증 한도다. HF 가 한도를 바꾸면 둘을 함께 바꾼다.
+    hf-max-limit: 400000000
+  batch:
+    # HF 전세자금대출 금리 갱신 — 실행일(서울)의 전달을 기준월로 은행별 금리를 받아 넣고 고친다.
+    rate-refresh:
+      # 스케줄 빈(월 1회 + 기동 뒤 1회)을 띄울지. 테스트 실행에서는 build.gradle 이 false 로 덮는다.
+      # external.jeonse-loan-rate.mode 가 real 일 때만 뜬다 — mock 의 가상 은행 행이 DB 에 들어가지 않게(LoanRateRefreshScheduler).
+      enabled: true
+      # 실행 시각(서울). 미확정 — 매월 2일 04:00. 제공처가 월 집계를 언제 마감하는지 문서에 없다(업데이트 주기 「실시간」).
+      # 1일은 전달 말일 실행분이 늦게 반영될 여지를 두고 하루 미뤘고, 04:00 은 다른 배치(00:30 매물 갱신 · 03:00 등기 재조회)와
+      # 백업 시각(01:00 · 01:30 · 02:00)을 피한 자리다. 금리가 대출 실행 월 단위 집계라 월 1회다(데이터 적재 설계서 1.5).
+      # 운영에서 기준월 데이터가 비어 오는지(실적 없음)를 보고 확정한다.
+      cron: "0 0 4 2 * *"
+      # 기준월 락(loan:batch:rate-refresh:{yyyy-MM}) 만료. 잡은 인스턴스가 죽었을 때만 쓰인다. 미확정 — 잠정 1시간. 회차는 외부
+      # 호출 두 번(재시도 포함 수십 초)이라 충분하고, 만료 뒤 다시 돌아도 자연키 갱신이라 결과가 같다.
+      lock-lease-time: PT1H
+
 # @Async 실행기(알림 생성 · 발송). 설정 클래스 AsyncConfig.
 async:
   # 앱 종료 때 실행 중인 작업을 기다리는 상한. 넘으면 남은 작업은 끊긴다.
@@ -341,6 +364,18 @@ external:
     fault:
       kind: error
       delay: 10s
+  # 한국주택금융공사 전세자금대출 금리(LOAN-01 대출 상품 금리). 전월세 실거래가와 같은 인증키이며 활용 신청은 따로다.
+  # 제공처 문서 https://www.data.go.kr/data/15082044/openapi.do — 개발계정 일 1,000건. 회차당 호출은 매물 유형 둘 × 1페이지.
+  jeonse-loan-rate:
+    mode: mock
+    base-url: https://apis.data.go.kr/B551408
+    api-key: ${DATA_GO_KR_API_KEY:}
+    # 타임아웃은 미확정 잠정치 — 전월세 실거래가와 같게 둔다.
+    connect-timeout: 2s
+    read-timeout: 10s
+    fault:
+      kind: error
+      delay: 10s
 
   # 메일 발송(USER-06 비밀번호 재설정). HTTP 연동이 아니라 기본 URL · 키가 없고, SMTP 접속 정보는 spring.mail 이 갖는다.
   #   mock  — 보내지 않고 링크를 로그로 남긴다. 토큰 원문이 로그에 남으므로 로컬 전용이다
@@ -388,6 +423,8 @@ resilience4j:
         base-config: default
       buildingLedger:
         base-config: default
+      jeonseLoanRate:
+        base-config: default
       # 메일 발송. 재시도 인스턴스는 두지 않는다 — 발송은 멱등하지 않다(MailClient 주석).
       mail:
         base-config: default
@@ -409,4 +446,6 @@ resilience4j:
       geocode:
         base-config: default
       buildingLedger:
+        base-config: default
+      jeonseLoanRate:
         base-config: default

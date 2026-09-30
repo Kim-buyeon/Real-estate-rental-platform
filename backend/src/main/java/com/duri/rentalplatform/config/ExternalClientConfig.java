@@ -42,6 +42,11 @@ public class ExternalClientConfig {
         return build(properties.geocode());
     }
 
+    @Bean
+    public RestClient jeonseLoanRateRestClient(ExternalApiProperties properties) {
+        return build(properties.jeonseLoanRate());
+    }
+
     private RestClient build(ExternalApiProperties.ClientSettings settings) {
         return RestClient.builder()
                 .baseUrl(settings.baseUrl())

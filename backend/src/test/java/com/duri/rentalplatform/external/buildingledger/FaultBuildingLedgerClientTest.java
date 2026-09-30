@@ -84,6 +84,6 @@ class FaultBuildingLedgerClientTest {
     private FaultBuildingLedgerClient clientOf(String kind, Duration delay, Duration readTimeout) {
         ExternalApiProperties.ClientSettings settings = new ExternalApiProperties.ClientSettings(
                 "fault", null, null, null, readTimeout, new ExternalApiProperties.FaultSettings(kind, delay));
-        return new FaultBuildingLedgerClient(new ExternalApiProperties(null, null, null, settings, null));
+        return new FaultBuildingLedgerClient(new ExternalApiProperties(null, null, null, settings, null, null));
     }
 }

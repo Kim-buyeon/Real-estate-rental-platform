@@ -211,7 +211,7 @@ class RealSaleTransactionClientTest {
         ExternalApiProperties.ClientSettings settings =
                 new ExternalApiProperties.ClientSettings("real", BASE_URL, apiKey, null, null, null);
         return new RealSaleTransactionClient(
-                builder.build(), new ExternalApiProperties(null, null, null, null, settings));
+                builder.build(), new ExternalApiProperties(null, null, null, null, settings, null));
     }
 
     private static String apartmentItem(String aptNm, String dealAmount, String cdealType) {
