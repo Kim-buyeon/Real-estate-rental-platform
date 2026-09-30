@@ -182,7 +182,14 @@ x-app: &app
     # 단일 스레드로 낮추는 셈이 된다 — 운영 절차서 3.3 의 p95 1초 판정에 직접 닿는다.
     #
     # ExitOnOutOfMemoryError 는 OOM 뒤 좀비 상태로 남지 않고 죽어서 restart: unless-stopped 가 받게 한다.
-    JAVA_TOOL_OPTIONS: "-XX:+UseG1GC -XX:MaxRAMPercentage=60.0 -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp"
+    #
+    # 힙 밖 상한 두 가지(2026-09-30 · #314) — 12개월 갱신 배치가 판정 단계에 들어가는 순간 컨테이너 RSS 가 600m 을 넘어
+    # 커널이 죽였다(anon-rss 605,272kB, 힙 OOM 아님 · 힙 덤프 없음). 힙 밖을 나눠 재지 못해 원인 비중은 모른다 — 흔한 두 요인만 묶는다.
+    #   MaxDirectMemorySize 64m — 기본값이 힙 최대(360m)와 같아 Redis 클라이언트(Netty) 직접 버퍼가 non-heap 몫을 넘볼 수 있다
+    #   MALLOC_ARENA_MAX 2      — glibc 가 스레드마다 arena 를 늘려(기본 코어 × 8) 네이티브 RSS 가 부푼다
+    # 값은 미확정 — 다음 갱신 배치 회차의 docker stats RSS 로 확정한다.
+    JAVA_TOOL_OPTIONS: "-XX:+UseG1GC -XX:MaxRAMPercentage=60.0 -XX:MaxDirectMemorySize=64m -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp"
+    MALLOC_ARENA_MAX: "2"
   depends_on:
     # required: false — 3노드에서는 postgres 가 다른 노드(DB-01)라 이 노드의 활성 프로필에 없다. 없으면 기다리지 않고
     # 뜨고, 있으면(단일 노드) 지금처럼 healthy 를 기다린다
