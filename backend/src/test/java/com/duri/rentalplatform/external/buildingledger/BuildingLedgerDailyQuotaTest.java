@@ -105,6 +105,35 @@ class BuildingLedgerDailyQuotaTest {
     }
 
     @Test
+    @DisplayName("exhaust: 제공처 일일 한도 응답이면 오늘 카운터를 상한까지 채워 더 받지 않는다 — 만료도 걸린다")
+    void exhaustFillsToLimit() {
+        assertThat(quota.tryAcquire()).isTrue();
+
+        quota.exhaust();
+
+        assertThat(quota.remaining()).isZero();
+        assertThat(quota.tryAcquire()).isFalse();
+        String key = BuildingLedgerDailyQuota.keyOf(SEOUL_DATE);
+        assertThat(stringRedisTemplate.opsForValue().get(key)).isEqualTo(String.valueOf(LIMIT));
+        assertThat(stringRedisTemplate.getExpire(key, TimeUnit.SECONDS)).isPositive()
+                .isLessThanOrEqualTo(Duration.ofDays(2).toSeconds());
+    }
+
+    @Test
+    @DisplayName("exhaust: 키가 없던 날에도 상한 값과 만료로 만든다 · 상한보다 큰 값은 줄이지 않는다")
+    void exhaustCreatesKeyAndNeverLowers() {
+        String key = BuildingLedgerDailyQuota.keyOf(SEOUL_DATE);
+
+        quota.exhaust();
+        assertThat(stringRedisTemplate.opsForValue().get(key)).isEqualTo(String.valueOf(LIMIT));
+        assertThat(stringRedisTemplate.getExpire(key, TimeUnit.SECONDS)).isPositive();
+
+        stringRedisTemplate.opsForValue().set(key, "10", Duration.ofHours(1));
+        quota.exhaust();
+        assertThat(stringRedisTemplate.opsForValue().get(key)).isEqualTo("10");
+    }
+
+    @Test
     @DisplayName("기동한 빈은 설정 external.building-ledger.daily-limit 을 상한으로 쓴다")
     void configuredBeanUsesProperty() {
         // 오늘(실제 서울 날짜) 키를 건드리지 않으려고 호출하지 않고 필드를 본다.

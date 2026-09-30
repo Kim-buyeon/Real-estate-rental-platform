@@ -6,8 +6,10 @@ import com.duri.rentalplatform.config.ExternalApiProperties;
 import com.duri.rentalplatform.domain.property.enums.LedgerDataSource;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
+import com.duri.rentalplatform.external.ExternalFallbackLog;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URI;
@@ -19,11 +21,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilderFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.w3c.dom.Document;
+import org.w3c.dom.NodeList;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -38,7 +45,8 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>응답에서 쓰는 필드(2026-09-30 종로구 창신동 702 실호출 응답으로 확인):
  * <ul>
- *   <li>{@code response.header.resultCode} — {@code "00"} 이 정상. 그 밖은 장애로 본다</li>
+ *   <li>{@code response.header.resultCode} — {@code "00"} 이 정상. 그 밖은 장애로 본다(한도 응답은 아래 「제공처의 한도
+ *       응답」)</li>
  *   <li>{@code response.body.totalCount} · {@code response.body.items.item[]} — 표제부 행. 동마다 한 행이다</li>
  *   <li>{@code platPlc}(대지위치, 지번 주소 · 「번지」로 끝난다) · {@code newPlatPlc}(도로명대지위치)</li>
  *   <li>{@code mainAtchGbCd} — {@code "0"} 이 주건축물, 그 밖은 부속건축물</li>
@@ -59,7 +67,24 @@ import tools.jackson.databind.json.JsonMapper;
  * <p><b>일일 상한</b> — 요청(페이지) 한 건을 보내기 전마다 {@link BuildingLedgerDailyQuota} 에서 한 칸을 받는다. 못 받으면 그
  * 조회를 더 부르지 않고 빈 값이다 — 앞 페이지까지 받은 행이 있어도 버린다. 일부 행으로 동을 고르면 다른 건물의 표제부를 고를 수
  * 있다. 상한은 장애가 아니라 서킷이 실패로 세지 않게 예외로 올리지 않는다.
+ *
+ * <p><b>초당 상한</b> — 일일 상한보다 먼저 {@link BuildingLedgerRateLimiter} 에서 한 칸을 받는다(슬롯 넷이 Redis 로 나눠 쓴다).
+ * 기다림 상한 안에 못 받으면 {@link BuildingLedgerRateLimitedException} 이다. 초당 몫을 먼저 받는 이유는 일일 몫을 받고 초당에서
+ * 포기하면 일일 몫 하나가 요청 없이 사라져서다.
+ *
+ * <p><b>제공처의 한도 응답</b> — 제공처(공공데이터포털 게이트웨이)는 한도에 걸리면 {@code response.header} 대신
+ * {@code OpenAPI_ServiceResponse.cmmMsgHeader} 를 보낸다({@code _type=json} 이어도 JSON 또는 XML). {@code errMsg} ·
+ * {@code returnAuthMsg} 에 다음 코드가 있으면 장애가 아니라 한도로 본다.
+ * <ul>
+ *   <li>{@value #PER_SECOND_LIMIT_CODE} — 초당 한도. {@link BuildingLedgerRateLimitedException}. 2026-09-30 운영에서
+ *       {@code errMsg} 로 받은 코드다</li>
+ *   <li>{@value #DAILY_LIMIT_CODE} — 일일 한도. 일일 카운터를 상한까지 채우고({@link BuildingLedgerDailyQuota#exhaust()}) 빈
+ *       값이다 — 우리 상한에 닿은 것과 같다</li>
+ * </ul>
+ * 두 경우 모두 서킷이 실패로 세지 않는다 — 초당 한도 예외는 {@code application.yml} 에서 서킷 · 재시도가 무시하고, 폴백도 그대로
+ * 올린다. 2026-09-30 14:29 초당 한도 응답을 장애로 세어 서킷이 열리고 전 조회가 503 이 됐다.
  */
+@Slf4j
 @Component
 @ConditionalOnProperty(prefix = "external.building-ledger", name = "mode", havingValue = "real")
 public class RealBuildingLedgerClient implements BuildingLedgerClient {
@@ -73,6 +98,12 @@ public class RealBuildingLedgerClient implements BuildingLedgerClient {
     static final int MAX_PAGES = 10;
 
     private static final String SUCCESS_RESULT_CODE = "00";
+
+    /** 게이트웨이의 초당 요청 한도 초과 코드. */
+    static final String PER_SECOND_LIMIT_CODE = "LIMITED_NUMBER_OF_SERVICE_REQUESTS_PER_SECOND_EXCEEDS_ERROR";
+
+    /** 게이트웨이의 일일 요청 한도(계정 트래픽) 초과 코드. */
+    static final String DAILY_LIMIT_CODE = "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR";
     private static final String MAIN_BUILDING = "0";
 
     /** 매물 유형별로 표제부에서 찾을 주용도 — 건축법 시행령 별표 1 제2호 공동주택 · 제14호 업무시설(오피스텔). */
@@ -95,14 +126,17 @@ public class RealBuildingLedgerClient implements BuildingLedgerClient {
     private final RestClient restClient;
     private final ExternalApiProperties.ClientSettings settings;
     private final BuildingLedgerDailyQuota dailyQuota;
+    private final BuildingLedgerRateLimiter rateLimiter;
 
     public RealBuildingLedgerClient(
             @Qualifier("buildingLedgerRestClient") RestClient restClient,
             ExternalApiProperties properties,
-            BuildingLedgerDailyQuota dailyQuota) {
+            BuildingLedgerDailyQuota dailyQuota,
+            BuildingLedgerRateLimiter rateLimiter) {
         this.restClient = restClient;
         this.settings = properties.buildingLedger();
         this.dailyQuota = dailyQuota;
+        this.rateLimiter = rateLimiter;
         // 인코딩 키가 아니면 기동에서 멈춘다. 디코딩 키가 들어오면 요청마다 403 이 나고 재시도 · 서킷을 거쳐 503 으로 바뀌어,
         // 설정 오류가 외부 장애와 구분되지 않는다 — 실거래가 Real 과 같은 이유.
         if (settings.apiKey() == null || !ENCODED_KEY.matcher(settings.apiKey()).matches()) {
@@ -122,7 +156,7 @@ public class RealBuildingLedgerClient implements BuildingLedgerClient {
         }
         Optional<List<TitleRow>> rows = fetchTitleRows(key);
         if (rows.isEmpty()) {
-            // 일일 상한에 닿았다. 장애가 아니므로 예외 없이 빈 값이다(클래스 주석).
+            // 일일 상한에 닿았거나 제공처가 일일 한도로 거절했다. 장애가 아니므로 예외 없이 빈 값이다(클래스 주석).
             return Optional.empty();
         }
         return select(rows.get(), lookup.propertyType(), lookup.naturalKey().address())
@@ -135,17 +169,49 @@ public class RealBuildingLedgerClient implements BuildingLedgerClient {
      */
     @SuppressWarnings("unused")
     private Optional<BuildingLedgerDocument> unavailable(BuildingLedgerLookup lookup, Throwable cause) {
+        ExternalFallbackLog.warn(log, "건축물대장", cause);
         throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
     }
 
-    /** 필지의 표제부 전부. 도중에 일일 상한에 닿으면 빈 값 — 받은 행까지만으로는 동을 고르지 않는다. */
+    /**
+     * 초당 한도 예외의 폴백 — 503 으로 바꾸지 않고 그대로 올린다. 폴백은 서킷이 무시하는 예외에도 불린다. Resilience4j 는 원인
+     * 예외에 가장 가까운 타입의 폴백을 고르므로 이 예외만 여기로 온다.
+     */
+    @SuppressWarnings("unused")
+    private Optional<BuildingLedgerDocument> unavailable(BuildingLedgerLookup lookup,
+            BuildingLedgerRateLimitedException cause) {
+        throw cause;
+    }
+
+    /**
+     * 필지의 표제부 전부. 도중에 일일 상한에 닿거나 제공처가 일일 한도로 거절하면 빈 값 — 받은 행까지만으로는 동을 고르지
+     * 않는다. 초당 한도면 {@link BuildingLedgerRateLimitedException}.
+     */
     private Optional<List<TitleRow>> fetchTitleRows(LedgerLookupKey key) {
         List<TitleRow> rows = new ArrayList<>();
         for (int pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
+            if (!rateLimiter.acquire()) {
+                throw new BuildingLedgerRateLimitedException("건축HUB 초당 요청 몫을 기다림 상한 안에 받지 못했다");
+            }
             if (!dailyQuota.tryAcquire()) {
                 return Optional.empty();
             }
-            JsonNode body = parseBody(request(key, pageNo));
+            byte[] payload = request(key, pageNo);
+            switch (providerLimitOf(payload)) {
+                case PER_SECOND -> {
+                    log.info("[건축물대장] 제공처 초당 요청 한도 응답 — 이번 조회는 대장 없이 진행");
+                    throw new BuildingLedgerRateLimitedException("건축HUB 가 초당 요청 한도 초과로 거절했다");
+                }
+                case DAILY -> {
+                    log.warn("[건축물대장] 제공처 일일 요청 한도 응답 — 오늘 남은 호출을 0 으로 채운다");
+                    dailyQuota.exhaust();
+                    return Optional.empty();
+                }
+                case NONE -> {
+                    // 한도 응답이 아니다. 아래에서 결과 코드를 본다.
+                }
+            }
+            JsonNode body = parseBody(payload);
             List<JsonNode> items = items(body);
             items.forEach(item -> rows.add(TitleRow.from(item)));
             if (items.isEmpty() || rows.size() >= body.path("totalCount").asInt(0)) {
@@ -196,6 +262,63 @@ public class RealBuildingLedgerClient implements BuildingLedgerClient {
             throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
         }
         return response.path("body");
+    }
+
+    /** 제공처 게이트웨이의 한도 응답 구분. */
+    enum ProviderLimit {
+        NONE, PER_SECOND, DAILY
+    }
+
+    /**
+     * 본문이 게이트웨이의 한도 응답인지 본다. {@code OpenAPI_ServiceResponse.cmmMsgHeader} 의 {@code errMsg} ·
+     * {@code returnAuthMsg} 에 한도 코드가 있으면 한도다. JSON 으로 읽히면 JSON 으로, 아니면 XML 로 읽는다. 둘 다 아니거나
+     * 한도 코드가 없으면 {@link ProviderLimit#NONE} — 그 판단은 {@link #parseBody} 가 한다.
+     */
+    static ProviderLimit providerLimitOf(byte[] payload) {
+        if (payload == null || payload.length == 0) {
+            return ProviderLimit.NONE;
+        }
+        List<String> messages = new ArrayList<>();
+        try {
+            JsonNode header = JSON.readTree(payload).path("OpenAPI_ServiceResponse").path("cmmMsgHeader");
+            messages.add(header.path("errMsg").asString(""));
+            messages.add(header.path("returnAuthMsg").asString(""));
+        } catch (JacksonException notJson) {
+            Document document = parseXml(payload);
+            if (document == null) {
+                return ProviderLimit.NONE;
+            }
+            messages.addAll(xmlTexts(document, "errMsg"));
+            messages.addAll(xmlTexts(document, "returnAuthMsg"));
+        }
+        List<String> codes = messages.stream().map(String::strip).toList();
+        if (codes.contains(PER_SECOND_LIMIT_CODE)) {
+            return ProviderLimit.PER_SECOND;
+        }
+        return codes.contains(DAILY_LIMIT_CODE) ? ProviderLimit.DAILY : ProviderLimit.NONE;
+    }
+
+    /** XML 로 읽는다. 읽지 못하면 null. 외부 XML 이라 DTD · 외부 엔티티를 막는다 — 실거래가 XML 파서와 같다. */
+    private static Document parseXml(byte[] payload) {
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
+            return factory.newDocumentBuilder().parse(new ByteArrayInputStream(payload));
+        } catch (Exception cause) {
+            return null;
+        }
+    }
+
+    private static List<String> xmlTexts(Document document, String tagName) {
+        NodeList nodes = document.getElementsByTagName(tagName);
+        List<String> texts = new ArrayList<>(nodes.getLength());
+        for (int index = 0; index < nodes.getLength(); index++) {
+            texts.add(nodes.item(index).getTextContent());
+        }
+        return texts;
     }
 
     /**

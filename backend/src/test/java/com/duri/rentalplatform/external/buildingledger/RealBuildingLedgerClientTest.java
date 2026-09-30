@@ -3,12 +3,17 @@ package com.duri.rentalplatform.external.buildingledger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.config.ExternalApiProperties;
@@ -19,11 +24,13 @@ import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -143,7 +150,7 @@ class RealBuildingLedgerClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo(uriOf(1))).andRespond(withSuccess("""
-                {"response":{"header":{"resultCode":"99","resultMsg":"LIMITED NUMBER OF SERVICE REQUESTS EXCEEDS"}}}
+                {"response":{"header":{"resultCode":"99","resultMsg":"APPLICATION ERROR"}}}
                 """, MediaType.APPLICATION_JSON));
 
         assertThatThrownBy(() -> clientOf(builder).fetch(lookup(PropertyType.APARTMENT, KEY)))
@@ -290,6 +297,182 @@ class RealBuildingLedgerClientTest {
         verify(quota, times(0)).tryAcquire();
     }
 
+    // ---------- 초당 상한 · 제공처 한도 응답(PROP-04, #318) ----------
+
+    /** 2026-09-30 운영에서 받은 초당 한도 응답의 모양. {@code _type=json} 이어도 이 모양이다. 메시지 문구는 줄였다. */
+    private static final String PER_SECOND_LIMIT_JSON = """
+            {"OpenAPI_ServiceResponse":{"cmmMsgHeader":{
+            "errMsg":"LIMITED_NUMBER_OF_SERVICE_REQUESTS_PER_SECOND_EXCEEDS_ERROR",
+            "returnAuthMsg":"초당 서비스 요청제한 횟수 초과","returnReasonCode":"99"}}}
+            """;
+
+    @Test
+    @DisplayName("초당 몫을 기다림 상한 안에 못 받으면 제공처를 부르지 않고 초당 한도 예외 — 일일 몫도 쓰지 않는다")
+    void rateLimiterGivesUpWithoutCalling() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+        BuildingLedgerRateLimiter limiter = mock(BuildingLedgerRateLimiter.class);
+        when(limiter.acquire()).thenReturn(false);
+
+        assertThatThrownBy(() -> clientOf(builder, ENCODED_KEY, quota, limiter).fetch(lookup(PropertyType.APARTMENT, KEY)))
+                .isInstanceOf(BuildingLedgerRateLimitedException.class);
+
+        server.verify();
+        verify(quota, never()).tryAcquire();
+    }
+
+    @Test
+    @DisplayName("페이지마다 초당 몫을 먼저 받고 일일 몫을 받는다 — 두 페이지면 각각 두 번")
+    void acquiresRateThenQuotaPerPage() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(uriOf(1))).andRespond(withSuccess(body(2,
+                item("주차장", "1", "자동차관련시설", "", "900.00", "19921125")), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(uriOf(2))).andRespond(withSuccess(body(2,
+                item("101동", "0", "공동주택", "", "14544.66", "19921125")), MediaType.APPLICATION_JSON));
+        BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+        when(quota.tryAcquire()).thenReturn(true);
+        BuildingLedgerRateLimiter limiter = mock(BuildingLedgerRateLimiter.class);
+        when(limiter.acquire()).thenReturn(true);
+
+        assertThat(clientOf(builder, ENCODED_KEY, quota, limiter).fetch(lookup(PropertyType.APARTMENT, KEY))).isPresent();
+
+        server.verify();
+        verify(limiter, times(2)).acquire();
+        verify(quota, times(2)).tryAcquire();
+    }
+
+    @Test
+    @DisplayName("제공처의 초당 한도 응답(JSON)은 장애(503)가 아니라 초당 한도 예외다")
+    void perSecondLimitJsonIsRateLimited() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(uriOf(1))).andRespond(withSuccess(PER_SECOND_LIMIT_JSON, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> clientOf(builder).fetch(lookup(PropertyType.APARTMENT, KEY)))
+                .isInstanceOf(BuildingLedgerRateLimitedException.class);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("제공처의 초당 한도 응답이 XML 로 와도 초당 한도 예외다")
+    void perSecondLimitXmlIsRateLimited() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(uriOf(1))).andRespond(withSuccess("""
+                <OpenAPI_ServiceResponse><cmmMsgHeader>
+                <errMsg>LIMITED_NUMBER_OF_SERVICE_REQUESTS_PER_SECOND_EXCEEDS_ERROR</errMsg>
+                <returnAuthMsg>초당 서비스 요청제한 횟수 초과</returnAuthMsg><returnReasonCode>99</returnReasonCode>
+                </cmmMsgHeader></OpenAPI_ServiceResponse>
+                """, MediaType.TEXT_XML));
+
+        assertThatThrownBy(() -> clientOf(builder).fetch(lookup(PropertyType.APARTMENT, KEY)))
+                .isInstanceOf(BuildingLedgerRateLimitedException.class);
+    }
+
+    @Test
+    @DisplayName("제공처의 일일 한도 응답이면 일일 카운터를 상한까지 채우고 빈 값이다 — 예외(503 · 서킷 실패)가 아니다")
+    void dailyLimitResponseExhaustsQuota() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(uriOf(1))).andRespond(withSuccess("""
+                <OpenAPI_ServiceResponse><cmmMsgHeader><errMsg>SERVICE ERROR</errMsg>
+                <returnAuthMsg>LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR</returnAuthMsg>
+                </cmmMsgHeader></OpenAPI_ServiceResponse>
+                """, MediaType.TEXT_XML));
+        BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+        when(quota.tryAcquire()).thenReturn(true);
+
+        Optional<BuildingLedgerDocument> document =
+                clientOf(builder, ENCODED_KEY, quota).fetch(lookup(PropertyType.APARTMENT, KEY));
+
+        server.verify();
+        assertThat(document).isEmpty();
+        verify(quota).exhaust();
+    }
+
+    @Test
+    @DisplayName("한도 응답 구분: errMsg · returnAuthMsg 어느 쪽의 코드든 JSON · XML 모두 읽고, 다른 오류는 한도가 아니다")
+    void providerLimitParsing() {
+        assertThat(RealBuildingLedgerClient.providerLimitOf(PER_SECOND_LIMIT_JSON.getBytes(StandardCharsets.UTF_8)))
+                .isEqualTo(RealBuildingLedgerClient.ProviderLimit.PER_SECOND);
+        assertThat(RealBuildingLedgerClient.providerLimitOf("""
+                {"OpenAPI_ServiceResponse":{"cmmMsgHeader":{"errMsg":"SERVICE ERROR",
+                "returnAuthMsg":"LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR"}}}
+                """.getBytes(StandardCharsets.UTF_8))).isEqualTo(RealBuildingLedgerClient.ProviderLimit.DAILY);
+        assertThat(RealBuildingLedgerClient.providerLimitOf("""
+                <OpenAPI_ServiceResponse><cmmMsgHeader>
+                <errMsg> LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR </errMsg>
+                </cmmMsgHeader></OpenAPI_ServiceResponse>
+                """.getBytes(StandardCharsets.UTF_8))).isEqualTo(RealBuildingLedgerClient.ProviderLimit.DAILY);
+        // 인증 오류 · 정상 응답 · 읽을 수 없는 본문은 한도가 아니다 — 장애 여부는 결과 코드 확인이 가른다.
+        assertThat(RealBuildingLedgerClient.providerLimitOf("""
+                <OpenAPI_ServiceResponse><cmmMsgHeader><returnAuthMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</returnAuthMsg>
+                </cmmMsgHeader></OpenAPI_ServiceResponse>
+                """.getBytes(StandardCharsets.UTF_8))).isEqualTo(RealBuildingLedgerClient.ProviderLimit.NONE);
+        assertThat(RealBuildingLedgerClient.providerLimitOf(body(0, "[]").getBytes(StandardCharsets.UTF_8)))
+                .isEqualTo(RealBuildingLedgerClient.ProviderLimit.NONE);
+        assertThat(RealBuildingLedgerClient.providerLimitOf("<html>".getBytes(StandardCharsets.UTF_8)))
+                .isEqualTo(RealBuildingLedgerClient.ProviderLimit.NONE);
+    }
+
+    @Test
+    @DisplayName("초당 한도 예외의 폴백은 503 으로 바꾸지 않고 그대로 올린다")
+    void rateLimitFallbackRethrows() throws Exception {
+        RealBuildingLedgerClient client = clientOf(RestClient.builder());
+        Method fallback = RealBuildingLedgerClient.class.getDeclaredMethod("unavailable", BuildingLedgerLookup.class,
+                BuildingLedgerRateLimitedException.class);
+        fallback.setAccessible(true);
+        BuildingLedgerRateLimitedException limited = new BuildingLedgerRateLimitedException("시험");
+
+        assertThatThrownBy(() -> {
+            try {
+                fallback.invoke(client, lookup(PropertyType.APARTMENT, KEY), limited);
+            } catch (InvocationTargetException wrapped) {
+                throw wrapped.getCause();
+            }
+        }).isSameAs(limited);
+    }
+
+    @Test
+    @DisplayName("폴백은 원인 예외의 종류 · 메시지를 WARN 으로 남기고 메시지의 인증키를 가린다")
+    void fallbackLogsCauseWithMaskedKey() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(RealBuildingLedgerClient.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            RealBuildingLedgerClient client = clientOf(RestClient.builder());
+            Method fallback = RealBuildingLedgerClient.class
+                    .getDeclaredMethod("unavailable", BuildingLedgerLookup.class, Throwable.class);
+            fallback.setAccessible(true);
+            IllegalStateException cause = new IllegalStateException(
+                    "I/O error on GET request for \"" + uriOf(1) + "\": Read timed out");
+
+            assertThatThrownBy(() -> {
+                try {
+                    fallback.invoke(client, lookup(PropertyType.APARTMENT, KEY), cause);
+                } catch (InvocationTargetException wrapped) {
+                    throw wrapped.getCause();
+                }
+            }).isInstanceOf(BusinessException.class);
+
+            assertThat(appender.list).filteredOn(event -> event.getLevel() == Level.WARN).singleElement()
+                    .satisfies(event -> {
+                        assertThat(event.getFormattedMessage())
+                                .contains("java.lang.IllegalStateException")
+                                .contains("Read timed out")
+                                .contains("serviceKey=***")
+                                .doesNotContain(ENCODED_KEY);
+                        // 스택은 WARN 에 싣지 않는다(DEBUG).
+                        assertThat(event.getThrowableProxy()).isNull();
+                    });
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
     // ---------- 픽스처 ----------
 
     private RealBuildingLedgerClient clientOf(RestClient.Builder builder) {
@@ -304,10 +487,17 @@ class RealBuildingLedgerClientTest {
 
     private RealBuildingLedgerClient clientOf(RestClient.Builder builder, String apiKey,
             BuildingLedgerDailyQuota quota) {
+        BuildingLedgerRateLimiter limiter = mock(BuildingLedgerRateLimiter.class);
+        when(limiter.acquire()).thenReturn(true);
+        return clientOf(builder, apiKey, quota, limiter);
+    }
+
+    private RealBuildingLedgerClient clientOf(RestClient.Builder builder, String apiKey,
+            BuildingLedgerDailyQuota quota, BuildingLedgerRateLimiter limiter) {
         ExternalApiProperties.ClientSettings settings =
                 new ExternalApiProperties.ClientSettings("real", BASE_URL, apiKey, null, null, null);
         return new RealBuildingLedgerClient(
-                builder.build(), new ExternalApiProperties(null, null, null, settings, null, null), quota);
+                builder.build(), new ExternalApiProperties(null, null, null, settings, null, null), quota, limiter);
     }
 
     private static BuildingLedgerLookup lookup(PropertyType type, LedgerLookupKey key) {

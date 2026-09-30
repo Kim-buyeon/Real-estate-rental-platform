@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
-import com.duri.rentalplatform.domain.property.dto.condition.LedgerSourceTargetCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.LedgerReplaceTargetCondition;
 import com.duri.rentalplatform.domain.property.enums.LedgerDataSource;
 import com.duri.rentalplatform.domain.property.enums.LedgerReplacementOutcome;
 import com.duri.rentalplatform.domain.property.mapper.LedgerMapper;
@@ -96,7 +96,30 @@ class MockLedgerReplaceJobLauncherTest {
         // 관심 매물 4 는 전체 단계에서 다시 처리하지 않는다.
         verify(executor, times(1)).replaceAndAnalyze(4L);
         verify(executor, times(6)).replaceAndAnalyze(any());
-        assertThat(report.summary()).isEqualTo("대상 6건 · 교체 2건 · 삭제 1건 · 재분석 2건 · 상한 0건 · 건너뜀 1건 · 실패 2건");
+        assertThat(report.summary()).isEqualTo("대상 6건 · 교체 2건 · 삭제 1건 · 신규 수집 0건 · 대장 없음 유지 0건 · 재분석 2건 · 상한 0건 · 초당 한도 0건"
+                + " · 건너뜀 1건 · 실패 2건");
+    }
+
+    @Test
+    @DisplayName("Mock 다음에 대장 행이 없는 매물을 읽어 신규 수집 · 대장 없음 유지 · 초당 한도를 따로 센다(#318)")
+    void missingLedgerPhaseAggregates() {
+        page(true, null);
+        page(false, null, 1L);
+        when(ledgerMapper.selectLedgerReplaceTargetIds(
+                new LedgerReplaceTargetCondition(null, true, false, null, CHUNK_SIZE))).thenReturn(List.of(7L, 8L, 9L));
+        when(executor.replaceAndAnalyze(1L))
+                .thenReturn(MockLedgerReplaceAttempt.completed(LedgerReplacementOutcome.RATE_LIMITED, false));
+        when(executor.replaceAndAnalyze(7L))
+                .thenReturn(MockLedgerReplaceAttempt.completed(LedgerReplacementOutcome.COLLECTED, true));
+        when(executor.replaceAndAnalyze(8L))
+                .thenReturn(MockLedgerReplaceAttempt.completed(LedgerReplacementOutcome.NO_LEDGER, false));
+        when(executor.replaceAndAnalyze(9L))
+                .thenReturn(MockLedgerReplaceAttempt.completed(LedgerReplacementOutcome.RATE_LIMITED, false));
+
+        MockLedgerReplaceReport report = launcher().run(DATE);
+
+        assertThat(report.summary()).isEqualTo("대상 4건 · 교체 0건 · 삭제 0건 · 신규 수집 1건 · 대장 없음 유지 1건 · 재분석 1건 · 상한 0건"
+                + " · 초당 한도 2건 · 건너뜀 0건 · 실패 0건");
     }
 
     @Test
@@ -132,14 +155,15 @@ class MockLedgerReplaceJobLauncherTest {
         MockLedgerReplaceReport report = launcher().run(DATE);
 
         verify(executor, never()).replaceAndAnalyze(any());
-        assertThat(report.summary()).isEqualTo("대상 0건 · 교체 0건 · 삭제 0건 · 재분석 0건 · 상한 0건 · 건너뜀 0건 · 실패 0건");
+        assertThat(report.summary()).isEqualTo("대상 0건 · 교체 0건 · 삭제 0건 · 신규 수집 0건 · 대장 없음 유지 0건 · 재분석 0건 · 상한 0건 · 초당 한도 0건"
+                + " · 건너뜀 0건 · 실패 0건");
     }
 
     @Test
     @DisplayName("대상 조회가 실패하면 스텝이 멈추고 예외로 알린다")
     void readerFailurePropagates() {
         DataAccessResourceFailureException failure = new DataAccessResourceFailureException("db down");
-        when(ledgerMapper.selectPropertyIdsByLedgerSource(any())).thenThrow(failure);
+        when(ledgerMapper.selectLedgerReplaceTargetIds(any())).thenThrow(failure);
 
         assertThatThrownBy(() -> launcher().run(DATE))
                 .isInstanceOf(IllegalStateException.class)
@@ -160,7 +184,7 @@ class MockLedgerReplaceJobLauncherTest {
     @Test
     @DisplayName("회차가 완료되지 못하면 성공 기록을 남기지 않는다 — 다음 기동이 다시 돌 수 있게")
     void noRecordWhenNotCompleted() {
-        when(ledgerMapper.selectPropertyIdsByLedgerSource(any()))
+        when(ledgerMapper.selectLedgerReplaceTargetIds(any()))
                 .thenThrow(new DataAccessResourceFailureException("db down"));
 
         assertThatThrownBy(() -> launcher().run(DATE)).isInstanceOf(IllegalStateException.class);
@@ -197,8 +221,8 @@ class MockLedgerReplaceJobLauncherTest {
     }
 
     private void page(boolean wishlistedOnly, Long lastPropertyId, Long... propertyIds) {
-        when(ledgerMapper.selectPropertyIdsByLedgerSource(new LedgerSourceTargetCondition(
-                LedgerDataSource.MOCK, wishlistedOnly, lastPropertyId, CHUNK_SIZE)))
+        when(ledgerMapper.selectLedgerReplaceTargetIds(new LedgerReplaceTargetCondition(
+                LedgerDataSource.MOCK, wishlistedOnly, wishlistedOnly, lastPropertyId, CHUNK_SIZE)))
                 .thenReturn(List.of(propertyIds));
     }
 

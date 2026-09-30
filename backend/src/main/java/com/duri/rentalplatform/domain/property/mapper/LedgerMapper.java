@@ -1,6 +1,6 @@
 package com.duri.rentalplatform.domain.property.mapper;
 
-import com.duri.rentalplatform.domain.property.dto.condition.LedgerSourceTargetCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.LedgerReplaceTargetCondition;
 import com.duri.rentalplatform.domain.property.vo.LedgerRow;
 import java.util.List;
 
@@ -15,8 +15,9 @@ public interface LedgerMapper {
     LedgerRow selectLedger(Long propertyId);
 
     /**
-     * 대장의 수집 출처가 조건과 같은 매물 식별자 한 페이지. {@code property_id ASC}. 배치용 대량 조회다 — 아키텍처
-     * 설계서(영속성 구조) 1.1. Mock 대장 교체 배치가 관심 매물만 · 전체를 차례로 읽는다.
+     * Mock 대장 교체 배치 대상 매물 식별자 한 페이지 — 대장 출처가 조건과 같은 매물 · 대장 행이 없고 조회 키가 있는 매물.
+     * {@code property_id ASC}. 배치용 대량 조회다 — 아키텍처 설계서(영속성 구조) 1.1. 배치가 관심 매물(둘 다) → Mock 전체 →
+     * 대장 없음 전체 순서로 읽는다.
      */
-    List<Long> selectPropertyIdsByLedgerSource(LedgerSourceTargetCondition condition);
+    List<Long> selectLedgerReplaceTargetIds(LedgerReplaceTargetCondition condition);
 }

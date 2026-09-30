@@ -52,6 +52,18 @@ public class BuildingLedgerDailyQuota {
             return 1
             """, Long.class);
 
+    /** 상한보다 작으면 상한으로 올린다. 키가 없던 경우에도 만료를 건다. */
+    private static final RedisScript<Long> EXHAUST_SCRIPT = new DefaultRedisScript<>("""
+            local current = tonumber(redis.call('get', KEYS[1]) or '0')
+            if current < tonumber(ARGV[1]) then
+              redis.call('set', KEYS[1], ARGV[1], 'KEEPTTL')
+            end
+            if redis.call('ttl', KEYS[1]) < 0 then
+              redis.call('expire', KEYS[1], ARGV[2])
+            end
+            return 1
+            """, Long.class);
+
     private final StringRedisTemplate stringRedisTemplate;
     private final long dailyLimit;
     private final Clock clock;
@@ -81,6 +93,15 @@ public class BuildingLedgerDailyQuota {
         Long acquired = stringRedisTemplate.execute(ACQUIRE_SCRIPT, List.of(keyOf(today())),
                 String.valueOf(dailyLimit), String.valueOf(Duration.ofDays(KEY_TTL_DAYS).toSeconds()));
         return acquired != null && acquired == 1L;
+    }
+
+    /**
+     * 오늘 몫을 상한까지 채운다. 제공처가 일일 한도 초과({@code LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR})로 거절했을
+     * 때 부른다 — 우리 카운터가 남았다고 봐도 제공처가 막았으므로 그날 더 부르지 않는다. 이미 상한 이상이면 줄이지 않는다.
+     */
+    public void exhaust() {
+        stringRedisTemplate.execute(EXHAUST_SCRIPT, List.of(keyOf(today())),
+                String.valueOf(dailyLimit), String.valueOf(Duration.ofDays(KEY_TTL_DAYS).toSeconds()));
     }
 
     /** 오늘 남은 요청 수. 0 이면 상한에 닿았다. */

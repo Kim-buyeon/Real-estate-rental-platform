@@ -3,6 +3,7 @@ package com.duri.rentalplatform.external.loanrate;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.config.ExternalApiProperties;
+import com.duri.rentalplatform.external.ExternalFallbackLog;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import java.math.BigDecimal;
@@ -11,6 +12,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -40,6 +42,7 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>인증키는 포털의 인코딩 키를 {@code .env} 에 그대로 넣고 다시 인코딩하지 않는다 — {@link #request} 참고. 전월세 실거래가와 같은
  * 키(DATA_GO_KR_API_KEY)이며 활용 신청은 서비스마다 따로다. 개발계정 트래픽은 일 1,000건(같은 문서).
  */
+@Slf4j
 @Component
 @ConditionalOnProperty(prefix = "external.jeonse-loan-rate", name = "mode", havingValue = "real")
 public class RealJeonseLoanRateClient implements JeonseLoanRateClient {
@@ -108,6 +111,7 @@ public class RealJeonseLoanRateClient implements JeonseLoanRateClient {
      */
     @SuppressWarnings("unused")
     private List<BankLoanRate> unavailable(LoanRateQuery query, Throwable cause) {
+        ExternalFallbackLog.warn(log, "전세자금대출 금리", cause);
         throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
     }
 

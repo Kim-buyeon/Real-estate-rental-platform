@@ -28,6 +28,7 @@ import com.duri.rentalplatform.external.buildingledger.BuildingLedgerClient;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDailyQuota;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDocument;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerLookup;
+import com.duri.rentalplatform.external.buildingledger.BuildingLedgerRateLimitedException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -87,7 +88,7 @@ class LedgerCommandServiceTest {
         givenProperty();
         when(buildingLedgerRepository.existsByPropertyId(PROPERTY_ID)).thenReturn(true);
 
-        service.collectIfAbsent(PROPERTY_ID);
+        assertThat(service.collectIfAbsent(PROPERTY_ID)).isFalse();
 
         verify(client, never()).fetch(any());
         verify(buildingLedgerRepository, never()).saveAndFlush(any());
@@ -99,7 +100,7 @@ class LedgerCommandServiceTest {
         givenProperty();
         when(client.fetch(any())).thenReturn(Optional.of(document()));
 
-        service.collectIfAbsent(PROPERTY_ID);
+        assertThat(service.collectIfAbsent(PROPERTY_ID)).isTrue();
 
         ArgumentCaptor<BuildingLedgerLookup> lookup = ArgumentCaptor.forClass(BuildingLedgerLookup.class);
         verify(client).fetch(lookup.capture());
@@ -120,6 +121,17 @@ class LedgerCommandServiceTest {
         assertThat(ledger.getApprovalDate()).isEqualTo(LocalDate.of(1998, 4, 18));
         assertThat(ledger.getViolation()).isTrue();
         assertThat(ledger.getDataSource()).isEqualTo(LedgerDataSource.MOCK);
+    }
+
+    @Test
+    @DisplayName("초당 한도 예외면 저장 없이 끝낸다 — 503 이 아니라 대장 없이 판정한다(PROP-04)")
+    void rateLimitedCollectsNothing() {
+        givenProperty();
+        when(client.fetch(any())).thenThrow(new BuildingLedgerRateLimitedException("시험"));
+
+        assertThat(service.collectIfAbsent(PROPERTY_ID)).isFalse();
+
+        verify(buildingLedgerRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -267,7 +279,7 @@ class LedgerCommandServiceTest {
     private static final LedgerLookupKey KEY = new LedgerLookupKey("11110", "17400", "0702", "0000");
 
     @Test
-    @DisplayName("교체용 떼기: 대장이 Mock 이 아니거나 없으면 외부를 부르지 않고 NOT_MOCK")
+    @DisplayName("교체용 떼기: 대장이 Mock 이 아니면 NOT_MOCK, 대장 행이 없으면 NO_LEDGER — 둘 다 외부를 부르지 않는다")
     void fetchReplacementSkipsNonMock() {
         givenProperty().ledgerKey(KEY);
         givenStoredLedger(LedgerDataSource.BUILDING_HUB);
@@ -275,8 +287,19 @@ class LedgerCommandServiceTest {
         assertThat(service.fetchMockReplacement(PROPERTY_ID).outcome()).isEqualTo(LedgerReplacementOutcome.NOT_MOCK);
 
         when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.empty());
-        assertThat(service.fetchMockReplacement(PROPERTY_ID).outcome()).isEqualTo(LedgerReplacementOutcome.NOT_MOCK);
+        assertThat(service.fetchMockReplacement(PROPERTY_ID).outcome()).isEqualTo(LedgerReplacementOutcome.NO_LEDGER);
         verify(client, never()).fetch(any());
+    }
+
+    @Test
+    @DisplayName("교체용 떼기: 초당 한도 예외면 RATE_LIMITED — 없음(NOT_FOUND)으로 Mock 행을 지우지 않는다")
+    void rateLimitedReplacementKeepsMock() {
+        givenProperty().ledgerKey(KEY);
+        givenStoredLedger(LedgerDataSource.MOCK);
+        when(client.fetch(any())).thenThrow(new BuildingLedgerRateLimitedException("시험"));
+
+        assertThat(service.fetchMockReplacement(PROPERTY_ID).outcome())
+                .isEqualTo(LedgerReplacementOutcome.RATE_LIMITED);
     }
 
     @Test

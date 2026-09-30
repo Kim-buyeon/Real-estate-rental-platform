@@ -11,6 +11,9 @@ import java.util.Optional;
  * <p><b>빈 값은 「뗄 대장이 없다」이다.</b> 조회 키가 없는 매물이거나, 그 필지에 쓸 수 있는 표제부가 없을 때다. 장애가
  * 아니므로 예외로 올리지 않는다 — 장애와 같은 값이면 한 매물의 자료 문제로 서킷이 열린다. Real 은 일일 호출 상한에 닿았을
  * 때도 빈 값을 준다({@link BuildingLedgerDailyQuota}) — 둘을 가려야 하는 쪽은 상한의 남은 수를 함께 본다.
+ *
+ * <p><b>초당 한도는 빈 값이 아니라 {@link BuildingLedgerRateLimitedException} 이다</b>(Real). 남은 수 같은 단서로 「없음」과
+ * 가를 수 없어서다. 장애가 아니므로 서킷이 세지 않고 폴백도 503 으로 바꾸지 않는다. 받는 쪽은 대장 없이 진행한다.
  */
 public interface BuildingLedgerClient {
 

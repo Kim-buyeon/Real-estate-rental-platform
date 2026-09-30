@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.duri.rentalplatform.TestcontainersConfiguration;
-import com.duri.rentalplatform.domain.property.dto.condition.LedgerSourceTargetCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.LedgerReplaceTargetCondition;
 import com.duri.rentalplatform.domain.property.dto.response.LedgerResponse;
 import com.duri.rentalplatform.domain.property.entity.BuildingLedger;
 import com.duri.rentalplatform.domain.property.entity.Property;
@@ -254,10 +254,10 @@ class LedgerMapperTest {
         long third = insertProperty();
         insertLedger(third, false);
 
-        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(false, first - 1, 10)))
+        assertThat(ledgerMapper.selectLedgerReplaceTargetIds(target(false, first - 1, 10)))
                 .containsExactly(first, third);
-        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(new LedgerSourceTargetCondition(
-                LedgerDataSource.BUILDING_HUB, false, first - 1, 10))).containsExactly(hub);
+        assertThat(ledgerMapper.selectLedgerReplaceTargetIds(new LedgerReplaceTargetCondition(
+                LedgerDataSource.BUILDING_HUB, false, false, first - 1, 10))).containsExactly(hub);
     }
 
     @Test
@@ -268,9 +268,9 @@ class LedgerMapperTest {
         long second = insertProperty();
         insertLedger(second, true);
 
-        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(false, first - 1, 1))).containsExactly(first);
-        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(false, first, 1))).containsExactly(second);
-        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(false, second, 1))).isEmpty();
+        assertThat(ledgerMapper.selectLedgerReplaceTargetIds(target(false, first - 1, 1))).containsExactly(first);
+        assertThat(ledgerMapper.selectLedgerReplaceTargetIds(target(false, first, 1))).containsExactly(second);
+        assertThat(ledgerMapper.selectLedgerReplaceTargetIds(target(false, second, 1))).isEmpty();
     }
 
     @Test
@@ -281,7 +281,7 @@ class LedgerMapperTest {
         long second = insertProperty();
         insertLedger(second, true);
 
-        List<Long> all = ledgerMapper.selectPropertyIdsByLedgerSource(target(false, null, Integer.MAX_VALUE));
+        List<Long> all = ledgerMapper.selectLedgerReplaceTargetIds(target(false, null, Integer.MAX_VALUE));
 
         assertThat(all).isSorted();
         assertThat(all.stream().filter(Set.of(first, second)::contains).toList()).containsExactly(first, second);
@@ -297,9 +297,53 @@ class LedgerMapperTest {
         insertWishlist(insertUser(), wished);
         insertWishlist(insertUser(), wished);
 
-        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(true, plain - 1, 10))).containsExactly(wished);
-        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(false, plain - 1, 10)))
+        assertThat(ledgerMapper.selectLedgerReplaceTargetIds(target(true, plain - 1, 10))).containsExactly(wished);
+        assertThat(ledgerMapper.selectLedgerReplaceTargetIds(target(false, plain - 1, 10)))
                 .containsExactly(plain, wished);
+    }
+
+    @Test
+    @DisplayName("교체 대상(대장 없음): 대장 행이 없고 조회 키가 있는 매물만 — 키 없는 매물 · 대장 있는 매물은 빠진다(#318)")
+    void selectsMissingLedgerWithKey() {
+        long keyed = insertProperty();
+        fillLedgerKey(keyed);
+        insertProperty(); // 조회 키 없음
+        long keyedWithLedger = insertProperty();
+        fillLedgerKey(keyedWithLedger);
+        insertLedger(keyedWithLedger, true);
+        long keyedLater = insertProperty();
+        fillLedgerKey(keyedLater);
+
+        assertThat(ledgerMapper.selectLedgerReplaceTargetIds(
+                new LedgerReplaceTargetCondition(null, true, false, keyed - 1, 10))).containsExactly(keyed, keyedLater);
+        assertThat(ledgerMapper.selectLedgerReplaceTargetIds(
+                new LedgerReplaceTargetCondition(null, true, false, keyed, 1))).containsExactly(keyedLater);
+    }
+
+    @Test
+    @DisplayName("교체 대상(관심 매물 단계): Mock 대장 · 대장 없음(키 있음) 둘 다, 관심 매물만 식별자 순으로 한 번씩(#318)")
+    void selectsWishlistedMockOrMissing() {
+        long wishedMock = insertProperty();
+        insertLedger(wishedMock, true);
+        long wishedMissing = insertProperty();
+        fillLedgerKey(wishedMissing);
+        long wishedUnkeyed = insertProperty();
+        long wishedHub = insertProperty();
+        insertLedger(wishedHub, null, "BUILDING_HUB");
+        long plainMissing = insertProperty();
+        fillLedgerKey(plainMissing);
+        long user = insertUser();
+        for (long propertyId : List.of(wishedMock, wishedMissing, wishedUnkeyed, wishedHub)) {
+            insertWishlist(user, propertyId);
+        }
+        insertWishlist(insertUser(), wishedMissing);
+
+        assertThat(ledgerMapper.selectLedgerReplaceTargetIds(new LedgerReplaceTargetCondition(
+                LedgerDataSource.MOCK, true, true, wishedMock - 1, 10))).containsExactly(wishedMock, wishedMissing);
+        // 관심 매물이 아니어도 되면 대장 없는 다른 매물도 나온다.
+        assertThat(ledgerMapper.selectLedgerReplaceTargetIds(new LedgerReplaceTargetCondition(
+                LedgerDataSource.MOCK, true, false, wishedMock - 1, 10)))
+                .containsExactly(wishedMock, wishedMissing, plainMissing);
     }
 
     @Test
@@ -352,8 +396,13 @@ class LedgerMapperTest {
                 Long.class, propertyId)).isZero();
     }
 
-    private static LedgerSourceTargetCondition target(boolean wishlistedOnly, Long lastPropertyId, int limit) {
-        return new LedgerSourceTargetCondition(LedgerDataSource.MOCK, wishlistedOnly, lastPropertyId, limit);
+    private static LedgerReplaceTargetCondition target(boolean wishlistedOnly, Long lastPropertyId, int limit) {
+        return new LedgerReplaceTargetCondition(LedgerDataSource.MOCK, false, wishlistedOnly, lastPropertyId, limit);
+    }
+
+    private void fillLedgerKey(long propertyId) {
+        jdbc.update("UPDATE property SET sigungu_code = '11110', bjdong_code = '17400', bun = '0702', ji = '0000'"
+                + " WHERE property_id = ?", propertyId);
     }
 
     private long insertUser() {
