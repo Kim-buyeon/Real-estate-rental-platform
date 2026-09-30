@@ -17,7 +17,14 @@
         LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
     </sql>
 
-    <!-- 공통 검색 필터(명세 1.1) + 바운딩 박스(영속성 구조 1.3). 경계를 포함한다. -->
+    <!--
+      공통 검색 필터(명세 1.1) + 바운딩 박스(영속성 구조 1.3). 경계를 포함한다.
+      바운딩 박스 네 값은 NUMERIC 으로 바꿔 넘긴다. latitude · longitude 는 NUMERIC 열인데 조건 값이 Double(float8)이면
+      PostgreSQL 이 열 쪽을 float8 로 바꿔 비교해 좌표 인덱스(V3 · V15)를 타지 못한다 — 지도 3단계 201 → 30.9ms(운영 측정, #321 PR 본문).
+      BETWEEN(경계 포함)은 그대로다. float8 → NUMERIC 변환은 유효 15자리로 맞추므로 요청이 보낸 좌표(10자리 이내)는 값이 바뀌지
+      않는다. 반경에서 계산한 경계는 15자리 밖 끝자리(1e-13 아래)만 달라지고, 바운딩 박스는 1차 필터라 최종 판정은 거리 계산이 한다.
+      셀 번호 식(cellRow · cellCol)은 조건이 아니라 SELECT 식이라 그대로 둔다.
+    -->
     <sql id="filter">
         <where>
             <if test="district != null and district != ''">
@@ -52,8 +59,8 @@
                 </foreach>
             </if>
             <if test="minLat != null and maxLat != null and minLng != null and maxLng != null">
-                AND p.latitude BETWEEN #{minLat} AND #{maxLat}
-                AND p.longitude BETWEEN #{minLng} AND #{maxLng}
+                AND p.latitude BETWEEN CAST(#{minLat} AS NUMERIC) AND CAST(#{maxLat} AS NUMERIC)
+                AND p.longitude BETWEEN CAST(#{minLng} AS NUMERIC) AND CAST(#{maxLng} AS NUMERIC)
             </if>
             <!-- 목록 키셋. 정렬 값이 같은 행은 식별자로 가른다. 목록 외 조회는 lastId 가 null 이다. -->
             <if test="lastId != null">
@@ -76,7 +83,12 @@
         ORDER BY p.district
     </select>
 
-    <!-- 지도 마커 응답(명세 1.4)의 컬럼. 바운딩 박스 조회와 식별자 조회가 함께 쓴다. -->
+    <!--
+      지도 마커 응답(명세 1.4)의 컬럼. 바운딩 박스 조회와 식별자 조회가 함께 쓴다.
+      선순위 채무 EXISTS 는 senior_debt_yn 을 보지 않는다 — 계약 전 조회자에게 등기상 유효 항목은 전부 선순위라 수집 경로가 늘 참으로
+      저장한다(MortgageHistory.record). 조건을 빼면 부분 인덱스 idx_mortgage_history_registry_active (registry_id) WHERE is_active
+      (V19)만으로 인덱스 전용 스캔이 된다. 선순위가 아닌 항목을 저장하는 경로가 생기면 조건과 인덱스를 함께 다시 본다.
+    -->
     <sql id="markerColumns">
         SELECT p.property_id,
                p.latitude,
@@ -91,7 +103,6 @@
                     ELSE EXISTS (SELECT 1
                                    FROM mortgage_history mh
                                   WHERE mh.registry_id = ra.registry_id
-                                    AND mh.senior_debt_yn = TRUE
                                     AND mh.is_active = TRUE)
                END AS has_senior_debt
     </sql>
@@ -248,7 +259,8 @@
       최신 판정이 없는 매물 — 매물 갱신 배치(RISK-08)의 판정 대상. 신규 매물과, 판정이 실패해 남은 매물이 함께 나온다.
       재분석 대기 매물은 뺀다 — 아래 selectPriceChangedPropertyIds 가 내주므로 두 갈래가 겹치지 않는다.
       전체 매물을 읽어 메모리에서 거르지 않고 NOT EXISTS 로 DB 가 거른다. 하위 질의는 부분 유일 인덱스
-      uq_risk_analysis_latest (property_id) WHERE is_latest (V9) 로 풀리고, 바깥은 PK 순서라 식별자 커서에 인덱스가 따로 필요 없다.
+      uq_risk_analysis_latest (property_id) WHERE is_latest 로 풀리고(V9 에서 만들고 V19 에서 같은 이름의 커버링 인덱스로 교체),
+      바깥은 PK 순서라 식별자 커서에 인덱스가 따로 필요 없다.
       실행 계획은 미검증 — 운영 규모 더미로 EXPLAIN 을 돌리지 않았다.
     -->
     <select id="selectUnanalyzedPropertyIds" resultType="java.lang.Long">

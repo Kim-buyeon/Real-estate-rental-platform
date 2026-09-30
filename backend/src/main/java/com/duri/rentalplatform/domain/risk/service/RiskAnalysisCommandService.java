@@ -79,7 +79,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 예외가 나고, 다시 판정한 쪽은 「결론 같음」이라 발행하지 않는다.
  *
  * <p><b>동시 분석</b> — 두 인스턴스가 같은 매물을 동시에 처음 분석하면 한쪽이 최신 분석 유일 인덱스
- * ({@code uq_risk_analysis_latest}, V9)에 걸린다. 그때는 한 번 다시 판정한다 — 다른 쪽이 같은 입력으로 저장했으므로
+ * ({@code uq_risk_analysis_latest}, V9 · V19 커버링 교체)에 걸린다. 그때는 한 번 다시 판정한다 — 다른 쪽이 같은 입력으로 저장했으므로
  * 「결론 같음 — 저장 안 함」으로 끝난다.
  *
  * <p><b>Mock 대장</b> — 대장 연동이 real({@code external.building-ledger.mode=real})이면 {@code data_source = MOCK} 인 대장은
@@ -174,7 +174,7 @@ public class RiskAnalysisCommandService {
         try {
             return writeTransaction.execute(status -> judgeAndRecord(propertyId));
         } catch (DataIntegrityViolationException concurrentFirstAnalysis) {
-            // 두 인스턴스가 같은 매물을 동시에 처음 분석하면 한쪽이 최신 분석 유일 인덱스(V9)에 걸린다.
+            // 두 인스턴스가 같은 매물을 동시에 처음 분석하면 한쪽이 최신 분석 유일 인덱스(V9 · V19 커버링 교체)에 걸린다.
             // 다른 쪽이 이미 같은 입력으로 저장했으므로 다시 판정하면 「결과 같음 — 저장 안 함」으로 끝난다.
             return writeTransaction.execute(status -> judgeAndRecord(propertyId));
         }

@@ -4,8 +4,8 @@
   관심 매물 목록. API 명세서(매물) 1.9.
 
   정렬은 wish_id 내림차순(최근 등록 먼저). 식별자가 등록 순서이고 유일해 동률이 없다. 등급은 최신 분석
-  (is_latest — 매물당 하나, V9)과 LEFT JOIN 해 분석 전 매물도 목록에 남긴다. 사용자 조건은 유일 제약
-  (user_id, property_id) 인덱스(V11)를 탄다. 평면 record 는 자동 생성자 매핑이다.
+  (is_latest — 매물당 하나, V9)과 LEFT JOIN 해 분석 전 매물도 목록에 남긴다. 사용자 조건과 정렬은
+  (user_id, wish_id DESC) 인덱스(V19)가 함께 푼다 — 유일 제약(V11)으로는 정렬을 못 해 기본 키를 역순으로 훑었다. 평면 record 는 자동 생성자 매핑이다.
 -->
 <mapper namespace="com.duri.rentalplatform.domain.property.mapper.WishlistMapper">
 
@@ -30,7 +30,7 @@
 
     <!--
       등기 재조회 배치(RISK-08)의 대상. 여러 사용자가 같은 매물을 등록해도 한 번만 나온다. 매물 식별자 오름차순이라
-      식별자 자체가 커서이고 동률이 없다. property_id 단독 인덱스는 없다 — 실행 계획은 미검증(T7 에서 확인).
+      식별자 자체가 커서이고 동률이 없다. property_id 단독 인덱스 idx_wishlist_property(V13)가 있다 — 실행 계획은 미검증(T7 에서 확인).
     -->
     <select id="selectWishlistedPropertyIds" resultType="java.lang.Long">
         SELECT DISTINCT w.property_id
