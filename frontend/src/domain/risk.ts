@@ -220,3 +220,29 @@ const APPLICABILITY_LABEL: Record<'applicable' | 'notApplicable', string> = {
 
 export const applicabilityLabel = (isApplicable: boolean) =>
   isApplicable ? APPLICABILITY_LABEL.applicable : APPLICABILITY_LABEL.notApplicable;
+
+// ── 명의 · 문서 정합 (RISK-04, 명세 1.1 consistency) ─────────────────────
+// 건축물대장에서 오는 항목(주소 · 위반건축물 · 면적)은 대장을 확인하지 못하면 null이다. null을
+// 「일치」 · 「해당 없음」으로 보이면 확인하지 못한 것이 확인된 것처럼 읽히므로 문구를 따로 둔다.
+// domain/property.ts의 대장 표기에도 같은 문구가 있다 — 위 applicabilityLabel과 같은 이유로 모으지 않는다.
+
+/** 정합 항목 값이 없을 때(null)의 문구 */
+export const CONSISTENCY_UNVERIFIABLE_LABEL = '확인 불가';
+
+/** 위반건축물을 확인하지 못했을 때 — 보증보험 집 단위 조건이라(RISK-05) 대장 열람 안내까지 붙인다 */
+export const VIOLATION_BUILDING_UNVERIFIABLE_LABEL = '확인 불가 — 계약 전 건축물대장 열람 필요';
+
+const MATCH_LABEL: Record<'matched' | 'mismatched', string> = {
+  matched: '일치',
+  mismatched: '불일치',
+};
+
+/** 명의 · 주소 · 면적 대조 결과. null은 「확인 불가」다 */
+export const consistencyMatchLabel = (matched: boolean | null) => {
+  if (matched === null) return CONSISTENCY_UNVERIFIABLE_LABEL;
+  return matched ? MATCH_LABEL.matched : MATCH_LABEL.mismatched;
+};
+
+/** 위반건축물 해당 여부 — 다른 정합 항목과 달리 일치 여부가 아니라 해당 여부다. null이면 대장 열람 안내 */
+export const violationBuildingLabel = (violationBuilding: boolean | null) =>
+  violationBuilding === null ? VIOLATION_BUILDING_UNVERIFIABLE_LABEL : applicabilityLabel(violationBuilding);

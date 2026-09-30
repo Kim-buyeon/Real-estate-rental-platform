@@ -2,7 +2,7 @@
 // 지도 묶음(PROP-02) · 상세(PROP-03) · 건축물대장(PROP-04) · 관심 매물 3행(PROP-05)이다.
 // 매물 조회(GET /api/properties)의 좌표 조건 형태(명세 1.3 마커 응답)는 화면이 쓰지 않는다 — 지도 자치구 단계는
 // 지도 묶음 조회(명세 1.12)로 옮겨 갔다. 쓰는 화면이 없는 형태에 함수를 두지 않는다.
-import type { ContractType, PropertySort, PropertyType } from '../domain/property';
+import type { ContractType, LedgerDataSource, PropertySort, PropertyType } from '../domain/property';
 import type { PriceType, RiskGrade } from '../domain/risk';
 import { request } from './client';
 import type { CursorPage } from './types';
@@ -191,22 +191,27 @@ export const fetchPropertyDetail = (propertyId: number) =>
 /**
  * 건축물대장 — 명세 1.8. 국토부 수집 데이터이며 명의 · 문서 정합 확인(RISK-04)의 입력이기도 하다.
  * 위험도 응답의 consistency가 그 대조 「결과」라면 이쪽은 대조에 쓰인 원본이다.
+ *
+ * propertyId 밖의 필드는 전부 null일 수 있다. 대장을 찾지 못하면 200에 propertyId만 값이 있고 나머지가
+ * 모두 null로 온다(명세 1.8). null은 「확인 불가」이며 거짓 · 0으로 읽지 않는다 — 문구는 domain/property.ts가 갖는다.
  */
 export interface BuildingLedger {
   propertyId: number;
   /** 건축물대장의 주용도. 공통 코드가 아니라 대장이 준 문자열 그대로다 */
-  mainPurpose: string;
-  isResidential: boolean;
-  /** 참일 때가 문제다 — 보증보험 집 단위 조건에 걸린다 (RISK-05) */
-  violationBuilding: boolean;
+  mainPurpose: string | null;
+  isResidential: boolean | null;
+  /** 참일 때가 문제다 — 보증보험 집 단위 조건에 걸린다 (RISK-05). null은 위반 없음이 아니라 확인 불가다 */
+  violationBuilding: boolean | null;
   /** 연면적 (㎡) */
-  totalFloorArea: number;
+  totalFloorArea: number | null;
   /** 전용면적 (㎡) */
-  exclusiveArea: number;
+  exclusiveArea: number | null;
   /** 사용승인일 (YYYY-MM-DD) */
-  approvalDate: string;
+  approvalDate: string | null;
+  /** 대장 수집 경로 */
+  dataSource: LedgerDataSource | null;
   /** 대장 수집 시각 (ISO 8601) */
-  collectedAt: string;
+  collectedAt: string | null;
 }
 
 /**

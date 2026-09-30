@@ -28,12 +28,16 @@ export interface InsuranceProvider {
   productName: string | null;
 }
 
-/** 명의 · 문서 정합 확인 결과 (RISK-04) — 명세 1.1 consistency */
+/**
+ * 명의 · 문서 정합 확인 결과 (RISK-04) — 명세 1.1 consistency.
+ * 건축물대장에서 오는 셋(주소 · 위반건축물 · 면적)은 대장을 확인하지 못하면 null이다 — 「확인 불가」이며
+ * 일치 · 해당 없음으로 읽지 않는다. 명의 일치는 등기에서 오므로 항상 값이 있다. 문구는 domain/risk.ts가 갖는다.
+ */
 export interface RiskConsistency {
   ownerNameMatched: boolean;
-  addressMatched: boolean;
-  violationBuilding: boolean;
-  areaMatched: boolean;
+  addressMatched: boolean | null;
+  violationBuilding: boolean | null;
+  areaMatched: boolean | null;
 }
 
 /** 위험 등급과 판정 근거 — 명세 1.1. 깡통전세 · 권리 침해 · 정합 · 3사 판정이 모두 이 응답에 담긴다 */

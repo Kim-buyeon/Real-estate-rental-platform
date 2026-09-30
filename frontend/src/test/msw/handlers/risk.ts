@@ -1,6 +1,6 @@
 // 위험도 도메인 MSW 핸들러. 응답은 위험도 API 명세 1.1 · 1.3 · 1.4의 예시 그대로다 (frontend/CLAUDE.md 폴더 구조).
 import { http, HttpResponse } from 'msw';
-import type { Registry, RiskAnalysis, RiskReanalyzeResult } from '../../../api/risk';
+import type { Registry, RiskAnalysis, RiskConsistency, RiskReanalyzeResult } from '../../../api/risk';
 
 /** 위험도 API 명세 1.1 응답 예시 그대로 — PropertyDetailPanel 테스트가 쓴다 */
 export const RISK_ANALYSIS: RiskAnalysis = {
@@ -59,6 +59,25 @@ export const RISK_ANALYSIS: RiskAnalysis = {
     areaMatched: true,
   },
   analyzedAt: '2026-07-29T03:00:00+09:00',
+};
+
+/**
+ * 건축물대장을 확인하지 못한 매물의 정합 결과 — 명세 1.1 consistency. 대장에서 오는 셋(주소 · 위반건축물 ·
+ * 면적)이 null이고 등기에서 오는 명의 일치만 값이 있다. ConsistencyCheck 테스트가 쓴다.
+ */
+export const CONSISTENCY_LEDGER_UNVERIFIED: RiskConsistency = {
+  ownerNameMatched: true,
+  addressMatched: null,
+  violationBuilding: null,
+  areaMatched: null,
+};
+
+/** 대조 결과가 전부 문제인 경우 — 불일치 · 위반건축물 해당. true/false 표기가 바뀌지 않았는지 본다 */
+export const CONSISTENCY_ALL_FAILED: RiskConsistency = {
+  ownerNameMatched: false,
+  addressMatched: false,
+  violationBuilding: true,
+  areaMatched: false,
 };
 
 /** 위험도 API 명세 1.3 응답 예시 그대로 — RegistryTimeline 테스트가 쓴다. propertyId만 명세(2048)와 달리 테스트가 쓰는 1024다 */
