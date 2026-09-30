@@ -182,7 +182,7 @@ class PropertyRefreshJobLauncherTest {
     @Test
     @DisplayName("회차가 COMPLETED 로 끝나면 그 날짜의 성공 기록을 남긴다")
     void recordsSuccessWhenCompleted() {
-        loadReturns(List.of(), List.of());
+        loadReturns(0, 0);
         page(null);
 
         launcher(AT_0200).run(DATE);
