@@ -17,7 +17,7 @@ import java.time.LocalDate;
  *
  * @param contractType 계약 유형. 코드 엔티티를 찾는 열쇠다
  * @param propertyType 매물 유형
- * @param marketPrice  시세(원). 같은 법정동 · 같은 면적대 전세 실거래 보증금의 중앙값
+ * @param marketPrice  시세(원). 같은 유형 · 같은 법정동 · 같은 면적대 매매 실거래가의 중앙값(표본이 없으면 같은 유형의 자치구로 넓힌다)
  * @param priceType    시세 산출 근거
  * @param priceDate    시세 기준일. 표본에서 가장 최근 계약일
  */

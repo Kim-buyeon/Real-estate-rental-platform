@@ -14,14 +14,32 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param addressNormalize 도로명주소 주소 정규화
  * @param geocode          카카오 로컬 좌표 변환
  * @param buildingLedger   국토교통부 건축물대장. Real 이 없어 기본 URL · 키 · 타임아웃은 Fault 의 timeout 모드만 쓴다
+ * @param saleTransaction  국토교통부 매매 실거래가. 시세 표본이다. 전월세와 같은 제공처 · 같은 키지만 서킷은 따로 둔다
  */
 @ConfigurationProperties(prefix = "external")
 public record ExternalApiProperties(
         ClientSettings rentTransaction,
         ClientSettings addressNormalize,
         ClientSettings geocode,
-        ClientSettings buildingLedger
+        ClientSettings buildingLedger,
+        ClientSettings saleTransaction
 ) {
+
+    /**
+     * 전월세가 real 인데 매매가 real 이 아니면 기동을 멈춘다.
+     *
+     * <p>매물은 실거래로 들어오는데 시세 표본이 Mock 이면, Mock 의 법정동명이 실매물과 맞지 않아 자치구 표본으로 넓혀지고
+     * 실매물 전체의 시세가 Mock 값으로 덮인다. 갱신 배치가 그 값으로 재분석 · 알림까지 이어 간다 — 등기 외 가짜 데이터를
+     * 쓰지 않는다는 규칙(#301)을 조용히 깨는 조합이라 설정 단계에서 막는다.
+     */
+    public ExternalApiProperties {
+        if (rentTransaction != null && saleTransaction != null
+                && "real".equals(rentTransaction.mode()) && !"real".equals(saleTransaction.mode())) {
+            throw new IllegalStateException(
+                    "external.rent-transaction.mode=real 이면 external.sale-transaction.mode 도 real 이어야 한다 — 현재 "
+                            + saleTransaction.mode());
+        }
+    }
 
     /**
      * 연동 하나의 설정.

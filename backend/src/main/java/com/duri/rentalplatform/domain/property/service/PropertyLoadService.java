@@ -22,6 +22,10 @@ import com.duri.rentalplatform.external.realestate.RentBuildingType;
 import com.duri.rentalplatform.external.realestate.RentTransaction;
 import com.duri.rentalplatform.external.realestate.RentTransactionClient;
 import com.duri.rentalplatform.external.realestate.RentTransactionQuery;
+import com.duri.rentalplatform.external.realestate.SaleBuildingType;
+import com.duri.rentalplatform.external.realestate.SaleTransaction;
+import com.duri.rentalplatform.external.realestate.SaleTransactionClient;
+import com.duri.rentalplatform.external.realestate.SaleTransactionQuery;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -37,8 +41,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * 매물 초기 적재. 실거래가를 모아 주소를 정규화하고 좌표를 확보한 뒤 매물로 저장한다 —
- * 데이터 적재 설계서 1.4.
+ * 매물 초기 적재. 전월세 실거래가를 모아 주소를 정규화하고 좌표를 확보한 뒤 매물로 저장한다 —
+ * 데이터 적재 설계서 1.4. 매물의 시세는 같은 자치구 · 같은 기간 · 같은 유형의 <b>매매</b> 실거래가로 만든 시세표에서 찾는다
+ * ({@link MarketPriceCalculator}).
  *
  * <p><b>QueryService · CommandService 로 나누지 않은 이유</b> — 이 클래스는 사용자 요청을 처리하지
  * 않는다. 적재는 서비스 기능이 아니라 개발 · 운영 준비 작업이며(같은 절), 매물을 등록하는 API 경로는
@@ -50,9 +55,9 @@ import org.springframework.stereotype.Service;
  * 중단시키지 않는다」(같은 절)를 네 층으로 지킨다.
  *
  * <ol>
- *   <li>한 구 · 한 달의 조회가 실패해도 나머지 달로 넘어간다.</li>
- *   <li>필수 값이 빠진 실거래 한 건은 시세 표본에 넣기 전에 걸러 낸다 — 면적이나 보증금이 없으면
- *       면적대 분류와 금액 계산에서 예외가 난다.</li>
+ *   <li>한 구 · 한 달의 조회(전월세 · 매매 각각)가 실패해도 나머지 달로 넘어간다.</li>
+ *   <li>필수 값이 빠진 전월세 한 건은 매물로 옮기기 전에 걸러 낸다 — 면적이나 보증금이 없으면
+ *       면적대 분류와 금액 계산에서 예외가 난다. 매매 표본의 빈 건은 시세 산출이 표본에서 뺀다.</li>
  *   <li>한 건을 옮기다 무엇이 나든 그 건만 버린다. 예상하지 못한 예외까지 잡는 이유는, 한 건의
  *       자료 이상이 25개 구 전체를 멈추게 두지 않기 위해서다.</li>
  *   <li>저장 한 덩어리가 실패하거나 한 자치구가 통째로 멈춰도 다음 자치구는 돈다.</li>
@@ -76,6 +81,7 @@ public class PropertyLoadService {
     private static final String SEOUL = "서울특별시";
 
     private final RentTransactionClient rentTransactionClient;
+    private final SaleTransactionClient saleTransactionClient;
     private final AddressNormalizeClient addressNormalizeClient;
     private final GeocodeClient geocodeClient;
     private final PropertyLoadWriter propertyLoadWriter;
@@ -101,7 +107,7 @@ public class PropertyLoadService {
      * <p><b>기간을 초기 적재와 같게 받는 이유</b> — 시세는 표본의 중앙값이다. 기간이 다르면 표본이 달라져, 실제로는 바뀌지 않은
      * 매물까지 「변경」으로 잡힌다.
      *
-     * <p><b>수집이 일부 실패한 자치구</b> — 그 자치구의 기존 매물 시세는 갱신하지 않는다. 빠진 달이 있으면 표본이 줄어 중앙값이
+     * <p><b>수집이 일부 실패한 자치구</b> — 전월세든 매매든 한 달이라도 못 받았으면 그 자치구의 기존 매물 시세는 갱신하지 않는다. 빠진 달이 있으면 표본이 줄어 중앙값이
      * 달라지므로, 반영하면 멀쩡한 시세를 덜 모은 표본의 값으로 덮게 된다 — 같은 설계서 「갱신 배치는 실패해도 기존 데이터를
      * 훼손하지 않는다」. 새 매물 저장은 초기 적재와 같이 진행한다.
      *
@@ -149,12 +155,14 @@ public class PropertyLoadService {
      *
      * <p>구 단위로 도는 이유는 시세 때문이다. 시세는 같은 법정동 · 같은 면적대 표본의 중앙값이라
      * 표본이 한자리에 모여 있어야 계산된다. 달 단위로 저장하면 그 달의 표본만으로 중앙값을 내게 된다.
+     *
+     * <p>매물 후보(전월세)를 먼저 받고, 쓸 수 있는 후보가 없으면 매매는 부르지 않는다 — 시세표를 쓸 곳이 없는데 달 수 × 유형
+     * 수만큼 호출하게 된다. 매매는 전월세와 같은 기간(달 목록)으로 받는다.
      */
     private void loadDistrict(SeoulDistrict district, List<YearMonth> targetMonths,
                               PropertyLoadReport report, RefreshTargets refreshTargets) {
         int externalFailuresBefore = report.getFailedExternal();
         List<RentTransaction> fetched = fetchTransactions(district, targetMonths, report);
-        boolean fetchComplete = report.getFailedExternal() == externalFailuresBefore;
         report.addFetched(fetched.size());
 
         List<RentTransaction> transactions = filterUsable(fetched, district, report);
@@ -162,7 +170,9 @@ public class PropertyLoadService {
             return;
         }
 
-        MarketPriceCalculator marketPrices = MarketPriceCalculator.from(transactions);
+        List<SaleTransaction> sales = fetchSaleTransactions(district, targetMonths, report);
+        boolean fetchComplete = report.getFailedExternal() == externalFailuresBefore;
+        MarketPriceCalculator marketPrices = MarketPriceCalculator.from(sales);
 
         // 갱신 적재에서만 저장된 시세를 읽는다. 기존 매물을 처음 만날 때 꺼내 비교하고 지우므로, 같은 자연키가 다시 나오면
         // 비교 없이 중복으로만 센다. 수집이 일부 실패한 자치구는 비교 대상을 비워 시세를 갱신하지 않는다(refresh 주석).
@@ -229,7 +239,7 @@ public class PropertyLoadService {
     }
 
     /**
-     * 한 자치구의 대상 기간 실거래를 모은다. 유형별로 서비스가 다르므로 유형 수 × 달 수만큼 호출한다.
+     * 한 자치구의 대상 기간 전월세 실거래를 모은다. 매물 후보다. 유형별로 서비스가 다르므로 유형 수 × 달 수만큼 호출한다.
      */
     private List<RentTransaction> fetchTransactions(SeoulDistrict district, List<YearMonth> targetMonths,
                                                     PropertyLoadReport report) {
@@ -252,11 +262,37 @@ public class PropertyLoadService {
     }
 
     /**
+     * 한 자치구의 대상 기간 매매 실거래를 모은다. 시세표의 표본이다. 전월세와 같이 유형 수 × 달 수만큼 호출하고, 한 달을 못
+     * 받아도 나머지 달은 받는다.
+     *
+     * <p>해제 거래 · 필수 값이 빈 거래는 여기서 거르지 않는다 — 표본에 넣을지는 {@link MarketPriceCalculator} 가 정한다.
+     * 매매 거래는 매물이 아니라 표본이라, 한 건이 표본에서 빠지는 것을 적재 실패(자료이상)로 세지 않는다.
+     */
+    private List<SaleTransaction> fetchSaleTransactions(SeoulDistrict district, List<YearMonth> targetMonths,
+                                                        PropertyLoadReport report) {
+        List<SaleTransaction> transactions = new ArrayList<>();
+        for (SaleBuildingType buildingType : SaleBuildingType.values()) {
+            for (YearMonth yearMonth : targetMonths) {
+                try {
+                    transactions.addAll(saleTransactionClient.findSaleTransactions(
+                            new SaleTransactionQuery(district.getLawdCode(), yearMonth, buildingType)));
+                } catch (BusinessException cause) {
+                    String reason = "매매 실거래가 조회 실패 — %s %s %s"
+                            .formatted(district.getDistrictName(), yearMonth, buildingType);
+                    report.failExternal(reason);
+                    log.warn("[매물 적재] {}", reason);
+                }
+            }
+        }
+        return transactions;
+    }
+
+    /**
      * 필수 값이 빠진 건을 걸러 낸다.
      *
      * <p>{@code RentTransaction} 은 제공처가 비워 보내는 필드를 그대로 받는 레코드라 null 을 막지
-     * 않는다. 걸러 내지 않으면 면적대 분류와 금액 계산에서 예외가 나고, 그 예외는 한 건이 아니라
-     * 시세표를 만드는 단계에서 터져 자치구 전체를 멈춘다.
+     * 않는다. 걸러 내지 않으면 시세 조회의 면적대 분류와 금액 계산에서 예외가 난다. 건별 변환이 그 예외를 잡더라도
+     * 「변환 실패」로 뭉뚱그려져, 어느 필수 값이 비었는지가 기록에 남지 않는다.
      */
     private List<RentTransaction> filterUsable(List<RentTransaction> transactions, SeoulDistrict district,
                                                PropertyLoadReport report) {
@@ -349,10 +385,11 @@ public class PropertyLoadService {
         }
 
         Optional<MarketPriceCalculator.MarketPrice> marketPrice =
-                marketPrices.find(transaction.legalDongName(), transaction.areaSqm());
+                marketPrices.find(toPropertyType(transaction.buildingType()), transaction.legalDongName(),
+                        transaction.areaSqm());
         if (marketPrice.isEmpty()) {
-            // 시세는 깡통전세 판정 기준금액의 밑값이자 전세가율의 분모다. 표본이 없으면 값을 지어내지
-            // 않고 그 매물을 버린다.
+            // 시세는 깡통전세 판정 기준금액의 밑값이자 전세가율의 분모다. 같은 법정동 · 자치구 어디에도 같은 유형 · 같은
+            // 면적대의 매매 표본이 없으면 값을 지어내지 않고 그 매물을 버린다.
             report.skipMarketPriceNotFound();
             return null;
         }

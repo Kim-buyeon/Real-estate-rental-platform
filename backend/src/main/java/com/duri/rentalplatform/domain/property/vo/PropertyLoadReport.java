@@ -38,7 +38,7 @@ public class PropertyLoadReport {
     /** 좌표를 얻지 못해 건너뛴 건수. */
     private int skippedCoordinatesNotFound;
 
-    /** 같은 법정동 · 면적대의 전세 표본이 없어 시세를 산출하지 못한 건수. */
+    /** 같은 법정동 · 자치구 어디에도 같은 유형 · 같은 면적대의 매매 표본이 없어 시세를 산출하지 못한 건수. */
     private int skippedMarketPriceNotFound;
 
     /** 외부 연동이 응답하지 못해 실패한 건수. */

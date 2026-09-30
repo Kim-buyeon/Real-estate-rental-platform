@@ -28,6 +28,11 @@ public class ExternalClientConfig {
     }
 
     @Bean
+    public RestClient saleTransactionRestClient(ExternalApiProperties properties) {
+        return build(properties.saleTransaction());
+    }
+
+    @Bean
     public RestClient addressNormalizeRestClient(ExternalApiProperties properties) {
         return build(properties.addressNormalize());
     }
