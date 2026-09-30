@@ -55,6 +55,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -80,6 +81,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p><b>동시 분석</b> — 두 인스턴스가 같은 매물을 동시에 처음 분석하면 한쪽이 최신 분석 유일 인덱스
  * ({@code uq_risk_analysis_latest}, V9)에 걸린다. 그때는 한 번 다시 판정한다 — 다른 쪽이 같은 입력으로 저장했으므로
  * 「결론 같음 — 저장 안 함」으로 끝난다.
+ *
+ * <p><b>Mock 대장</b> — 대장 연동이 real({@code external.building-ledger.mode=real})이면 {@code data_source = MOCK} 인 대장은
+ * 판정 입력에서 「대장 없음」으로 본다. 대장 항목 셋(주소 · 면적 · 위반건축물)은 확인 불가이고 분석 행의 대장 참조는 null 이다 —
+ * 뗄 대장이 없을 때와 같은 경로다. Mock 대장은 판정 분기를 돌리려고 지어낸 값(위반건축물 5% 등)이라, real 운영에서 판정 근거가
+ * 되면 없는 위반건축물로 가입 불가가 나온다. 행은 지우지 않는다 — 교체 배치가 실데이터로 바꾸거나 지운다. Mock · Fault 모드는
+ * Mock 대장이 곧 그 모드의 대장이라 그대로 쓴다.
  */
 @Service
 public class RiskAnalysisCommandService {
@@ -100,6 +107,7 @@ public class RiskAnalysisCommandService {
     private final RiskAnalysisRepository riskAnalysisRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate writeTransaction;
+    private final boolean ignoreMockLedger;
 
     public RiskAnalysisCommandService(
             RegistryCommandService registryCommandService,
@@ -117,7 +125,8 @@ public class RiskAnalysisCommandService {
             RiskCriteriaRepository riskCriteriaRepository,
             RiskAnalysisRepository riskAnalysisRepository,
             ApplicationEventPublisher eventPublisher,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            @Value("${external.building-ledger.mode:mock}") String buildingLedgerMode) {
         this.registryCommandService = registryCommandService;
         this.ledgerCommandService = ledgerCommandService;
         this.propertyRepository = propertyRepository;
@@ -134,6 +143,7 @@ public class RiskAnalysisCommandService {
         this.riskAnalysisRepository = riskAnalysisRepository;
         this.eventPublisher = eventPublisher;
         this.writeTransaction = new TransactionTemplate(transactionManager);
+        this.ignoreMockLedger = "real".equals(buildingLedgerMode);
     }
 
     /**
@@ -145,6 +155,22 @@ public class RiskAnalysisCommandService {
     public RiskResponse analyze(Long propertyId) {
         registryCommandService.collectIfAbsent(propertyId);
         ledgerCommandService.collectIfAbsent(propertyId);
+        return judge(propertyId);
+    }
+
+    /**
+     * 대장 수집을 건너뛰고 분석한다 — Mock 대장 교체 배치가 대장을 방금 교체 · 삭제한 뒤에 부른다. {@link #analyze} 로 부르면
+     * 삭제한 매물(뗄 대장 없음)의 대장을 다시 떼어 같은 빈 값을 받느라 일일 호출 상한을 한 번 더 쓴다. 등기는 없으면 수집한다.
+     *
+     * @throws BusinessException {@link ErrorCode#PROPERTY_NOT_FOUND} — 매물이 없을 때,
+     *                           {@link ErrorCode#EXTERNAL_API_UNAVAILABLE} — 등기 수집이 실패했을 때
+     */
+    public RiskResponse analyzeWithCollectedLedger(Long propertyId) {
+        registryCommandService.collectIfAbsent(propertyId);
+        return judge(propertyId);
+    }
+
+    private RiskResponse judge(Long propertyId) {
         try {
             return writeTransaction.execute(status -> judgeAndRecord(propertyId));
         } catch (DataIntegrityViolationException concurrentFirstAnalysis) {
@@ -162,7 +188,10 @@ public class RiskAnalysisCommandService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
         // 대장은 없을 수 있다 — 뗄 대장이 없으면 수집이 저장하지 않는다(LedgerCommandService). 그때는 대장 없이 분석하고
         // 대장 항목은 확인 불가로 둔다(DocumentConsistencyChecker).
-        BuildingLedger ledger = buildingLedgerRepository.findByPropertyId(propertyId).orElse(null);
+        // real 연동에서 Mock 대장은 대장 없음으로 본다(클래스 주석).
+        BuildingLedger ledger = buildingLedgerRepository.findByPropertyId(propertyId)
+                .filter(found -> !(ignoreMockLedger && found.isMock()))
+                .orElse(null);
         RiskCriteria riskCriteria = riskCriteriaRepository.findFirstByOrderByRiskCriteriaIdAsc()
                 .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
 

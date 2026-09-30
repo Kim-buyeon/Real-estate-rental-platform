@@ -88,6 +88,7 @@ tasks.withType(Test).configureEach {
 	systemProperty 'risk.batch.registry-refresh.enabled', 'false'
 	systemProperty 'property.batch.refresh.enabled', 'false'
 	systemProperty 'loan.batch.rate-refresh.enabled', 'false'
+	systemProperty 'risk.batch.mock-ledger-replace.enabled', 'false'
 }
 
 // 단위 테스트만 돈다. 컨테이너를 띄우는 것은 @Tag("integration") 으로 갈라 뺀다.

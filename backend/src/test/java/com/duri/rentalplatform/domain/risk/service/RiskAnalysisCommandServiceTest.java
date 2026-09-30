@@ -56,6 +56,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.springframework.context.ApplicationEventPublisher;
@@ -114,11 +116,15 @@ class RiskAnalysisCommandServiceTest {
         riskCriteriaRepository = mock(RiskCriteriaRepository.class);
         riskAnalysisRepository = mock(RiskAnalysisRepository.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
-        service = new RiskAnalysisCommandService(registryCommandService, ledgerCommandService, propertyRepository,
+        service = serviceWithLedgerMode("mock");
+    }
+
+    private RiskAnalysisCommandService serviceWithLedgerMode(String buildingLedgerMode) {
+        return new RiskAnalysisCommandService(registryCommandService, ledgerCommandService, propertyRepository,
                 buildingRegistryRepository, ownershipHistoryRepository, mortgageHistoryRepository,
                 buildingLedgerRepository, guaranteeCriteriaRepository, hfCriteriaRepository, sgiCriteriaRepository,
                 premiumRateRepository, insuranceProductRepository, riskCriteriaRepository, riskAnalysisRepository,
-                eventPublisher, mock(PlatformTransactionManager.class));
+                eventPublisher, mock(PlatformTransactionManager.class), buildingLedgerMode);
     }
 
     @Test
@@ -223,6 +229,101 @@ class RiskAnalysisCommandServiceTest {
         assertThat(response.riskGrade()).isEqualTo(RiskGrade.SAFE);
         assertThat(response.providers()).allSatisfy(provider -> assertThat(provider.failedConditions()).isEmpty());
         assertThat(capturedSave().getLedgerId()).isNull();
+    }
+
+    // ---------- Mock 대장(PROP-04) ----------
+    //
+    // 대장 연동 모드 × 저장된 대장 출처 → 판정 입력. 픽스처 대장은 위반건축물이 참(Mock 이 지어낸 값)이다 — 판정에 쓰이면
+    // 3사 모두 VIOLATION_BUILDING 으로 가입 불가, 쓰이지 않으면 대장 항목 셋이 확인 불가(null)이고 SAFE 다.
+    //
+    // | 모드  | 저장된 대장        | 판정 입력   | consistency(명의, 주소, 위반, 면적) | 가입 · 등급            | 분석 행 대장 ID |
+    // | real  | MOCK              | 대장 없음   | (true, null, null, null)           | 가능 · SAFE            | null           |
+    // | real  | BUILDING_HUB      | 그 대장     | (true, true, true, true)           | 불가 · 위반건축물       | 8              |
+    // | mock  | MOCK              | 그 대장     | (true, true, true, true)           | 불가 · 위반건축물       | 8              |
+    // | fault | MOCK              | 그 대장     | (true, true, true, true)           | 불가 · 위반건축물       | 8              |
+    // | real  | 없음              | 대장 없음   | (true, null, null, null)           | 가능 · SAFE            | null           |
+
+    @Test
+    @DisplayName("real 연동: Mock 대장은 대장 없음으로 본다 — 지어낸 위반건축물이 가입 불가 사유가 되지 않고 분석 행의 대장 ID 는 null")
+    void realModeIgnoresMockLedger() {
+        service = serviceWithLedgerMode("real");
+        givenSafeProperty();
+        givenStoredLedger(true);
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        RiskResponse response = service.analyze(PROPERTY_ID);
+
+        assertThat(response.consistency()).isEqualTo(new RiskResponse.Consistency(true, null, null, null));
+        assertThat(response.insuranceEligible()).isTrue();
+        assertThat(response.riskGrade()).isEqualTo(RiskGrade.SAFE);
+        assertThat(capturedSave().getLedgerId()).isNull();
+    }
+
+    @Test
+    @DisplayName("real 연동: 건축HUB 대장은 그대로 판정 입력이다")
+    void realModeUsesBuildingHubLedger() {
+        service = serviceWithLedgerMode("real");
+        givenSafeProperty();
+        givenStoredLedger(false);
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        RiskResponse response = service.analyze(PROPERTY_ID);
+
+        assertThat(response.consistency()).isEqualTo(new RiskResponse.Consistency(true, true, true, true));
+        assertThat(response.insuranceEligible()).isFalse();
+        assertThat(response.providers()).allSatisfy(provider -> assertThat(provider.failedConditions())
+                .containsExactly(GuaranteeFailedCondition.VIOLATION_BUILDING));
+        assertThat(capturedSave().getLedgerId()).isEqualTo(LEDGER_ID);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"mock", "fault"})
+    @DisplayName("mock · fault 연동: Mock 대장이 곧 그 모드의 대장이라 판정 입력이다")
+    void mockAndFaultModesUseMockLedger(String mode) {
+        service = serviceWithLedgerMode(mode);
+        givenSafeProperty();
+        givenStoredLedger(true);
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        RiskResponse response = service.analyze(PROPERTY_ID);
+
+        assertThat(response.consistency()).isEqualTo(new RiskResponse.Consistency(true, true, true, true));
+        assertThat(response.insuranceEligible()).isFalse();
+        assertThat(capturedSave().getLedgerId()).isEqualTo(LEDGER_ID);
+    }
+
+    @Test
+    @DisplayName("real 연동에서 대장이 없으면 대장 없음 경로 그대로다")
+    void realModeWithoutLedger() {
+        service = serviceWithLedgerMode("real");
+        givenSafeProperty();
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.empty());
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        RiskResponse response = service.analyze(PROPERTY_ID);
+
+        assertThat(response.consistency()).isEqualTo(new RiskResponse.Consistency(true, null, null, null));
+        assertThat(response.riskGrade()).isEqualTo(RiskGrade.SAFE);
+        assertThat(capturedSave().getLedgerId()).isNull();
+    }
+
+    @Test
+    @DisplayName("대장 수집을 건너뛰는 분석: 등기만 수집하고 대장 수집은 부르지 않은 채 판정한다")
+    void analyzeWithCollectedLedgerSkipsLedgerCollection() {
+        givenSafeProperty();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        RiskResponse response = service.analyzeWithCollectedLedger(PROPERTY_ID);
+
+        verify(registryCommandService).collectIfAbsent(PROPERTY_ID);
+        verifyNoInteractions(ledgerCommandService);
+        assertThat(response.riskGrade()).isEqualTo(RiskGrade.SAFE);
+        assertThat(capturedSave().getLedgerId()).isEqualTo(LEDGER_ID);
     }
 
     @Test
@@ -427,6 +528,13 @@ class RiskAnalysisCommandServiceTest {
         when(hugProduct.getGuaranteeId()).thenReturn(HUG_ID);
         when(hugProduct.getProductName()).thenReturn("전세보증금반환보증");
         when(insuranceProductRepository.findAll()).thenReturn(List.of(hugProduct));
+    }
+
+    /** 픽스처 대장의 출처와 위반건축물(참)을 정한다. 주소 · 면적은 등기와 같다. */
+    private void givenStoredLedger(boolean mockSource) {
+        BuildingLedger ledger = buildingLedgerRepository.findByPropertyId(PROPERTY_ID).orElseThrow();
+        when(ledger.isMock()).thenReturn(mockSource);
+        when(ledger.getViolation()).thenReturn(true);
     }
 
     private void givenSaveStampsCreatedAt() {

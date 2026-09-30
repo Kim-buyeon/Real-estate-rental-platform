@@ -26,4 +26,26 @@
           LEFT JOIN building_ledger bl ON bl.property_id = p.property_id
          WHERE p.property_id = #{propertyId}
     </select>
+
+    <!--
+      Mock 대장 교체 배치의 대상. 대장 행에서 출발하므로 매물마다 한 번만 나온다(property_id UNIQUE). 매물 식별자
+      오름차순이라 식별자 자체가 커서이고 동률이 없다 — 배치가 앞 페이지의 행을 교체 · 삭제해도 커서가 흔들리지 않는다.
+      관심 매물 조건은 EXISTS 로 두어 여러 사용자가 등록한 매물이 중복되지 않게 한다(idx_wishlist_property, V13).
+      정렬 · 커서는 uq_building_ledger_property_id(V5) 순서다. data_source 인덱스는 없다 — 실행 계획은 미검증.
+    -->
+    <select id="selectPropertyIdsByLedgerSource" resultType="java.lang.Long">
+        SELECT bl.property_id
+          FROM building_ledger bl
+        <where>
+            bl.data_source = #{dataSource}
+            <if test="wishlistedOnly">
+                AND EXISTS (SELECT 1 FROM wishlist w WHERE w.property_id = bl.property_id)
+            </if>
+            <if test="lastPropertyId != null">
+                AND bl.property_id &gt; #{lastPropertyId}
+            </if>
+        </where>
+         ORDER BY bl.property_id
+         LIMIT #{limit}
+    </select>
 </mapper>

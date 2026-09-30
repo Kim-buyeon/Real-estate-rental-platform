@@ -15,14 +15,17 @@ import com.duri.rentalplatform.domain.property.entity.BuildingLedger;
 import com.duri.rentalplatform.domain.property.entity.Property;
 import com.duri.rentalplatform.domain.property.entity.PropertyCode;
 import com.duri.rentalplatform.domain.property.enums.LedgerDataSource;
+import com.duri.rentalplatform.domain.property.enums.LedgerReplacementOutcome;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.repository.BuildingLedgerRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
 import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
+import com.duri.rentalplatform.domain.property.vo.LedgerReplacement;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
 import com.duri.rentalplatform.external.address.AddressNormalizeClient;
 import com.duri.rentalplatform.external.address.NormalizedAddress;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerClient;
+import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDailyQuota;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDocument;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerLookup;
 import java.math.BigDecimal;
@@ -50,6 +53,7 @@ class LedgerCommandServiceTest {
     private PropertyRepository propertyRepository;
     private BuildingLedgerRepository buildingLedgerRepository;
     private PlatformTransactionManager transactionManager;
+    private BuildingLedgerDailyQuota dailyQuota;
     private LedgerCommandService service;
 
     @BeforeEach
@@ -59,8 +63,10 @@ class LedgerCommandServiceTest {
         buildingLedgerRepository = mock(BuildingLedgerRepository.class);
         transactionManager = mock(PlatformTransactionManager.class);
         addressClient = mock(AddressNormalizeClient.class);
+        dailyQuota = mock(BuildingLedgerDailyQuota.class);
+        when(dailyQuota.remaining()).thenReturn(100L);
         service = new LedgerCommandService(client, addressClient, propertyRepository, buildingLedgerRepository,
-                transactionManager);
+                dailyQuota, transactionManager);
     }
 
     @Test
@@ -254,6 +260,135 @@ class LedgerCommandServiceTest {
         service.collectIfAbsent(PROPERTY_ID);
 
         verify(addressClient, never()).normalize(any());
+    }
+
+    // ---------- Mock 대장 교체(PROP-04) ----------
+
+    private static final LedgerLookupKey KEY = new LedgerLookupKey("11110", "17400", "0702", "0000");
+
+    @Test
+    @DisplayName("교체용 떼기: 대장이 Mock 이 아니거나 없으면 외부를 부르지 않고 NOT_MOCK")
+    void fetchReplacementSkipsNonMock() {
+        givenProperty().ledgerKey(KEY);
+        givenStoredLedger(LedgerDataSource.BUILDING_HUB);
+
+        assertThat(service.fetchMockReplacement(PROPERTY_ID).outcome()).isEqualTo(LedgerReplacementOutcome.NOT_MOCK);
+
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.empty());
+        assertThat(service.fetchMockReplacement(PROPERTY_ID).outcome()).isEqualTo(LedgerReplacementOutcome.NOT_MOCK);
+        verify(client, never()).fetch(any());
+    }
+
+    @Test
+    @DisplayName("교체용 떼기: 건축HUB 대장을 떼면 주소를 정규화해 FETCHED 로 돌려주고 저장하지 않는다")
+    void fetchReplacementReturnsNormalizedDocument() {
+        givenProperty().ledgerKey(KEY);
+        givenStoredLedger(LedgerDataSource.MOCK);
+        when(client.fetch(any())).thenReturn(Optional.of(buildingHubDocument()));
+        when(addressClient.normalize("서울특별시 종로구 창신동 702")).thenReturn(Optional.of(new NormalizedAddress(
+                "서울특별시 종로구 동망산길 19 (창신동)", "서울특별시 종로구 창신동 702", "종로구", "창신동", null,
+                "1111017400", "TEST_JUSO")));
+
+        LedgerReplacement replacement = service.fetchMockReplacement(PROPERTY_ID);
+
+        assertThat(replacement.outcome()).isEqualTo(LedgerReplacementOutcome.FETCHED);
+        assertThat(replacement.document().ledgerAddress()).isEqualTo("서울특별시 종로구 동망산길 19 (창신동)");
+        assertThat(replacement.document().dataSource()).isEqualTo(LedgerDataSource.BUILDING_HUB);
+        verify(buildingLedgerRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("교체용 떼기: 빈 값이고 상한이 남아 있으면 NOT_FOUND — 뗄 대장이 없다")
+    void fetchReplacementNotFound() {
+        givenProperty().ledgerKey(KEY);
+        givenStoredLedger(LedgerDataSource.MOCK);
+        when(client.fetch(any())).thenReturn(Optional.empty());
+
+        assertThat(service.fetchMockReplacement(PROPERTY_ID).outcome()).isEqualTo(LedgerReplacementOutcome.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("교체용 떼기: 상한이 이미 0 이면 부르지 않고 QUOTA_EXHAUSTED")
+    void fetchReplacementStopsWhenQuotaAlreadyExhausted() {
+        givenProperty().ledgerKey(KEY);
+        givenStoredLedger(LedgerDataSource.MOCK);
+        when(dailyQuota.remaining()).thenReturn(0L);
+
+        assertThat(service.fetchMockReplacement(PROPERTY_ID).outcome())
+                .isEqualTo(LedgerReplacementOutcome.QUOTA_EXHAUSTED);
+        verify(client, never()).fetch(any());
+    }
+
+    @Test
+    @DisplayName("교체용 떼기: 빈 값 뒤 상한이 0 이면 상한에 걸린 빈 값으로 보고 QUOTA_EXHAUSTED — 없음으로 지우지 않는다")
+    void emptyAfterQuotaExhaustedIsQuota() {
+        givenProperty().ledgerKey(KEY);
+        givenStoredLedger(LedgerDataSource.MOCK);
+        when(dailyQuota.remaining()).thenReturn(1L, 0L);
+        when(client.fetch(any())).thenReturn(Optional.empty());
+
+        assertThat(service.fetchMockReplacement(PROPERTY_ID).outcome())
+                .isEqualTo(LedgerReplacementOutcome.QUOTA_EXHAUSTED);
+    }
+
+    @Test
+    @DisplayName("교체용 떼기: 조회 키가 없으면 상한과 무관하게 NOT_FOUND — 클라이언트가 부르지 않는다")
+    void noKeyIsNotFoundRegardlessOfQuota() {
+        givenProperty();
+        givenStoredLedger(LedgerDataSource.MOCK);
+        when(dailyQuota.remaining()).thenReturn(0L);
+        when(client.fetch(any())).thenReturn(Optional.empty());
+
+        assertThat(service.fetchMockReplacement(PROPERTY_ID).outcome()).isEqualTo(LedgerReplacementOutcome.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("교체용 떼기: 매물이 없으면 PROPERTY_NOT_FOUND")
+    void fetchReplacementPropertyNotFound() {
+        when(propertyRepository.findById(PROPERTY_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.fetchMockReplacement(PROPERTY_ID))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.PROPERTY_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("교체 저장: Mock 행의 모든 항목을 뗀 대장으로 바꾼다 — null 은 null 로 덮는다")
+    void replaceMockOverwritesAllFields() {
+        BuildingLedger ledger = BuildingLedger.collect(PROPERTY_ID, "서울특별시 시험구 시험로 1", "김임대", "공동주택",
+                "철근콘크리트구조", new BigDecimal("600.30"), new BigDecimal("2550.00"), new BigDecimal("42.50"),
+                LocalDate.of(1998, 4, 18), true, LedgerDataSource.MOCK);
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.of(ledger));
+
+        boolean replaced = service.replaceMock(PROPERTY_ID, buildingHubDocument());
+
+        assertThat(replaced).isTrue();
+        assertThat(ledger.getLedgerAddress()).isEqualTo("서울특별시 종로구 창신동 702");
+        assertThat(ledger.getOwnerName()).isNull();
+        assertThat(ledger.getBuildingArea()).isNull();
+        assertThat(ledger.getTotalFloorArea()).isEqualByComparingTo("14544.66");
+        assertThat(ledger.getExclusiveArea()).isNull();
+        assertThat(ledger.getApprovalDate()).isEqualTo(LocalDate.of(1992, 11, 25));
+        assertThat(ledger.getViolation()).isNull();
+        assertThat(ledger.getDataSource()).isEqualTo(LedgerDataSource.BUILDING_HUB);
+    }
+
+    @Test
+    @DisplayName("교체 저장: 그 사이 Mock 이 아니게 됐으면 손대지 않는다")
+    void replaceMockSkipsNonMock() {
+        BuildingLedger ledger = BuildingLedger.collect(PROPERTY_ID, "서울특별시 종로구 동망산길 19 (창신동)", null, "공동주택",
+                null, null, new BigDecimal("100.00"), null, null, null, LedgerDataSource.BUILDING_HUB);
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.of(ledger));
+
+        assertThat(service.replaceMock(PROPERTY_ID, buildingHubDocument())).isFalse();
+        assertThat(ledger.getTotalFloorArea()).isEqualByComparingTo("100.00");
+    }
+
+    private void givenStoredLedger(LedgerDataSource dataSource) {
+        BuildingLedger ledger = mock(BuildingLedger.class);
+        when(ledger.isMock()).thenReturn(dataSource == LedgerDataSource.MOCK);
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.of(ledger));
     }
 
     // ---------- 픽스처 ----------

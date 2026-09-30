@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.duri.rentalplatform.TestcontainersConfiguration;
+import com.duri.rentalplatform.domain.property.dto.condition.LedgerSourceTargetCondition;
 import com.duri.rentalplatform.domain.property.dto.response.LedgerResponse;
 import com.duri.rentalplatform.domain.property.entity.BuildingLedger;
 import com.duri.rentalplatform.domain.property.entity.Property;
@@ -14,10 +15,13 @@ import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
 import com.duri.rentalplatform.domain.property.service.LedgerCommandService;
 import com.duri.rentalplatform.domain.property.service.LedgerQueryService;
 import com.duri.rentalplatform.domain.property.vo.LedgerRow;
+import com.duri.rentalplatform.domain.risk.repository.RiskAnalysisRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -62,6 +66,9 @@ class LedgerMapperTest {
 
     @Autowired
     PropertyRepository propertyRepository;
+
+    @Autowired
+    RiskAnalysisRepository riskAnalysisRepository;
 
     @Test
     @DisplayName("모든 필드가 매핑되고 수집 시각은 서울 벽시계 시각 그대로의 시점이다")
@@ -231,6 +238,136 @@ class LedgerMapperTest {
                 + " WHERE property_id = ?", String.class, propertyId)).isEqualTo("1111017400" + "07020000");
     }
 
+    // ---------- Mock 대장 교체 대상 · 교체 · 삭제(PROP-04) ----------
+    //
+    // 공유 컨테이너에 다른 테스트가 커밋한 대장이 있을 수 있어, 커서를 이 테스트의 첫 매물 직전으로 두거나 결과를 이 테스트의
+    // 매물로 걸러 본다. 식별자는 삽입 순서로 커진다.
+
+    @Test
+    @DisplayName("교체 대상: 출처가 MOCK 인 대장의 매물만 식별자 오름차순으로 — 건축HUB 대장 · 대장 없는 매물은 빠진다")
+    void selectsMockLedgerPropertiesInIdOrder() {
+        long first = insertProperty();
+        insertLedger(first, true);
+        long hub = insertProperty();
+        insertLedger(hub, null, "BUILDING_HUB");
+        insertProperty();
+        long third = insertProperty();
+        insertLedger(third, false);
+
+        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(false, first - 1, 10)))
+                .containsExactly(first, third);
+        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(new LedgerSourceTargetCondition(
+                LedgerDataSource.BUILDING_HUB, false, first - 1, 10))).containsExactly(hub);
+    }
+
+    @Test
+    @DisplayName("교체 대상: 커서 뒤에서 페이지 크기만큼 이어 읽고, 마지막 뒤는 빈 결과다")
+    void pagesByCursor() {
+        long first = insertProperty();
+        insertLedger(first, true);
+        long second = insertProperty();
+        insertLedger(second, true);
+
+        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(false, first - 1, 1))).containsExactly(first);
+        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(false, first, 1))).containsExactly(second);
+        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(false, second, 1))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("교체 대상: 커서가 없으면 처음부터 읽는다")
+    void nullCursorStartsFromBeginning() {
+        long first = insertProperty();
+        insertLedger(first, true);
+        long second = insertProperty();
+        insertLedger(second, true);
+
+        List<Long> all = ledgerMapper.selectPropertyIdsByLedgerSource(target(false, null, Integer.MAX_VALUE));
+
+        assertThat(all).isSorted();
+        assertThat(all.stream().filter(Set.of(first, second)::contains).toList()).containsExactly(first, second);
+    }
+
+    @Test
+    @DisplayName("교체 대상: 관심 매물만이면 누군가 등록한 매물만, 여러 사용자가 등록해도 한 번 나온다")
+    void wishlistedOnly() {
+        long plain = insertProperty();
+        insertLedger(plain, true);
+        long wished = insertProperty();
+        insertLedger(wished, true);
+        insertWishlist(insertUser(), wished);
+        insertWishlist(insertUser(), wished);
+
+        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(true, plain - 1, 10))).containsExactly(wished);
+        assertThat(ledgerMapper.selectPropertyIdsByLedgerSource(target(false, plain - 1, 10)))
+                .containsExactly(plain, wished);
+    }
+
+    @Test
+    @DisplayName("교체 저장: Mock 행을 건축HUB 대장으로 바꾸면 같은 행(식별자)이 새 값 · 새 출처로 저장된다")
+    void replaceWithPersistsOnSameRow() {
+        long propertyId = insertProperty();
+        insertLedger(propertyId, true);
+        long ledgerId = jdbc.queryForObject("SELECT ledger_id FROM building_ledger WHERE property_id = ?",
+                Long.class, propertyId);
+
+        BuildingLedger ledger = buildingLedgerRepository.findByPropertyId(propertyId).orElseThrow();
+        ledger.replaceWith("서울특별시 종로구 동망산길 19 (창신동)", null, "공동주택", "철근콘크리트구조", null,
+                new BigDecimal("14544.66"), null, LocalDate.of(1992, 11, 25), null, LedgerDataSource.BUILDING_HUB);
+        buildingLedgerRepository.flush();
+
+        assertThat(jdbc.queryForObject("SELECT ledger_id FROM building_ledger WHERE property_id = ?",
+                Long.class, propertyId)).isEqualTo(ledgerId);
+        assertThat(jdbc.queryForObject("SELECT data_source FROM building_ledger WHERE property_id = ?",
+                String.class, propertyId)).isEqualTo("BUILDING_HUB");
+        assertThat(jdbc.queryForObject("SELECT violation_yn FROM building_ledger WHERE property_id = ?",
+                Boolean.class, propertyId)).isNull();
+        assertThat(jdbc.queryForObject("SELECT owner_name FROM building_ledger WHERE property_id = ?",
+                String.class, propertyId)).isNull();
+    }
+
+    @Test
+    @DisplayName("교체 삭제: 분석 행(이력 포함)의 대장 참조를 끊은 뒤 대장 행을 지우면 외래 키에 막히지 않는다")
+    void detachThenDeleteLedger() {
+        long propertyId = insertProperty();
+        insertLedger(propertyId, true);
+        long ledgerId = jdbc.queryForObject("SELECT ledger_id FROM building_ledger WHERE property_id = ?",
+                Long.class, propertyId);
+        long registryId = jdbc.queryForObject("""
+                INSERT INTO building_registry (property_id, building_purpose, data_source) VALUES (?, '공동주택', 'MOCK')
+                RETURNING registry_id
+                """, Long.class, propertyId);
+        jdbc.update("""
+                INSERT INTO risk_analysis (property_id, registry_id, ledger_id, lease_ratio, risk_grade, is_latest)
+                VALUES (?, ?, ?, 50.00, 'CAUTION', FALSE), (?, ?, ?, 50.00, 'SAFE', TRUE)
+                """, propertyId, registryId, ledgerId, propertyId, registryId, ledgerId);
+
+        int detached = riskAnalysisRepository.detachLedger(ledgerId);
+        buildingLedgerRepository.delete(buildingLedgerRepository.findByPropertyId(propertyId).orElseThrow());
+        buildingLedgerRepository.flush();
+
+        assertThat(detached).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM risk_analysis WHERE property_id = ? AND ledger_id IS NULL",
+                Long.class, propertyId)).isEqualTo(2L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM building_ledger WHERE property_id = ?",
+                Long.class, propertyId)).isZero();
+    }
+
+    private static LedgerSourceTargetCondition target(boolean wishlistedOnly, Long lastPropertyId, int limit) {
+        return new LedgerSourceTargetCondition(LedgerDataSource.MOCK, wishlistedOnly, lastPropertyId, limit);
+    }
+
+    private long insertUser() {
+        return jdbc.queryForObject(
+                "INSERT INTO users (name, credit_score) VALUES ('대장시험', 800) RETURNING user_id", Long.class);
+    }
+
+    private void insertWishlist(long userId, long propertyId) {
+        jdbc.update("""
+                INSERT INTO wishlist (user_id, property_id, monitoring_yn, alert_condition)
+                VALUES (?, ?, FALSE, 'RISK_AND_REGISTRY')
+                """, userId, propertyId);
+    }
+
     // ---------- 픽스처 ----------
 
     private long codeId(String group, String value) {
@@ -253,11 +390,15 @@ class LedgerMapperTest {
     }
 
     private void insertLedger(long propertyId, Boolean violation) {
+        insertLedger(propertyId, violation, "MOCK");
+    }
+
+    private void insertLedger(long propertyId, Boolean violation, String dataSource) {
         jdbc.update("""
                 INSERT INTO building_ledger (property_id, ledger_address, owner_name, building_purpose, building_area,
                     total_floor_area, exclusive_area, approval_date, violation_yn, data_source, updated_at)
                 VALUES (?, '서울특별시 대장시험구 시험로 1', '김임대', '공동주택', 160.07, 480.20, 42.50,
-                    DATE '2015-04-18', ?, 'MOCK', ?)
-                """, propertyId, violation, COLLECTED);
+                    DATE '2015-04-18', ?, ?, ?)
+                """, propertyId, violation, dataSource, COLLECTED);
     }
 }

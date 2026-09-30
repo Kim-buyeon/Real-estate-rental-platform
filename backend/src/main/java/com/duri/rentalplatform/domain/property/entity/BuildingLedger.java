@@ -105,4 +105,38 @@ public class BuildingLedger extends BaseEntity {
         ledger.dataSource = dataSource;
         return ledger;
     }
+
+    /**
+     * Mock 어댑터가 지어낸 대장인가. 연동이 real 이면 판정 입력으로 쓰지 않고, 교체 배치가 실데이터로 바꾸거나 지운다.
+     */
+    public boolean isMock() {
+        return dataSource == LedgerDataSource.MOCK;
+    }
+
+    /**
+     * 같은 매물의 대장을 새로 뗀 것으로 통째로 바꾼다 — Mock 대장을 건축HUB 대장으로 교체할 때. 행(식별자)을 유지하므로 이
+     * 대장을 가리키던 분석 이력은 그대로 이어진다. 넘긴 null 은 「확인하지 못함」 그대로 옮긴다 — 기존 값을 남기지 않는다.
+     */
+    public void replaceWith(
+            String ledgerAddress,
+            String ownerName,
+            String buildingPurpose,
+            String buildingStructure,
+            BigDecimal buildingArea,
+            BigDecimal totalFloorArea,
+            BigDecimal exclusiveArea,
+            LocalDate approvalDate,
+            Boolean violation,
+            LedgerDataSource dataSource) {
+        this.ledgerAddress = ledgerAddress;
+        this.ownerName = ownerName;
+        this.buildingPurpose = buildingPurpose;
+        this.buildingStructure = buildingStructure;
+        this.buildingArea = buildingArea;
+        this.totalFloorArea = totalFloorArea;
+        this.exclusiveArea = exclusiveArea;
+        this.approvalDate = approvalDate;
+        this.violation = violation;
+        this.dataSource = dataSource;
+    }
 }

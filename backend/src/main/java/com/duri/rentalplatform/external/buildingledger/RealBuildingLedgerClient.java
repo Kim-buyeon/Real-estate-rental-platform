@@ -55,6 +55,10 @@ import tools.jackson.databind.json.JsonMapper;
  * 한 필지가 5,167행(52쪽)이었다. 매물 하나에 수십 번 호출해야 하므로 떼지 않고 null 로 둔다.
  *
  * <p>인증키는 실거래가와 같은 {@code DATA_GO_KR_API_KEY} 이며 포털의 <b>인코딩 키</b>를 그대로 넣는다 — {@link #request} 참고.
+ *
+ * <p><b>일일 상한</b> — 요청(페이지) 한 건을 보내기 전마다 {@link BuildingLedgerDailyQuota} 에서 한 칸을 받는다. 못 받으면 그
+ * 조회를 더 부르지 않고 빈 값이다 — 앞 페이지까지 받은 행이 있어도 버린다. 일부 행으로 동을 고르면 다른 건물의 표제부를 고를 수
+ * 있다. 상한은 장애가 아니라 서킷이 실패로 세지 않게 예외로 올리지 않는다.
  */
 @Component
 @ConditionalOnProperty(prefix = "external.building-ledger", name = "mode", havingValue = "real")
@@ -90,12 +94,15 @@ public class RealBuildingLedgerClient implements BuildingLedgerClient {
 
     private final RestClient restClient;
     private final ExternalApiProperties.ClientSettings settings;
+    private final BuildingLedgerDailyQuota dailyQuota;
 
     public RealBuildingLedgerClient(
             @Qualifier("buildingLedgerRestClient") RestClient restClient,
-            ExternalApiProperties properties) {
+            ExternalApiProperties properties,
+            BuildingLedgerDailyQuota dailyQuota) {
         this.restClient = restClient;
         this.settings = properties.buildingLedger();
+        this.dailyQuota = dailyQuota;
         // 인코딩 키가 아니면 기동에서 멈춘다. 디코딩 키가 들어오면 요청마다 403 이 나고 재시도 · 서킷을 거쳐 503 으로 바뀌어,
         // 설정 오류가 외부 장애와 구분되지 않는다 — 실거래가 Real 과 같은 이유.
         if (settings.apiKey() == null || !ENCODED_KEY.matcher(settings.apiKey()).matches()) {
@@ -113,8 +120,13 @@ public class RealBuildingLedgerClient implements BuildingLedgerClient {
             // 조회 키가 없으면 어느 필지인지 모른다. 부르지 않는다 — 추측한 키로 떼면 다른 건물의 대장이다.
             return Optional.empty();
         }
-        List<TitleRow> rows = fetchTitleRows(key);
-        return select(rows, lookup.propertyType(), lookup.naturalKey().address()).map(RealBuildingLedgerClient::toDocument);
+        Optional<List<TitleRow>> rows = fetchTitleRows(key);
+        if (rows.isEmpty()) {
+            // 일일 상한에 닿았다. 장애가 아니므로 예외 없이 빈 값이다(클래스 주석).
+            return Optional.empty();
+        }
+        return select(rows.get(), lookup.propertyType(), lookup.naturalKey().address())
+                .map(RealBuildingLedgerClient::toDocument);
     }
 
     /**
@@ -126,9 +138,13 @@ public class RealBuildingLedgerClient implements BuildingLedgerClient {
         throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
     }
 
-    private List<TitleRow> fetchTitleRows(LedgerLookupKey key) {
+    /** 필지의 표제부 전부. 도중에 일일 상한에 닿으면 빈 값 — 받은 행까지만으로는 동을 고르지 않는다. */
+    private Optional<List<TitleRow>> fetchTitleRows(LedgerLookupKey key) {
         List<TitleRow> rows = new ArrayList<>();
         for (int pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
+            if (!dailyQuota.tryAcquire()) {
+                return Optional.empty();
+            }
             JsonNode body = parseBody(request(key, pageNo));
             List<JsonNode> items = items(body);
             items.forEach(item -> rows.add(TitleRow.from(item)));
@@ -136,7 +152,7 @@ public class RealBuildingLedgerClient implements BuildingLedgerClient {
                 break;
             }
         }
-        return rows;
+        return Optional.of(rows);
     }
 
     /**
