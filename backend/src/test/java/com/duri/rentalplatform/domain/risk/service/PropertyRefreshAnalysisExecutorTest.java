@@ -43,13 +43,14 @@ class PropertyRefreshAnalysisExecutorTest {
     }
 
     @Test
-    @DisplayName("시세가 바뀐 매물은 판정을 다시 돌린다 — 이전 등급 보존과 등급 변동 이벤트는 판정 서비스가 갖는다")
+    @DisplayName("시세가 바뀐 매물은 대장을 다시 떼지 않고 수집해 둔 대장으로 판정을 다시 돌린다 — 건축HUB 초당 한도에 묶이지 않게(#328)")
     void reanalyzesPriceChangedProperty() {
         PropertyRefreshTarget target = PropertyRefreshTarget.priceChanged(PROPERTY_ID);
 
         PropertyRefreshAttempt attempt = executor.analyze(target);
 
-        verify(riskAnalysisCommandService).analyze(PROPERTY_ID);
+        verify(riskAnalysisCommandService).analyzeWithCollectedLedger(PROPERTY_ID);
+        verify(riskAnalysisCommandService, never()).analyze(PROPERTY_ID);
         assertThat(attempt.analyzed()).isTrue();
         assertThat(attempt.isFailed()).isFalse();
         assertThat(attempt.target()).isEqualTo(target);
@@ -61,14 +62,14 @@ class PropertyRefreshAnalysisExecutorTest {
         executor.analyze(PropertyRefreshTarget.priceChanged(PROPERTY_ID));
 
         InOrder order = inOrder(riskAnalysisCommandService, propertyLoadWriter);
-        order.verify(riskAnalysisCommandService).analyze(PROPERTY_ID);
+        order.verify(riskAnalysisCommandService).analyzeWithCollectedLedger(PROPERTY_ID);
         order.verify(propertyLoadWriter).completeReanalysis(PROPERTY_ID);
     }
 
     @Test
     @DisplayName("재분석이 실패하면 재분석 대기 표시를 내리지 않는다 — 다음 회차가 다시 잡는다")
     void keepsReanalysisPendingWhenAnalysisFails() {
-        when(riskAnalysisCommandService.analyze(PROPERTY_ID))
+        when(riskAnalysisCommandService.analyzeWithCollectedLedger(PROPERTY_ID))
                 .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
 
         PropertyRefreshAttempt attempt = executor.analyze(PropertyRefreshTarget.priceChanged(PROPERTY_ID));
@@ -89,11 +90,12 @@ class PropertyRefreshAnalysisExecutorTest {
     }
 
     @Test
-    @DisplayName("최신 판정이 없는 매물도 같은 판정을 돌린다")
+    @DisplayName("최신 판정이 없는 매물(첫 판정)은 대장 수집을 포함한 판정을 돌린다")
     void analyzesUnanalyzedProperty() {
         PropertyRefreshAttempt attempt = executor.analyze(PropertyRefreshTarget.unanalyzed(PROPERTY_ID));
 
         verify(riskAnalysisCommandService).analyze(PROPERTY_ID);
+        verify(riskAnalysisCommandService, never()).analyzeWithCollectedLedger(PROPERTY_ID);
         assertThat(attempt.analyzed()).isTrue();
         // 미판정 갈래는 재분석 대기 매물을 빼고 조회하므로 내릴 표시가 없다.
         verify(propertyLoadWriter, never()).completeReanalysis(PROPERTY_ID);
