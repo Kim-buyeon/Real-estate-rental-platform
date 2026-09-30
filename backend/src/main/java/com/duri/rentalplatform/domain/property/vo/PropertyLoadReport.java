@@ -59,6 +59,9 @@ public class PropertyLoadReport {
     /** 위 갱신 중 시세 금액까지 바뀐 매물 수. 재분석 대상이다. 기준일만 바뀐 매물은 들지 않는다. */
     private int priceChanged;
 
+    /** 갱신 적재에서 건축물대장 조회 키가 비어 있던 기존 매물에 키를 채운 수. 초기 적재에서는 늘 0 이다. */
+    private int ledgerKeyFilled;
+
     /** 실패 사유 목록. 어느 구 · 어느 달에서 무엇이 났는지 남긴다. */
     private final List<String> failures = new ArrayList<>();
 
@@ -76,6 +79,10 @@ public class PropertyLoadReport {
 
     public void addPriceChanged(int count) {
         priceChanged += count;
+    }
+
+    public void addLedgerKeyFilled(int count) {
+        ledgerKeyFilled += count;
     }
 
     public void skipDuplicate() {
@@ -111,10 +118,10 @@ public class PropertyLoadReport {
 
     public String summary() {
         return ("받은 %d건 · 저장 %d건 · 중복 %d건 · 주소없음 %d건 · 좌표없음 %d건 · 시세없음 %d건"
-                + " · 연동실패 %d건 · 자료이상 %d건 · 처리실패 %d건 · 시세갱신 %d건 · 시세변경 %d건")
+                + " · 연동실패 %d건 · 자료이상 %d건 · 처리실패 %d건 · 시세갱신 %d건 · 시세변경 %d건 · 대장키보강 %d건")
                 .formatted(fetched, saved, skippedDuplicate, skippedAddressNotFound,
                         skippedCoordinatesNotFound, skippedMarketPriceNotFound, failedExternal,
-                        failedInvalidData, failedUnexpected, priceUpdated, priceChanged);
+                        failedInvalidData, failedUnexpected, priceUpdated, priceChanged, ledgerKeyFilled);
     }
 
     /**

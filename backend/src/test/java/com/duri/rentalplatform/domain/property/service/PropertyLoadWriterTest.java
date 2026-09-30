@@ -17,6 +17,8 @@ import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.repository.PropertyCodeRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
+import com.duri.rentalplatform.domain.property.vo.LedgerKeyFill;
+import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
 import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
 import com.duri.rentalplatform.domain.property.vo.PropertyPriceSnapshot;
@@ -58,7 +60,7 @@ class PropertyLoadWriterTest {
                 address, "강남구", "김민준", ContractType.DEPOSIT_ONLY, PropertyType.APARTMENT,
                 300_000_000L, 0L, 300_000_000L, PriceType.ACTUAL_TRANSACTION, LocalDate.now(),
                 new BigDecimal("59.90"), floor, 2005,
-                new BigDecimal("37.5000000"), new BigDecimal("127.0000000"));
+                new BigDecimal("37.5000000"), new BigDecimal("127.0000000"), null);
     }
 
     @Test
@@ -168,7 +170,7 @@ class PropertyLoadWriterTest {
                 address, "강남구", "김민준", ContractType.DEPOSIT_ONLY, PropertyType.APARTMENT,
                 300_000_000L, 0L, marketPrice, PriceType.ACTUAL_TRANSACTION, priceDate,
                 new BigDecimal("59.90"), 3, 2005,
-                new BigDecimal("37.5000000"), new BigDecimal("127.0000000"));
+                new BigDecimal("37.5000000"), new BigDecimal("127.0000000"), null);
         Property property = Property.register(registration, anyCode, anyCode, anyCode);
         // 식별자는 IDENTITY 라 저장 때 채워진다. 저장소가 스텁이라 직접 넣는다.
         ReflectionTestUtils.setField(property, "propertyId", propertyId);
@@ -185,7 +187,7 @@ class PropertyLoadWriterTest {
         Map<PropertyNaturalKey, PropertyPriceSnapshot> prices = writer.findLoadedPrices("강남구");
 
         assertThat(prices).containsExactly(Map.entry(property.naturalKey(),
-                new PropertyPriceSnapshot(5L, 280_000_000L, PriceType.ACTUAL_TRANSACTION, priceDate)));
+                new PropertyPriceSnapshot(5L, 280_000_000L, PriceType.ACTUAL_TRANSACTION, priceDate, true)));
     }
 
     @Test
@@ -221,5 +223,57 @@ class PropertyLoadWriterTest {
                 new MarketPriceUpdate(9L, 300_000_000L, PriceType.ACTUAL_TRANSACTION, LocalDate.of(2026, 8, 20))));
 
         assertThat(priceChanged).isEmpty();
+    }
+
+    // ---------- 건축물대장 조회 키(PROP-04) ----------
+
+    private static final LedgerLookupKey KEY = new LedgerLookupKey("11680", "10100", "0100", "0001");
+
+    @Test
+    @DisplayName("대장 조회 키: 새 매물은 적재 때 만든 키를 넷 한 묶음으로 저장한다")
+    void registersLedgerKey() {
+        PropertyCode anyCode = mock(PropertyCode.class);
+        PropertyRegistration base = registrationOf("주소1", 3);
+        PropertyRegistration withKey = new PropertyRegistration(base.address(), base.district(), base.landlordName(),
+                base.contractType(), base.propertyType(), base.deposit(), base.monthlyRent(), base.marketPrice(),
+                base.priceType(), base.priceDate(), base.areaSqm(), base.floor(), base.builtYear(), base.latitude(),
+                base.longitude(), KEY);
+
+        Property property = Property.register(withKey, anyCode, anyCode, anyCode);
+
+        assertThat(property.ledgerKey()).isEqualTo(KEY);
+        assertThat(property.getSigunguCode()).isEqualTo("11680");
+        assertThat(property.getBjdongCode()).isEqualTo("10100");
+        assertThat(property.getBun()).isEqualTo("0100");
+        assertThat(property.getJi()).isEqualTo("0001");
+    }
+
+    @Test
+    @DisplayName("대장 조회 키: 키가 있는 매물의 저장된 시세는 키가 비어 있지 않다고 표시한다")
+    void marksSnapshotWithLedgerKeyAsPresent() {
+        Property property = storedProperty(5L, "주소1", 280_000_000L, LocalDate.of(2026, 8, 20));
+        property.fillLedgerKey(KEY);
+        when(propertyRepository.findAllByDistrict("강남구")).thenReturn(List.of(property));
+
+        assertThat(writer.findLoadedPrices("강남구").get(property.naturalKey()).ledgerKeyMissing()).isFalse();
+    }
+
+    @Test
+    @DisplayName("대장 조회 키 보강: 빈 매물만 채우고 이미 키가 있는 매물 · 지워진 매물은 건너뛴다")
+    void fillsOnlyKeylessProperties() {
+        LedgerLookupKey otherKey = new LedgerLookupKey("11680", "10300", "0200", "0000");
+        Property keyless = storedProperty(1L, "주소1", 300_000_000L, LocalDate.of(2026, 8, 20));
+        Property keyed = storedProperty(2L, "주소2", 300_000_000L, LocalDate.of(2026, 8, 20));
+        keyed.fillLedgerKey(otherKey);
+        when(propertyRepository.findAllById(Set.of(1L, 2L, 9L))).thenReturn(List.of(keyless, keyed));
+
+        int filled = writer.fillLedgerKeys(List.of(
+                new LedgerKeyFill(1L, KEY), new LedgerKeyFill(2L, KEY), new LedgerKeyFill(9L, KEY)));
+
+        assertThat(filled).isEqualTo(1);
+        assertThat(keyless.ledgerKey()).isEqualTo(KEY);
+        // 이미 있는 키는 덮어쓰지 않는다 — 이미 수집한 대장과 키가 어긋날 수 있다.
+        assertThat(keyed.ledgerKey()).isEqualTo(otherKey);
+        verify(propertyRepository, never()).saveAll(any());
     }
 }

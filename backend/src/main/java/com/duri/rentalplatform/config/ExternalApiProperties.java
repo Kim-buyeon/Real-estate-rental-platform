@@ -13,7 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param rentTransaction  국토교통부 전월세 실거래가
  * @param addressNormalize 도로명주소 주소 정규화
  * @param geocode          카카오 로컬 좌표 변환
- * @param buildingLedger   국토교통부 건축물대장. Real 이 없어 기본 URL · 키 · 타임아웃은 Fault 의 timeout 모드만 쓴다
+ * @param buildingLedger   국토교통부 건축HUB 건축물대장정보. 실거래가와 같은 제공처 · 같은 키지만 서킷은 따로 둔다
  * @param saleTransaction  국토교통부 매매 실거래가. 시세 표본이다. 전월세와 같은 제공처 · 같은 키지만 서킷은 따로 둔다
  * @param jeonseLoanRate   한국주택금융공사 전세자금대출 금리(은행별)
  */

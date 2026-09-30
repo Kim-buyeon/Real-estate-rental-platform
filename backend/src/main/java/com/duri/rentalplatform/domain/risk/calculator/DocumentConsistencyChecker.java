@@ -19,6 +19,10 @@ import java.util.regex.Pattern;
  *       차이가 곧 다른 집이다. 도로명 · 지번 변환은 적재 단계의 정규화가 맡는다.</li>
  *   <li><b>면적</b> — 소수 자릿수와 무관한 값 비교({@code compareTo}). 허용 오차의 근거 문서가 없어 두지 않는다.
  *       어느 한쪽이 없으면 불일치다.</li>
+ *   <li><b>위반건축물</b> — 대장 표기를 그대로 옮긴다. 확인하지 못했으면(null) null 로 옮긴다 — 「위반 아님」으로도
+ *       「위반」으로도 바꾸지 않는다. 보증 판정은 참일 때만 가입 불가 사유로 쓰고, null 은 안내 대상이다.</li>
+ *   <li><b>대장이 없을 때</b> — 뗄 대장이 없어 대장 없이 분석하면 대장 항목 셋(주소 · 위반건축물 · 면적)은 모두 null
+ *       (확인 불가)이다. 명의는 등기와 매물의 대조라 그대로 본다.</li>
  * </ul>
  *
  * <p>기준 테이블 값이 없는 대조라 임계값 인자를 받지 않는다.
@@ -31,6 +35,9 @@ public final class DocumentConsistencyChecker {
         boolean ownerNameMatched = currentOwner(input)
                 .map(owner -> sameName(owner.holderName(), input.landlordName()))
                 .orElse(false);
+        if (!input.ledgerCollected()) {
+            return new ConsistencyResult(ownerNameMatched, null, null, null);
+        }
         return new ConsistencyResult(
                 ownerNameMatched,
                 sameAddress(input.ledgerAddress(), input.registryAddress()),

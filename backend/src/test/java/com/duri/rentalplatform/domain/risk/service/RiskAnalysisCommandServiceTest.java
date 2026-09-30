@@ -32,6 +32,7 @@ import com.duri.rentalplatform.domain.risk.entity.RiskAnalysis;
 import com.duri.rentalplatform.domain.risk.entity.RiskCriteria;
 import com.duri.rentalplatform.domain.risk.entity.SgiCriteria;
 import com.duri.rentalplatform.domain.risk.enums.GradeReason;
+import com.duri.rentalplatform.domain.risk.enums.GuaranteeFailedCondition;
 import com.duri.rentalplatform.domain.risk.enums.GuaranteeProvider;
 import com.duri.rentalplatform.domain.risk.enums.OwnershipRightType;
 import com.duri.rentalplatform.domain.risk.event.RiskGradeChangedEvent;
@@ -162,6 +163,66 @@ class RiskAnalysisCommandServiceTest {
         assertThat(saved.getRiskReason()).isEqualTo("INSURANCE_ELIGIBLE");
         assertThat(saved.getPreviousGrade()).isNull();
         assertThat(saved.isLatest()).isTrue();
+    }
+
+    @Test
+    @DisplayName("대장 위반건축물 확인 불가(null)는 가입 불가 사유가 아니다 — 3사 가입 가능 · SAFE")
+    void unverifiedViolationDoesNotDisqualify() {
+        givenSafeProperty();
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID).orElseThrow().getViolation()).thenReturn(null);
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        RiskResponse response = service.analyze(PROPERTY_ID);
+
+        assertThat(response.insuranceEligible()).isTrue();
+        assertThat(response.riskGrade()).isEqualTo(RiskGrade.SAFE);
+        assertThat(response.providers()).allSatisfy(provider -> assertThat(provider.failedConditions()).isEmpty());
+    }
+
+    @Test
+    @DisplayName("대장 위반건축물이 참이면 3사 가입 불가 사유다 — 기준의 위반건축물 불가가 참일 때")
+    void confirmedViolationDisqualifies() {
+        givenSafeProperty();
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID).orElseThrow().getViolation()).thenReturn(true);
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        RiskResponse response = service.analyze(PROPERTY_ID);
+
+        assertThat(response.insuranceEligible()).isFalse();
+        assertThat(response.consistency().violationBuilding()).isTrue();
+        assertThat(response.providers()).allSatisfy(provider -> assertThat(provider.failedConditions())
+                .containsExactly(GuaranteeFailedCondition.VIOLATION_BUILDING));
+    }
+
+    @Test
+    @DisplayName("대장 위반건축물 확인 불가(null)는 응답에도 null 그대로 나간다")
+    void unverifiedViolationIsNullInResponse() {
+        givenSafeProperty();
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID).orElseThrow().getViolation()).thenReturn(null);
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        assertThat(service.analyze(PROPERTY_ID).consistency())
+                .isEqualTo(new RiskResponse.Consistency(true, true, null, true));
+    }
+
+    @Test
+    @DisplayName("대장 없음: 오류 없이 대장 없이 분석한다 — 대장 항목은 null, 가입 가능 · SAFE, 분석 행의 대장 ID 는 null")
+    void analyzesWithoutLedger() {
+        givenSafeProperty();
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.empty());
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        RiskResponse response = service.analyze(PROPERTY_ID);
+
+        assertThat(response.consistency()).isEqualTo(new RiskResponse.Consistency(true, null, null, null));
+        assertThat(response.insuranceEligible()).isTrue();
+        assertThat(response.riskGrade()).isEqualTo(RiskGrade.SAFE);
+        assertThat(response.providers()).allSatisfy(provider -> assertThat(provider.failedConditions()).isEmpty());
+        assertThat(capturedSave().getLedgerId()).isNull();
     }
 
     @Test
@@ -340,6 +401,7 @@ class RiskAnalysisCommandServiceTest {
         when(ledger.getLedgerId()).thenReturn(LEDGER_ID);
         when(ledger.getLedgerAddress()).thenReturn("서울특별시 시험구 시험로 1");
         when(ledger.getExclusiveArea()).thenReturn(new BigDecimal("84.0"));
+        when(ledger.getViolation()).thenReturn(false);
         when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.of(ledger));
 
         RiskCriteria riskCriteria = mock(RiskCriteria.class);

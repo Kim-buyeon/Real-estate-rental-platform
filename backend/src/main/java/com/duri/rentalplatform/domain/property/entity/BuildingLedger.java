@@ -41,7 +41,8 @@ public class BuildingLedger extends BaseEntity {
     @Column(nullable = false, length = 200)
     private String ledgerAddress;
 
-    @Column(nullable = false, length = 50)
+    /** 대장상 소유자. 건축HUB 는 주지 않아 null 일 수 있다(V17). */
+    @Column(length = 50)
     private String ownerName;
 
     /** 주용도. 응답의 {@code mainPurpose}. */
@@ -51,8 +52,8 @@ public class BuildingLedger extends BaseEntity {
     @Column(length = 50)
     private String buildingStructure;
 
-    /** 건축면적(㎡). 연면적이 아니다. */
-    @Column(nullable = false, precision = 7, scale = 2)
+    /** 건축면적(㎡). 연면적이 아니다. 미기재면 null(V17). */
+    @Column(precision = 7, scale = 2)
     private BigDecimal buildingArea;
 
     /** 연면적(㎡). */
@@ -66,9 +67,12 @@ public class BuildingLedger extends BaseEntity {
     /** 사용승인일. */
     private LocalDate approvalDate;
 
-    /** 위반건축물 표기. 응답의 {@code violationBuilding}. */
-    @Column(name = "violation_yn", nullable = false)
-    private boolean violation;
+    /**
+     * 위반건축물 표기. 응답의 {@code violationBuilding}. <b>null 은 「확인하지 못함」</b>이다(V17) — 건축HUB 는 이 항목을
+     * 주지 않는다. 「위반 아님」으로 읽지 않는다.
+     */
+    @Column(name = "violation_yn")
+    private Boolean violation;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -85,7 +89,7 @@ public class BuildingLedger extends BaseEntity {
             BigDecimal totalFloorArea,
             BigDecimal exclusiveArea,
             LocalDate approvalDate,
-            boolean violation,
+            Boolean violation,
             LedgerDataSource dataSource) {
         BuildingLedger ledger = new BuildingLedger();
         ledger.propertyId = propertyId;

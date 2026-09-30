@@ -1,13 +1,15 @@
 package com.duri.rentalplatform.external.buildingledger;
 
+import java.util.Optional;
+
 /**
- * 국토교통부 건축물대장 연동.
- *
- * <p><b>구현은 Mock · Fault 둘이다.</b> Real 은 활용 신청 승인과, 요청 파라미터인 시군구 · 법정동 코드와 번 · 지를
- * 매물이 저장하게 되는 변경에서 붙인다. 어느 구현이 뜨는지는 {@code external.building-ledger.mode} 가 정한다.
+ * 국토교통부 건축물대장 연동. 어느 구현이 뜨는지는 {@code external.building-ledger.mode} 가 정한다 — Mock · Real · Fault.
  *
  * <p>호출은 트랜잭션 밖에서 한다. 실패는 {@code BusinessException(EXTERNAL_API_UNAVAILABLE)} 으로 올라오며, 수집
- * 서비스는 아무것도 저장하지 않고 그대로 올린다 — 위반건축물 여부는 판정 입력이라 빈 값이나 기본값으로 채울 수 없다.
+ * 서비스는 아무것도 저장하지 않고 그대로 올린다 — 대장 항목은 판정 입력이라 빈 값이나 기본값으로 채울 수 없다.
+ *
+ * <p><b>빈 값은 「뗄 대장이 없다」이다.</b> 조회 키가 없는 매물이거나, 그 필지에 쓸 수 있는 표제부가 없을 때다. 장애가
+ * 아니므로 예외로 올리지 않는다 — 장애와 같은 값이면 한 매물의 자료 문제로 서킷이 열린다.
  */
 public interface BuildingLedgerClient {
 
@@ -20,6 +22,6 @@ public interface BuildingLedgerClient {
      */
     String RESILIENCE_INSTANCE = "buildingLedger";
 
-    /** 매물의 건축물대장을 떼어 온다. */
-    BuildingLedgerDocument fetch(BuildingLedgerLookup lookup);
+    /** 매물의 건축물대장을 떼어 온다. 뗄 대장이 없으면 빈 값. */
+    Optional<BuildingLedgerDocument> fetch(BuildingLedgerLookup lookup);
 }
