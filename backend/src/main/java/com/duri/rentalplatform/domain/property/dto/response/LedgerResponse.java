@@ -1,5 +1,6 @@
 package com.duri.rentalplatform.domain.property.dto.response;
 
+import com.duri.rentalplatform.domain.property.enums.LedgerDataSource;
 import com.duri.rentalplatform.domain.property.vo.LedgerRow;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -10,17 +11,24 @@ import java.util.Set;
 /**
  * 건축물대장 정보. API 명세서(매물) 1.8.
  *
- * @param isResidential 주용도가 주거용인가. 저장하지 않는다 — 주용도에서 파생되는 값이라 따로 저장하면 둘이 어긋날 수 있다
+ * <p><b>null 은 「확인 불가」</b>다. 대장이 그 항목을 주지 않거나(건축HUB 의 위반건축물), 뗄 대장이 없을 때(조회 키 없음 ·
+ * 필지에 맞는 표제부 없음)다. 뗄 대장이 없으면 {@code propertyId} 만 채우고 나머지는 전부 null 이다 — 공통 규약 2장에 「대장
+ * 없음」에 맞는 오류 코드가 없어 200 으로 낸다.
+ *
+ * @param isResidential 주용도가 주거용인가. 저장하지 않는다 — 주용도에서 파생되는 값이라 따로 저장하면 둘이 어긋날 수 있다.
+ *                      주용도가 없으면(대장 없음) null
+ * @param dataSource    대장 수집 출처. 뗄 대장이 없으면 null
  */
 public record LedgerResponse(
         Long propertyId,
         String mainPurpose,
-        boolean isResidential,
-        boolean violationBuilding,
+        Boolean isResidential,
+        Boolean violationBuilding,
         BigDecimal totalFloorArea,
         BigDecimal exclusiveArea,
         LocalDate approvalDate,
-        OffsetDateTime collectedAt
+        OffsetDateTime collectedAt,
+        LedgerDataSource dataSource
 ) {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
@@ -36,11 +44,12 @@ public record LedgerResponse(
         return new LedgerResponse(
                 row.propertyId(),
                 row.mainPurpose(),
-                RESIDENTIAL_PURPOSES.contains(row.mainPurpose()),
+                row.mainPurpose() == null ? null : RESIDENTIAL_PURPOSES.contains(row.mainPurpose()),
                 row.violationBuilding(),
                 row.totalFloorArea(),
                 row.exclusiveArea(),
                 row.approvalDate(),
-                row.collectedAt().atZoneSameInstant(SEOUL).toOffsetDateTime());
+                row.collectedAt() == null ? null : row.collectedAt().atZoneSameInstant(SEOUL).toOffsetDateTime(),
+                row.dataSource());
     }
 }

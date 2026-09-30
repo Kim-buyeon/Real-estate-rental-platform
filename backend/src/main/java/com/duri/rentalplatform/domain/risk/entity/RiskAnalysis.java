@@ -46,7 +46,7 @@ public class RiskAnalysis extends CreatedAtEntity {
     @Column(nullable = false)
     private Long registryId;
 
-    @Column(nullable = false)
+    /** 판정에 쓴 대장. 뗄 대장이 없어 대장 없이 분석했으면 null(V17). */
     private Long ledgerId;
 
     /** 가입 가능한 첫 기관(HUG → HF → SGI). 없으면 null. */

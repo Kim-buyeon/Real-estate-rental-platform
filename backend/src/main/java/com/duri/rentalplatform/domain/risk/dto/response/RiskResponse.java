@@ -64,12 +64,17 @@ public record RiskResponse(
         }
     }
 
-    /** 명의 · 문서 정합 확인(RISK-04). */
+    /**
+     * 명의 · 문서 정합 확인(RISK-04).
+     *
+     * <p>대장에서 오는 세 항목({@code addressMatched} · {@code violationBuilding} · {@code areaMatched})은 null 이 「확인
+     * 불가」다 — 뗄 대장이 없거나 대장이 그 항목을 주지 않을 때. 참 · 거짓으로 바꾸지 않고 null 그대로 낸다.
+     */
     public record Consistency(
             boolean ownerNameMatched,
-            boolean addressMatched,
-            boolean violationBuilding,
-            boolean areaMatched
+            Boolean addressMatched,
+            Boolean violationBuilding,
+            Boolean areaMatched
     ) {
 
         static Consistency from(ConsistencyResult result) {

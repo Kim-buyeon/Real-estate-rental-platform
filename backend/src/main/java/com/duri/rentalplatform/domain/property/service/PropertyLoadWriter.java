@@ -6,6 +6,7 @@ import com.duri.rentalplatform.domain.property.enums.CodeGroup;
 import com.duri.rentalplatform.domain.property.enums.PropertyStatus;
 import com.duri.rentalplatform.domain.property.repository.PropertyCodeRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
+import com.duri.rentalplatform.domain.property.vo.LedgerKeyFill;
 import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
 import com.duri.rentalplatform.domain.property.vo.PropertyPriceSnapshot;
@@ -62,7 +63,7 @@ public class PropertyLoadWriter {
                 .collect(Collectors.toMap(
                         Property::naturalKey,
                         property -> new PropertyPriceSnapshot(property.getPropertyId(), property.getMarketPrice(),
-                                property.getPriceType(), property.getPriceDate()),
+                                property.getPriceType(), property.getPriceDate(), property.ledgerKey() == null),
                         (first, second) -> first));
     }
 
@@ -105,6 +106,23 @@ public class PropertyLoadWriter {
             }
         }
         return priceChanged;
+    }
+
+    /**
+     * 조회 키가 비어 있는 기존 매물 한 덩어리에 건축물대장 조회 키를 채우고 채운 건수를 돌려준다. 이 메서드 하나가 트랜잭션
+     * 경계다. 그 사이 키가 채워진 매물은 엔티티가 건너뛰고, 지워진 매물은 조회되지 않아 건너뛴다.
+     */
+    @Transactional
+    public int fillLedgerKeys(List<LedgerKeyFill> fills) {
+        Map<Long, LedgerKeyFill> byId = fills.stream()
+                .collect(Collectors.toMap(LedgerKeyFill::propertyId, Function.identity(), (first, second) -> first));
+        int filled = 0;
+        for (Property property : propertyRepository.findAllById(byId.keySet())) {
+            if (property.fillLedgerKey(byId.get(property.getPropertyId()).ledgerKey())) {
+                filled++;
+            }
+        }
+        return filled;
     }
 
     /**

@@ -18,7 +18,10 @@ import com.duri.rentalplatform.domain.property.enums.LedgerDataSource;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.repository.BuildingLedgerRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
+import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
+import com.duri.rentalplatform.external.address.AddressNormalizeClient;
+import com.duri.rentalplatform.external.address.NormalizedAddress;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerClient;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDocument;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerLookup;
@@ -43,6 +46,7 @@ class LedgerCommandServiceTest {
     private static final long PROPERTY_ID = 1024L;
 
     private BuildingLedgerClient client;
+    private AddressNormalizeClient addressClient;
     private PropertyRepository propertyRepository;
     private BuildingLedgerRepository buildingLedgerRepository;
     private PlatformTransactionManager transactionManager;
@@ -54,7 +58,9 @@ class LedgerCommandServiceTest {
         propertyRepository = mock(PropertyRepository.class);
         buildingLedgerRepository = mock(BuildingLedgerRepository.class);
         transactionManager = mock(PlatformTransactionManager.class);
-        service = new LedgerCommandService(client, propertyRepository, buildingLedgerRepository, transactionManager);
+        addressClient = mock(AddressNormalizeClient.class);
+        service = new LedgerCommandService(client, addressClient, propertyRepository, buildingLedgerRepository,
+                transactionManager);
     }
 
     @Test
@@ -85,14 +91,14 @@ class LedgerCommandServiceTest {
     @DisplayName("처음 조회면 매물 정보로 대장을 떼어 모든 항목을 옮겨 저장한다")
     void collectsAndSaves() {
         givenProperty();
-        when(client.fetch(any())).thenReturn(document());
+        when(client.fetch(any())).thenReturn(Optional.of(document()));
 
         service.collectIfAbsent(PROPERTY_ID);
 
         ArgumentCaptor<BuildingLedgerLookup> lookup = ArgumentCaptor.forClass(BuildingLedgerLookup.class);
         verify(client).fetch(lookup.capture());
         assertThat(lookup.getValue())
-                .isEqualTo(new BuildingLedgerLookup(PROPERTY_ID, naturalKey(), "김임대", PropertyType.APARTMENT));
+                .isEqualTo(new BuildingLedgerLookup(PROPERTY_ID, naturalKey(), "김임대", PropertyType.APARTMENT, null));
 
         ArgumentCaptor<BuildingLedger> saved = ArgumentCaptor.forClass(BuildingLedger.class);
         verify(buildingLedgerRepository).saveAndFlush(saved.capture());
@@ -106,7 +112,7 @@ class LedgerCommandServiceTest {
         assertThat(ledger.getTotalFloorArea()).isEqualByComparingTo("2550.00");
         assertThat(ledger.getExclusiveArea()).isEqualByComparingTo("42.50");
         assertThat(ledger.getApprovalDate()).isEqualTo(LocalDate.of(1998, 4, 18));
-        assertThat(ledger.isViolation()).isTrue();
+        assertThat(ledger.getViolation()).isTrue();
         assertThat(ledger.getDataSource()).isEqualTo(LedgerDataSource.MOCK);
     }
 
@@ -114,7 +120,7 @@ class LedgerCommandServiceTest {
     @DisplayName("외부 호출은 읽기 트랜잭션이 끝난 뒤, 쓰기 트랜잭션이 시작되기 전에 일어난다")
     void fetchHappensOutsideTransactions() {
         givenProperty();
-        when(client.fetch(any())).thenReturn(document());
+        when(client.fetch(any())).thenReturn(Optional.of(document()));
 
         service.collectIfAbsent(PROPERTY_ID);
 
@@ -145,7 +151,7 @@ class LedgerCommandServiceTest {
     @DisplayName("동시 첫 조회로 UNIQUE 에 걸려도 이미 저장된 대장이 있으면 예외 없이 끝난다")
     void concurrentFirstCollectionIsAbsorbed() {
         givenProperty();
-        when(client.fetch(any())).thenReturn(document());
+        when(client.fetch(any())).thenReturn(Optional.of(document()));
         when(buildingLedgerRepository.existsByPropertyId(PROPERTY_ID)).thenReturn(false, true);
         when(buildingLedgerRepository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("uq_building_ledger_property_id"));
@@ -159,7 +165,7 @@ class LedgerCommandServiceTest {
     @DisplayName("무결성 위반인데 저장된 대장이 없으면 삼키지 않는다")
     void otherIntegrityViolationIsRethrown() {
         givenProperty();
-        when(client.fetch(any())).thenReturn(document());
+        when(client.fetch(any())).thenReturn(Optional.of(document()));
         when(buildingLedgerRepository.existsByPropertyId(PROPERTY_ID)).thenReturn(false);
         when(buildingLedgerRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("fk"));
 
@@ -167,9 +173,93 @@ class LedgerCommandServiceTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    // ---------- 조회 키 · 뗄 대장이 없을 때 · 대장 주소 정규화(PROP-04) ----------
+
+    @Test
+    @DisplayName("매물의 대장 조회 키를 조회 값에 옮겨 넘긴다")
+    void passesLedgerKey() {
+        LedgerLookupKey key = new LedgerLookupKey("11110", "17400", "0702", "0000");
+        givenProperty().ledgerKey(key);
+        when(client.fetch(any())).thenReturn(Optional.of(document()));
+
+        service.collectIfAbsent(PROPERTY_ID);
+
+        ArgumentCaptor<BuildingLedgerLookup> lookup = ArgumentCaptor.forClass(BuildingLedgerLookup.class);
+        verify(client).fetch(lookup.capture());
+        assertThat(lookup.getValue().ledgerKey()).isEqualTo(key);
+    }
+
+    @Test
+    @DisplayName("뗄 대장이 없으면(빈 값) 오류 없이 끝나고 아무것도 저장하지 않는다 — 대장 행을 지어내지 않는다")
+    void noDocumentSavesNothing() {
+        givenProperty();
+        when(client.fetch(any())).thenReturn(Optional.empty());
+
+        service.collectIfAbsent(PROPERTY_ID);
+
+        verify(buildingLedgerRepository, never()).saveAndFlush(any());
+        verify(addressClient, never()).normalize(any());
+    }
+
+    @Test
+    @DisplayName("건축HUB 대장은 지번 주소를 주소 정규화에 태워 도로명 주소로 저장하고, 위반건축물 null 은 null 로 저장한다")
+    void normalizesBuildingHubAddress() {
+        givenProperty();
+        when(client.fetch(any())).thenReturn(Optional.of(buildingHubDocument()));
+        when(addressClient.normalize("서울특별시 종로구 창신동 702")).thenReturn(Optional.of(new NormalizedAddress(
+                "서울특별시 종로구 동망산길 19 (창신동)", "서울특별시 종로구 창신동 702", "종로구", "창신동", null,
+                "1111017400", "TEST_JUSO")));
+
+        service.collectIfAbsent(PROPERTY_ID);
+
+        ArgumentCaptor<BuildingLedger> saved = ArgumentCaptor.forClass(BuildingLedger.class);
+        verify(buildingLedgerRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getLedgerAddress()).isEqualTo("서울특별시 종로구 동망산길 19 (창신동)");
+        assertThat(saved.getValue().getViolation()).isNull();
+        assertThat(saved.getValue().getOwnerName()).isNull();
+        assertThat(saved.getValue().getDataSource()).isEqualTo(LedgerDataSource.BUILDING_HUB);
+    }
+
+    @Test
+    @DisplayName("정규화 결과가 없으면 대장 원문 주소를 그대로 저장한다")
+    void keepsRawAddressWhenNormalizationFindsNothing() {
+        givenProperty();
+        when(client.fetch(any())).thenReturn(Optional.of(buildingHubDocument()));
+        when(addressClient.normalize(any())).thenReturn(Optional.empty());
+
+        service.collectIfAbsent(PROPERTY_ID);
+
+        ArgumentCaptor<BuildingLedger> saved = ArgumentCaptor.forClass(BuildingLedger.class);
+        verify(buildingLedgerRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getLedgerAddress()).isEqualTo("서울특별시 종로구 창신동 702");
+    }
+
+    @Test
+    @DisplayName("정규화 연동이 실패하면 그대로 올리고 아무것도 저장하지 않는다")
+    void normalizationFailureSavesNothing() {
+        givenProperty();
+        when(client.fetch(any())).thenReturn(Optional.of(buildingHubDocument()));
+        when(addressClient.normalize(any())).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
+
+        assertThatThrownBy(() -> service.collectIfAbsent(PROPERTY_ID)).isInstanceOf(BusinessException.class);
+        verify(buildingLedgerRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Mock 대장은 이미 매물 주소라 주소 정규화를 부르지 않는다")
+    void doesNotNormalizeMockAddress() {
+        givenProperty();
+        when(client.fetch(any())).thenReturn(Optional.of(document()));
+
+        service.collectIfAbsent(PROPERTY_ID);
+
+        verify(addressClient, never()).normalize(any());
+    }
+
     // ---------- 픽스처 ----------
 
-    private void givenProperty() {
+    /** 매물 목을 등록하고 돌려준다. 조회 키는 기본 null 이다. */
+    private PropertyStub givenProperty() {
         Property property = mock(Property.class);
         PropertyCode typeCode = mock(PropertyCode.class);
         when(typeCode.getCodeValue()).thenReturn("APARTMENT");
@@ -178,6 +268,19 @@ class LedgerCommandServiceTest {
         when(property.getLandlordName()).thenReturn("김임대");
         when(property.getPropertyTypeCode()).thenReturn(typeCode);
         when(propertyRepository.findById(PROPERTY_ID)).thenReturn(Optional.of(property));
+        return new PropertyStub(property);
+    }
+
+    private record PropertyStub(Property property) {
+        void ledgerKey(LedgerLookupKey key) {
+            when(property.ledgerKey()).thenReturn(key);
+        }
+    }
+
+    /** 건축HUB 가 주는 꼴 — 지번 주소, 소유자 · 전용면적 · 위반건축물 없음. */
+    private static BuildingLedgerDocument buildingHubDocument() {
+        return new BuildingLedgerDocument("서울특별시 종로구 창신동 702", null, "공동주택", "철근콘크리트구조",
+                null, new BigDecimal("14544.66"), null, LocalDate.of(1992, 11, 25), null, LedgerDataSource.BUILDING_HUB);
     }
 
     private static PropertyNaturalKey naturalKey() {

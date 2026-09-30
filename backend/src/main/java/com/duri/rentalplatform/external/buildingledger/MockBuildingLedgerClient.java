@@ -7,11 +7,16 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
  * 건축물대장 Mock. 매물에서 대장을 만들어 <b>같은 매물은 항상 같은 대장</b>이 되게 한다.
+ *
+ * <p><b>테스트 · 로컬 전용이다.</b> 아래 값은 판정 분기를 돌리기 위해 지어낸 것이고 실제 대장이 아니다. 실제 대장은
+ * {@link RealBuildingLedgerClient} 가 뗀다. 조회 키({@link BuildingLedgerLookup#ledgerKey()})는 쓰지 않으므로 키가 없는
+ * 매물에도 대장을 낸다.
  *
  * <p>난수나 시각을 쓰지 않는다. 각 항목은 매물 ID 와 항목별 씨앗을 섞기 함수에 태워 고른다 — 등기 Mock 과 같은
  * 방식이다. 씨앗이 다르면 결과가 전 비트에서 갈리므로 항목끼리 함께 움직이지 않는다.
@@ -84,7 +89,7 @@ public class MockBuildingLedgerClient implements BuildingLedgerClient {
     }
 
     @Override
-    public BuildingLedgerDocument fetch(BuildingLedgerLookup lookup) {
+    public Optional<BuildingLedgerDocument> fetch(BuildingLedgerLookup lookup) {
         long id = lookup.propertyId();
         BigDecimal exclusiveArea = lookup.naturalKey().areaSqm();
 
@@ -98,7 +103,7 @@ public class MockBuildingLedgerClient implements BuildingLedgerClient {
         BigDecimal buildingArea = totalFloorArea.multiply(BigDecimal.valueOf(buildingPercent))
                 .divide(BigDecimal.valueOf(PERCENT_SCALE), AREA_SCALE, RoundingMode.HALF_UP);
 
-        return new BuildingLedgerDocument(
+        return Optional.of(new BuildingLedgerDocument(
                 lookup.naturalKey().address(),
                 ownerName(lookup),
                 mainPurpose(lookup.propertyType()),
@@ -108,7 +113,7 @@ public class MockBuildingLedgerClient implements BuildingLedgerClient {
                 exclusiveArea,
                 APPROVAL_BASE_DATE.plusDays(pick(id, Draw.APPROVAL_DATE, APPROVAL_SPAN_DAYS)),
                 pick(id, Draw.VIOLATION, PERCENT_SCALE) < VIOLATION_PERCENT,
-                LedgerDataSource.MOCK);
+                LedgerDataSource.MOCK));
     }
 
     /** 대장 소유자. 임대인명 생성 쪽이 불일치로 정한 매물만 다른 이름을 쓴다. */

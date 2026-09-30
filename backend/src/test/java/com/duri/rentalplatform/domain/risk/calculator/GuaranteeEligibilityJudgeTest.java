@@ -136,7 +136,48 @@ class GuaranteeEligibilityJudgeTest {
                 Arguments.of("RISK-05-16 전세가율 50.00 — 요율 구간 0~50 에 든다",
                         input(MARKET, 150_000_000L, 0L, HouseType.APARTMENT), seed(),
                         List.of(ok(HUG, 270_000_000L, null), ok(HF, 270_000_000L, 60_000L),
-                                ok(SGI, 270_000_000L, 240_000L)))
+                                ok(SGI, 270_000_000L, 240_000L))),
+                // 이슈 #302 기대값 표 — 위반건축물을 대장에서 확인하지 못함(null). 가입 불가 사유가 아니다.
+                Arguments.of("PROP-04-V1 위반건축물 확인 불가(null) — 사유 아님, 05-01 과 같은 결과",
+                        new GuaranteeInput(MARKET, DEPOSIT, 0L, HouseType.APARTMENT, null, List.of(), true, true),
+                        seed(),
+                        List.of(ok(HUG, 270_000_000L, null), ok(HF, 270_000_000L, 80_000L),
+                                ok(SGI, 270_000_000L, 458_000L))),
+                Arguments.of("PROP-04-V2 위반건축물 확인 불가(null) + 명의 불일치 — 명의 불일치만 담는다",
+                        new GuaranteeInput(MARKET, DEPOSIT, 0L, HouseType.APARTMENT, null, List.of(), false, true),
+                        seed(),
+                        List.of(fail(HUG, 270_000_000L, OWNER_MISMATCH),
+                                fail(HF, 270_000_000L, OWNER_MISMATCH),
+                                fail(SGI, 270_000_000L, OWNER_MISMATCH))),
+                Arguments.of("PROP-04-V3 위반건축물 확인 불가(null) · 기준의 위반건축물 불가가 거짓 — 통과",
+                        new GuaranteeInput(MARKET, DEPOSIT, 0L, HouseType.APARTMENT, null, List.of(), true, true),
+                        List.of(withoutViolationDisqualify(hug(new BigDecimal("90.00"))),
+                                withoutViolationDisqualify(hf()), withoutViolationDisqualify(sgi())),
+                        List.of(ok(HUG, 270_000_000L, null), ok(HF, 270_000_000L, 80_000L),
+                                ok(SGI, 270_000_000L, 458_000L))),
+                Arguments.of("PROP-04-V5 대장 없음(위반건축물 · 주소 일치 null) — 사유 아님, 05-01 과 같은 결과",
+                        new GuaranteeInput(MARKET, DEPOSIT, 0L, HouseType.APARTMENT, null, List.of(), true, null),
+                        seed(),
+                        List.of(ok(HUG, 270_000_000L, null), ok(HF, 270_000_000L, 80_000L),
+                                ok(SGI, 270_000_000L, 458_000L))),
+                Arguments.of("PROP-04-V6 대장 없음 + 명의 불일치 — 명의 불일치만 담는다(주소는 사유 아님)",
+                        new GuaranteeInput(MARKET, DEPOSIT, 0L, HouseType.APARTMENT, null, List.of(), false, null),
+                        seed(),
+                        List.of(fail(HUG, 270_000_000L, OWNER_MISMATCH),
+                                fail(HF, 270_000_000L, OWNER_MISMATCH),
+                                fail(SGI, 270_000_000L, OWNER_MISMATCH))),
+                Arguments.of("PROP-04-V7 대장 없음 + 전세가율 경계 +1원 — 대장과 무관한 조건은 그대로 걸린다",
+                        new GuaranteeInput(MARKET, 270_000_001L, 0L, HouseType.APARTMENT, null, List.of(), true, null),
+                        seed(),
+                        List.of(fail(HUG, 270_000_000L, DEBT_RATIO_EXCEEDED),
+                                fail(HF, 270_000_000L, DEBT_RATIO_EXCEEDED),
+                                fail(SGI, 270_000_000L, DEBT_RATIO_EXCEEDED))),
+                Arguments.of("PROP-04-V4 위반건축물 참 · 기준의 위반건축물 불가가 거짓 — 통과(기준 테이블이 정한다)",
+                        new GuaranteeInput(MARKET, DEPOSIT, 0L, HouseType.APARTMENT, true, List.of(), true, true),
+                        List.of(withoutViolationDisqualify(hug(new BigDecimal("90.00"))),
+                                withoutViolationDisqualify(hf()), withoutViolationDisqualify(sgi())),
+                        List.of(ok(HUG, 270_000_000L, null), ok(HF, 270_000_000L, 80_000L),
+                                ok(SGI, 270_000_000L, 458_000L)))
         );
     }
 
@@ -198,6 +239,14 @@ class GuaranteeEligibilityJudgeTest {
                 band(HouseType.OTHER, "0.00", "50.00", "0.182"),
                 band(HouseType.OTHER, "50.00", "60.00", "0.208"),
                 band(HouseType.OTHER, "60.00", "90.00", "0.260")));
+    }
+
+    /** 기준의 위반건축물 불가 여부만 거짓으로 바꾼다. 나머지 기준값은 그대로다. */
+    private static GuaranteeCriteriaSnapshot withoutViolationDisqualify(GuaranteeCriteriaSnapshot criteria) {
+        return new GuaranteeCriteriaSnapshot(criteria.provider(), criteria.collateralRatio(),
+                criteria.seniorDebtRatioLimit(), criteria.maxDeposit(), criteria.apartmentUnlimited(), false,
+                criteria.rightViolationDisqualify(), criteria.loanLinkRequired(), criteria.productName(),
+                criteria.premiumRates());
     }
 
     private static PremiumRateBand band(HouseType houseType, String min, String max, String rate) {

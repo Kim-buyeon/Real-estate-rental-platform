@@ -26,7 +26,7 @@ class FaultBuildingLedgerClientTest {
 
     private static final BuildingLedgerLookup LOOKUP = new BuildingLedgerLookup(1024L,
             new PropertyNaturalKey("서울특별시 시험구 시험로 1", new BigDecimal("42.50"), 3, 230_000_000L, 0L),
-            "김임대", PropertyType.APARTMENT);
+            "김임대", PropertyType.APARTMENT, null);
 
     @Test
     @DisplayName("error 모드는 위임 없이 즉시 EXTERNAL_API_UNAVAILABLE 을 던진다")

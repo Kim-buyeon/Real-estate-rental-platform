@@ -12,6 +12,8 @@ import com.duri.rentalplatform.domain.risk.vo.OwnershipRightEntry;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -79,17 +81,48 @@ class DocumentConsistencyCheckerTest {
                         result(true, true, false, false)),
                 Arguments.of("RISK-04-13 소유자명 안쪽 공백 — 이름은 접지 않아 불일치",
                         input(List.of(valid(1, OWNERSHIP_TRANSFER, "김 임대")), LEDGER_ADDRESS, LEDGER_AREA, false),
-                        result(false, true, false, true))
+                        result(false, true, false, true)),
+                // 이슈 #302 기대값 표 — 대장이 위반건축물 여부를 주지 않으면(건축HUB) null 을 그대로 옮긴다.
+                Arguments.of("PROP-04-C1 대장 위반건축물 확인 불가(null) — null 로 옮긴다(위반 아님으로 바꾸지 않는다)",
+                        input(OWNED_BY_LANDLORD, LEDGER_ADDRESS, LEDGER_AREA, null),
+                        result(true, true, null, true)),
+                // 대장 없음 — 뗄 대장이 없어 대장 없이 분석한다. 대장 항목 셋은 확인 불가(null), 명의는 등기로 본다.
+                Arguments.of("PROP-04-C3 대장 없음 — 주소 · 위반건축물 · 면적 null, 명의 일치는 그대로",
+                        noLedger(OWNED_BY_LANDLORD, LEDGER_ADDRESS, LEDGER_AREA),
+                        result(true, null, null, null)),
+                Arguments.of("PROP-04-C4 대장 없음 + 명의 불일치 — 명의만 거짓",
+                        noLedger(List.of(valid(1, OWNERSHIP_TRANSFER, "박소유")), LEDGER_ADDRESS, LEDGER_AREA),
+                        result(false, null, null, null)),
+                Arguments.of("PROP-04-C5 대장 없음 · 등기 면적 NULL — 대장이 있을 때와 달리 불일치가 아니라 null",
+                        noLedger(OWNED_BY_LANDLORD, "서울특별시 강남구 역삼동 123-5", null),
+                        result(true, null, null, null))
         );
     }
 
-    private static ConsistencyInput input(List<OwnershipRightEntry> ownerships, String registryAddress,
-            BigDecimal registryArea, boolean violation) {
-        return new ConsistencyInput(ownerships, LANDLORD, LEDGER_ADDRESS, registryAddress, LEDGER_AREA, registryArea,
-                violation);
+    @Test
+    @DisplayName("PROP-04-C2 확인 불가만 안내 대상이다 — null 은 참, 참 · 거짓은 거짓")
+    void onlyNullIsUnverified() {
+        assertThat(DocumentConsistencyChecker.check(input(OWNED_BY_LANDLORD, LEDGER_ADDRESS, LEDGER_AREA, null))
+                .violationBuildingUnverified()).isTrue();
+        assertThat(DocumentConsistencyChecker.check(input(OWNED_BY_LANDLORD, LEDGER_ADDRESS, LEDGER_AREA, true))
+                .violationBuildingUnverified()).isFalse();
+        assertThat(DocumentConsistencyChecker.check(input(OWNED_BY_LANDLORD, LEDGER_ADDRESS, LEDGER_AREA, false))
+                .violationBuildingUnverified()).isFalse();
     }
 
-    private static ConsistencyResult result(boolean owner, boolean address, boolean violation, boolean area) {
+    private static ConsistencyInput input(List<OwnershipRightEntry> ownerships, String registryAddress,
+            BigDecimal registryArea, Boolean violation) {
+        return new ConsistencyInput(ownerships, LANDLORD, true, LEDGER_ADDRESS, registryAddress, LEDGER_AREA,
+                registryArea, violation);
+    }
+
+    /** 뗄 대장이 없는 매물 — 대장 값은 모두 null 이다. */
+    private static ConsistencyInput noLedger(List<OwnershipRightEntry> ownerships, String registryAddress,
+            BigDecimal registryArea) {
+        return new ConsistencyInput(ownerships, LANDLORD, false, null, registryAddress, null, registryArea, null);
+    }
+
+    private static ConsistencyResult result(boolean owner, Boolean address, Boolean violation, Boolean area) {
         return new ConsistencyResult(owner, address, violation, area);
     }
 

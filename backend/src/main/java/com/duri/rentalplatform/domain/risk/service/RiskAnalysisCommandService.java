@@ -160,8 +160,9 @@ public class RiskAnalysisCommandService {
         // 수집 직후라 없으면 수집 경로나 시드의 결함이다. 사용자 요청으로 생기는 상태가 아니므로 500 으로 낸다.
         BuildingRegistry registry = buildingRegistryRepository.findByPropertyId(propertyId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
-        BuildingLedger ledger = buildingLedgerRepository.findByPropertyId(propertyId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+        // 대장은 없을 수 있다 — 뗄 대장이 없으면 수집이 저장하지 않는다(LedgerCommandService). 그때는 대장 없이 분석하고
+        // 대장 항목은 확인 불가로 둔다(DocumentConsistencyChecker).
+        BuildingLedger ledger = buildingLedgerRepository.findByPropertyId(propertyId).orElse(null);
         RiskCriteria riskCriteria = riskCriteriaRepository.findFirstByOrderByRiskCriteriaIdAsc()
                 .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
 
@@ -181,8 +182,10 @@ public class RiskAnalysisCommandService {
                 mortgages, deposit, marketPrice, riskCriteria.getNegativeEquityRatio());
         RightViolationResult rights = RightViolationDetector.detect(ownerships);
         ConsistencyResult consistency = DocumentConsistencyChecker.check(new ConsistencyInput(
-                ownerships, property.getLandlordName(), ledger.getLedgerAddress(), registry.getRegistryAddress(),
-                ledger.getExclusiveArea(), registry.getExclusiveArea(), ledger.isViolation()));
+                ownerships, property.getLandlordName(), ledger != null,
+                ledger == null ? null : ledger.getLedgerAddress(), registry.getRegistryAddress(),
+                ledger == null ? null : ledger.getExclusiveArea(), registry.getExclusiveArea(),
+                ledger == null ? null : ledger.getViolation()));
 
         List<GuaranteeCriteria> guaranteeCriteria = guaranteeCriteriaRepository.findAll().stream()
                 .sorted(Comparator.comparing(GuaranteeCriteria::getProvider))
@@ -224,7 +227,7 @@ public class RiskAnalysisCommandService {
         riskAnalysisRepository.flush();
 
         RiskAnalysis saved = riskAnalysisRepository.save(RiskAnalysis.record(
-                propertyId, registry.getRegistryId(), ledger.getLedgerId(),
+                propertyId, registry.getRegistryId(), ledger == null ? null : ledger.getLedgerId(),
                 firstEligibleGuaranteeId(guarantee, guaranteeCriteria), negativeEquity.debtRatio(),
                 hug, hf, sgi, grade.riskGrade(), grade.gradeReason(), previousGrade));
         if (previousGrade != null && previousGrade != saved.getRiskGrade()) {

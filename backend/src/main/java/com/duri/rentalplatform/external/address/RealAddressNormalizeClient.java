@@ -73,7 +73,8 @@ public class RealAddressNormalizeClient implements AddressNormalizeClient {
         }
         JusoResponse.Juso juso = found.getFirst();
         return Optional.of(new NormalizedAddress(
-                juso.roadAddr(), juso.jibunAddr(), juso.sggNm(), juso.emdNm(), juso.zipNo(), DATA_SOURCE));
+                juso.roadAddr(), juso.jibunAddr(), juso.sggNm(), juso.emdNm(), juso.zipNo(), juso.admCd(),
+                DATA_SOURCE));
     }
 
     /**
@@ -101,9 +102,10 @@ public class RealAddressNormalizeClient implements AddressNormalizeClient {
         record Common(String errorCode, String errorMessage, String totalCount) {
         }
 
+        /** {@code admCd} — 제공처 이름은 「행정구역코드」지만 값은 10자리 법정동 코드다(건축물대장 조회 키의 원천). */
         @JsonIgnoreProperties(ignoreUnknown = true)
         record Juso(String roadAddr, String jibunAddr, String zipNo, String siNm, String sggNm,
-                    String emdNm) {
+                    String emdNm, String admCd) {
         }
     }
 }

@@ -141,6 +141,10 @@
 | Latitude | latitude |  |  | NUMERIC | 10 | 7 | — | 위도 |
 | Longitude | longitude |  |  | NUMERIC | 10 | 7 | — | 경도 |
 | Registered At | registered_at |  | ● | TIMESTAMP | — | — | now() | 매물 등록일시 |
+| Sigungu Code | sigungu_code |  |  | VARCHAR | 5 | — | — | 건축물대장 조회 키 — 시군구 코드. 넷(시군구 · 법정동 · 번 · 지)이 모두 있거나 모두 없다(CHECK) |
+| Bjdong Code | bjdong_code |  |  | VARCHAR | 5 | — | — | 법정동 코드(도로명주소 API admCd 뒤 5자리) |
+| Bun | bun |  |  | VARCHAR | 4 | — | — | 번(0 채움) |
+| Ji | ji |  |  | VARCHAR | 4 | — | — | 지(0 채움) |
 
 인덱스 — (latitude, longitude): 좌표 범위 조회(V3). (district, latitude, longitude): 자치구 + 좌표 범위인 지도 묶음 · 마커 조회(V15). (district, registered_at DESC, property_id DESC): 목록 기본 정렬을 인덱스 순서로 읽고 LIMIT 에서 멈춘다(V15). 근거는 부하 시험의 질의 통계(용량 산정 리포트, #270).
 
@@ -163,15 +167,15 @@
 | Ledger ID | ledger_id | ● | ● | BIGINT | — | — | IDENTITY | 건축물관리대장 고유 ID |
 | Property ID | property_id (FK, UQ) |  | ● | BIGINT | — | — | — | 매물 ID — 매물당 1건 |
 | Ledger Address | ledger_address |  | ● | VARCHAR | 200 | — | — | 대장상 건물 주소 |
-| Owner Name | owner_name |  | ● | VARCHAR | 50 | — | — | 대장상 소유자명 |
+| Owner Name | owner_name |  |  | VARCHAR | 50 | — | — | 대장상 소유자명 — 건축HUB 표제부에 없어 실연동에서 NULL |
 | Building Purpose | building_purpose |  | ● | VARCHAR | 50 | — | — | 건물 실제 용도 |
 | Building Structure | building_structure |  |  | VARCHAR | 50 | — | — | 건물 구조 |
-| Building Area | building_area |  | ● | NUMERIC | 7 | 2 | — | 건축 면적 (㎡) |
+| Building Area | building_area |  |  | NUMERIC | 7 | 2 | — | 건축 면적 (㎡) — 실응답이 0(미기재)일 수 있다 |
 | Total Floor Area | total_floor_area |  |  | NUMERIC | 10 | 2 | — | 연면적 (㎡) |
 | Exclusive Area | exclusive_area |  |  | NUMERIC | 7 | 2 | — | 전용면적 (㎡) |
 | Approval Date | approval_date |  |  | DATE | — | — | — | 사용승인일 |
-| Violation YN | violation_yn |  | ● | BOOLEAN | 1 | — | FALSE | 위반 건축물 여부 (대장 표기) |
-| Data Source | data_source |  | ● | VARCHAR | 20 | — | — | 수집 출처 (MOCK) |
+| Violation YN | violation_yn |  |  | BOOLEAN | 1 | — | — | 위반 건축물 여부. NULL = 확인 불가 — 건축HUB API 에 항목이 없다(2026-09-30 9개 기능 확인) |
+| Data Source | data_source |  | ● | VARCHAR | 20 | — | — | 수집 출처 (MOCK · BUILDING_HUB) |
 | Created At | created_at |  | ● | TIMESTAMP | — | — | now() | 최초 수집일시 |
 | Updated At | updated_at |  | ● | TIMESTAMP | — | — | now() | 대장 정보 갱신일시 |
 
@@ -317,7 +321,7 @@
 | Risk ID | risk_id | ● | ● | BIGINT | — | — | IDENTITY | 위험도 분석 고유 ID |
 | Property ID | property_id (FK) |  | ● | BIGINT | — | — | — | 매물 ID (1:N — 분석 시점마다 누적) |
 | Registry ID | registry_id (FK) |  | ● | BIGINT | — | — | — | 분석 근거 등기 ID |
-| Ledger ID | ledger_id (FK) |  | ● | BIGINT | — | — | — | 분석 근거 건축물관리대장 ID |
+| Ledger ID | ledger_id (FK) |  |  | BIGINT | — | — | — | 분석 근거 건축물관리대장 ID. NULL = 대장 없이 분석(대장 항목은 확인 불가) |
 | Eligible Guarantee | eligible_guarantee_id (FK) |  |  | BIGINT | — | — | — | 가입 가능한 보증보험 기준 ID (불가 시 NULL) |
 | Lease Ratio | lease_ratio |  | ● | NUMERIC | 5 | 2 | — | 전세가율 (%) — 결과로 보여줄 핵심 지표 |
 | HUG Eligible | hug_eligible_yn |  | ● | BOOLEAN | 1 | — | FALSE | HUG 가입 가능 여부 |

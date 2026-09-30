@@ -23,6 +23,10 @@ import java.util.List;
  *   <li>선순위채권 한도가 null 인 기관은 그 조건을 검사하지 않는다.</li>
  *   <li>보증금 한도는 기준의 아파트 무제한 여부가 참이고 주택유형이 아파트면 검사하지 않는다(SGI).</li>
  *   <li>대출 연계(HF)는 가입 불가 사유가 아니라 결과에 표기한다.</li>
+ *   <li>위반건축물은 대장 표기가 <b>참일 때만</b> 가입 불가 사유다. 확인하지 못함(null)은 사유가 아니다 — 확인하지 않은
+ *       값을 위반으로도 위반 아님으로도 쓰지 않는다. 그 매물은 계약 전 대장 열람 안내 대상이다(RISK-04 결과).</li>
+ *   <li>주소 불일치는 대조 결과가 <b>거짓일 때만</b> 가입 불가 사유다. 대장이 없어 확인하지 못함(null)은 사유가 아니다 —
+ *       위반건축물과 같은 원칙이다.</li>
  *   <li>보증한도는 가입 여부와 무관하게 낸다. 원 단위 버림, 0 미만이면 0.</li>
  *   <li>예상 보증료(연)는 가입 가능할 때만, 맞는 요율 행이 없으면 null. 원 단위 반올림.</li>
  * </ul>
@@ -70,7 +74,7 @@ public final class GuaranteeEligibilityJudge {
         if (!depositUnlimited && input.deposit() > criteria.maxDeposit()) {
             failed.add(GuaranteeFailedCondition.DEPOSIT_LIMIT_EXCEEDED);
         }
-        if (input.violationBuilding() && criteria.violationDisqualify()) {
+        if (Boolean.TRUE.equals(input.violationBuilding()) && criteria.violationDisqualify()) {
             failed.add(GuaranteeFailedCondition.VIOLATION_BUILDING);
         }
         if (!input.rightViolations().isEmpty() && criteria.rightViolationDisqualify()) {
@@ -79,7 +83,7 @@ public final class GuaranteeEligibilityJudge {
         if (!input.ownerNameMatched()) {
             failed.add(GuaranteeFailedCondition.OWNER_MISMATCH);
         }
-        if (!input.addressMatched()) {
+        if (Boolean.FALSE.equals(input.addressMatched())) {
             failed.add(GuaranteeFailedCondition.ADDRESS_MISMATCH);
         }
 

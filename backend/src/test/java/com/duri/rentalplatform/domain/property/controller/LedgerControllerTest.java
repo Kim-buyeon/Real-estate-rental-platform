@@ -18,6 +18,7 @@ import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.common.security.StreamTicketStore;
 import com.duri.rentalplatform.config.SecurityConfig;
 import com.duri.rentalplatform.domain.property.dto.response.LedgerResponse;
+import com.duri.rentalplatform.domain.property.enums.LedgerDataSource;
 import com.duri.rentalplatform.domain.property.service.LedgerCommandService;
 import com.duri.rentalplatform.domain.property.service.LedgerQueryService;
 import java.math.BigDecimal;
@@ -70,7 +71,7 @@ class LedgerControllerTest {
     void responseMatchesSpecExample() throws Exception {
         when(queryService.getLedger(1024L)).thenReturn(new LedgerResponse(1024L, "공동주택", true, false,
                 new BigDecimal("480.2"), new BigDecimal("42.5"), LocalDate.of(2015, 4, 18),
-                OffsetDateTime.of(2026, 7, 28, 2, 10, 0, 0, ZoneOffset.ofHours(9))));
+                OffsetDateTime.of(2026, 7, 28, 2, 10, 0, 0, ZoneOffset.ofHours(9)), LedgerDataSource.MOCK));
 
         mockMvc.perform(get("/api/properties/1024/ledger"))
                 .andExpect(status().isOk())
@@ -83,7 +84,23 @@ class LedgerControllerTest {
                 .andExpect(jsonPath("$.data.exclusiveArea").value(42.5))
                 .andExpect(jsonPath("$.data.approvalDate").value("2015-04-18"))
                 .andExpect(jsonPath("$.data.collectedAt").value("2026-07-28T02:10:00+09:00"))
-                .andExpect(jsonPath("$.data", aMapWithSize(8)));
+                .andExpect(jsonPath("$.data.dataSource").value("MOCK"))
+                .andExpect(jsonPath("$.data", aMapWithSize(9)));
+    }
+
+    @Test
+    @DisplayName("뗄 대장이 없으면 200 이고 대장 필드는 빠지지 않고 null 로 나간다")
+    void noLedgerReturnsNullFields() throws Exception {
+        when(queryService.getLedger(1024L)).thenReturn(
+                new LedgerResponse(1024L, null, null, null, null, null, null, null, null));
+
+        mockMvc.perform(get("/api/properties/1024/ledger"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.propertyId").value(1024))
+                .andExpect(jsonPath("$.data.violationBuilding").isEmpty())
+                .andExpect(jsonPath("$.data.isResidential").isEmpty())
+                .andExpect(jsonPath("$.data.dataSource").isEmpty())
+                .andExpect(jsonPath("$.data", aMapWithSize(9)));
     }
 
     @Test

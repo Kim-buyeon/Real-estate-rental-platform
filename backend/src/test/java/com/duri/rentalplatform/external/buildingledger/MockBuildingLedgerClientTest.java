@@ -40,15 +40,15 @@ class MockBuildingLedgerClientTest {
     @Test
     @DisplayName("주용도는 아파트면 공동주택, 오피스텔이면 업무시설이다")
     void mainPurposeFollowsPropertyType() {
-        assertThat(client.fetch(lookup(7L, PropertyType.APARTMENT)).buildingPurpose()).isEqualTo("공동주택");
-        assertThat(client.fetch(lookup(7L, PropertyType.OFFICETEL)).buildingPurpose()).isEqualTo("업무시설");
+        assertThat(fetch(lookup(7L, PropertyType.APARTMENT)).buildingPurpose()).isEqualTo("공동주택");
+        assertThat(fetch(lookup(7L, PropertyType.OFFICETEL)).buildingPurpose()).isEqualTo("업무시설");
     }
 
     @Test
     @DisplayName("주소 · 전용면적은 매물 그대로이고 건축면적 ≤ 연면적, 전용면적 ≤ 연면적이며 출처는 MOCK 이다")
     void areasAndAddressAreConsistent() {
         for (BuildingLedgerLookup lookup : sample()) {
-            BuildingLedgerDocument document = client.fetch(lookup);
+            BuildingLedgerDocument document = fetch(lookup);
 
             assertThat(document.ledgerAddress()).isEqualTo(lookup.naturalKey().address());
             assertThat(document.exclusiveArea()).isEqualTo(lookup.naturalKey().areaSqm());
@@ -64,7 +64,7 @@ class MockBuildingLedgerClientTest {
     @DisplayName("사용승인일은 1985년 이후이고 등기 Mock 의 소유권보존 기준일(2005-01-01)보다 앞선다")
     void approvalDatePrecedesRegistryPreservation() {
         for (BuildingLedgerLookup lookup : sample()) {
-            LocalDate approvalDate = client.fetch(lookup).approvalDate();
+            LocalDate approvalDate = fetch(lookup).approvalDate();
 
             assertThat(approvalDate).isAfterOrEqualTo(MockBuildingLedgerClient.APPROVAL_BASE_DATE)
                     .isBefore(REGISTRY_PRESERVATION_BASE_DATE);
@@ -78,7 +78,7 @@ class MockBuildingLedgerClientTest {
         for (BuildingLedgerLookup lookup : sample()) {
             boolean intended = LandlordNameGenerator.isIntentionalMismatch(lookup.naturalKey());
 
-            assertThat(client.fetch(lookup).ownerName().equals(lookup.landlordName())).isEqualTo(!intended);
+            assertThat(fetch(lookup).ownerName().equals(lookup.landlordName())).isEqualTo(!intended);
             mismatches += intended ? 1 : 0;
         }
         assertThat(mismatches).isPositive();
@@ -87,7 +87,7 @@ class MockBuildingLedgerClientTest {
     @Test
     @DisplayName("위반건축물은 표본에서 설계 비율 근처로 나온다")
     void violationRateIsNearDesign() {
-        long violations = sample().stream().filter(lookup -> client.fetch(lookup).violation()).count();
+        long violations = sample().stream().filter(lookup -> Boolean.TRUE.equals(fetch(lookup).violation())).count();
 
         double p = (double) MockBuildingLedgerClient.VIOLATION_PERCENT / PERCENT;
         double expected = SAMPLE_SIZE * p;
@@ -95,7 +95,18 @@ class MockBuildingLedgerClientTest {
         assertThat((double) violations).isBetween(expected - tolerance, expected + tolerance);
     }
 
+    @Test
+    @DisplayName("조회 키가 없는 매물에도 대장을 낸다 — Mock 은 조회 키를 쓰지 않는다")
+    void issuesDocumentWithoutLedgerKey() {
+        assertThat(client.fetch(lookup(7L, PropertyType.APARTMENT))).isPresent();
+    }
+
     // ---------- 픽스처 ----------
+
+    /** Mock 은 늘 대장을 낸다. 빈 값이면 여기서 실패한다. */
+    private BuildingLedgerDocument fetch(BuildingLedgerLookup lookup) {
+        return client.fetch(lookup).orElseThrow();
+    }
 
     private static List<BuildingLedgerLookup> sample() {
         return LongStream.rangeClosed(1, SAMPLE_SIZE)
@@ -107,6 +118,6 @@ class MockBuildingLedgerClientTest {
         BigDecimal area = new BigDecimal("20.00").add(BigDecimal.valueOf(id % 120));
         PropertyNaturalKey key = new PropertyNaturalKey(
                 "서울특별시 시험구 시험로 " + id, area, (int) (id % 20) + 1, 100_000_000L + id * 1_000_000L, 0L);
-        return new BuildingLedgerLookup(id, key, LandlordNameGenerator.generate(key), type);
+        return new BuildingLedgerLookup(id, key, LandlordNameGenerator.generate(key), type, null);
     }
 }
