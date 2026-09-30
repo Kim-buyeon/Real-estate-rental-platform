@@ -2,6 +2,7 @@ package com.duri.rentalplatform.domain.property.entity;
 
 import com.duri.rentalplatform.common.CreatedAtEntity;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
+import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
 import com.duri.rentalplatform.domain.property.vo.PropertyRegistration;
 import jakarta.persistence.AttributeOverride;
@@ -106,6 +107,21 @@ public class Property extends CreatedAtEntity {
     @Column(precision = 10, scale = 7)
     private BigDecimal longitude;
 
+    // 건축물대장 조회 키(V17). 넷이 한 묶음이라 전부 있거나 전부 없다 — 테이블 CHECK 제약이 막고, 여기서도 한 묶음으로만
+    // 넣는다(register · fillLedgerKey). 읽을 때는 ledgerKey() 로 묶어서 꺼낸다.
+
+    @Column(length = 5)
+    private String sigunguCode;
+
+    @Column(length = 5)
+    private String bjdongCode;
+
+    @Column(length = 4)
+    private String bun;
+
+    @Column(length = 4)
+    private String ji;
+
     /**
      * 적재된 실거래 한 건을 매물로 만든다.
      *
@@ -135,7 +151,41 @@ public class Property extends CreatedAtEntity {
         property.builtYear = registration.builtYear();
         property.latitude = registration.latitude();
         property.longitude = registration.longitude();
+        property.applyLedgerKey(registration.ledgerKey());
         return property;
+    }
+
+    /**
+     * 비어 있는 건축물대장 조회 키를 채운다. 이 키가 생기기 전에 적재된 매물을 갱신 배치(RISK-08)가 이행하는 자리다.
+     * 이미 키가 있으면 손대지 않는다 — 같은 자연키의 매물은 같은 지번이라 덮어쓸 이유가 없고, 덮어쓰면 이미 수집한 대장과
+     * 키가 어긋날 수 있다.
+     *
+     * @return 채웠는가
+     */
+    public boolean fillLedgerKey(LedgerLookupKey key) {
+        if (key == null || sigunguCode != null) {
+            return false;
+        }
+        applyLedgerKey(key);
+        return true;
+    }
+
+    /** 건축물대장 조회 키. 없으면 null. */
+    public LedgerLookupKey ledgerKey() {
+        if (sigunguCode == null) {
+            return null;
+        }
+        return new LedgerLookupKey(sigunguCode, bjdongCode, bun, ji);
+    }
+
+    private void applyLedgerKey(LedgerLookupKey key) {
+        if (key == null) {
+            return;
+        }
+        sigunguCode = key.sigunguCode();
+        bjdongCode = key.bjdongCode();
+        bun = key.bun();
+        ji = key.ji();
     }
 
     /**

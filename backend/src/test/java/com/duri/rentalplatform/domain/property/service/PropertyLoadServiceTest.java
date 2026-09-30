@@ -18,6 +18,8 @@ import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.enums.SeoulDistrict;
+import com.duri.rentalplatform.domain.property.vo.LedgerKeyFill;
+import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
 import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
 import com.duri.rentalplatform.domain.property.vo.PropertyLoadReport;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
@@ -77,6 +79,9 @@ import org.mockito.ArgumentCaptor;
 class PropertyLoadServiceTest {
 
     private static final SeoulDistrict PRIMARY = SeoulDistrict.GANGNAM;
+
+    /** 주소 정규화 스텁이 주는 법정동 코드. 앞 5자리가 {@link #PRIMARY} 의 시군구 코드와 같다. */
+    private static final String LEGAL_DONG_CODE = PRIMARY.getLawdCode() + "10100";
     private static final SeoulDistrict SECONDARY = SeoulDistrict.SEOCHO;
     private static final YearMonth TARGET_MONTH = YearMonth.now().minusMonths(1);
     private static final RentBuildingType APARTMENT = RentBuildingType.APARTMENT;
@@ -110,7 +115,8 @@ class PropertyLoadServiceTest {
         when(addressNormalizeClient.normalize(anyString())).thenAnswer(invocation -> {
             String rawAddress = invocation.getArgument(0);
             return Optional.of(new NormalizedAddress(
-                    "정규화-" + rawAddress, rawAddress, PRIMARY.getDistrictName(), "역삼동", null, "TEST_JUSO"));
+                    "정규화-" + rawAddress, rawAddress, PRIMARY.getDistrictName(), "역삼동", null,
+                    LEGAL_DONG_CODE, "TEST_JUSO"));
         });
         when(geocodeClient.geocode(anyString())).thenReturn(Optional.of(new Coordinates(
                 new BigDecimal("37.5000000"), new BigDecimal("127.0000000"), "TEST_GEO")));
@@ -620,9 +626,14 @@ class PropertyLoadServiceTest {
 
     /** 기본 거래(100-1 · 59.90㎡ · 3층 · 3억 전세)의 자연키와 저장된 시세. 새 시세는 기본 매매 표본의 5억 · 기준일은 그 매매의 계약일이다. */
     private void storedPrice(Long marketPrice, LocalDate priceDate) {
+        storedPrice(marketPrice, priceDate, false);
+    }
+
+    private void storedPrice(Long marketPrice, LocalDate priceDate, boolean ledgerKeyMissing) {
         PropertyNaturalKey key = new PropertyNaturalKey(NORMALIZED_ADDRESS, new BigDecimal("59.90"), 3, 300_000_000L, 0L);
         when(propertyLoadWriter.findLoadedPrices(PRIMARY.getDistrictName())).thenReturn(Map.of(key,
-                new PropertyPriceSnapshot(STORED_ID, marketPrice, PriceType.ACTUAL_TRANSACTION, priceDate)));
+                new PropertyPriceSnapshot(STORED_ID, marketPrice, PriceType.ACTUAL_TRANSACTION, priceDate,
+                        ledgerKeyMissing)));
     }
 
     private void fetchesDefaultTransaction() {
@@ -785,5 +796,108 @@ class PropertyLoadServiceTest {
         verify(propertyLoadWriter, never()).findLoadedPrices(anyString());
         verify(propertyLoadWriter, never()).updateMarketPrices(anyList());
         assertThat(report.getSkippedDuplicate()).isEqualTo(1);
+    }
+
+    // ---------- 건축물대장 조회 키(PROP-04) ----------
+
+    /** 저장된 한 건을 꺼낸다. */
+    private PropertyRegistration savedRegistration() {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PropertyRegistration>> captor = ArgumentCaptor.forClass(List.class);
+        verify(propertyLoadWriter).saveAll(captor.capture());
+        return captor.getValue().getFirst();
+    }
+
+    @Test
+    @DisplayName("대장 조회 키: 실거래의 시군구 코드 · 지번과 주소 정규화의 법정동 코드 뒤 5자리로 만들어 저장한다")
+    void storesLedgerKeyFromTransactionAndNormalizedAddress() {
+        fetchesDefaultTransaction();
+
+        service.load(1, new PropertyLoadReport());
+
+        assertThat(savedRegistration().ledgerKey())
+                .isEqualTo(new LedgerLookupKey(PRIMARY.getLawdCode(), "10100", "0100", "0001"));
+    }
+
+    @Test
+    @DisplayName("대장 조회 키: 산 지번이면 키 없이 매물은 저장한다 — 키는 매물 탐색 · 시세와 무관하다")
+    void savesPropertyWithoutLedgerKeyWhenJibunIsOutOfFormat() {
+        when(rentTransactionClient.findRentTransactions(queryOf(PRIMARY, APARTMENT)))
+                .thenReturn(List.of(validTransaction("산12", new BigDecimal("59.90"), 3)));
+
+        PropertyLoadReport report = new PropertyLoadReport();
+        service.load(1, report);
+
+        assertThat(report.getSaved()).isEqualTo(1);
+        assertThat(savedRegistration().ledgerKey()).isNull();
+    }
+
+    @Test
+    @DisplayName("대장 조회 키: 주소 정규화가 법정동 코드를 주지 않으면(Mock) 키 없이 저장한다")
+    void savesPropertyWithoutLedgerKeyWhenLegalDongCodeIsMissing() {
+        fetchesDefaultTransaction();
+        when(addressNormalizeClient.normalize(anyString())).thenAnswer(invocation -> Optional.of(new NormalizedAddress(
+                "정규화-" + invocation.getArgument(0), invocation.getArgument(0), PRIMARY.getDistrictName(), "역삼동",
+                null, null, "MOCK_JUSO")));
+
+        service.load(1, new PropertyLoadReport());
+
+        assertThat(savedRegistration().ledgerKey()).isNull();
+    }
+
+    @Test
+    @DisplayName("갱신: 조회 키가 빈 기존 매물을 자연키로 만나면 이번 회차의 키로 채운다 — 외부 호출은 늘지 않는다")
+    void refreshFillsLedgerKeyOfKeylessExistingProperty() {
+        fetchesDefaultTransaction();
+        storedPrice(SALE_PRICE, SALE_DATE, true);
+        when(propertyLoadWriter.fillLedgerKeys(anyList())).thenReturn(1);
+
+        PropertyLoadReport report = new PropertyLoadReport();
+        service.refresh(1, report);
+
+        verify(propertyLoadWriter).fillLedgerKeys(List.of(new LedgerKeyFill(
+                STORED_ID, new LedgerLookupKey(PRIMARY.getLawdCode(), "10100", "0100", "0001"))));
+        assertThat(report.getLedgerKeyFilled()).isEqualTo(1);
+        verify(addressNormalizeClient, times(1)).normalize(anyString());
+    }
+
+    @Test
+    @DisplayName("갱신: 조회 키가 이미 있는 기존 매물은 키를 채우지 않는다")
+    void refreshLeavesExistingLedgerKey() {
+        fetchesDefaultTransaction();
+        storedPrice(SALE_PRICE, SALE_DATE, false);
+
+        service.refresh(1, new PropertyLoadReport());
+
+        verify(propertyLoadWriter, never()).fillLedgerKeys(anyList());
+    }
+
+    @Test
+    @DisplayName("갱신: 수집이 일부 실패해 시세를 갱신하지 않는 자치구에서도 조회 키는 채운다 — 키는 표본 크기와 무관하다")
+    void refreshFillsLedgerKeyEvenWhenFetchIsIncomplete() {
+        fetchesDefaultTransaction();
+        when(rentTransactionClient.findRentTransactions(queryOf(PRIMARY, RentBuildingType.OFFICETEL)))
+                .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
+        storedPrice(280_000_000L, TARGET_MONTH.atDay(10), true);
+
+        service.refresh(1, new PropertyLoadReport());
+
+        verify(propertyLoadWriter, never()).updateMarketPrices(anyList());
+        verify(propertyLoadWriter).fillLedgerKeys(anyList());
+    }
+
+    @Test
+    @DisplayName("갱신: 조회 키 보강 덩어리가 실패하면 기록하고 다음으로 넘어간다")
+    void refreshRecordsLedgerKeyFillFailure() {
+        fetchesDefaultTransaction();
+        storedPrice(SALE_PRICE, SALE_DATE, true);
+        when(propertyLoadWriter.fillLedgerKeys(anyList())).thenThrow(new RuntimeException("DB 커넥션 끊김"));
+
+        PropertyLoadReport report = new PropertyLoadReport();
+        service.refresh(1, report);
+
+        assertThat(report.getFailedUnexpected()).isEqualTo(1);
+        assertThat(report.getFailures()).anyMatch(reason -> reason.contains("대장 조회 키 보강 실패"));
+        assertThat(report.getLedgerKeyFilled()).isZero();
     }
 }

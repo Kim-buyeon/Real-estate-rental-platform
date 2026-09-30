@@ -6,6 +6,7 @@ import com.duri.rentalplatform.config.ExternalApiProperties;
 import com.duri.rentalplatform.external.FaultInjection;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
+import java.util.Optional;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -32,17 +33,17 @@ public class FaultBuildingLedgerClient implements BuildingLedgerClient {
     @Override
     @Retry(name = RESILIENCE_INSTANCE)
     @CircuitBreaker(name = RESILIENCE_INSTANCE, fallbackMethod = "unavailable")
-    public BuildingLedgerDocument fetch(BuildingLedgerLookup lookup) {
+    public Optional<BuildingLedgerDocument> fetch(BuildingLedgerLookup lookup) {
         FaultInjection.inject(settings);
         return delegate.fetch(lookup);
     }
 
     /**
-     * 폴백. 값을 채운 대장을 돌려주지 않는다 — 위반건축물 「아님」으로 채우면 외부 장애가 안전 판정의 근거로
-     * 저장된다.
+     * 폴백. 값을 채운 대장도 빈 값도 돌려주지 않는다 — 위반건축물 「아님」으로 채우면 외부 장애가 안전 판정의 근거로
+     * 저장되고, 빈 값이면 「뗄 대장이 없다」와 구분되지 않는다.
      */
     @SuppressWarnings("unused")
-    private BuildingLedgerDocument unavailable(BuildingLedgerLookup lookup, Throwable cause) {
+    private Optional<BuildingLedgerDocument> unavailable(BuildingLedgerLookup lookup, Throwable cause) {
         throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
     }
 }

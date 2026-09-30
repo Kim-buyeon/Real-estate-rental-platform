@@ -20,6 +20,7 @@ import java.time.LocalDate;
  * @param marketPrice  시세(원). 같은 유형 · 같은 법정동 · 같은 면적대 매매 실거래가의 중앙값(표본이 없으면 같은 유형의 자치구로 넓힌다)
  * @param priceType    시세 산출 근거
  * @param priceDate    시세 기준일. 표본에서 가장 최근 계약일
+ * @param ledgerKey    건축물대장 조회 키. 만들 수 없으면 null — {@link LedgerLookupKey#of}
  */
 public record PropertyRegistration(
         String address,
@@ -36,7 +37,8 @@ public record PropertyRegistration(
         Integer floor,
         Integer builtYear,
         BigDecimal latitude,
-        BigDecimal longitude
+        BigDecimal longitude,
+        LedgerLookupKey ledgerKey
 ) {
     public PropertyNaturalKey naturalKey() {
         return new PropertyNaturalKey(address, areaSqm, floor, deposit, monthlyRent);

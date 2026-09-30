@@ -43,7 +43,7 @@
 | --- | --- | --- |
 | 전월세 실거래가 | 공공데이터포털 (www.data.go.kr) | DATA_GO_KR_API_KEY |
 | 매매 실거래가(아파트 · 오피스텔) — 시세 산출 | 공공데이터포털 (www.data.go.kr) | DATA_GO_KR_API_KEY |
-| 건축물대장 | 공공데이터포털 (www.data.go.kr) | DATA_GO_KR_API_KEY |
+| 건축물대장(건축HUB 건축물대장정보 — 표제부) | 공공데이터포털 (www.data.go.kr) | DATA_GO_KR_API_KEY. 조회 키(시군구 · 법정동 · 번 · 지)는 적재 때 실거래 지번과 주소 정규화 admCd 로 채우고, 기존 매물은 갱신 배치가 채운다 |
 | 주소 정규화 · 좌표 | 도로명주소 (business.juso.go.kr)<br>카카오 로컬 (developers.kakao.com) | ADDRESS_API_KEY<br>KAKAO_REST_API_KEY |
 | 기준금리 · 시장금리 | 한국은행 ECOS (ecos.bok.or.kr/api) | ECOS_API_KEY |
 | HF 전세대출 금리(은행별) | 공공데이터포털 (www.data.go.kr) | DATA_GO_KR_API_KEY |

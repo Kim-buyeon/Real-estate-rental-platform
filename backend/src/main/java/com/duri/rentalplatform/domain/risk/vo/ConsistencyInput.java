@@ -8,20 +8,23 @@ import java.util.List;
  *
  * @param ownerships            갑구 전체. 현재 소유자는 계산기가 고른다
  * @param landlordName          임대인명 — {@code property.landlord_name}
- * @param ledgerAddress         대장 주소 — {@code building_ledger.ledger_address}
+ * @param ledgerCollected       대장이 있는가. 거짓이면 뗄 대장이 없어 대장 없이 분석한다 — 대장 항목 셋(주소 · 면적 ·
+ *                              위반건축물)은 확인 불가다
+ * @param ledgerAddress         대장 주소 — {@code building_ledger.ledger_address}. 대장이 없으면 null
  * @param registryAddress       등기 표제부 주소 — {@code building_registry.registry_address}. 없으면 null
  * @param ledgerExclusiveArea   대장 전용면적(㎡) — {@code building_ledger.exclusive_area}. 없으면 null
  * @param registryExclusiveArea 등기 표제부 전용면적(㎡) — {@code building_registry.exclusive_area}. 없으면 null
- * @param violationBuilding     위반건축물인가 — {@code building_ledger.violation_yn}
+ * @param violationBuilding     위반건축물인가 — {@code building_ledger.violation_yn}. 확인하지 못했으면 null
  */
 public record ConsistencyInput(
         List<OwnershipRightEntry> ownerships,
         String landlordName,
+        boolean ledgerCollected,
         String ledgerAddress,
         String registryAddress,
         BigDecimal ledgerExclusiveArea,
         BigDecimal registryExclusiveArea,
-        boolean violationBuilding
+        Boolean violationBuilding
 ) {
 
     public ConsistencyInput {

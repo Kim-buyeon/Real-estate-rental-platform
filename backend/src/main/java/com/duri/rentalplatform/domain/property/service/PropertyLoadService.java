@@ -8,6 +8,8 @@ import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.enums.SeoulDistrict;
+import com.duri.rentalplatform.domain.property.vo.LedgerKeyFill;
+import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
 import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
 import com.duri.rentalplatform.domain.property.vo.PropertyLoadReport;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
@@ -111,6 +113,9 @@ public class PropertyLoadService {
      * 달라지므로, 반영하면 멀쩡한 시세를 덜 모은 표본의 값으로 덮게 된다 — 같은 설계서 「갱신 배치는 실패해도 기존 데이터를
      * 훼손하지 않는다」. 새 매물 저장은 초기 적재와 같이 진행한다.
      *
+     * <p><b>건축물대장 조회 키 이행</b> — 자연키로 만난 기존 매물의 조회 키가 비어 있으면 이번 회차에 만든 키로 채운다. 이미
+     * 받는 실거래 · 주소 응답에서 나오는 값이라 외부 호출이 늘지 않는다. 조회 기간 밖으로 빠진 매물은 만나지 않으므로 계속 빈다.
+     *
      * @param months 초기 적재와 같은 뜻의 기간(개월)
      * @param report 적재 결과 집계. 호출자가 만들어 넘긴다 — {@link #load} 와 같은 이유
      * @return 새로 저장한 매물과 시세 금액이 바뀐 매물의 식별자
@@ -176,13 +181,22 @@ public class PropertyLoadService {
 
         // 갱신 적재에서만 저장된 시세를 읽는다. 기존 매물을 처음 만날 때 꺼내 비교하고 지우므로, 같은 자연키가 다시 나오면
         // 비교 없이 중복으로만 센다. 수집이 일부 실패한 자치구는 비교 대상을 비워 시세를 갱신하지 않는다(refresh 주석).
+        //
+        // 건축물대장 조회 키가 비어 있는 기존 매물은 따로 모아 두고, 자연키로 다시 만나면 이번 회차의 키로 채운다(V17 이전 매물의
+        // 이행). 시세와 달리 수집이 일부 실패해도 채운다 — 키는 한 건의 실거래 · 주소 응답에서 나오고 표본 크기와 무관하다.
         Map<PropertyNaturalKey, PropertyPriceSnapshot> storedPrices = new HashMap<>();
+        Map<PropertyNaturalKey, Long> keylessPropertyIds = new HashMap<>();
         Set<PropertyNaturalKey> seenKeys;
         if (refreshTargets == null) {
             seenKeys = new HashSet<>(propertyLoadWriter.findLoadedNaturalKeys(district.getDistrictName()));
         } else {
             storedPrices.putAll(propertyLoadWriter.findLoadedPrices(district.getDistrictName()));
             seenKeys = new HashSet<>(storedPrices.keySet());
+            storedPrices.forEach((key, stored) -> {
+                if (stored.ledgerKeyMissing()) {
+                    keylessPropertyIds.put(key, stored.propertyId());
+                }
+            });
             if (!fetchComplete) {
                 log.warn("[매물 갱신] {} — 실거래가 수집이 일부 실패해 기존 매물 시세는 갱신하지 않는다",
                         district.getDistrictName());
@@ -190,6 +204,7 @@ public class PropertyLoadService {
             }
         }
         List<MarketPriceUpdate> pendingUpdates = new ArrayList<>();
+        List<LedgerKeyFill> pendingKeyFills = new ArrayList<>();
 
         // 같은 건물 · 같은 지번이 여러 번 나온다. 구 단위 실행 동안만 사는 메모라 인스턴스 간에
         // 공유할 상태가 아니다. 이것이 없으면 같은 주소를 수십 번 외부에 묻는다.
@@ -214,6 +229,15 @@ public class PropertyLoadService {
                         pendingUpdates.clear();
                     }
                 }
+                Long keylessId = registration.ledgerKey() == null
+                        ? null : keylessPropertyIds.remove(registration.naturalKey());
+                if (keylessId != null) {
+                    pendingKeyFills.add(new LedgerKeyFill(keylessId, registration.ledgerKey()));
+                    if (pendingKeyFills.size() >= SAVE_CHUNK_SIZE) {
+                        fillLedgerKeyChunk(pendingKeyFills, district, report);
+                        pendingKeyFills.clear();
+                    }
+                }
                 continue;
             }
             pending.add(registration);
@@ -228,6 +252,9 @@ public class PropertyLoadService {
         }
         if (!pendingUpdates.isEmpty()) {
             updatePriceChunk(pendingUpdates, district, report, refreshTargets);
+        }
+        if (!pendingKeyFills.isEmpty()) {
+            fillLedgerKeyChunk(pendingKeyFills, district, report);
         }
     }
 
@@ -415,7 +442,26 @@ public class PropertyLoadService {
                 transaction.floor(),
                 transaction.buildYear(),
                 coordinates.get().latitude(),
-                coordinates.get().longitude());
+                coordinates.get().longitude(),
+                // 시군구 코드는 실거래 조회 요청의 지역 코드(LAWD_CD), 법정동 코드는 주소 정규화 응답에서 온다. 못 만들면 null 로 두고 매물은 저장한다 —
+                // 대장 조회 키는 대장을 뗄 때만 쓰이고 매물 탐색 · 시세와 무관하다.
+                LedgerLookupKey.of(transaction.lawdCode(), normalized.get().legalDongCode(), transaction.jibun())
+                        .orElse(null));
+    }
+
+    /**
+     * 기존 매물 한 덩어리에 건축물대장 조회 키를 채운다. 실패하면 그 덩어리만 버린다 — 저장 덩어리와 같은 이유다. 버린
+     * 덩어리의 매물은 키가 빈 채라 다음 회차에 다시 채운다.
+     */
+    private void fillLedgerKeyChunk(List<LedgerKeyFill> pending, SeoulDistrict district, PropertyLoadReport report) {
+        try {
+            report.addLedgerKeyFilled(propertyLoadWriter.fillLedgerKeys(pending));
+        } catch (RuntimeException cause) {
+            String reason = "대장 조회 키 보강 실패 — %s %d건 (%s)"
+                    .formatted(district.getDistrictName(), pending.size(), cause);
+            report.failUnexpected(reason);
+            log.warn("[매물 갱신] {}", reason, cause);
+        }
     }
 
     /**

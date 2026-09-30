@@ -12,6 +12,7 @@ package com.duri.rentalplatform.external.address;
  * @param district      자치구명(시군구). {@code property.district} 에 저장한다
  * @param legalDongName 법정동명
  * @param zipCode       우편번호
+ * @param legalDongCode 법정동 코드 10자리. 건축물대장 조회 키의 법정동 코드가 뒤 5자리다. 주지 못하는 구현은 null
  * @param dataSource    출처 표기
  */
 public record NormalizedAddress(
@@ -20,6 +21,7 @@ public record NormalizedAddress(
         String district,
         String legalDongName,
         String zipCode,
+        String legalDongCode,
         String dataSource
 ) {
 }

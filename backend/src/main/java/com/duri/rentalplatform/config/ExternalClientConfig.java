@@ -47,6 +47,11 @@ public class ExternalClientConfig {
         return build(properties.jeonseLoanRate());
     }
 
+    @Bean
+    public RestClient buildingLedgerRestClient(ExternalApiProperties properties) {
+        return build(properties.buildingLedger());
+    }
+
     private RestClient build(ExternalApiProperties.ClientSettings settings) {
         return RestClient.builder()
                 .baseUrl(settings.baseUrl())
