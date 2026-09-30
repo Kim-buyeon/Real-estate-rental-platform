@@ -440,6 +440,180 @@ class PropertyMapperTest {
                 null, new BigDecimal("50.00"), null, low, 10)))).containsExactly(none);
     }
 
+    // ---------- 목록: 자치구 없는 전세가율 정렬(평범한 조인 갈래)과 LATERAL 갈래 ----------
+
+    @Test
+    @DisplayName("목록: 자치구 없이 전세가율 정렬하면 미분석은 맨 뒤, 같은 전세가율은 식별자 순이다")
+    void listDebtRatioWithoutDistrictOrdersLikeWithDistrict() {
+        long tieA = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long tieB = insertProperty(D2, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long high = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long none = insertProperty(D2, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        insertRisk(tieA, "SAFE", "50.00", true, false);
+        insertRisk(tieB, "SAFE", "50.00", true, false);
+        insertRisk(high, "DANGER", "95.00", true, false);
+
+        // 자치구가 없으면 다른 데이터가 섞이므로 이 테스트의 매물만 걸러 순서를 본다.
+        List<Long> mine = List.of(tieA, tieB, high, none);
+        List<Long> asc = ids(propertyMapper.selectList(listBy(filter(null), PropertySortKey.DEBT_RATIO, true,
+                null, null, 1000))).stream().filter(mine::contains).toList();
+        List<Long> desc = ids(propertyMapper.selectList(listBy(filter(null), PropertySortKey.DEBT_RATIO, false,
+                null, null, 1000))).stream().filter(mine::contains).toList();
+
+        assertThat(asc).containsExactly(tieA, tieB, high, none);
+        assertThat(desc).containsExactly(high, tieB, tieA, none);
+    }
+
+    @Test
+    @DisplayName("목록: 전세가율 오름차순 키셋 — 같은 전세가율은 식별자로 갈라 페이지 사이에서 밀리거나 겹치지 않는다")
+    void listDebtRatioAscKeysetWithTies() {
+        long t1 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long t2 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long t3 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long top = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        insertRisk(t1, "SAFE", "50.00", true, false);
+        insertRisk(t2, "SAFE", "50.00", true, false);
+        insertRisk(t3, "SAFE", "50.00", true, false);
+        insertRisk(top, "DANGER", "95.00", true, false);
+        BigDecimal fifty = new BigDecimal("50.00");
+
+        List<Long> first = ids(propertyMapper.selectList(listBy(filter(D1), PropertySortKey.DEBT_RATIO, true,
+                null, null, 2)));
+        List<Long> second = ids(propertyMapper.selectList(listBy(filter(D1), PropertySortKey.DEBT_RATIO, true,
+                fifty, t2, 2)));
+        List<Long> empty = ids(propertyMapper.selectList(listBy(filter(D1), PropertySortKey.DEBT_RATIO, true,
+                new BigDecimal("95.00"), top, 2)));
+
+        assertThat(first).containsExactly(t1, t2);
+        assertThat(second).containsExactly(t3, top);
+        assertThat(empty).isEmpty();
+    }
+
+    @Test
+    @DisplayName("목록: 자치구 · 전세가율 정렬에서 최신이 아닌 분석은 정렬에도 행 수에도 영향이 없다")
+    void listDebtRatioLateralUsesOnlyLatestAnalysis() {
+        long a = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long b = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long c = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        // 옛 분석의 전세가율은 최신과 반대 쪽으로 튀게 둔다 — 섞여 들면 순서가 뒤집힌다.
+        insertRisk(a, "DANGER", "99.00", false, false);
+        insertRisk(a, "SAFE", "60.00", true, false);
+        insertRisk(b, "SAFE", "10.00", false, false);
+        insertRisk(b, "CAUTION", "70.00", true, false);
+        insertRisk(c, "SAFE", "20.00", false, false);
+        insertRisk(c, "DANGER", "80.00", true, false);
+
+        List<PropertyListResponse> asc = propertyMapper.selectList(listBy(filter(D1), PropertySortKey.DEBT_RATIO,
+                true, null, null, 10));
+        List<Long> desc = ids(propertyMapper.selectList(listBy(filter(D1), PropertySortKey.DEBT_RATIO, false,
+                null, null, 10)));
+
+        assertThat(asc).extracting(PropertyListResponse::propertyId, PropertyListResponse::riskGrade)
+                .containsExactly(tuple(a, RiskGrade.SAFE), tuple(b, RiskGrade.CAUTION),
+                        tuple(c, RiskGrade.DANGER));
+        assertThat(desc).containsExactly(c, b, a);
+    }
+
+    @Test
+    @DisplayName("목록: 자치구 · 전세가율 정렬에서 등급 필터는 최신 분석의 등급으로만 거르고 미분석은 뺀다")
+    void listDebtRatioLateralAppliesRiskGradeFilterOnLatest() {
+        long safe = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long caution = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long danger = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long wasSafe = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0); // 미분석
+        insertRisk(safe, "SAFE", "50.00", true, false);
+        insertRisk(caution, "CAUTION", "80.00", true, false);
+        insertRisk(danger, "DANGER", "95.00", true, false);
+        insertRisk(wasSafe, "SAFE", "40.00", false, false); // 옛 등급만 SAFE
+        insertRisk(wasSafe, "DANGER", "97.00", true, false);
+
+        DistrictCountRequest f = new DistrictCountRequest(D1, null, null, null, null, null,
+                List.of(RiskGrade.SAFE, RiskGrade.CAUTION), null, null);
+
+        assertThat(ids(propertyMapper.selectList(listBy(f, PropertySortKey.DEBT_RATIO, true, null, null, 10))))
+                .containsExactly(safe, caution);
+    }
+
+    @Test
+    @DisplayName("목록: 계약 유형 필터는 자치구 · 전세가율 정렬(LATERAL 갈래)에서 적용된다")
+    void listContractTypeFilterOnLateralBranch() {
+        long[] ids = insertTypeMatrix();
+
+        List<Long> rows = ids(propertyMapper.selectList(listBy(typeFilter(ContractType.MONTHLY_RENT, null),
+                PropertySortKey.DEBT_RATIO, true, null, null, 10)));
+
+        assertThat(rows).containsExactly(ids[1], ids[3]);
+    }
+
+    @Test
+    @DisplayName("목록: 계약 유형 필터는 다른 정렬(평범한 조인 갈래)에서도 적용된다")
+    void listContractTypeFilterOnPlainBranch() {
+        long[] ids = insertTypeMatrix();
+
+        List<Long> rows = ids(propertyMapper.selectList(listBy(typeFilter(ContractType.MONTHLY_RENT, null),
+                PropertySortKey.DEPOSIT, true, null, null, 10)));
+
+        assertThat(rows).containsExactly(ids[1], ids[3]);
+    }
+
+    @Test
+    @DisplayName("목록: 매물 유형 필터는 자치구 · 전세가율 정렬(LATERAL 갈래)에서 적용된다")
+    void listPropertyTypeFilterOnLateralBranch() {
+        long[] ids = insertTypeMatrix();
+
+        List<Long> rows = ids(propertyMapper.selectList(listBy(typeFilter(null, PropertyType.OFFICETEL),
+                PropertySortKey.DEBT_RATIO, true, null, null, 10)));
+
+        assertThat(rows).containsExactly(ids[2], ids[3]);
+    }
+
+    @Test
+    @DisplayName("목록: 매물 유형 필터는 다른 정렬(평범한 조인 갈래)에서도 적용된다")
+    void listPropertyTypeFilterOnPlainBranch() {
+        long[] ids = insertTypeMatrix();
+
+        List<Long> rows = ids(propertyMapper.selectList(listBy(typeFilter(null, PropertyType.OFFICETEL),
+                PropertySortKey.REGISTERED_AT, true, null, null, 10)));
+
+        assertThat(rows).containsExactly(ids[2], ids[3]);
+    }
+
+    @Test
+    @DisplayName("마커: 계약 유형 필터가 적용된다")
+    void markersApplyContractTypeFilter() {
+        long[] ids = insertTypeMatrix();
+
+        List<PropertyMarkerResponse> markers = propertyMapper.selectMarkers(PropertySearchCondition.ofMarkers(
+                typeFilter(ContractType.MONTHLY_RENT, null), new BoundingBox(37.0, 38.0, 126.0, 127.0)));
+
+        assertThat(markers).extracting(PropertyMarkerResponse::propertyId).containsExactly(ids[1], ids[3]);
+    }
+
+    @Test
+    @DisplayName("마커: 매물 유형 필터가 적용된다")
+    void markersApplyPropertyTypeFilter() {
+        long[] ids = insertTypeMatrix();
+
+        List<PropertyMarkerResponse> markers = propertyMapper.selectMarkers(PropertySearchCondition.ofMarkers(
+                typeFilter(null, PropertyType.OFFICETEL), new BoundingBox(37.0, 38.0, 126.0, 127.0)));
+
+        assertThat(markers).extracting(PropertyMarkerResponse::propertyId).containsExactly(ids[2], ids[3]);
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 매물 유형 필터가 적용된다")
+    void clusterAppliesPropertyTypeFilter() {
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.30, 127.30, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "OFFICETEL", 1L, 0L, 37.30, 127.30, T0);
+        insertProperty(D1, "MONTHLY_RENT", "OFFICETEL", 1L, 500_000L, 37.30, 127.30, T0);
+
+        List<MapClusterCellRow> cells = propertyMapper.selectClusterCells(
+                clusters(typeFilter(null, PropertyType.OFFICETEL), GRID_BOX));
+
+        assertThat(cells).extracting(MapClusterCellRow::count).containsExactly(2L);
+    }
+
     // ---------- 상세 ----------
 
     @Test
@@ -620,6 +794,35 @@ class PropertyMapperTest {
         BigDecimal nullDebtRatio = new BigDecimal(ascending ? "1000" : "-1000");
         return PropertySearchCondition.ofList(filter(D1), sortKey, ascending, nullDebtRatio,
                 lastDeposit, lastDebtRatio, lastRegisteredAt, lastId, limit);
+    }
+
+    /** 자치구를 인자로 받는 목록 조건 — 자치구 없는 갈래를 보려고 {@link #list} 대신 쓴다. */
+    private static PropertySearchCondition listBy(DistrictCountRequest f, PropertySortKey sortKey,
+            boolean ascending, BigDecimal lastDebtRatio, Long lastId, int limit) {
+        BigDecimal nullDebtRatio = new BigDecimal(ascending ? "1000" : "-1000");
+        return PropertySearchCondition.ofList(f, sortKey, ascending, nullDebtRatio,
+                null, lastDebtRatio, null, lastId, limit);
+    }
+
+    /** D1 로 좁히고 계약 유형 · 매물 유형만 거는 필터. */
+    private static DistrictCountRequest typeFilter(ContractType contractType, PropertyType propertyType) {
+        return new DistrictCountRequest(D1, contractType, null, null, null, propertyType, null, null, null);
+    }
+
+    /**
+     * 계약 · 매물 유형 조합 넷을 D1 에 넣고 식별자를 [전세·아파트, 월세·아파트, 전세·오피스텔, 월세·오피스텔] 순으로
+     * 돌려준다. 보증금과 등록일은 식별자 순과 같은 방향으로 늘어 어느 정렬에서도 순서가 같다.
+     */
+    private long[] insertTypeMatrix() {
+        long a = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.5, 126.8, T0);
+        long b = insertProperty(D1, "MONTHLY_RENT", "APARTMENT", 200L, 500_000L, 37.5, 126.8, T0.plusDays(1));
+        long c = insertProperty(D1, "DEPOSIT_ONLY", "OFFICETEL", 300L, 0L, 37.5, 126.8, T0.plusDays(2));
+        long d = insertProperty(D1, "MONTHLY_RENT", "OFFICETEL", 400L, 500_000L, 37.5, 126.8, T0.plusDays(3));
+        insertRisk(a, "SAFE", "10.00", true, false);
+        insertRisk(b, "SAFE", "20.00", true, false);
+        insertRisk(c, "SAFE", "30.00", true, false);
+        insertRisk(d, "SAFE", "40.00", true, false);
+        return new long[] {a, b, c, d};
     }
 
     private static List<Long> ids(List<PropertyListResponse> rows) {
