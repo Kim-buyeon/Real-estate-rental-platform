@@ -78,7 +78,7 @@ class FaultSaleTransactionClientTest {
                 "real", "https://example.invalid", "encodedKey", null, null, null);
         RealSaleTransactionClient real = new RealSaleTransactionClient(
                 RestClient.create(),
-                new ExternalApiProperties(null, null, null, null, settings));
+                new ExternalApiProperties(null, null, null, null, settings, null));
 
         assertThatThrownBy(() -> {
             try {
@@ -94,6 +94,6 @@ class FaultSaleTransactionClientTest {
     private FaultSaleTransactionClient clientOf(String kind, Duration delay) {
         ExternalApiProperties.ClientSettings settings = new ExternalApiProperties.ClientSettings(
                 "fault", null, null, null, Duration.ofSeconds(5), new ExternalApiProperties.FaultSettings(kind, delay));
-        return new FaultSaleTransactionClient(new ExternalApiProperties(null, null, null, null, settings));
+        return new FaultSaleTransactionClient(new ExternalApiProperties(null, null, null, null, settings, null));
     }
 }

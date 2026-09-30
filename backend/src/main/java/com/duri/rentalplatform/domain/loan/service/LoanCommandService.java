@@ -11,6 +11,7 @@ import com.duri.rentalplatform.domain.loan.repository.LoanRegulationRepository;
 import com.duri.rentalplatform.domain.loan.vo.LoanLimitCriteria;
 import com.duri.rentalplatform.domain.loan.vo.LoanLimitInput;
 import com.duri.rentalplatform.domain.property.entity.Property;
+import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
 import com.duri.rentalplatform.domain.risk.service.RiskAnalysisCommandService;
 import com.duri.rentalplatform.domain.user.dto.response.ProfileResponse;
@@ -31,6 +32,8 @@ import org.springframework.stereotype.Service;
  *
  * <p>순서 — 매물(404) → 자격 정보(422 {@code PROFILE_INCOMPLETE}) → 분석(422 {@code LOAN_PROPERTY_NOT_ELIGIBLE}) →
  * 기준값 → 계산. 자격 정보 확인을 분석보다 앞에 두어 외부 수집 없이 거를 수 있는 것을 먼저 거른다.
+ *
+ * <p>금리 · 상품 한도는 매물 유형의 대표 상품에서 읽는다 — 선택 규칙은 {@link LoanProductRepository}.
  */
 @Service
 @RequiredArgsConstructor
@@ -50,7 +53,7 @@ public class LoanCommandService {
      *                           annualIncome), {@link ErrorCode#LOAN_PROPERTY_NOT_ELIGIBLE} — 보증보험 가입 불가 매물
      */
     public LoanLimitResponse calculateLimit(Long userId, Long propertyId) {
-        Property property = propertyRepository.findById(propertyId)
+        Property property = propertyRepository.findWithPropertyTypeCodeByPropertyId(propertyId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROPERTY_NOT_FOUND));
 
         ProfileResponse.Profile profile = userQueryService.getProfile(userId).profile();
@@ -67,8 +70,8 @@ public class LoanCommandService {
         // 기준값이 없으면 시드 결함이다. 사용자 요청으로 생기는 상태가 아니므로 500 으로 낸다.
         LoanRegulation regulation = loanRegulationRepository.findFirstByOrderByEffectiveDateDescRegulationIdDesc()
                 .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
-        LoanProduct product = loanProductRepository.findFirstByOrderByLoanIdAsc()
-                .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
+        LoanProduct product = representativeProduct(
+                PropertyType.valueOf(property.getPropertyTypeCode().getCodeValue()));
 
         return LoanLimitResponse.from(JeonseLoanLimitCalculator.calculate(
                 new LoanLimitInput(hasHouse, annualIncome, orZero(profile.existingLoanAnnualPayment()),
@@ -76,6 +79,14 @@ public class LoanCommandService {
                 new LoanLimitCriteria(regulation.getDepositRatioLimit(), regulation.getGuaranteeCapNoHouse(),
                         regulation.getGuaranteeCapOneHouse(), regulation.getDsrLimit(),
                         regulation.getStressDsrRate(), product.getInterestRate(), product.getMaxLimit())));
+    }
+
+    /** 매물 유형의 HF 금리 API 대표 행, 없으면 시드 예시 행. 둘 다 없으면 시드 결함이라 500. */
+    private LoanProduct representativeProduct(PropertyType propertyType) {
+        return loanProductRepository
+                .findFirstByHouseTypeOrderByBaseMonthDescLoanAmountDescInterestRateAscLoanIdAsc(propertyType)
+                .or(loanProductRepository::findFirstByHouseTypeIsNullOrderByLoanIdAsc)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
     }
 
     private static long orZero(Long value) {

@@ -120,6 +120,7 @@
 | 부동산 등기부등본 | 대법원 인터넷등기소 | `BUILDING_REGISTRY`, `OWNERSHIP_HISTORY`, `MORTGAGE_HISTORY` — **무료 공개 API가 없고 유료 중계만 존재하므로 Mock 어댑터로 구현한다** | 1단계 |
 | 보증보험 3사 기준 | HUG · HF · SGI 공시 자료 | `GUARANTEE_CRITERIA` 및 서브타입 — 개방 API 부재. 시드 적재 후 ADMIN-01로 갱신 | 1단계 |
 | 비밀번호 재설정 메일 | Gmail SMTP | 발송만. 적재 대상 없음 — USER-06. 사용 신청이 필요 없어 아래 「1일차 신청」 대상이 아니다 | 1단계 (9/19 추가) |
+| 전세대출 금리 | 한국주택금융공사 (공공데이터포털) | `LOAN_PRODUCT` 은행별 가중평균 금리 · 대출실행금액 | 1단계 |
 | 대출 상품·금리 | 금융감독원 금융상품 비교공시 | `LOAN_PRODUCT` | **차기 (LOAN-03)** |
 | 기준금리·시장금리 | 한국은행 ECOS | `INTEREST_RATE_HISTORY` | **차기 (LOAN-06)** |
 | 소셜 로그인 | 카카오 · 네이버 OAuth 2.0 | `USER_AUTH` | **차기** |
