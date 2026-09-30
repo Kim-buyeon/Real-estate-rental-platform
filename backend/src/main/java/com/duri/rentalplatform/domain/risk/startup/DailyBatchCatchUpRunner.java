@@ -1,6 +1,9 @@
-package com.duri.rentalplatform.domain.risk.scheduler;
+package com.duri.rentalplatform.domain.risk.startup;
 
 import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
+import com.duri.rentalplatform.domain.risk.scheduler.MockLedgerReplaceScheduler;
+import com.duri.rentalplatform.domain.risk.scheduler.PropertyRefreshScheduler;
+import com.duri.rentalplatform.domain.risk.scheduler.RegistryRefreshScheduler;
 import com.duri.rentalplatform.domain.risk.store.BatchSuccessStore;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -23,7 +26,10 @@ import org.springframework.stereotype.Component;
  * 조건(enabled 설정, Mock 대장 교체는 대장 연동 real)도 스케줄러 빈이 뜨는 조건 그대로다 — 빈이 없으면 그 배치는 건너뛴다.
  *
  * <p><b>하루 한 번</b> — 오늘 이미 성공한 배치는 다시 시작하지 않는다. 외부 호출 한도가 하루 단위라 기동이 잦아도 호출이 늘지 않는다.
- * 실패 · 중단된 날은 기록이 없으므로 다음 기동이나 다음 예약 시각에 다시 돈다.
+ * 실패한 날은 기록이 없으므로 다음 기동이나 다음 예약 시각에 다시 돈다. <b>회차 도중 노드를 멈춘 날은 조건부다</b> — 날짜 락이
+ * 해제되지 않은 채 남고(만료 {@code *.lock-lease-time} 잠정 23시간), Redis 가 그 키를 들고 살아 있거나 재기동 뒤에도 키가 남아
+ * 있으면 그날 회차는 락을 못 잡아 건너뛴다. 키가 남는지는 Redis 영속성 설정에 달렸고 이는 확인되지 않았다. 남으면 다음 날 회차부터
+ * 다시 돈다.
  *
  * <p><b>네 슬롯</b> — 동시에 기동하면 모두 이 흐름을 탄다. 한 곳만 실행되는 것은 날짜 락이 보장하고, 못 잡은 슬롯은 스케줄러가
  * 한 줄 남기고 다음 배치로 넘어간다. 그래서 슬롯마다 다른 배치를 동시에 돌 수 있다 — 날짜 락 키가 배치마다 달라 서로 막지 않고,
@@ -33,11 +39,14 @@ import org.springframework.stereotype.Component;
  * SSE 하트비트를 막지 않는다. 앞 배치가 실패해도 다음 배치는 돈다 — 예외는 로그로 남긴다.
  *
  * <p><b>켜고 끄기</b> — {@code batch.startup-catchup.enabled}. 테스트 실행에서는 끈다.
+ *
+ * <p><b>패키지</b> — {@code scheduler/} 는 {@code @Scheduled} 반복 진입점의 자리라 두지 않았다. 이 클래스는 기동 때 한 번 도는
+ * 진입점이고 스케줄러를 부르는 쪽이다.
  */
 @Slf4j
 @Component
 @ConditionalOnBooleanProperty("batch.startup-catchup.enabled")
-public class DailyBatchCatchUpScheduler {
+public class DailyBatchCatchUpRunner {
 
     static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
@@ -50,7 +59,7 @@ public class DailyBatchCatchUpScheduler {
     private final Executor startupExecutor;
 
     @Autowired
-    public DailyBatchCatchUpScheduler(
+    public DailyBatchCatchUpRunner(
             ObjectProvider<PropertyRefreshScheduler> propertyRefreshScheduler,
             ObjectProvider<RegistryRefreshScheduler> registryRefreshScheduler,
             ObjectProvider<MockLedgerReplaceScheduler> mockLedgerReplaceScheduler,
@@ -60,7 +69,7 @@ public class DailyBatchCatchUpScheduler {
                 task -> Thread.ofVirtual().name("daily-batch-catch-up").start(task));
     }
 
-    DailyBatchCatchUpScheduler(
+    DailyBatchCatchUpRunner(
             PropertyRefreshScheduler propertyRefreshScheduler,
             RegistryRefreshScheduler registryRefreshScheduler,
             MockLedgerReplaceScheduler mockLedgerReplaceScheduler,

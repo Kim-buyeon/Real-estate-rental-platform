@@ -62,8 +62,9 @@ spring:
         # SSE 하트비트(notification.sse.heartbeat-interval)가 멈춰 프록시가 유휴 연결을 끊는다. 스케줄이 셋(하트비트 · 등기 재조회 ·
         # 매물 갱신)이라 3 으로 둔다 — 매물 갱신이 길어져 등기 재조회와 한 인스턴스에서 겹쳐도 하트비트 스레드가 남는다.
         # 대출 금리 갱신(loan.batch.rate-refresh.cron)은 월 1회 · 외부 호출 두 번이라 스레드를 늘리지 않는다.
-        # Mock 대장 교체(risk.batch.mock-ledger-replace.cron, 04:30)는 다른 배치가 끝난 뒤 시각이라 겹치지 않는다고 보고 늘리지
-        # 않는다 — 03:00 등기 재조회가 04:30 을 넘기면 두 배치 스레드를 쓰고도 하트비트 스레드가 하나 남는다.
+        # Mock 대장 교체(risk.batch.mock-ledger-replace.cron, 04:30)는 예약 시각이 다른 배치가 끝난 뒤라 늘리지 않는다 — 03:00 등기
+        # 재조회가 04:30 을 넘기면 두 배치 스레드를 쓰고도 하트비트 스레드가 하나 남는다. 기동 뒤 따라잡기(batch.startup-catchup)는
+        # 이 풀을 쓰지 않는다. 배치가 한 프로세스에서 겹쳐도 Job 저장소는 배치마다 따로라 실행 기록이 섞이지 않는다.
         size: 3
   # 비밀번호 재설정 메일(USER-06)의 SMTP. external.mail.mode=real 일 때만 쓰인다 — 기본 mock 은 접속하지 않는다.
   # 운영은 Gmail SMTP(기술 스택 정의서 2장). 계정 · 앱 비밀번호는 .env 에 둔다. 호스트 · 포트 기본값은 Gmail 의 STARTTLS 포트다.
@@ -239,7 +240,7 @@ risk:
       # 풀려야 하므로 하루보다 짧게 둔다. 미확정 — 다른 날짜 락과 같게 잠정 23시간.
       lock-lease-time: PT23H
 
-# 하루 한 번 도는 위험도 배치(매물 갱신 · 등기 재조회 · Mock 대장 교체)의 기동 뒤 따라잡기(DailyBatchCatchUpScheduler).
+# 하루 한 번 도는 위험도 배치(매물 갱신 · 등기 재조회 · Mock 대장 교체)의 기동 뒤 따라잡기(DailyBatchCatchUpRunner).
 # 노드를 작업할 때만 켜는 운용이라 예약 시각에 꺼져 있으면 그날 회차가 빠진다 — 기동 뒤 한 번, 오늘(서울) 성공 기록
 # (Redis batch:last-success:{배치})이 없는 배치만 순서대로 돌린다. 각 배치의 enabled · 연동 모드 조건은 그대로 따른다.
 # @Scheduled 스레드 풀(spring.task.scheduling.pool.size)이 아니라 가상 스레드에서 돌아 예약 실행 · 하트비트를 막지 않는다.

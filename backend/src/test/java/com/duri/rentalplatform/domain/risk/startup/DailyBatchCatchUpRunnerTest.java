@@ -1,4 +1,4 @@
-package com.duri.rentalplatform.domain.risk.scheduler;
+package com.duri.rentalplatform.domain.risk.startup;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -11,6 +11,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
+import com.duri.rentalplatform.domain.risk.scheduler.MockLedgerReplaceScheduler;
+import com.duri.rentalplatform.domain.risk.scheduler.PropertyRefreshScheduler;
+import com.duri.rentalplatform.domain.risk.scheduler.RegistryRefreshScheduler;
 import com.duri.rentalplatform.domain.risk.store.BatchSuccessStore;
 import java.time.Clock;
 import java.time.Instant;
@@ -28,10 +31,10 @@ import org.springframework.context.event.EventListener;
 import org.springframework.dao.QueryTimeoutException;
 
 /**
- * {@link DailyBatchCatchUpScheduler} — 오늘(서울) 성공 기록이 없는 배치만 정해진 순서로 스케줄러 진입점을 부르고, 한 배치가 실패해도
+ * {@link DailyBatchCatchUpRunner} — 오늘(서울) 성공 기록이 없는 배치만 정해진 순서로 스케줄러 진입점을 부르고, 한 배치가 실패해도
  * 다음 배치로 넘어가며, 스케줄러 빈이 없는 배치는 건너뛴다. 날짜 락 · 락 경합 처리는 각 스케줄러 테스트가 본다.
  */
-class DailyBatchCatchUpSchedulerTest {
+class DailyBatchCatchUpRunnerTest {
 
     /** UTC 9/29 17:00 = 서울 9/30 02:00. 오늘이 서버 시간대가 아니라 서울로 정해지는지 가른다. */
     private static final Clock UTC_CLOCK = Clock.fixed(Instant.parse("2026-09-29T17:00:00Z"), ZoneOffset.UTC);
@@ -114,7 +117,7 @@ class DailyBatchCatchUpSchedulerTest {
     @DisplayName("기동 이벤트는 따라잡기를 실행기에 넘기기만 한다 — 준비 상태를 늦추지 않는다")
     void startupHandsOffToExecutor() {
         List<Runnable> submitted = new ArrayList<>();
-        DailyBatchCatchUpScheduler scheduler = new DailyBatchCatchUpScheduler(
+        DailyBatchCatchUpRunner scheduler = new DailyBatchCatchUpRunner(
                 propertyRefresh, registryRefresh, mockLedgerReplace, successStore, UTC_CLOCK, submitted::add);
 
         scheduler.catchUpOnStartup();
@@ -131,17 +134,17 @@ class DailyBatchCatchUpSchedulerTest {
     @Test
     @DisplayName("ApplicationReadyEvent 에 걸리고, batch.startup-catchup.enabled 일 때만 뜬다")
     void annotations() throws NoSuchMethodException {
-        EventListener listener = DailyBatchCatchUpScheduler.class.getMethod("catchUpOnStartup")
+        EventListener listener = DailyBatchCatchUpRunner.class.getMethod("catchUpOnStartup")
                 .getAnnotation(EventListener.class);
         ConditionalOnBooleanProperty enabled =
-                DailyBatchCatchUpScheduler.class.getAnnotation(ConditionalOnBooleanProperty.class);
+                DailyBatchCatchUpRunner.class.getAnnotation(ConditionalOnBooleanProperty.class);
 
         assertThat(listener.value()).containsExactly(ApplicationReadyEvent.class);
         assertThat(enabled.value()).containsExactly("batch.startup-catchup.enabled");
     }
 
-    private DailyBatchCatchUpScheduler catchUp(
+    private DailyBatchCatchUpRunner catchUp(
             PropertyRefreshScheduler property, RegistryRefreshScheduler registry, MockLedgerReplaceScheduler mockLedger) {
-        return new DailyBatchCatchUpScheduler(property, registry, mockLedger, successStore, UTC_CLOCK, Runnable::run);
+        return new DailyBatchCatchUpRunner(property, registry, mockLedger, successStore, UTC_CLOCK, Runnable::run);
     }
 }

@@ -8,6 +8,7 @@ import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDailyQuota;
 import org.springframework.batch.core.job.Job;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.repository.support.ResourcelessJobRepository;
 import org.springframework.batch.core.step.Step;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.infrastructure.support.transaction.ResourcelessTransactionManager;
@@ -21,6 +22,10 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
  *
  * <p>Job 을 회차마다 만드는 이유 · resourceless 스텝 트랜잭션 · 트랜잭션 동기화를 끄는 이유는 {@link RegistryRefreshJobFactory}
  * 와 같다 — 매물마다 외부 대장 조회가 있으므로 청크를 DB 트랜잭션으로 묶지 않는다.
+ *
+ * <p><b>전용 저장소</b> — 앱이 가진 Job 저장소 빈을 쓰지 않고 이 배치만의 resourceless 저장소를 둔다. 이유는
+ * {@link PropertyRefreshJobFactory} 와 같다 — 기동 뒤 따라잡기가 아무 시각에나 돌아 같은 프로세스에서 등기 재조회 배치와 겹칠 수
+ * 있고, 저장소를 나눠 쓰면 서로의 실행 기록을 덮는다. 이 배치끼리의 겹침은 날짜 락이 막는다.
  */
 @Component
 public class MockLedgerReplaceJobFactory {
@@ -28,23 +33,27 @@ public class MockLedgerReplaceJobFactory {
     public static final String JOB_NAME = "mockLedgerReplaceJob";
     public static final String STEP_NAME = "mockLedgerReplaceStep";
 
-    private final JobRepository jobRepository;
+    /** 이 배치 전용 저장소 — 클래스 주석 「전용 저장소」. */
+    private final JobRepository jobRepository = new ResourcelessJobRepository();
     private final LedgerMapper ledgerMapper;
     private final BuildingLedgerDailyQuota dailyQuota;
     private final MockLedgerReplaceExecutor executor;
     private final int chunkSize;
 
     public MockLedgerReplaceJobFactory(
-            JobRepository jobRepository,
             LedgerMapper ledgerMapper,
             BuildingLedgerDailyQuota dailyQuota,
             MockLedgerReplaceExecutor executor,
             @Value("${risk.batch.mock-ledger-replace.page-size}") int chunkSize) {
-        this.jobRepository = jobRepository;
         this.ledgerMapper = ledgerMapper;
         this.dailyQuota = dailyQuota;
         this.executor = executor;
         this.chunkSize = chunkSize;
+    }
+
+    /** 이 배치 전용 저장소. 배치 시작기가 이 저장소로 Job 실행기를 만든다. */
+    public JobRepository jobRepository() {
+        return jobRepository;
     }
 
     /**

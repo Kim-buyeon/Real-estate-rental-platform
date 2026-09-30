@@ -32,9 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.batch.core.configuration.support.MapJobRegistry;
-import org.springframework.batch.core.launch.support.TaskExecutorJobOperator;
-import org.springframework.batch.core.repository.support.ResourcelessJobRepository;
+import org.springframework.batch.core.launch.JobOperator;
 import org.springframework.context.expression.MethodBasedEvaluationContext;
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -57,25 +55,20 @@ class MockLedgerReplaceJobLauncherTest {
     private LedgerMapper ledgerMapper;
     private BuildingLedgerDailyQuota dailyQuota;
     private MockLedgerReplaceExecutor executor;
-    private TaskExecutorJobOperator jobOperator;
+    private JobOperator jobOperator;
     private MockLedgerReplaceJobFactory jobFactory;
     private BatchSuccessStore successStore;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         ledgerMapper = mock(LedgerMapper.class);
         dailyQuota = mock(BuildingLedgerDailyQuota.class);
         when(dailyQuota.remaining()).thenReturn(100L);
         executor = mock(MockLedgerReplaceExecutor.class);
         successStore = mock(BatchSuccessStore.class);
 
-        ResourcelessJobRepository jobRepository = new ResourcelessJobRepository();
-        jobOperator = new TaskExecutorJobOperator();
-        jobOperator.setJobRepository(jobRepository);
-        jobOperator.setJobRegistry(new MapJobRegistry());
-        jobOperator.afterPropertiesSet();
-
-        jobFactory = new MockLedgerReplaceJobFactory(jobRepository, ledgerMapper, dailyQuota, executor, CHUNK_SIZE);
+        jobFactory = new MockLedgerReplaceJobFactory(ledgerMapper, dailyQuota, executor, CHUNK_SIZE);
+        jobOperator = DedicatedJobOperators.create(jobFactory.jobRepository(), "Mock 대장 교체 배치");
     }
 
     @Test
@@ -172,6 +165,15 @@ class MockLedgerReplaceJobLauncherTest {
 
         assertThatThrownBy(() -> launcher().run(DATE)).isInstanceOf(IllegalStateException.class);
         verify(successStore, never()).markSucceeded(any(), any());
+    }
+
+    @Test
+    @DisplayName("Job 저장소는 이 배치 전용이다 — 기동 뒤 따라잡기로 등기 재조회 배치와 한 프로세스에서 겹쳐도 실행 기록을 나눠 쓰지 않는다")
+    void usesDedicatedJobRepository() {
+        MockLedgerReplaceJobFactory another =
+                new MockLedgerReplaceJobFactory(ledgerMapper, dailyQuota, executor, CHUNK_SIZE);
+
+        assertThat(jobFactory.jobRepository()).isNotNull().isNotSameAs(another.jobRepository());
     }
 
     @Test

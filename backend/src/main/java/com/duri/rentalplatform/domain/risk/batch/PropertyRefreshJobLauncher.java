@@ -17,12 +17,9 @@ import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.job.JobExecutionException;
 import org.springframework.batch.core.job.parameters.JobParameters;
 import org.springframework.batch.core.job.parameters.JobParametersBuilder;
-import org.springframework.batch.core.configuration.support.MapJobRegistry;
 import org.springframework.batch.core.launch.JobOperator;
-import org.springframework.batch.core.launch.support.TaskExecutorJobOperator;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.stereotype.Component;
 
 /**
@@ -69,18 +66,9 @@ public class PropertyRefreshJobLauncher {
         this.clock = clock;
     }
 
-    /** 전용 저장소로 동기 Job 실행기를 만든다. Job 을 등록해 두지 않으므로 등록부는 비어 있다. */
+    /** 전용 저장소로 동기 Job 실행기를 만든다 — {@link DedicatedJobOperators}. */
     static JobOperator dedicatedJobOperator(JobRepository jobRepository) {
-        TaskExecutorJobOperator jobOperator = new TaskExecutorJobOperator();
-        jobOperator.setJobRepository(jobRepository);
-        jobOperator.setJobRegistry(new MapJobRegistry());
-        jobOperator.setTaskExecutor(new SyncTaskExecutor());
-        try {
-            jobOperator.afterPropertiesSet();
-        } catch (Exception e) {
-            throw new IllegalStateException("매물 갱신 배치의 Job 실행기를 만들지 못했다", e);
-        }
-        return jobOperator;
+        return DedicatedJobOperators.create(jobRepository, "매물 갱신 배치");
     }
 
     /**
