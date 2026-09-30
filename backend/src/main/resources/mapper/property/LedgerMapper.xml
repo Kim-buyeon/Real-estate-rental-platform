@@ -28,24 +28,39 @@
     </select>
 
     <!--
-      Mock 대장 교체 배치의 대상. 대장 행에서 출발하므로 매물마다 한 번만 나온다(property_id UNIQUE). 매물 식별자
-      오름차순이라 식별자 자체가 커서이고 동률이 없다 — 배치가 앞 페이지의 행을 교체 · 삭제해도 커서가 흔들리지 않는다.
-      관심 매물 조건은 EXISTS 로 두어 여러 사용자가 등록한 매물이 중복되지 않게 한다(idx_wishlist_property, V13).
-      정렬 · 커서는 uq_building_ledger_property_id(V5) 순서다. data_source 인덱스는 없다 — 실행 계획은 미검증.
+      Mock 대장 교체 배치의 대상 — 대장 출처가 replaceSource 인 매물(교체) · 대장 행이 없고 조회 키가 있는 매물(신규 수집).
+      매물에서 출발해 대장을 LEFT JOIN 한다. 대장은 매물마다 많아야 한 행(uq_building_ledger_property_id, V5)이라 매물이 한 번만
+      나온다. 대장 없음은 대장 쪽 키가 NULL 인 행이다. 조회 키 네 컬럼은 모두 있거나 모두 없으므로(V17 CHECK) sigungu_code
+      하나로 본다 — 키가 없으면 클라이언트가 부르지 않아 대상으로 삼을 이유가 없다.
+      매물 식별자 오름차순이라 식별자 자체가 커서이고 동률이 없다 — 배치가 앞 페이지의 행을 교체 · 삭제 · 저장해도 커서가
+      흔들리지 않는다. 관심 매물 조건은 EXISTS 로 두어 여러 사용자가 등록한 매물이 중복되지 않게 한다(idx_wishlist_property, V13).
+      data_source · sigungu_code 인덱스는 없다 — 실행 계획은 미검증.
     -->
-    <select id="selectPropertyIdsByLedgerSource" resultType="java.lang.Long">
-        SELECT bl.property_id
-          FROM building_ledger bl
+    <select id="selectLedgerReplaceTargetIds" resultType="java.lang.Long">
+        SELECT p.property_id
+          FROM property p
+          LEFT JOIN building_ledger bl ON bl.property_id = p.property_id
         <where>
-            bl.data_source = #{dataSource}
+            <choose>
+                <when test="replaceSource != null and missingLedger">
+                    (bl.data_source = #{replaceSource}
+                     OR (bl.property_id IS NULL AND p.sigungu_code IS NOT NULL))
+                </when>
+                <when test="replaceSource != null">
+                    bl.data_source = #{replaceSource}
+                </when>
+                <otherwise>
+                    bl.property_id IS NULL AND p.sigungu_code IS NOT NULL
+                </otherwise>
+            </choose>
             <if test="wishlistedOnly">
-                AND EXISTS (SELECT 1 FROM wishlist w WHERE w.property_id = bl.property_id)
+                AND EXISTS (SELECT 1 FROM wishlist w WHERE w.property_id = p.property_id)
             </if>
             <if test="lastPropertyId != null">
-                AND bl.property_id &gt; #{lastPropertyId}
+                AND p.property_id &gt; #{lastPropertyId}
             </if>
         </where>
-         ORDER BY bl.property_id
+         ORDER BY p.property_id
          LIMIT #{limit}
     </select>
 </mapper>

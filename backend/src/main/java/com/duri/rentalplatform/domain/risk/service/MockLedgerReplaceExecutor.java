@@ -25,9 +25,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>뗄 대장이 없다 — Mock 행을 지운다. 분석 행(이력 포함)의 대장 참조를 먼저 NULL 로 끊는다({@code risk_analysis.ledger_id}
  *       외래 키, V17 부터 NULL 허용). 둘은 한 트랜잭션이다. 대장 항목은 확인 불가가 되고, 뒤 조회가 다시 수집을 시도한다.</li>
  *   <li>일일 상한 — 손대지 않는다. 배치는 그날 멈춘다.</li>
+ *   <li>초당 한도 — 손대지 않는다. 다음 매물로 넘어가고 다음 회차에 다시 본다.</li>
  *   <li>이미 Mock 이 아니다 — 손대지 않는다.</li>
+ *   <li>대장 행이 없다 — 대장 수집 경로({@link LedgerCommandService#collectIfAbsent})로 떼어 새 행으로 저장한다. 못 떼면
+ *       (뗄 대장이 없다 · 한도) 그대로 두고 건너뛴다. 뗄 대장이 없는 매물은 다음 회차에도 다시 떼어 본다.</li>
  * </ul>
- * 바꾸거나 지웠으면 재분석한다 — 저장된 분석이 Mock 대장으로 판정된 것이라서다. 재분석은 대장 수집을 건너뛴다
+ * 바꾸거나 지웠거나 새로 저장했으면 재분석한다 — 저장된 분석이 Mock 대장으로 판정된 것이라서다. 재분석은 대장 수집을 건너뛴다
  * ({@link RiskAnalysisCommandService#analyzeWithCollectedLedger}) — 지운 매물의 대장을 다시 떼면 상한을 한 번 더 쓴다. 판정
  * 결론이 같으면 새 분석 행을 남기지 않는다.
  *
@@ -79,13 +82,24 @@ public class MockLedgerReplaceExecutor {
         try {
             LedgerReplacement replacement = ledgerCommandService.fetchMockReplacement(propertyId);
             switch (replacement.outcome()) {
-                case NOT_MOCK, QUOTA_EXHAUSTED -> {
+                case NOT_MOCK, QUOTA_EXHAUSTED, RATE_LIMITED, COLLECTED -> {
                     return MockLedgerReplaceAttempt.completed(replacement.outcome(), false);
                 }
-                case FETCHED -> ledgerCommandService.replaceMock(propertyId, replacement.document());
-                case NOT_FOUND -> removeMock(propertyId);
+                case NO_LEDGER -> {
+                    if (!ledgerCommandService.collectIfAbsent(propertyId)) {
+                        return MockLedgerReplaceAttempt.completed(LedgerReplacementOutcome.NO_LEDGER, false);
+                    }
+                    applied = LedgerReplacementOutcome.COLLECTED;
+                }
+                case FETCHED -> {
+                    ledgerCommandService.replaceMock(propertyId, replacement.document());
+                    applied = LedgerReplacementOutcome.FETCHED;
+                }
+                case NOT_FOUND -> {
+                    removeMock(propertyId);
+                    applied = LedgerReplacementOutcome.NOT_FOUND;
+                }
             }
-            applied = replacement.outcome();
             riskAnalysisCommandService.analyzeWithCollectedLedger(propertyId);
             return MockLedgerReplaceAttempt.completed(applied, true);
         } catch (RuntimeException e) {

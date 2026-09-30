@@ -3,12 +3,14 @@ package com.duri.rentalplatform.external.address;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.config.ExternalApiProperties;
+import com.duri.rentalplatform.external.ExternalFallbackLog;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
@@ -26,6 +28,7 @@ import org.springframework.web.client.RestClient;
  * <p>응답의 {@code x} 가 경도, {@code y} 가 위도다. 순서를 뒤집으면 서울 매물이 중국 앞바다에 찍힌다.
  * 문자열로 오므로 {@link BigDecimal} 로 그대로 받는다 — double 로 받으면 저장 시 자릿수가 흔들린다.
  */
+@Slf4j
 @Component
 @ConditionalOnProperty(prefix = "external.geocode", name = "mode", havingValue = "real")
 public class RealGeocodeClient implements GeocodeClient {
@@ -78,6 +81,7 @@ public class RealGeocodeClient implements GeocodeClient {
      */
     @SuppressWarnings("unused")
     private Optional<Coordinates> unavailable(String address, Throwable cause) {
+        ExternalFallbackLog.warn(log, "좌표 변환", cause);
         throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
     }
 

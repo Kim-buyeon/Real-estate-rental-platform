@@ -3,6 +3,7 @@ package com.duri.rentalplatform.external.realestate;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.config.ExternalApiProperties;
+import com.duri.rentalplatform.external.ExternalFallbackLog;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import java.math.BigDecimal;
@@ -10,6 +11,7 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -38,6 +40,7 @@ import org.w3c.dom.Element;
  *
  * <p>호출 로깅은 이 클래스에 쓰지 않는다 — 전월세 Real 과 같은 이유(횡단 관심사 설계서 1.1).
  */
+@Slf4j
 @Component
 @ConditionalOnProperty(prefix = "external.sale-transaction", name = "mode", havingValue = "real")
 public class RealSaleTransactionClient implements SaleTransactionClient {
@@ -85,6 +88,7 @@ public class RealSaleTransactionClient implements SaleTransactionClient {
      */
     @SuppressWarnings("unused")
     private List<SaleTransaction> unavailable(SaleTransactionQuery query, Throwable cause) {
+        ExternalFallbackLog.warn(log, "매매 실거래가", cause);
         throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
     }
 

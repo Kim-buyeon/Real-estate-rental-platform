@@ -10,7 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.duri.rentalplatform.domain.property.dto.condition.LedgerSourceTargetCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.LedgerReplaceTargetCondition;
 import com.duri.rentalplatform.domain.property.enums.LedgerDataSource;
 import com.duri.rentalplatform.domain.property.mapper.LedgerMapper;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDailyQuota;
@@ -21,7 +21,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
-/** {@link MockLedgerTargetReader} — 관심 매물 먼저 · 전체 다음, 식별자 커서, 앞 단계 식별자 건너뛰기, 상한에서 끝내기. */
+/**
+ * {@link MockLedgerTargetReader} — 관심 매물(Mock · 대장 없음) → Mock 전체 → 대장 없음 전체 순서, 식별자 커서, 관심 매물 단계
+ * 식별자 건너뛰기, 상한에서 끝내기.
+ */
 class MockLedgerTargetReaderTest {
 
     private static final int PAGE_SIZE = 2;
@@ -39,7 +42,7 @@ class MockLedgerTargetReaderTest {
     }
 
     @Test
-    @DisplayName("관심 매물을 먼저 커서로 다 읽고, 전체를 처음부터 읽되 앞에서 내준 식별자는 건너뛴다")
+    @DisplayName("관심 매물 → Mock 전체 → 대장 없음 전체 순서로 각각 커서로 다 읽고, 관심 매물 단계에서 내준 식별자는 건너뛴다")
     void wishlistedFirstThenAllSkippingSeen() {
         page(true, null, 3L, 7L);
         page(true, 7L, 9L);
@@ -47,16 +50,21 @@ class MockLedgerTargetReaderTest {
         page(false, 3L, 5L, 7L);
         page(false, 7L, 8L, 9L);
         page(false, 9L);
+        missingPage(null, 2L, 3L);
+        missingPage(3L, 10L);
 
-        assertThat(readAll()).containsExactly(3L, 7L, 9L, 1L, 5L, 8L);
+        // 대장 없음 단계에서도 관심 매물 단계에서 내준 3 은 건너뛴다.
+        assertThat(readAll()).containsExactly(3L, 7L, 9L, 1L, 5L, 8L, 2L, 10L);
 
         InOrder order = inOrder(ledgerMapper);
-        order.verify(ledgerMapper).selectPropertyIdsByLedgerSource(condition(true, null));
-        order.verify(ledgerMapper).selectPropertyIdsByLedgerSource(condition(true, 7L));
-        order.verify(ledgerMapper).selectPropertyIdsByLedgerSource(condition(false, null));
-        order.verify(ledgerMapper).selectPropertyIdsByLedgerSource(condition(false, 3L));
-        order.verify(ledgerMapper).selectPropertyIdsByLedgerSource(condition(false, 7L));
-        order.verify(ledgerMapper).selectPropertyIdsByLedgerSource(condition(false, 9L));
+        order.verify(ledgerMapper).selectLedgerReplaceTargetIds(condition(true, null));
+        order.verify(ledgerMapper).selectLedgerReplaceTargetIds(condition(true, 7L));
+        order.verify(ledgerMapper).selectLedgerReplaceTargetIds(condition(false, null));
+        order.verify(ledgerMapper).selectLedgerReplaceTargetIds(condition(false, 3L));
+        order.verify(ledgerMapper).selectLedgerReplaceTargetIds(condition(false, 7L));
+        order.verify(ledgerMapper).selectLedgerReplaceTargetIds(condition(false, 9L));
+        order.verify(ledgerMapper).selectLedgerReplaceTargetIds(missing(null));
+        order.verify(ledgerMapper).selectLedgerReplaceTargetIds(missing(3L));
     }
 
     @Test
@@ -76,7 +84,7 @@ class MockLedgerTargetReaderTest {
 
         assertThat(reader.read()).isNull();
         assertThat(reader.read()).isNull();
-        verify(ledgerMapper, times(2)).selectPropertyIdsByLedgerSource(any());
+        verify(ledgerMapper, times(3)).selectLedgerReplaceTargetIds(any());
     }
 
     @Test
@@ -85,7 +93,7 @@ class MockLedgerTargetReaderTest {
         when(dailyQuota.remaining()).thenReturn(0L);
 
         assertThat(reader.read()).isNull();
-        verify(ledgerMapper, never()).selectPropertyIdsByLedgerSource(any());
+        verify(ledgerMapper, never()).selectLedgerReplaceTargetIds(any());
     }
 
     @Test
@@ -115,11 +123,21 @@ class MockLedgerTargetReaderTest {
     }
 
     private void page(boolean wishlistedOnly, Long lastPropertyId, Long... propertyIds) {
-        when(ledgerMapper.selectPropertyIdsByLedgerSource(condition(wishlistedOnly, lastPropertyId)))
+        when(ledgerMapper.selectLedgerReplaceTargetIds(condition(wishlistedOnly, lastPropertyId)))
                 .thenReturn(List.of(propertyIds));
     }
 
-    private static LedgerSourceTargetCondition condition(boolean wishlistedOnly, Long lastPropertyId) {
-        return new LedgerSourceTargetCondition(LedgerDataSource.MOCK, wishlistedOnly, lastPropertyId, PAGE_SIZE);
+    private void missingPage(Long lastPropertyId, Long... propertyIds) {
+        when(ledgerMapper.selectLedgerReplaceTargetIds(missing(lastPropertyId))).thenReturn(List.of(propertyIds));
+    }
+
+    /** 관심 매물 단계는 Mock · 대장 없음 둘 다, 전체 단계는 Mock 만. */
+    private static LedgerReplaceTargetCondition condition(boolean wishlistedOnly, Long lastPropertyId) {
+        return new LedgerReplaceTargetCondition(LedgerDataSource.MOCK, wishlistedOnly, wishlistedOnly, lastPropertyId,
+                PAGE_SIZE);
+    }
+
+    private static LedgerReplaceTargetCondition missing(Long lastPropertyId) {
+        return new LedgerReplaceTargetCondition(null, true, false, lastPropertyId, PAGE_SIZE);
     }
 }

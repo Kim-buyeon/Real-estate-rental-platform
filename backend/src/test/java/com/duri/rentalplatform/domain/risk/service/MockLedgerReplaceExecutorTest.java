@@ -105,8 +105,8 @@ class MockLedgerReplaceExecutorTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = LedgerReplacementOutcome.class, names = {"NOT_MOCK", "QUOTA_EXHAUSTED"})
-    @DisplayName("이미 Mock 이 아니거나 상한에 닿았으면 아무것도 바꾸지 않고 재분석하지 않는다")
+    @EnumSource(value = LedgerReplacementOutcome.class, names = {"NOT_MOCK", "QUOTA_EXHAUSTED", "RATE_LIMITED"})
+    @DisplayName("이미 Mock 이 아니거나 일일 · 초당 한도에 닿았으면 아무것도 바꾸지 않고 재분석하지 않는다")
     void untouchedOutcomes(LedgerReplacementOutcome outcome) {
         when(ledgerCommandService.fetchMockReplacement(PROPERTY_ID)).thenReturn(LedgerReplacement.of(outcome));
 
@@ -115,6 +115,36 @@ class MockLedgerReplaceExecutorTest {
         verify(ledgerCommandService, never()).replaceMock(any(), any());
         verifyNoInteractions(buildingLedgerRepository, riskAnalysisRepository, riskAnalysisCommandService);
         assertThat(attempt).isEqualTo(MockLedgerReplaceAttempt.completed(outcome, false));
+    }
+
+    @Test
+    @DisplayName("대장 행이 없는 매물은 수집 경로로 떼어 새로 저장했으면 대장 수집 없이 재분석하고 COLLECTED")
+    void noLedgerCollectsAndReanalyzes() {
+        when(ledgerCommandService.fetchMockReplacement(PROPERTY_ID))
+                .thenReturn(LedgerReplacement.of(LedgerReplacementOutcome.NO_LEDGER));
+        when(ledgerCommandService.collectIfAbsent(PROPERTY_ID)).thenReturn(true);
+
+        MockLedgerReplaceAttempt attempt = executor.replaceAndAnalyze(PROPERTY_ID);
+
+        InOrder order = inOrder(ledgerCommandService, riskAnalysisCommandService);
+        order.verify(ledgerCommandService).collectIfAbsent(PROPERTY_ID);
+        order.verify(riskAnalysisCommandService).analyzeWithCollectedLedger(PROPERTY_ID);
+        verify(riskAnalysisCommandService, never()).analyze(any());
+        verifyNoInteractions(buildingLedgerRepository, riskAnalysisRepository);
+        assertThat(attempt).isEqualTo(MockLedgerReplaceAttempt.completed(LedgerReplacementOutcome.COLLECTED, true));
+    }
+
+    @Test
+    @DisplayName("대장 행이 없는 매물을 떼지 못했으면(없음 · 한도) 그대로 두고 재분석하지 않는다 — NO_LEDGER")
+    void noLedgerNotCollectedIsSkipped() {
+        when(ledgerCommandService.fetchMockReplacement(PROPERTY_ID))
+                .thenReturn(LedgerReplacement.of(LedgerReplacementOutcome.NO_LEDGER));
+        when(ledgerCommandService.collectIfAbsent(PROPERTY_ID)).thenReturn(false);
+
+        MockLedgerReplaceAttempt attempt = executor.replaceAndAnalyze(PROPERTY_ID);
+
+        verifyNoInteractions(buildingLedgerRepository, riskAnalysisRepository, riskAnalysisCommandService);
+        assertThat(attempt).isEqualTo(MockLedgerReplaceAttempt.completed(LedgerReplacementOutcome.NO_LEDGER, false));
     }
 
     @Test

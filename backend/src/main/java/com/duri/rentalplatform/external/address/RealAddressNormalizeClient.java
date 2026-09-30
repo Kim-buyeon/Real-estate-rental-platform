@@ -3,11 +3,13 @@ package com.duri.rentalplatform.external.address;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.config.ExternalApiProperties;
+import com.duri.rentalplatform.external.ExternalFallbackLog;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import java.util.List;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -23,6 +25,7 @@ import org.springframework.web.client.RestClient;
  * <p>이 API 도 오류를 HTTP 200 본문에 담아 보낸다. {@code results.common.errorCode} 가 "0" 이 아니면
  * 실패로 본다. 검색 결과 0건은 오류가 아니라 「그런 주소가 없다」이므로 빈 값으로 돌려준다.
  */
+@Slf4j
 @Component
 @ConditionalOnProperty(prefix = "external.address-normalize", name = "mode", havingValue = "real")
 public class RealAddressNormalizeClient implements AddressNormalizeClient {
@@ -85,6 +88,7 @@ public class RealAddressNormalizeClient implements AddressNormalizeClient {
      */
     @SuppressWarnings("unused")
     private Optional<NormalizedAddress> unavailable(String rawAddress, Throwable cause) {
+        ExternalFallbackLog.warn(log, "주소 정규화", cause);
         throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
     }
 

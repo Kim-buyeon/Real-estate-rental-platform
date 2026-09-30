@@ -3,6 +3,7 @@ package com.duri.rentalplatform.external.realestate;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.config.ExternalApiProperties;
+import com.duri.rentalplatform.external.ExternalFallbackLog;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import java.math.BigDecimal;
@@ -10,6 +11,7 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -36,6 +38,7 @@ import org.w3c.dom.Element;
  * <p>호출 로깅은 이 클래스에 쓰지 않는다. 「외부 API 호출 로깅」은 관점의 몫이며(횡단 관심사 설계서 1.1),
  * 포인트컷 애노테이션은 아직 만들어지지 않았다. 그 기반 작업이 끝나면 애노테이션만 붙인다.
  */
+@Slf4j
 @Component
 @ConditionalOnProperty(prefix = "external.rent-transaction", name = "mode", havingValue = "real")
 public class RealRentTransactionClient implements RentTransactionClient {
@@ -82,6 +85,7 @@ public class RealRentTransactionClient implements RentTransactionClient {
      */
     @SuppressWarnings("unused")
     private List<RentTransaction> unavailable(RentTransactionQuery query, Throwable cause) {
+        ExternalFallbackLog.warn(log, "전월세 실거래가", cause);
         throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
     }
 

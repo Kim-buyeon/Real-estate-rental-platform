@@ -15,7 +15,9 @@ import com.duri.rentalplatform.external.buildingledger.BuildingLedgerClient;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDailyQuota;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDocument;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerLookup;
+import com.duri.rentalplatform.external.buildingledger.BuildingLedgerRateLimitedException;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -48,7 +50,16 @@ import org.springframework.transaction.support.TransactionTemplate;
  * {@link #fetchMockReplacement} 로 대장을 다시 떼어 보고, 뗐으면 {@link #replaceMock} 으로 같은 행을 바꾼다. 뗄 대장이 없을 때
  * 행을 지우는 일은 분석 이력의 참조를 함께 끊어야 해서 배치 쪽(위험도 도메인)이 한 트랜잭션으로 한다. 외부 호출과 저장을 나눈
  * 이유는 수집과 같다.
+ *
+ * <p><b>초당 한도</b> — 클라이언트가 {@link BuildingLedgerRateLimitedException} 을 던지면 장애가 아니라 한도다. 수집은 저장 없이
+ * 끝내고(대장 없이 판정 — 일일 상한과 같다), 교체는 {@link LedgerReplacementOutcome#RATE_LIMITED} 로 Mock 행을 남긴다.
+ * 빈 값(「없음」)으로 바꾸지 않는 이유는 그 예외의 주석에 있다.
+ *
+ * <p><b>대장 행이 없는 매물</b> — 교체 배치는 대장 행이 없고 조회 키가 있는 매물도 대상으로 삼는다. 그 매물은
+ * {@link #fetchMockReplacement} 가 {@link LedgerReplacementOutcome#NO_LEDGER} 를 주고, 배치가 {@link #collectIfAbsent} 로
+ * 수집한다 — 저장 경로를 따로 두지 않는다.
  */
+@Slf4j
 @Service
 public class LedgerCommandService {
 
@@ -80,29 +91,40 @@ public class LedgerCommandService {
     /**
      * 대장을 아직 수집하지 않았으면 떼어 저장한다.
      *
+     * @return 이 호출이 대장 행을 저장했으면 참. 이미 있었거나 · 뗄 대장이 없거나 · 한도에 닿았거나 · 동시 요청이 먼저
+     *         저장했으면 거짓
      * @throws BusinessException {@link ErrorCode#PROPERTY_NOT_FOUND} — 매물이 없을 때,
      *                           {@link ErrorCode#EXTERNAL_API_UNAVAILABLE} — 연동이 실패하거나 서킷이 열려 있을 때
      */
-    public void collectIfAbsent(Long propertyId) {
+    public boolean collectIfAbsent(Long propertyId) {
         Optional<BuildingLedgerLookup> lookup = readTransaction.execute(status -> findUncollected(propertyId));
         if (lookup == null || lookup.isEmpty()) {
-            return;
+            return false;
         }
 
-        Optional<BuildingLedgerDocument> fetched = buildingLedgerClient.fetch(lookup.get());
+        Optional<BuildingLedgerDocument> fetched;
+        try {
+            fetched = buildingLedgerClient.fetch(lookup.get());
+        } catch (BuildingLedgerRateLimitedException e) {
+            // 초당 한도. 장애가 아니므로 저장 없이 끝낸다 — 대장 없이 판정하고 다음 조회가 다시 수집한다(클래스 주석).
+            log.info("[대장 수집] 초당 한도로 건너뜀 — 매물 {}", propertyId);
+            return false;
+        }
         if (fetched.isEmpty()) {
             // 뗄 대장이 없다. 저장하지 않고 끝낸다(클래스 주석).
-            return;
+            return false;
         }
         BuildingLedgerDocument document = normalizeAddress(fetched.get());
 
         try {
             writeTransaction.executeWithoutResult(status -> save(propertyId, document));
+            return true;
         } catch (DataIntegrityViolationException e) {
             // UNIQUE 위반이면 다른 요청이 먼저 저장한 것이다. 그 밖의 무결성 위반은 삼키지 않는다.
             if (!buildingLedgerRepository.existsByPropertyId(propertyId)) {
                 throw e;
             }
+            return false;
         }
     }
 
@@ -112,22 +134,29 @@ public class LedgerCommandService {
      * <p>일일 상한과 「뗄 대장 없음」은 클라이언트에서 같은 빈 값으로 온다. 조회 키가 있는 매물에서 빈 값이 왔고 그 뒤 상한이 남아
      * 있지 않으면 상한으로 본다 — 마지막 한 칸으로 「없음」을 받은 경우도 여기에 들지만, 그 매물은 Mock 을 남겨 다음 회차에 다시
      * 본다. 반대로 보면 상한에 걸린 매물의 Mock 행을 「없음」으로 지우게 된다. 조회 키가 없으면 클라이언트가 부르지 않으므로 상한과
-     * 무관하게 「없음」이다.
+     * 무관하게 「없음」이다. 초당 한도는 {@link LedgerReplacementOutcome#RATE_LIMITED} 이고, 대장 행이 없으면
+     * {@link LedgerReplacementOutcome#NO_LEDGER} 다(떼지 않는다 — 배치가 수집 경로로 넘긴다).
      *
      * @throws BusinessException {@link ErrorCode#PROPERTY_NOT_FOUND} — 매물이 없을 때,
      *                           {@link ErrorCode#EXTERNAL_API_UNAVAILABLE} — 대장 · 주소 정규화 연동이 실패했을 때
      */
     public LedgerReplacement fetchMockReplacement(Long propertyId) {
-        Optional<BuildingLedgerLookup> lookup = readTransaction.execute(status -> findMockLedgerLookup(propertyId));
-        if (lookup == null || lookup.isEmpty()) {
-            return LedgerReplacement.of(LedgerReplacementOutcome.NOT_MOCK);
+        MockLedgerState state = readTransaction.execute(status -> findMockLedgerLookup(propertyId));
+        if (state == null || state.outcome() != null) {
+            return LedgerReplacement.of(state == null ? LedgerReplacementOutcome.NOT_MOCK : state.outcome());
         }
-        boolean keyed = lookup.get().ledgerKey() != null;
+        BuildingLedgerLookup lookup = state.lookup();
+        boolean keyed = lookup.ledgerKey() != null;
         if (keyed && dailyQuota.remaining() <= 0) {
             return LedgerReplacement.of(LedgerReplacementOutcome.QUOTA_EXHAUSTED);
         }
 
-        Optional<BuildingLedgerDocument> fetched = buildingLedgerClient.fetch(lookup.get());
+        Optional<BuildingLedgerDocument> fetched;
+        try {
+            fetched = buildingLedgerClient.fetch(lookup);
+        } catch (BuildingLedgerRateLimitedException e) {
+            return LedgerReplacement.of(LedgerReplacementOutcome.RATE_LIMITED);
+        }
         if (fetched.isEmpty()) {
             boolean quotaExhausted = keyed && dailyQuota.remaining() <= 0;
             return LedgerReplacement.of(quotaExhausted
@@ -163,12 +192,21 @@ public class LedgerCommandService {
         return Boolean.TRUE.equals(replaced);
     }
 
-    /** 대장이 Mock 이면 조회 값을, 대장이 없거나 Mock 이 아니면 빈 값을 돌려준다. */
-    private Optional<BuildingLedgerLookup> findMockLedgerLookup(Long propertyId) {
+    /** 대장이 Mock 이면 조회 값을, 대장 행이 없으면 {@code NO_LEDGER} 를, Mock 이 아니면 {@code NOT_MOCK} 을 담는다. */
+    private MockLedgerState findMockLedgerLookup(Long propertyId) {
         Property property = propertyRepository.findById(propertyId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PROPERTY_NOT_FOUND));
-        boolean mock = buildingLedgerRepository.findByPropertyId(propertyId).map(BuildingLedger::isMock).orElse(false);
-        return mock ? Optional.of(lookupOf(property)) : Optional.empty();
+        Optional<BuildingLedger> ledger = buildingLedgerRepository.findByPropertyId(propertyId);
+        if (ledger.isEmpty()) {
+            return new MockLedgerState(null, LedgerReplacementOutcome.NO_LEDGER);
+        }
+        return ledger.get().isMock()
+                ? new MockLedgerState(lookupOf(property), null)
+                : new MockLedgerState(null, LedgerReplacementOutcome.NOT_MOCK);
+    }
+
+    /** 교체 대상 확인 결과 — 떼어 볼 매물이면 조회 값, 아니면 그 결과. 둘 중 하나만 있다. */
+    private record MockLedgerState(BuildingLedgerLookup lookup, LedgerReplacementOutcome outcome) {
     }
 
     /** 수집할 매물이면 조회 값을, 이미 수집했으면 빈 값을 돌려준다. */

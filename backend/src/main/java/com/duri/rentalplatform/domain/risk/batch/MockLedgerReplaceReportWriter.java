@@ -30,6 +30,9 @@ public class MockLedgerReplaceReportWriter implements ItemWriter<MockLedgerRepla
                     case FETCHED -> report.addReplaced();
                     case NOT_FOUND -> report.addRemoved();
                     case QUOTA_EXHAUSTED -> report.addQuotaExhausted();
+                    case RATE_LIMITED -> report.addRateLimited();
+                    case COLLECTED -> report.addCollected();
+                    case NO_LEDGER -> report.addStillMissing();
                     case NOT_MOCK -> {
                         // 다른 경로가 먼저 바꿨다. 따로 세지 않는다 — 대상 수에만 든다.
                     }

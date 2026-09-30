@@ -20,11 +20,20 @@ public class MockLedgerReplaceReport {
     /** 뗄 대장이 없어 Mock 대장을 지운 매물 수 — 대장 항목은 확인 불가가 된다. */
     private int removed;
 
+    /** 대장 행이 없던 매물의 대장을 떼어 새로 저장한 매물 수. */
+    private int collected;
+
+    /** 대장 행이 없던 매물 중 떼지 못해(뗄 대장이 없다 · 한도) 그대로 둔 매물 수. */
+    private int stillMissing;
+
     /** 재분석까지 끝낸 매물 수. */
     private int reanalyzed;
 
     /** 일일 호출 상한에 닿아 떼어 보지 못하고 Mock 을 남긴 매물 수. 0 보다 크면 그 뒤로 회차를 멈췄다. */
     private int quotaExhausted;
+
+    /** 초당 호출 한도에 걸려 떼어 보지 못하고 그대로 둔 매물 수. 회차는 멈추지 않는다. */
+    private int rateLimited;
 
     /** 매물 락 경합으로 건너뛴 매물 수. */
     private int skipped;
@@ -44,6 +53,18 @@ public class MockLedgerReplaceReport {
         removed++;
     }
 
+    public void addCollected() {
+        collected++;
+    }
+
+    public void addStillMissing() {
+        stillMissing++;
+    }
+
+    public void addRateLimited() {
+        rateLimited++;
+    }
+
     public void addReanalyzed() {
         reanalyzed++;
     }
@@ -61,7 +82,8 @@ public class MockLedgerReplaceReport {
     }
 
     public String summary() {
-        return "대상 %d건 · 교체 %d건 · 삭제 %d건 · 재분석 %d건 · 상한 %d건 · 건너뜀 %d건 · 실패 %d건"
-                .formatted(targets, replaced, removed, reanalyzed, quotaExhausted, skipped, failed);
+        return ("대상 %d건 · 교체 %d건 · 삭제 %d건 · 신규 수집 %d건 · 대장 없음 유지 %d건 · 재분석 %d건 · 상한 %d건 · 초당 한도 %d건"
+                + " · 건너뜀 %d건 · 실패 %d건").formatted(targets, replaced, removed, collected, stillMissing, reanalyzed,
+                quotaExhausted, rateLimited, skipped, failed);
     }
 }
