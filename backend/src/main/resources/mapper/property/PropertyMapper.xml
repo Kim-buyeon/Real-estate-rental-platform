@@ -10,11 +10,35 @@
 -->
 <mapper namespace="com.duri.rentalplatform.domain.property.mapper.PropertyMapper">
 
-    <sql id="fromProperty">
+    <!--
+      FROM 조각은 조회가 쓰는 코드 조인만 붙이도록 셋으로 나눈다. PostgreSQL 은 INNER JOIN 을 스스로 떼지 못해, 코드 값을
+      고르지도 거르지도 않는 조회도 조인 비용을 낸다. contract_type_code_id · property_type_code_id 는 property_code 를 가리키는
+      NOT NULL 외래 키(V1)라 조인을 떼도 행이 바뀌지 않는다. 코드 필터는 아래 filter 가 식별자 비교로 건다.
+      운영 측정(298k 매물, 5회 중앙값, #326): 자치구 집계 412.8 → 362.4ms, 지도 묶음 131.1 → 126.6ms, 지도 마커 8.0 → 7.5ms.
+      읽은 버퍼 수는 같다.
+    -->
+    <sql id="latestRiskJoin">
+        LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
+    </sql>
+
+    <!-- 코드 값을 쓰지 않는 조회 — 자치구 집계 · 지도 묶음 -->
+    <sql id="fromPropertyRisk">
+        FROM property p
+        <include refid="latestRiskJoin"/>
+    </sql>
+
+    <!-- 계약 유형만 고르는 조회 — 지도 마커 -->
+    <sql id="fromPropertyRiskContractType">
+        FROM property p
+        JOIN property_code ct ON ct.code_id = p.contract_type_code_id
+        <include refid="latestRiskJoin"/>
+    </sql>
+
+    <!-- 계약 유형 · 매물 유형을 모두 고르는 조회 — 목록 · 상세. 목록은 최신 분석 조인을 따로 고르므로 코드 조인만 둔다. -->
+    <sql id="fromPropertyCodes">
         FROM property p
         JOIN property_code ct ON ct.code_id = p.contract_type_code_id
         JOIN property_code pt ON pt.code_id = p.property_type_code_id
-        LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
     </sql>
 
     <!--
@@ -24,6 +48,9 @@
       BETWEEN(경계 포함)은 그대로다. float8 → NUMERIC 변환은 유효 15자리로 맞추므로 요청이 보낸 좌표(10자리 이내)는 값이 바뀌지
       않는다. 반경에서 계산한 경계는 15자리 밖 끝자리(1e-13 아래)만 달라지고, 바운딩 박스는 1차 필터라 최종 판정은 거리 계산이 한다.
       셀 번호 식(cellRow · cellCol)은 조건이 아니라 SELECT 식이라 그대로 둔다.
+      계약 유형 · 매물 유형은 코드 테이블을 조인하지 않고 식별자로 비교한다 — 조인이 없는 조회에도 같은 필터를 걸기 위해서다.
+      하위 질의는 유일 제약 uq_property_code_group_value (code_group, code_value)(V1)로 한 행을 찾고, 바깥 행과 무관해
+      InitPlan 으로 한 번만 계산된다.
     -->
     <sql id="filter">
         <where>
@@ -31,10 +58,12 @@
                 AND p.district = #{district}
             </if>
             <if test="contractType != null">
-                AND ct.code_value = #{contractType}
+                AND p.contract_type_code_id = (SELECT code_id FROM property_code
+                                                WHERE code_group = 'CONTRACT_TYPE' AND code_value = #{contractType})
             </if>
             <if test="propertyType != null">
-                AND pt.code_value = #{propertyType}
+                AND p.property_type_code_id = (SELECT code_id FROM property_code
+                                                WHERE code_group = 'PROPERTY_TYPE' AND code_value = #{propertyType})
             </if>
             <if test="depositMin != null">
                 AND p.deposit &gt;= #{depositMin}
@@ -77,7 +106,7 @@
                SUM(CASE WHEN ra.risk_grade = 'SAFE' THEN 1 ELSE 0 END) AS safe_count,
                SUM(CASE WHEN ra.risk_grade = 'CAUTION' THEN 1 ELSE 0 END) AS caution_count,
                SUM(CASE WHEN ra.risk_grade = 'DANGER' THEN 1 ELSE 0 END) AS danger_count
-        <include refid="fromProperty"/>
+        <include refid="fromPropertyRisk"/>
         <include refid="filter"/>
         GROUP BY p.district
         ORDER BY p.district
@@ -109,14 +138,14 @@
 
     <select id="selectMarkers" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse">
         <include refid="markerColumns"/>
-        <include refid="fromProperty"/>
+        <include refid="fromPropertyRiskContractType"/>
         <include refid="filter"/>
         ORDER BY p.property_id
     </select>
 
     <select id="selectMarkersByIds" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse">
         <include refid="markerColumns"/>
-        <include refid="fromProperty"/>
+        <include refid="fromPropertyRiskContractType"/>
         WHERE p.property_id IN
         <foreach collection="propertyIds" item="id" open="(" separator="," close=")">
             #{id}
@@ -168,7 +197,7 @@
                        ra.risk_grade,
                        <include refid="cellRow"/> AS row_index,
                        <include refid="cellCol"/> AS col_index
-                <include refid="fromProperty"/>
+                <include refid="fromPropertyRisk"/>
                 <include refid="filter"/>) g
          GROUP BY g.row_index, g.col_index
          ORDER BY g.row_index, g.col_index
@@ -205,6 +234,18 @@
         </choose>
     </sql>
 
+    <!--
+      자치구를 지정하고 전세가율로 정렬하는 목록만 최신 분석을 매물 한 건씩 찾는다. 평범한 LEFT JOIN 이면 플래너가 최신 분석 전부를
+      해시 조인한다 — risk_analysis 를 이력 행까지(약 300k) 병렬 순차 읽기한다. 매물마다 커버링 부분 유일 인덱스
+      uq_risk_analysis_latest (property_id) INCLUDE (risk_id, risk_grade, lease_ratio, registry_id) WHERE is_latest(V19)를
+      찾게 하면 운영 측정(5회 중앙값, #326) 강남구 142.6 → 64.0ms, 도봉구 80.9 → 17.1ms 다.
+      자치구가 없으면(서울 전체) 같은 방식이 오히려 느려(457 → 835ms) 조건을 둘 다 걸 때만 쓴다.
+      OFFSET 0 은 최적화 울타리다 — 없으면 PostgreSQL 이 하위 질의를 평범한 조인으로 펼쳐 다시 해시 조인을 고를 수 있다.
+      별칭을 ra 로 두어 filter(ra.risk_grade) · sortExpr(ra.lease_ratio) · SELECT 목록이 그대로 쓴다. 하위 질의의 SELECT 에
+      없는 ra 열을 새로 참조하면 여기에 더해야 한다.
+      random_page_cost 를 1.1 로 낮추면 플래너가 스스로 이 계획을 고르는 것을 확인했지만(#326) 서버 설정이라 DB 설정 단계로
+      미룬다. 그때까지 매퍼가 계획을 정한다.
+    -->
     <select id="selectList" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse">
         SELECT p.property_id,
                p.district,
@@ -218,7 +259,18 @@
                ra.risk_grade,
                ra.lease_ratio AS debt_ratio,
                p.registered_at AT TIME ZONE 'Asia/Seoul' AS registered_at
-        <include refid="fromProperty"/>
+        <include refid="fromPropertyCodes"/>
+        <choose>
+            <when test="district != null and district != '' and sortKey.name() == 'DEBT_RATIO'">
+                LEFT JOIN LATERAL (SELECT r.risk_grade, r.lease_ratio
+                                     FROM risk_analysis r
+                                    WHERE r.property_id = p.property_id AND r.is_latest = TRUE
+                                   OFFSET 0) ra ON TRUE
+            </when>
+            <otherwise>
+                <include refid="latestRiskJoin"/>
+            </otherwise>
+        </choose>
         <include refid="filter"/>
         ORDER BY <include refid="sortExpr"/> <include refid="sortDir"/>, p.property_id <include refid="sortDir"/>
         LIMIT #{limit}
@@ -251,7 +303,8 @@
                    <otherwise>FALSE</otherwise>
                </choose> AS wishlisted,
                p.registered_at AT TIME ZONE 'Asia/Seoul' AS registered_at
-        <include refid="fromProperty"/>
+        <include refid="fromPropertyCodes"/>
+        <include refid="latestRiskJoin"/>
         WHERE p.property_id = #{propertyId}
     </select>
 
