@@ -11,6 +11,10 @@ import com.duri.rentalplatform.external.realestate.RentBuildingType;
 import com.duri.rentalplatform.external.realestate.RentTransaction;
 import com.duri.rentalplatform.external.realestate.RentTransactionClient;
 import com.duri.rentalplatform.external.realestate.RentTransactionQuery;
+import com.duri.rentalplatform.external.realestate.SaleBuildingType;
+import com.duri.rentalplatform.external.realestate.SaleTransaction;
+import com.duri.rentalplatform.external.realestate.SaleTransactionClient;
+import com.duri.rentalplatform.external.realestate.SaleTransactionQuery;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -39,9 +43,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * resourceless 트랜잭션 관리자로 도는데 저장 경계는 적재 쓰기 서비스가 긋는다. (b) 시세가 바뀐 관심 매물의 등급이 바뀌면 커밋 뒤
  * 이벤트로 관심 등록자에게만 알림이 생기는가. (c) 최신 판정이 없는 매물이 판정되는가 — 신규 매물과 적재와 무관한 기존 매물 둘 다.
  *
- * <p><b>적재 규모</b> — 실거래가 클라이언트를 테스트용으로 바꿔 끼운다. Mock 클라이언트는 한 회차에 25개 구 × 48건 × 2개 서비스를
- * 만들어 공유 컨테이너에 2,400건을 넣는다. 여기서는 한 자치구 · 아파트 서비스에만 일곱 건을 주고 나머지 조회는 빈 목록이다. 기간(months)
- * 도 1개월로 줄인다. 주소 정규화 · 좌표 · 등기 · 대장은 Mock 그대로다.
+ * <p><b>적재 규모</b> — 전월세 · 매매 실거래가 클라이언트를 테스트용으로 바꿔 끼운다. Mock 클라이언트는 한 회차에 25개 구 × 48건 ×
+ * 2개 서비스를 만들어 공유 컨테이너에 2,400건을 넣는다. 여기서는 한 자치구 · 아파트 서비스에만 전월세 일곱 건과 매매 두 건(면적대마다
+ * 한 건)을 주고 나머지 조회는 빈 목록이다. 기간(months)도 1개월로 줄인다. 주소 정규화 · 좌표 · 등기 · 대장은 Mock 그대로다.
  *
  * <p><b>격리</b> — 통합 테스트의 기존 방식을 따라 {@code @Transactional} 을 붙이지 않고 실제로 커밋한 뒤 테스트가 넣은 행을 끝에 지운다
  * ({@code NotificationCreationIntegrationTest} 와 같다). 커밋 뒤 비동기 리스너가 알림을 만들어야 하므로 롤백형 격리는 쓸 수 없다.
@@ -49,8 +53,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * 매물 식별자로만 한다.
  *
  * <p><b>등급 변경을 확정하는 방법</b> — 첫 등급은 Mock 등기(매물 식별자에서 결정)가 정하므로 미리 알 수 없다. 시세를 크게 잡은 기존 매물
- * 후보 여럿을 먼저 판정해 두고 등급이 DANGER 가 아닌 첫 후보를 관심 매물로 삼는다. 배치가 시세를 보증금과 같게 낮추면 깡통전세
- * (위험금액 × 100 &gt; 시세 × 80)라 DANGER 가 되므로 등급이 반드시 바뀐다.
+ * 후보 여럿을 먼저 판정해 두고 등급이 DANGER 가 아닌 첫 후보를 관심 매물로 삼는다. 후보 면적대의 매매 표본을 보증금과 같은 값으로 주어
+ * 배치가 시세를 보증금과 같게 낮추면 깡통전세(위험금액 × 100 &gt; 시세 × 80)라 DANGER 가 되므로 등급이 반드시 바뀐다.
  */
 @Tag("integration")
 @SpringBootTest(properties = {
@@ -77,8 +81,19 @@ class PropertyRefreshIntegrationTest {
     private static final LocalDate CANDIDATE_CONTRACT_DATE = LocalDate.of(2026, 8, 15);
     private static final LocalDate NEW_CONTRACT_DATE = LocalDate.of(2026, 8, 20);
 
+    /** 후보 면적대(40㎡ 미만)의 매매 표본. 보증금과 같은 값이라 후보는 깡통전세가 된다(클래스 주석). */
+    private static final long CANDIDATE_SALE_PRICE = CANDIDATE_DEPOSIT;
+    private static final LocalDate CANDIDATE_SALE_DATE = LocalDate.of(2026, 8, 25);
+
+    /** 신규 매물 면적대(40~60㎡)의 매매 표본. 보증금과 다른 값이라 시세가 매매에서 왔는지 드러난다. */
+    private static final long NEW_PROPERTY_SALE_PRICE = 400_000_000L;
+    private static final LocalDate NEW_PROPERTY_SALE_DATE = LocalDate.of(2026, 8, 28);
+
     /** 실거래가 클라이언트가 돌려줄 목록. 테스트마다 채운다. */
     private static volatile List<RentTransaction> stubbedTransactions = List.of();
+
+    /** 매매 실거래가 클라이언트가 돌려줄 목록. 테스트마다 채운다. */
+    private static volatile List<SaleTransaction> stubbedSales = List.of();
 
     @Autowired
     PropertyRefreshJobLauncher launcher;
@@ -99,11 +114,13 @@ class PropertyRefreshIntegrationTest {
     void clearDateLock() {
         stringRedisTemplate.delete(DATE_LOCK_KEY);
         stubbedTransactions = List.of();
+        stubbedSales = List.of();
     }
 
     @AfterEach
     void cleanUp() {
         stubbedTransactions = List.of();
+        stubbedSales = List.of();
         // 배치가 새로 저장한 매물은 주소로 찾아 지운다.
         for (Long found : jdbc.queryForList("SELECT property_id FROM property WHERE address LIKE ?", Long.class,
                 "서울특별시 " + DISTRICT + " " + DONG + " %")) {
@@ -140,7 +157,7 @@ class PropertyRefreshIntegrationTest {
         List<Long> candidates = insertCandidates();
         long newProperty = newPropertyOf(runWithStubbedTransactions(candidates).report()).id();
 
-        // 신규 매물 — 실거래 한 건이 매물 한 행으로 저장되고 시세는 같은 면적대 표본(자기 자신 하나)의 중앙값이다.
+        // 신규 매물 — 실거래 한 건이 매물 한 행으로 저장되고 시세는 같은 법정동 · 면적대 매매 표본(한 건)의 중앙값이다.
         Map<String, Object> saved = jdbc.queryForMap("""
                 SELECT address, district, deposit, monthly_rent, market_price, price_type, price_date, floor
                 FROM property WHERE property_id = ?
@@ -149,9 +166,9 @@ class PropertyRefreshIntegrationTest {
         assertThat(saved.get("district")).isEqualTo(DISTRICT);
         assertThat(saved.get("deposit")).isEqualTo(NEW_PROPERTY_DEPOSIT);
         assertThat(saved.get("monthly_rent")).isEqualTo(0L);
-        assertThat(saved.get("market_price")).isEqualTo(NEW_PROPERTY_DEPOSIT);
+        assertThat(saved.get("market_price")).isEqualTo(NEW_PROPERTY_SALE_PRICE);
         assertThat(saved.get("price_type")).isEqualTo("ACTUAL_TRANSACTION");
-        assertThat(saved.get("price_date")).isEqualTo(java.sql.Date.valueOf(NEW_CONTRACT_DATE));
+        assertThat(saved.get("price_date")).isEqualTo(java.sql.Date.valueOf(NEW_PROPERTY_SALE_DATE));
         assertThat(saved.get("floor")).isEqualTo(5);
         assertThat(countProperties(newPropertyAddress())).isEqualTo(1);
 
@@ -159,8 +176,8 @@ class PropertyRefreshIntegrationTest {
         for (int index = 0; index < candidates.size(); index++) {
             Map<String, Object> updated = jdbc.queryForMap(
                     "SELECT market_price, price_date FROM property WHERE property_id = ?", candidates.get(index));
-            assertThat(updated.get("market_price")).isEqualTo(CANDIDATE_DEPOSIT);
-            assertThat(updated.get("price_date")).isEqualTo(java.sql.Date.valueOf(CANDIDATE_CONTRACT_DATE));
+            assertThat(updated.get("market_price")).isEqualTo(CANDIDATE_SALE_PRICE);
+            assertThat(updated.get("price_date")).isEqualTo(java.sql.Date.valueOf(CANDIDATE_SALE_DATE));
             assertThat(countProperties(candidateAddress(index))).isEqualTo(1);
         }
     }
@@ -232,7 +249,7 @@ class PropertyRefreshIntegrationTest {
 
     // ---- 실행 · 픽스처 ----
 
-    /** 후보 기존 매물 전체와 신규 매물 한 건의 실거래를 클라이언트에 실어 배치를 돌린다. */
+    /** 후보 기존 매물 전체와 신규 매물 한 건의 전월세 실거래, 두 면적대의 매매 표본을 클라이언트에 실어 배치를 돌린다. */
     private Run runWithStubbedTransactions(List<Long> candidates) {
         List<RentTransaction> transactions = new ArrayList<>();
         for (int index = 0; index < candidates.size(); index++) {
@@ -240,6 +257,9 @@ class PropertyRefreshIntegrationTest {
         }
         transactions.add(transaction("9100-1", "50.00", 5, NEW_PROPERTY_DEPOSIT, NEW_CONTRACT_DATE));
         stubbedTransactions = List.copyOf(transactions);
+        stubbedSales = List.of(
+                sale("30.00", CANDIDATE_SALE_PRICE, CANDIDATE_SALE_DATE),
+                sale("50.00", NEW_PROPERTY_SALE_PRICE, NEW_PROPERTY_SALE_DATE));
 
         PropertyRefreshReport report = launcher.run(DATE);
         assertThat(report.getLoadReport().getFailures()).isEmpty();
@@ -268,6 +288,11 @@ class PropertyRefreshIntegrationTest {
                 contractDate, 2010, RentBuildingType.APARTMENT, "TEST");
     }
 
+    private static SaleTransaction sale(String area, long dealAmount, LocalDate contractDate) {
+        return new SaleTransaction(LAWD_CODE, DONG, "시험매매아파트", "9500-1", new BigDecimal(area), 7, dealAmount,
+                contractDate, 2010, false, SaleBuildingType.APARTMENT, "TEST");
+    }
+
     private static String jibun(int index) {
         return "%d-1".formatted(9001 + index);
     }
@@ -280,7 +305,7 @@ class PropertyRefreshIntegrationTest {
         return "서울특별시 " + DISTRICT + " " + DONG + " 9100-1";
     }
 
-    /** 실거래와 자연키가 같고 시세가 낡은 기존 매물들. 전부 40㎡ 미만 면적대라 새 시세 표본이 서로 섞여도 중앙값이 같다. */
+    /** 실거래와 자연키가 같고 시세가 낡은 기존 매물들. 전부 40㎡ 미만 면적대라 같은 매매 표본(후보 면적대 한 건)에서 시세가 잡힌다. */
     private List<Long> insertCandidates() {
         List<Long> ids = new ArrayList<>();
         for (int index = 0; index < CANDIDATE_COUNT; index++) {
@@ -352,7 +377,7 @@ class PropertyRefreshIntegrationTest {
         }
     }
 
-    /** 실거래가 클라이언트를 좁힌다. 한 자치구의 아파트 조회에만 정해진 목록을 주고 나머지는 빈 목록이다. */
+    /** 전월세 · 매매 실거래가 클라이언트를 좁힌다. 한 자치구의 아파트 조회에만 정해진 목록을 주고 나머지는 빈 목록이다. */
     @TestConfiguration(proxyBeanMethods = false)
     static class NarrowClientConfig {
 
@@ -364,6 +389,20 @@ class PropertyRefreshIntegrationTest {
                 public List<RentTransaction> findRentTransactions(RentTransactionQuery query) {
                     if (LAWD_CODE.equals(query.lawdCode()) && query.buildingType() == RentBuildingType.APARTMENT) {
                         return stubbedTransactions;
+                    }
+                    return List.of();
+                }
+            };
+        }
+
+        @Bean
+        @Primary
+        SaleTransactionClient narrowSaleTransactionClient() {
+            return new SaleTransactionClient() {
+                @Override
+                public List<SaleTransaction> findSaleTransactions(SaleTransactionQuery query) {
+                    if (LAWD_CODE.equals(query.lawdCode()) && query.buildingType() == SaleBuildingType.APARTMENT) {
+                        return stubbedSales;
                     }
                     return List.of();
                 }

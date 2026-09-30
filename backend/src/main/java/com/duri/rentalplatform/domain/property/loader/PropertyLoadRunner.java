@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
  * <pre>./gradlew bootRun --args='--spring.profiles.active=load-properties --load.months=12'</pre>
  *
  * <p>평소 기동에서 이 빈은 만들어지지 않는다. 프로파일 없이 돌게 두면 배포마다 적재가 다시 도는데,
- * 그때마다 25개 구 × 12개월 × 2개 서비스 = 600회의 외부 호출이 나간다. 공공 API 는 일일 한도가 있다.
+ * 그때마다 25개 구 × 12개월 × (전월세 2 + 매매 2개 서비스) = 최대 1,200회의 실거래가 호출이 나간다. 공공 API 는 일일 한도가 있다.
  *
  * <p>관리 API 로 두지 않은 이유는 범위다. 관리자 경로는 ADMIN-01 의 몫이고, 되풀이되는 갱신은
  * 갱신 배치(RISK-08)가 맡는다. 초기 적재는 한 번 돌리는 준비 작업이다 — 데이터 적재 설계서 1.4.
