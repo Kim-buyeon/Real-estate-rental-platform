@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Alert } from '../../../components/ui';
+import { registryDataSourceNotice } from '../../../domain/risk';
 import { formatDateTime } from '../../../lib/format';
 import { riskQueries } from '../../../queries/risk';
 import { MortgageRow } from './MortgageRow';
@@ -32,9 +33,16 @@ export function RegistryTimeline({ propertyId }: RegistryTimelineProps) {
   }
 
   const registry = registryQuery.data;
+  const dataSourceNotice = registryDataSourceNotice(registry.dataSource);
 
   return (
     <>
+      {dataSourceNotice !== null && (
+        <Alert variant="info" className={styles.notice}>
+          {dataSourceNotice}
+        </Alert>
+      )}
+
       <p className={`${styles.note} type-body-sm`}>접수일이 우선변제 순서를 정합니다.</p>
 
       <section className={styles.section}>

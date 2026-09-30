@@ -1,3 +1,8 @@
+/* 수집 경로 안내(예시 데이터) — 아래 안내 문구와 같은 간격을 둔다 */
+.notice {
+  margin: 0 0 var(--spacing-sm);
+}
+
 .note {
   margin: 0 0 var(--spacing-sm);
   color: var(--color-text-tertiary);

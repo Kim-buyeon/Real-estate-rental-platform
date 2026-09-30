@@ -140,11 +140,29 @@ export const OWNERSHIP_RIGHT_TYPE_LABEL: Record<OwnershipRightType, string> = {
 
 /**
  * 등기 수집 경로 — 명세 1.3 dataSource. 유료 중계 연동 전까지 Mock 어댑터 하나다.
- * 화면에 표시하지 않는 필드라 표시 문구 매핑을 두지 않는다 — 쓰는 곳이 없다.
  * 값이 늘면 백엔드와 함께 여기에 추가한다.
  */
 export const REGISTRY_DATA_SOURCES = ['MOCK'] as const;
 export type RegistryDataSource = (typeof REGISTRY_DATA_SOURCES)[number];
+
+/**
+ * 등기 이력 상단 안내 — 수집 경로별 문구. null이면 안내를 두지 않는다(실제 등기 연동 경로가 생기면 그 값).
+ * 조건 분기가 아니라 열거값에 붙인 매핑으로 둔다 (frontend/CLAUDE.md 타입·열거값).
+ */
+export const REGISTRY_DATA_SOURCE_NOTICE: Record<RegistryDataSource, string | null> = {
+  MOCK: '등기부등본은 유료 연동 전 예시 데이터입니다. 근저당 · 권리 침해 · 소유자 항목은 실제 등기와 다릅니다.',
+};
+
+/** 모르는 수집 경로는 안내 없음으로 둔다 — 실제 등기인지 예시인지 화면이 추측하지 않는다 */
+export const registryDataSourceNotice = (dataSource: string): string | null =>
+  (REGISTRY_DATA_SOURCE_NOTICE as Record<string, string | null>)[dataSource] ?? null;
+
+/**
+ * 매물 상세의 임대인 행 보조 문구. 임대인 이름은 등기 소유자와 대조되는 값인데 등기가 아직 예시
+ * 데이터(REGISTRY_DATA_SOURCES — MOCK뿐)라 함께 알린다. 매물 상세 응답에는 수집 경로 필드가 없어
+ * 새 필드를 만들지 않고 고정 문구로 둔다 — 유료 연동이 붙으면 이 문구와 쓰는 자리를 함께 걷어낸다.
+ */
+export const LANDLORD_NAME_SOURCE_NOTE = '등기 연동 전 예시';
 
 /**
  * 시세 산출 근거 — 명세 1.1 · 매물 명세 1.7 priceType. 두 응답이 같은 값을 쓰므로 한 곳에만 둔다.
