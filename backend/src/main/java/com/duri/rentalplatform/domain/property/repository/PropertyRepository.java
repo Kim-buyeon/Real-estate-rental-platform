@@ -2,6 +2,8 @@ package com.duri.rentalplatform.domain.property.repository;
 
 import com.duri.rentalplatform.domain.property.entity.Property;
 import java.util.List;
+import java.util.Optional;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
@@ -17,4 +19,10 @@ public interface PropertyRepository extends JpaRepository<Property, Long> {
      * 왕복이 그만큼 늘어난다. 적재는 자치구 단위로 도므로 한 번 읽어 메모리에서 비교한다.
      */
     List<Property> findAllByDistrict(String district);
+
+    /**
+     * 매물 유형 코드를 함께 읽는다. 호출부가 트랜잭션 밖(대출 한도 조회)이라 지연 로딩이 닿지 않는다 — 조인으로 한 번에 가져온다.
+     */
+    @EntityGraph(attributePaths = "propertyTypeCode")
+    Optional<Property> findWithPropertyTypeCodeByPropertyId(Long propertyId);
 }
