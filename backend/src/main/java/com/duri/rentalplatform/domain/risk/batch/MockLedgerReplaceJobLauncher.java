@@ -3,6 +3,8 @@ package com.duri.rentalplatform.domain.risk.batch;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
+import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
+import com.duri.rentalplatform.domain.risk.store.BatchSuccessStore;
 import com.duri.rentalplatform.domain.risk.vo.MockLedgerReplaceReport;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -39,16 +41,20 @@ public class MockLedgerReplaceJobLauncher {
 
     private final JobOperator jobOperator;
     private final MockLedgerReplaceJobFactory jobFactory;
+    private final BatchSuccessStore successStore;
     private final Clock clock;
 
     @Autowired
-    public MockLedgerReplaceJobLauncher(JobOperator jobOperator, MockLedgerReplaceJobFactory jobFactory) {
-        this(jobOperator, jobFactory, Clock.system(SEOUL));
+    public MockLedgerReplaceJobLauncher(
+            JobOperator jobOperator, MockLedgerReplaceJobFactory jobFactory, BatchSuccessStore successStore) {
+        this(jobOperator, jobFactory, successStore, Clock.system(SEOUL));
     }
 
-    MockLedgerReplaceJobLauncher(JobOperator jobOperator, MockLedgerReplaceJobFactory jobFactory, Clock clock) {
+    MockLedgerReplaceJobLauncher(
+            JobOperator jobOperator, MockLedgerReplaceJobFactory jobFactory, BatchSuccessStore successStore, Clock clock) {
         this.jobOperator = jobOperator;
         this.jobFactory = jobFactory;
+        this.successStore = successStore;
         this.clock = clock;
     }
 
@@ -87,6 +93,19 @@ public class MockLedgerReplaceJobLauncher {
             throw new IllegalStateException("Mock 대장 교체 배치가 완료되지 못했다 — " + date + " · " + status,
                     failures.isEmpty() ? null : failures.getFirst());
         }
+        recordSuccess(date);
         return report;
+    }
+
+    /**
+     * 성공 기록을 남긴다 — 기동 뒤 따라잡기가 오늘 회차를 다시 시작하지 않게 한다. 기록에 실패해도 회차는 이미 끝났으므로 예외를
+     * 올리지 않는다. 기록이 없으면 다음 기동이 같은 날 한 번 더 돌 뿐이다(동시 실행은 날짜 락이 막는다).
+     */
+    private void recordSuccess(LocalDate date) {
+        try {
+            successStore.markSucceeded(DailyBatch.MOCK_LEDGER_REPLACE, date);
+        } catch (RuntimeException e) {
+            log.warn("[Mock 대장 교체 배치] 성공 기록을 남기지 못했다 — {}", date, e);
+        }
     }
 }

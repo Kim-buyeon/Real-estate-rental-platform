@@ -3,6 +3,8 @@ package com.duri.rentalplatform.domain.risk.batch;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
+import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
+import com.duri.rentalplatform.domain.risk.store.BatchSuccessStore;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshReport;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -51,16 +53,19 @@ public class PropertyRefreshJobLauncher {
 
     private final JobOperator jobOperator;
     private final PropertyRefreshJobFactory jobFactory;
+    private final BatchSuccessStore successStore;
     private final Clock clock;
 
     @Autowired
-    public PropertyRefreshJobLauncher(PropertyRefreshJobFactory jobFactory) {
-        this(dedicatedJobOperator(jobFactory.jobRepository()), jobFactory, Clock.system(SEOUL));
+    public PropertyRefreshJobLauncher(PropertyRefreshJobFactory jobFactory, BatchSuccessStore successStore) {
+        this(dedicatedJobOperator(jobFactory.jobRepository()), jobFactory, successStore, Clock.system(SEOUL));
     }
 
-    PropertyRefreshJobLauncher(JobOperator jobOperator, PropertyRefreshJobFactory jobFactory, Clock clock) {
+    PropertyRefreshJobLauncher(
+            JobOperator jobOperator, PropertyRefreshJobFactory jobFactory, BatchSuccessStore successStore, Clock clock) {
         this.jobOperator = jobOperator;
         this.jobFactory = jobFactory;
+        this.successStore = successStore;
         this.clock = clock;
     }
 
@@ -114,6 +119,19 @@ public class PropertyRefreshJobLauncher {
             throw new IllegalStateException("매물 갱신 배치가 완료되지 못했다 — " + date + " · " + status,
                     failures.isEmpty() ? null : failures.getFirst());
         }
+        recordSuccess(date);
         return report;
+    }
+
+    /**
+     * 성공 기록을 남긴다 — 기동 뒤 따라잡기가 오늘 회차를 다시 시작하지 않게 한다. 기록에 실패해도 회차는 이미 끝났으므로 예외를
+     * 올리지 않는다. 기록이 없으면 다음 기동이 같은 날 한 번 더 돌 뿐이다(동시 실행은 날짜 락이 막는다).
+     */
+    private void recordSuccess(LocalDate date) {
+        try {
+            successStore.markSucceeded(DailyBatch.PROPERTY_REFRESH, date);
+        } catch (RuntimeException e) {
+            log.warn("[매물 갱신 배치] 성공 기록을 남기지 못했다 — {}", date, e);
+        }
     }
 }

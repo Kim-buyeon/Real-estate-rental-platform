@@ -239,6 +239,15 @@ risk:
       # 풀려야 하므로 하루보다 짧게 둔다. 미확정 — 다른 날짜 락과 같게 잠정 23시간.
       lock-lease-time: PT23H
 
+# 하루 한 번 도는 위험도 배치(매물 갱신 · 등기 재조회 · Mock 대장 교체)의 기동 뒤 따라잡기(DailyBatchCatchUpScheduler).
+# 노드를 작업할 때만 켜는 운용이라 예약 시각에 꺼져 있으면 그날 회차가 빠진다 — 기동 뒤 한 번, 오늘(서울) 성공 기록
+# (Redis batch:last-success:{배치})이 없는 배치만 순서대로 돌린다. 각 배치의 enabled · 연동 모드 조건은 그대로 따른다.
+# @Scheduled 스레드 풀(spring.task.scheduling.pool.size)이 아니라 가상 스레드에서 돌아 예약 실행 · 하트비트를 막지 않는다.
+batch:
+  startup-catchup:
+    # 켤지. 테스트 실행에서는 build.gradle 이 false 로 덮는다.
+    enabled: true
+
 # 대출 한도 조회(LOAN-01)의 금리 · 상품 한도 입력 — 대출 상품(loan_product).
 loan:
   product:

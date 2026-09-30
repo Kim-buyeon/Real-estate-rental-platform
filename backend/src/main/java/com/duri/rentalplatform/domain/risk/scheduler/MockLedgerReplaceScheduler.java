@@ -14,8 +14,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Mock 대장 교체 배치의 반복 실행 진입점. 시각은 설정 {@code risk.batch.mock-ledger-replace.cron}(서울). 기동 뒤 1회 실행은 두지
- * 않는다 — 하루 상한을 나눠 쓰는 배치라 정해진 시각 한 번이면 되고, 기동마다 돌면 사용자 조회 몫까지 당겨 쓴다.
+ * Mock 대장 교체 배치의 반복 실행 진입점. 시각은 설정 {@code risk.batch.mock-ledger-replace.cron}(서울). 기동 뒤에는
+ * {@link DailyBatchCatchUpScheduler} 가 오늘 성공 기록이 없을 때만 이 메서드를 한 번 부른다 — 하루 상한을 나눠 쓰는 배치라 기동마다
+ * 돌면 사용자 조회 몫까지 당겨 쓰므로, 이미 성공한 날에는 다시 돌지 않는다.
  *
  * <p><b>켜고 끄기</b> — {@code risk.batch.mock-ledger-replace.enabled} 가 참이고 <b>대장 연동이 real 일 때만</b> 뜬다. 테스트
  * 실행에서는 enabled 를 끈다. Mock · Fault 모드에서는 Mock 대장이 곧 그 모드의 대장이라 바꿀 것이 없다.
