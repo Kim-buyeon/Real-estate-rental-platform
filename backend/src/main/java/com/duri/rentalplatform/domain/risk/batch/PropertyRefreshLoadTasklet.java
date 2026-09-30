@@ -10,7 +10,8 @@ import org.springframework.batch.infrastructure.repeat.RepeatStatus;
 
 /**
  * 매물 갱신 배치(RISK-08)의 첫 스텝 — 실거래가를 다시 모아 새 매물을 저장하고 바뀐 시세를 갱신한다. 일은
- * {@link PropertyLoadService#refresh} 가 하고, 여기서는 결과를 회차 집계에 넘겨 다음 스텝이 이어받게 한다.
+ * {@link PropertyLoadService#refresh} 가 하고, 여기서는 결과 건수를 회차 집계에 남긴다. 다음 스텝은 대상을 DB 에서 읽으므로
+ * 넘겨주는 것이 없다 — 식별자 목록을 넘기면 회차 동안 신규 매물 수만큼 쌓인다.
  *
  * <p><b>청크로 만들지 않는 이유</b> — 적재는 자치구 단위로 돈다. 시세가 같은 법정동 · 면적대 표본의 중앙값이라 한 자치구의
  * 거래가 한자리에 모여야 계산되기 때문이다(적재 서비스 주석). 건 단위 읽기 · 쓰기로 쪼갤 수 없다.

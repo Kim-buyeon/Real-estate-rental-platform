@@ -42,6 +42,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * <p>확인하는 것은 세 가지다. (a) 적재 태스크릿 스텝 안에서 신규 매물의 JPA 저장과 기존 매물의 시세 갱신이 실제로 커밋되는가 — 스텝이
  * resourceless 트랜잭션 관리자로 도는데 저장 경계는 적재 쓰기 서비스가 긋는다. (b) 시세가 바뀐 관심 매물의 등급이 바뀌면 커밋 뒤
  * 이벤트로 관심 등록자에게만 알림이 생기는가. (c) 최신 판정이 없는 매물이 판정되는가 — 신규 매물과 적재와 무관한 기존 매물 둘 다.
+ * (d) 재분석 대상을 적재가 메모리로 넘기지 않고 판정 스텝이 DB(재분석 대기 표시 V18)에서 읽고, 판정을 마치면 표시를 내리는가 —
+ * 앞 회차에 남은 매물까지.
  *
  * <p><b>적재 규모</b> — 전월세 · 매매 실거래가 클라이언트를 테스트용으로 바꿔 끼운다. Mock 클라이언트는 한 회차에 25개 구 × 48건 ×
  * 2개 서비스를 만들어 공유 컨테이너에 2,400건을 넣는다. 여기서는 한 자치구 · 아파트 서비스에만 전월세 일곱 건과 매매 두 건(면적대마다
@@ -206,7 +208,12 @@ class PropertyRefreshIntegrationTest {
 
         PropertyRefreshReport report = runWithStubbedTransactions(candidates).report();
 
-        assertThat(report.getPriceChangedPropertyIds()).contains(watched);
+        // 적재는 건수만 남기고, 판정 스텝은 재분석 대기 표시(V18)로 DB 에서 읽어 재분석한 뒤 표시를 내린다.
+        assertThat(report.getPriceChangedProperties()).isEqualTo(CANDIDATE_COUNT);
+        assertThat(report.getReanalyzed()).isGreaterThanOrEqualTo(CANDIDATE_COUNT);
+        for (Long candidate : candidates) {
+            assertThat(reanalysisPending(candidate)).isFalse();
+        }
         awaitUntil(() -> countNotifications(watchedId) == 1);
         Map<String, Object> row = jdbc.queryForMap("""
                 SELECT n.user_id, n.notif_type, wn.change_type, wn.before_value, wn.after_value
@@ -245,6 +252,30 @@ class PropertyRefreshIntegrationTest {
                 "SELECT previous_grade FROM risk_analysis WHERE property_id = ? AND is_latest", String.class,
                 unrelated)).isNull();
         assertThat(report.getFirstAnalyzed()).isGreaterThanOrEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("앞 회차에 재분석되지 못한 시세 변경 매물은 적재에서 만나지 않아도 판정 스텝이 DB 에서 읽어 재분석한다")
+    void leftoverPriceChangedPropertyIsReanalyzedFromDatabase() {
+        long leftover = insertProperty("서울특별시 " + DISTRICT + " " + DONG + " 9300-1", STALE_MARKET_PRICE);
+        riskAnalysisCommandService.analyze(leftover);
+        // 앞 회차 적재가 시세 금액을 바꿨으나 재분석이 실패해 대기 표시가 남은 상태.
+        jdbc.update("UPDATE property SET is_reanalysis_pending = TRUE WHERE property_id = ?", leftover);
+
+        PropertyRefreshReport report = runWithStubbedTransactions(List.of()).report();
+        newPropertyOf(report);
+
+        assertThat(report.getPriceChangedProperties()).isZero();
+        assertThat(report.getReanalyzed()).isGreaterThanOrEqualTo(1);
+        // 입력이 같아 결론도 같으므로 판정 행은 늘지 않는다 — 그래도 표시는 내려가 다음 회차에 다시 나오지 않는다.
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM risk_analysis WHERE property_id = ?", Integer.class,
+                leftover)).isEqualTo(1);
+        assertThat(reanalysisPending(leftover)).isFalse();
+    }
+
+    private boolean reanalysisPending(long propertyId) {
+        return jdbc.queryForObject("SELECT is_reanalysis_pending FROM property WHERE property_id = ?", Boolean.class,
+                propertyId);
     }
 
     // ---- 실행 · 픽스처 ----

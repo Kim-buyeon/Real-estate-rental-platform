@@ -173,7 +173,7 @@ class PropertyRefreshMultiInstanceTest {
                 .satisfies(outcome -> {
                     // 클라이언트가 빈 목록만 주므로 적재는 아무것도 하지 않는다. 판정 스텝은 정상 종료해야 한다.
                     assertThat(outcome.report().getNewProperties()).isZero();
-                    assertThat(outcome.report().getPriceChangedPropertyIds()).isEmpty();
+                    assertThat(outcome.report().getPriceChangedProperties()).isZero();
                     assertThat(outcome.report().getLoadReport().getFetched()).isZero();
                 });
         assertThat(outcomes).filteredOn(outcome -> outcome.report() == null)

@@ -246,6 +246,7 @@
 
     <!--
       최신 판정이 없는 매물 — 매물 갱신 배치(RISK-08)의 판정 대상. 신규 매물과, 판정이 실패해 남은 매물이 함께 나온다.
+      재분석 대기 매물은 뺀다 — 아래 selectPriceChangedPropertyIds 가 내주므로 두 갈래가 겹치지 않는다.
       전체 매물을 읽어 메모리에서 거르지 않고 NOT EXISTS 로 DB 가 거른다. 하위 질의는 부분 유일 인덱스
       uq_risk_analysis_latest (property_id) WHERE is_latest (V9) 로 풀리고, 바깥은 PK 순서라 식별자 커서에 인덱스가 따로 필요 없다.
       실행 계획은 미검증 — 운영 규모 더미로 EXPLAIN 을 돌리지 않았다.
@@ -256,6 +257,26 @@
         <where>
             NOT EXISTS (SELECT 1 FROM risk_analysis ra
                          WHERE ra.property_id = p.property_id AND ra.is_latest = TRUE)
+            AND p.is_reanalysis_pending = FALSE
+            <if test="lastPropertyId != null">
+                AND p.property_id &gt; #{lastPropertyId}
+            </if>
+        </where>
+        ORDER BY p.property_id
+        LIMIT #{limit}
+    </select>
+
+    <!--
+      시세 금액이 바뀌어 재분석을 기다리는 매물 — 매물 갱신 배치(RISK-08)의 재분석 대상. 적재 단계가 식별자를 메모리에 모아 넘기지
+      않고 is_reanalysis_pending(V18)을 세우면 여기서 DB 가 거른다. 판정 단계가 판정을 마치면 표시를 내리므로 실패 · 경합으로 남은
+      매물은 다음 회차에 다시 나온다. 부분 인덱스 ix_property_reanalysis_pending (property_id) WHERE is_reanalysis_pending (V18) 이
+      대기 매물만 식별자 순으로 담는다. 실행 계획은 미검증 — 운영 규모 더미로 EXPLAIN 을 돌리지 않았다.
+    -->
+    <select id="selectPriceChangedPropertyIds" resultType="java.lang.Long">
+        SELECT p.property_id
+        FROM property p
+        <where>
+            p.is_reanalysis_pending = TRUE
             <if test="lastPropertyId != null">
                 AND p.property_id &gt; #{lastPropertyId}
             </if>

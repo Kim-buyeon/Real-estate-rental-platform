@@ -94,6 +94,14 @@ public class Property extends CreatedAtEntity {
 
     private LocalDate priceDate;
 
+    /**
+     * 시세 금액이 바뀌어 갱신 배치(RISK-08)의 재분석을 기다리는가(V18). {@link #refreshMarketPrice} 가 세우고 배치가 판정을 마치면
+     * {@link #completeReanalysis} 가 내린다. 판정 단계는 이 표시로 재분석 대상을 DB 에서 읽는다 — 적재 단계가 식별자를 메모리에
+     * 모아 넘기지 않는다.
+     */
+    @Column(name = "is_reanalysis_pending", nullable = false)
+    private boolean reanalysisPending;
+
     @Column(nullable = false, precision = 7, scale = 2)
     private BigDecimal areaSqm;
 
@@ -193,7 +201,7 @@ public class Property extends CreatedAtEntity {
      * 데이터 적재 설계서 1.5 「값이 동일하면 재분석하지 않는다」.
      *
      * <p>기준일만 바뀌어도 저장한다. 화면이 시세와 함께 기준일을 표시하기 때문이다(같은 설계서 1.4). 다만 판정에 쓰이는 값은
-     * 금액뿐이므로 <b>금액이 바뀐 경우만 참</b>을 돌려 재분석 대상으로 표시하게 한다.
+     * 금액뿐이므로 <b>금액이 바뀐 경우만</b> 재분석 대기로 표시하고 참을 돌려준다.
      *
      * @return 시세 금액이 바뀌었는가. 참이면 위험도 재분석 대상이다
      */
@@ -205,7 +213,18 @@ public class Property extends CreatedAtEntity {
         marketPrice = newMarketPrice;
         priceType = newPriceType;
         priceDate = newPriceDate;
+        if (amountChanged) {
+            reanalysisPending = true;
+        }
         return amountChanged;
+    }
+
+    /**
+     * 갱신 배치(RISK-08)가 시세 변경 재분석을 마쳤다. 재분석 대기 표시를 내린다. 판정 결론이 같아 새 판정 행이 생기지 않았어도
+     * 내린다 — 바뀐 시세로 판정한 것은 같다.
+     */
+    public void completeReanalysis() {
+        reanalysisPending = false;
     }
 
     /** 중복 적재 차단에 쓰는 자연키. */

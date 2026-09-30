@@ -1,5 +1,6 @@
 package com.duri.rentalplatform.domain.property.mapper;
 
+import com.duri.rentalplatform.domain.property.dto.condition.PriceChangedPropertyCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertySearchCondition;
@@ -37,7 +38,13 @@ public interface PropertyMapper {
 
     /**
      * 최신 판정(is_latest)이 없는 매물 식별자를 식별자 오름차순으로 {@code limit} 건. 매물 갱신 배치(RISK-08)의 판정 대상이다.
-     * 식별자 자체가 커서라 동률이 없다.
+     * 재분석 대기 매물은 들지 않는다 — {@link #selectPriceChangedPropertyIds} 가 내준다. 식별자 자체가 커서라 동률이 없다.
      */
     List<Long> selectUnanalyzedPropertyIds(UnanalyzedPropertyCondition condition);
+
+    /**
+     * 시세 금액이 바뀌어 재분석을 기다리는 매물(is_reanalysis_pending) 식별자를 식별자 오름차순으로 {@code limit} 건. 매물 갱신
+     * 배치(RISK-08)의 재분석 대상이다. 식별자 자체가 커서라 동률이 없다.
+     */
+    List<Long> selectPriceChangedPropertyIds(PriceChangedPropertyCondition condition);
 }
