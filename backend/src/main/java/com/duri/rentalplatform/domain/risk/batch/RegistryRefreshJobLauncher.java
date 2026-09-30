@@ -3,6 +3,8 @@ package com.duri.rentalplatform.domain.risk.batch;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
+import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
+import com.duri.rentalplatform.domain.risk.store.BatchSuccessStore;
 import com.duri.rentalplatform.domain.risk.vo.RegistryRefreshReport;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -30,7 +32,8 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>Job 파라미터</b> — 날짜와 실행 시각을 둘 다 식별 파라미터로 넣는다. 날짜만 넣으면 같은 날 두 번째 실행(수동 재실행 ·
  * 락 해제 뒤 다른 인스턴스)이 「이미 완료된 Job 인스턴스」로 거절된다. 실행 여부는 날짜 락이 가르므로 Batch 의 중복 판정에 기대지
- * 않는다. resourceless 저장소는 한 프로세스에서 동시에 한 Job 만 다룰 수 있고, 날짜 락과 하루 한 번의 스케줄이 그 조건을 지킨다.
+ * 않는다. resourceless 저장소는 한 프로세스에서 동시에 한 Job 만 다룰 수 있다. 앱의 Job 저장소 빈은 이제 이 배치만 쓰고(매물 갱신 ·
+ * Mock 대장 교체는 각자 전용 저장소 — {@link DedicatedJobOperators}), 이 배치끼리의 겹침은 날짜 락이 막는다.
  *
  * <p><b>대상 · 매물 단위</b> — 모니터링 여부와 무관하게 관심 매물 전부이고, 여러 사용자가 같은 매물을 등록해도 한 번만 처리한다.
  * 락 경합은 건너뛰고 실패는 기록한 뒤 다음 매물로 넘어간다 — 서킷이 열리면 나머지는 폴백으로 빠르게 실패하므로 전체를 멈추지 않는다.
@@ -48,16 +51,20 @@ public class RegistryRefreshJobLauncher {
 
     private final JobOperator jobOperator;
     private final RegistryRefreshJobFactory jobFactory;
+    private final BatchSuccessStore successStore;
     private final Clock clock;
 
     @Autowired
-    public RegistryRefreshJobLauncher(JobOperator jobOperator, RegistryRefreshJobFactory jobFactory) {
-        this(jobOperator, jobFactory, Clock.system(SEOUL));
+    public RegistryRefreshJobLauncher(
+            JobOperator jobOperator, RegistryRefreshJobFactory jobFactory, BatchSuccessStore successStore) {
+        this(jobOperator, jobFactory, successStore, Clock.system(SEOUL));
     }
 
-    RegistryRefreshJobLauncher(JobOperator jobOperator, RegistryRefreshJobFactory jobFactory, Clock clock) {
+    RegistryRefreshJobLauncher(
+            JobOperator jobOperator, RegistryRefreshJobFactory jobFactory, BatchSuccessStore successStore, Clock clock) {
         this.jobOperator = jobOperator;
         this.jobFactory = jobFactory;
+        this.successStore = successStore;
         this.clock = clock;
     }
 
@@ -96,6 +103,19 @@ public class RegistryRefreshJobLauncher {
             throw new IllegalStateException("등기 재조회 배치가 완료되지 못했다 — " + date + " · " + status,
                     failures.isEmpty() ? null : failures.getFirst());
         }
+        recordSuccess(date);
         return report;
+    }
+
+    /**
+     * 성공 기록을 남긴다 — 기동 뒤 따라잡기가 오늘 회차를 다시 시작하지 않게 한다. 기록에 실패해도 회차는 이미 끝났으므로 예외를
+     * 올리지 않는다. 기록이 없으면 다음 기동이 같은 날 한 번 더 돌 뿐이다(동시 실행은 날짜 락이 막는다).
+     */
+    private void recordSuccess(LocalDate date) {
+        try {
+            successStore.markSucceeded(DailyBatch.REGISTRY_REFRESH, date);
+        } catch (RuntimeException e) {
+            log.warn("[등기 재조회 배치] 성공 기록을 남기지 못했다 — {}", date, e);
+        }
     }
 }

@@ -16,7 +16,9 @@ import com.duri.rentalplatform.domain.property.dto.condition.LedgerSourceTargetC
 import com.duri.rentalplatform.domain.property.enums.LedgerDataSource;
 import com.duri.rentalplatform.domain.property.enums.LedgerReplacementOutcome;
 import com.duri.rentalplatform.domain.property.mapper.LedgerMapper;
+import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
 import com.duri.rentalplatform.domain.risk.service.MockLedgerReplaceExecutor;
+import com.duri.rentalplatform.domain.risk.store.BatchSuccessStore;
 import com.duri.rentalplatform.domain.risk.vo.MockLedgerReplaceAttempt;
 import com.duri.rentalplatform.domain.risk.vo.MockLedgerReplaceReport;
 import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDailyQuota;
@@ -30,9 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.batch.core.configuration.support.MapJobRegistry;
-import org.springframework.batch.core.launch.support.TaskExecutorJobOperator;
-import org.springframework.batch.core.repository.support.ResourcelessJobRepository;
+import org.springframework.batch.core.launch.JobOperator;
 import org.springframework.context.expression.MethodBasedEvaluationContext;
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -55,23 +55,20 @@ class MockLedgerReplaceJobLauncherTest {
     private LedgerMapper ledgerMapper;
     private BuildingLedgerDailyQuota dailyQuota;
     private MockLedgerReplaceExecutor executor;
-    private TaskExecutorJobOperator jobOperator;
+    private JobOperator jobOperator;
     private MockLedgerReplaceJobFactory jobFactory;
+    private BatchSuccessStore successStore;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         ledgerMapper = mock(LedgerMapper.class);
         dailyQuota = mock(BuildingLedgerDailyQuota.class);
         when(dailyQuota.remaining()).thenReturn(100L);
         executor = mock(MockLedgerReplaceExecutor.class);
+        successStore = mock(BatchSuccessStore.class);
 
-        ResourcelessJobRepository jobRepository = new ResourcelessJobRepository();
-        jobOperator = new TaskExecutorJobOperator();
-        jobOperator.setJobRepository(jobRepository);
-        jobOperator.setJobRegistry(new MapJobRegistry());
-        jobOperator.afterPropertiesSet();
-
-        jobFactory = new MockLedgerReplaceJobFactory(jobRepository, ledgerMapper, dailyQuota, executor, CHUNK_SIZE);
+        jobFactory = new MockLedgerReplaceJobFactory(ledgerMapper, dailyQuota, executor, CHUNK_SIZE);
+        jobOperator = DedicatedJobOperators.create(jobFactory.jobRepository(), "Mock 대장 교체 배치");
     }
 
     @Test
@@ -150,6 +147,36 @@ class MockLedgerReplaceJobLauncherTest {
     }
 
     @Test
+    @DisplayName("회차가 COMPLETED 로 끝나면 그 날짜의 성공 기록을 남긴다")
+    void recordsSuccessWhenCompleted() {
+        page(true, null);
+        page(false, null);
+
+        launcher().run(DATE);
+
+        verify(successStore).markSucceeded(DailyBatch.MOCK_LEDGER_REPLACE, DATE);
+    }
+
+    @Test
+    @DisplayName("회차가 완료되지 못하면 성공 기록을 남기지 않는다 — 다음 기동이 다시 돌 수 있게")
+    void noRecordWhenNotCompleted() {
+        when(ledgerMapper.selectPropertyIdsByLedgerSource(any()))
+                .thenThrow(new DataAccessResourceFailureException("db down"));
+
+        assertThatThrownBy(() -> launcher().run(DATE)).isInstanceOf(IllegalStateException.class);
+        verify(successStore, never()).markSucceeded(any(), any());
+    }
+
+    @Test
+    @DisplayName("Job 저장소는 이 배치 전용이다 — 기동 뒤 따라잡기로 등기 재조회 배치와 한 프로세스에서 겹쳐도 실행 기록을 나눠 쓰지 않는다")
+    void usesDedicatedJobRepository() {
+        MockLedgerReplaceJobFactory another =
+                new MockLedgerReplaceJobFactory(ledgerMapper, dailyQuota, executor, CHUNK_SIZE);
+
+        assertThat(jobFactory.jobRepository()).isNotNull().isNotSameAs(another.jobRepository());
+    }
+
+    @Test
     @DisplayName("배치 진입점에 날짜 키 분산 락이 대기 0 · 설정 만료로 붙어 있고, 키는 risk:batch:mock-ledger-replace:{yyyy-MM-dd} 로 풀린다")
     void dateLockAnnotation() throws NoSuchMethodException {
         Method run = MockLedgerReplaceJobLauncher.class.getMethod("run", LocalDate.class);
@@ -166,7 +193,7 @@ class MockLedgerReplaceJobLauncherTest {
     }
 
     private MockLedgerReplaceJobLauncher launcher() {
-        return new MockLedgerReplaceJobLauncher(jobOperator, jobFactory, AT_0430);
+        return new MockLedgerReplaceJobLauncher(jobOperator, jobFactory, successStore, AT_0430);
     }
 
     private void page(boolean wishlistedOnly, Long lastPropertyId, Long... propertyIds) {

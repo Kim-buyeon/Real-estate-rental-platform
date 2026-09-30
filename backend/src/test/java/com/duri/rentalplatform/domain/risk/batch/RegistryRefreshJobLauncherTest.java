@@ -3,6 +3,7 @@ package com.duri.rentalplatform.domain.risk.batch;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -14,8 +15,10 @@ import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
 import com.duri.rentalplatform.domain.property.dto.condition.WishlistedPropertyCondition;
 import com.duri.rentalplatform.domain.property.mapper.WishlistMapper;
+import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
 import com.duri.rentalplatform.domain.risk.enums.RegistryRefreshOutcome;
 import com.duri.rentalplatform.domain.risk.service.RegistryRefreshBatchExecutor;
+import com.duri.rentalplatform.domain.risk.store.BatchSuccessStore;
 import com.duri.rentalplatform.domain.risk.vo.RegistryRefreshAttempt;
 import com.duri.rentalplatform.domain.risk.vo.RegistryRefreshReport;
 import java.lang.reflect.Method;
@@ -56,11 +59,13 @@ class RegistryRefreshJobLauncherTest {
     private RegistryRefreshBatchExecutor executor;
     private TaskExecutorJobOperator jobOperator;
     private RegistryRefreshJobFactory jobFactory;
+    private BatchSuccessStore successStore;
 
     @BeforeEach
     void setUp() throws Exception {
         wishlistMapper = mock(WishlistMapper.class);
         executor = mock(RegistryRefreshBatchExecutor.class);
+        successStore = mock(BatchSuccessStore.class);
 
         ResourcelessJobRepository jobRepository = new ResourcelessJobRepository();
         jobOperator = new TaskExecutorJobOperator();
@@ -147,6 +152,37 @@ class RegistryRefreshJobLauncherTest {
     }
 
     @Test
+    @DisplayName("회차가 COMPLETED 로 끝나면 그 날짜의 성공 기록을 남긴다")
+    void recordsSuccessWhenCompleted() {
+        page(null);
+
+        service(AT_0300).run(DATE);
+
+        verify(successStore).markSucceeded(DailyBatch.REGISTRY_REFRESH, DATE);
+    }
+
+    @Test
+    @DisplayName("회차가 완료되지 못하면 성공 기록을 남기지 않는다 — 다음 기동이 다시 돌 수 있게")
+    void noRecordWhenNotCompleted() {
+        when(wishlistMapper.selectWishlistedPropertyIds(any()))
+                .thenThrow(new DataAccessResourceFailureException("db down"));
+
+        assertThatThrownBy(() -> service(AT_0300).run(DATE)).isInstanceOf(IllegalStateException.class);
+        verify(successStore, never()).markSucceeded(any(), any());
+    }
+
+    @Test
+    @DisplayName("성공 기록에 실패해도 회차 집계를 돌려준다 — 회차는 이미 끝났다")
+    void recordFailureDoesNotFailRun() {
+        page(null);
+        doThrow(new QueryTimeoutException("redis")).when(successStore).markSucceeded(any(), any());
+
+        RegistryRefreshReport report = service(AT_0300).run(DATE);
+
+        assertThat(report.getTargets()).isZero();
+    }
+
+    @Test
     @DisplayName("배치 진입점에 날짜 키 분산 락이 대기 0 · 설정 만료로 붙어 있고, 키는 risk:batch:registry-refresh:{yyyy-MM-dd} 로 풀린다")
     void dateLockAnnotation() throws NoSuchMethodException {
         Method run = RegistryRefreshJobLauncher.class.getMethod("run", LocalDate.class);
@@ -164,7 +200,7 @@ class RegistryRefreshJobLauncherTest {
     }
 
     private RegistryRefreshJobLauncher service(Clock clock) {
-        return new RegistryRefreshJobLauncher(jobOperator, jobFactory, clock);
+        return new RegistryRefreshJobLauncher(jobOperator, jobFactory, successStore, clock);
     }
 
     private void page(Long lastPropertyId, Long... propertyIds) {

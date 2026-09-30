@@ -19,7 +19,9 @@ import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyC
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.service.PropertyLoadService;
 import com.duri.rentalplatform.domain.property.vo.PropertyRefreshResult;
+import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
 import com.duri.rentalplatform.domain.risk.service.PropertyRefreshAnalysisExecutor;
+import com.duri.rentalplatform.domain.risk.store.BatchSuccessStore;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshAttempt;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshReport;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshTarget;
@@ -62,12 +64,14 @@ class PropertyRefreshJobLauncherTest {
     private PropertyRefreshAnalysisExecutor executor;
     private PropertyRefreshJobFactory jobFactory;
     private JobOperator jobOperator;
+    private BatchSuccessStore successStore;
 
     @BeforeEach
     void setUp() {
         propertyLoadService = mock(PropertyLoadService.class);
         propertyMapper = mock(PropertyMapper.class);
         executor = mock(PropertyRefreshAnalysisExecutor.class);
+        successStore = mock(BatchSuccessStore.class);
         jobFactory = new PropertyRefreshJobFactory(propertyLoadService, propertyMapper, executor, MONTHS, CHUNK_SIZE);
         jobOperator = PropertyRefreshJobLauncher.dedicatedJobOperator(jobFactory.jobRepository());
         when(executor.analyze(any())).thenAnswer(invocation -> PropertyRefreshAttempt.analyzed(invocation.getArgument(0)));
@@ -172,6 +176,26 @@ class PropertyRefreshJobLauncherTest {
     }
 
     @Test
+    @DisplayName("회차가 COMPLETED 로 끝나면 그 날짜의 성공 기록을 남긴다")
+    void recordsSuccessWhenCompleted() {
+        loadReturns(List.of(), List.of());
+        page(null);
+
+        launcher(AT_0200).run(DATE);
+
+        verify(successStore).markSucceeded(DailyBatch.PROPERTY_REFRESH, DATE);
+    }
+
+    @Test
+    @DisplayName("회차가 완료되지 못하면 성공 기록을 남기지 않는다 — 다음 기동이 다시 돌 수 있게")
+    void noRecordWhenNotCompleted() {
+        when(propertyLoadService.refresh(anyInt(), any())).thenThrow(new IllegalStateException("load broke"));
+
+        assertThatThrownBy(() -> launcher(AT_0200).run(DATE)).isInstanceOf(IllegalStateException.class);
+        verify(successStore, never()).markSucceeded(any(), any());
+    }
+
+    @Test
     @DisplayName("배치 진입점에 날짜 키 분산 락이 대기 0 · 설정 만료로 붙어 있고, 키는 property:batch:refresh:{yyyy-MM-dd} 로 풀린다")
     void dateLockAnnotation() throws NoSuchMethodException {
         Method run = PropertyRefreshJobLauncher.class.getMethod("run", LocalDate.class);
@@ -197,7 +221,7 @@ class PropertyRefreshJobLauncherTest {
     }
 
     private PropertyRefreshJobLauncher launcher(Clock clock) {
-        return new PropertyRefreshJobLauncher(jobOperator, jobFactory, clock);
+        return new PropertyRefreshJobLauncher(jobOperator, jobFactory, successStore, clock);
     }
 
     private void loadReturns(List<Long> newIds, List<Long> priceChangedIds) {

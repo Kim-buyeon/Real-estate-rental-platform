@@ -82,13 +82,14 @@ dependencies {
 	testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
-// 테스트 실행에서는 반복 배치 스케줄을 띄우지 않는다. 테스트가 배치 시각에 걸리면 공유 컨테이너의 데이터에
+// 테스트 실행에서는 반복 배치 스케줄과 기동 뒤 따라잡기를 띄우지 않는다. 테스트가 배치 시각에 걸리면 공유 컨테이너의 데이터에
 // 배치가 끼어든다. 시스템 속성은 application.yml 을 이기고, 테스트가 직접 띄우는 두 번째 컨텍스트에도 걸린다.
 tasks.withType(Test).configureEach {
 	systemProperty 'risk.batch.registry-refresh.enabled', 'false'
 	systemProperty 'property.batch.refresh.enabled', 'false'
 	systemProperty 'loan.batch.rate-refresh.enabled', 'false'
 	systemProperty 'risk.batch.mock-ledger-replace.enabled', 'false'
+	systemProperty 'batch.startup-catchup.enabled', 'false'
 }
 
 // 단위 테스트만 돈다. 컨테이너를 띄우는 것은 @Tag("integration") 으로 갈라 뺀다.

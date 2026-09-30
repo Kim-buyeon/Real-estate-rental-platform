@@ -3,6 +3,8 @@ package com.duri.rentalplatform.domain.risk.batch;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
+import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
+import com.duri.rentalplatform.domain.risk.store.BatchSuccessStore;
 import com.duri.rentalplatform.domain.risk.vo.MockLedgerReplaceReport;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -27,6 +29,10 @@ import org.springframework.stereotype.Component;
  * <p><b>하루 한 번 · Job 파라미터 · 트랜잭션</b> — {@link RegistryRefreshJobLauncher} 와 같다. 날짜 키
  * {@code risk:batch:mock-ledger-replace:{yyyy-MM-dd}} 의 분산 락을 기다리지 않고 한 번만 시도하고, 날짜와 실행 시각을 식별
  * 파라미터로 넣으며, 트랜잭션은 열지 않는다.
+ *
+ * <p><b>전용 Job 실행기</b> — 앱의 Job 실행기 빈이 아니라 이 배치 전용 저장소({@link MockLedgerReplaceJobFactory#jobRepository()})로
+ * 만든 실행기를 쓴다. 기동 뒤 따라잡기는 예약 시각과 무관하게 돌므로 같은 프로세스에서 등기 재조회 배치와 겹칠 수 있다 — 저장소를
+ * 나눠 쓰면 서로의 실행 기록을 덮는다. 이유는 {@link DedicatedJobOperators}. 실행은 동기다.
  */
 @Slf4j
 @Component
@@ -39,16 +45,20 @@ public class MockLedgerReplaceJobLauncher {
 
     private final JobOperator jobOperator;
     private final MockLedgerReplaceJobFactory jobFactory;
+    private final BatchSuccessStore successStore;
     private final Clock clock;
 
     @Autowired
-    public MockLedgerReplaceJobLauncher(JobOperator jobOperator, MockLedgerReplaceJobFactory jobFactory) {
-        this(jobOperator, jobFactory, Clock.system(SEOUL));
+    public MockLedgerReplaceJobLauncher(MockLedgerReplaceJobFactory jobFactory, BatchSuccessStore successStore) {
+        this(DedicatedJobOperators.create(jobFactory.jobRepository(), "Mock 대장 교체 배치"), jobFactory, successStore,
+                Clock.system(SEOUL));
     }
 
-    MockLedgerReplaceJobLauncher(JobOperator jobOperator, MockLedgerReplaceJobFactory jobFactory, Clock clock) {
+    MockLedgerReplaceJobLauncher(
+            JobOperator jobOperator, MockLedgerReplaceJobFactory jobFactory, BatchSuccessStore successStore, Clock clock) {
         this.jobOperator = jobOperator;
         this.jobFactory = jobFactory;
+        this.successStore = successStore;
         this.clock = clock;
     }
 
@@ -87,6 +97,19 @@ public class MockLedgerReplaceJobLauncher {
             throw new IllegalStateException("Mock 대장 교체 배치가 완료되지 못했다 — " + date + " · " + status,
                     failures.isEmpty() ? null : failures.getFirst());
         }
+        recordSuccess(date);
         return report;
+    }
+
+    /**
+     * 성공 기록을 남긴다 — 기동 뒤 따라잡기가 오늘 회차를 다시 시작하지 않게 한다. 기록에 실패해도 회차는 이미 끝났으므로 예외를
+     * 올리지 않는다. 기록이 없으면 다음 기동이 같은 날 한 번 더 돌 뿐이다(동시 실행은 날짜 락이 막는다).
+     */
+    private void recordSuccess(LocalDate date) {
+        try {
+            successStore.markSucceeded(DailyBatch.MOCK_LEDGER_REPLACE, date);
+        } catch (RuntimeException e) {
+            log.warn("[Mock 대장 교체 배치] 성공 기록을 남기지 못했다 — {}", date, e);
+        }
     }
 }
