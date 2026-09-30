@@ -8,8 +8,11 @@ import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.enums.SeoulDistrict;
+import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
 import com.duri.rentalplatform.domain.property.vo.PropertyLoadReport;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
+import com.duri.rentalplatform.domain.property.vo.PropertyPriceSnapshot;
+import com.duri.rentalplatform.domain.property.vo.PropertyRefreshResult;
 import com.duri.rentalplatform.domain.property.vo.PropertyRegistration;
 import com.duri.rentalplatform.external.address.AddressNormalizeClient;
 import com.duri.rentalplatform.external.address.Coordinates;
@@ -26,6 +29,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -55,6 +59,11 @@ import org.springframework.stereotype.Service;
  * </ol>
  *
  * <p>무엇을 몇 건 버렸는지는 {@link PropertyLoadReport} 에 남고 실행이 끝난 뒤 한 번에 출력된다.
+ *
+ * <p><b>초기 적재와 갱신 적재</b> — 수집 · 정규화 · 시세 산출 · 신규 저장은 같다. 다른 것은 자연키가 같은 기존 매물을 만났을
+ * 때다. 초기 적재({@link #load})는 건너뛰기만 하고, 갱신 적재({@link #refresh}, 갱신 배치 RISK-08)는 새로 계산한 시세 ·
+ * 기준일이 저장값과 다를 때만 시세를 갱신한다 — 데이터 적재 설계서 1.5. 갱신 적재는 신규 매물과 시세 금액이 바뀐 매물의
+ * 식별자를 돌려주어 판정 단계가 이어받게 한다.
  */
 @Slf4j
 @Service
@@ -82,11 +91,39 @@ public class PropertyLoadService {
      * @param report 적재 결과 집계. 호출자가 만들어 넘긴다
      */
     public void load(int months, PropertyLoadReport report) {
+        loadAll(months, report, null);
+    }
+
+    /**
+     * 갱신 배치(RISK-08)의 적재 단계. 초기 적재와 같은 기간을 다시 모아 새 매물을 저장하고, 자연키가 같은 기존 매물은 새로
+     * 계산한 시세 · 기준일이 저장값과 다를 때만 갱신한다. 같으면 손대지 않는다 — 데이터 적재 설계서 1.5.
+     *
+     * <p><b>기간을 초기 적재와 같게 받는 이유</b> — 시세는 표본의 중앙값이다. 기간이 다르면 표본이 달라져, 실제로는 바뀌지 않은
+     * 매물까지 「변경」으로 잡힌다.
+     *
+     * <p><b>수집이 일부 실패한 자치구</b> — 그 자치구의 기존 매물 시세는 갱신하지 않는다. 빠진 달이 있으면 표본이 줄어 중앙값이
+     * 달라지므로, 반영하면 멀쩡한 시세를 덜 모은 표본의 값으로 덮게 된다 — 같은 설계서 「갱신 배치는 실패해도 기존 데이터를
+     * 훼손하지 않는다」. 새 매물 저장은 초기 적재와 같이 진행한다.
+     *
+     * @param months 초기 적재와 같은 뜻의 기간(개월)
+     * @param report 적재 결과 집계. 호출자가 만들어 넘긴다 — {@link #load} 와 같은 이유
+     * @return 새로 저장한 매물과 시세 금액이 바뀐 매물의 식별자
+     */
+    public PropertyRefreshResult refresh(int months, PropertyLoadReport report) {
+        RefreshTargets targets = new RefreshTargets();
+        loadAll(months, report, targets);
+        return new PropertyRefreshResult(targets.newPropertyIds, targets.priceChangedPropertyIds);
+    }
+
+    /**
+     * @param refreshTargets 갱신 적재면 식별자를 모을 자리, 초기 적재면 null. null 이면 기존 매물을 건너뛰기만 한다
+     */
+    private void loadAll(int months, PropertyLoadReport report, RefreshTargets refreshTargets) {
         List<YearMonth> targetMonths = recentMonths(months);
 
         for (SeoulDistrict district : SeoulDistrict.values()) {
             try {
-                loadDistrict(district, targetMonths, report);
+                loadDistrict(district, targetMonths, report, refreshTargets);
             } catch (RuntimeException cause) {
                 // 한 자치구에서 무엇이 나든 남은 자치구는 돈다. 여기서 막지 않으면 적재가 통째로 끝난다.
                 String reason = "자치구 적재 중단 — %s (%s)"
@@ -114,8 +151,10 @@ public class PropertyLoadService {
      * 표본이 한자리에 모여 있어야 계산된다. 달 단위로 저장하면 그 달의 표본만으로 중앙값을 내게 된다.
      */
     private void loadDistrict(SeoulDistrict district, List<YearMonth> targetMonths,
-                              PropertyLoadReport report) {
+                              PropertyLoadReport report, RefreshTargets refreshTargets) {
+        int externalFailuresBefore = report.getFailedExternal();
         List<RentTransaction> fetched = fetchTransactions(district, targetMonths, report);
+        boolean fetchComplete = report.getFailedExternal() == externalFailuresBefore;
         report.addFetched(fetched.size());
 
         List<RentTransaction> transactions = filterUsable(fetched, district, report);
@@ -124,8 +163,23 @@ public class PropertyLoadService {
         }
 
         MarketPriceCalculator marketPrices = MarketPriceCalculator.from(transactions);
-        Set<PropertyNaturalKey> seenKeys =
-                new HashSet<>(propertyLoadWriter.findLoadedNaturalKeys(district.getDistrictName()));
+
+        // 갱신 적재에서만 저장된 시세를 읽는다. 기존 매물을 처음 만날 때 꺼내 비교하고 지우므로, 같은 자연키가 다시 나오면
+        // 비교 없이 중복으로만 센다. 수집이 일부 실패한 자치구는 비교 대상을 비워 시세를 갱신하지 않는다(refresh 주석).
+        Map<PropertyNaturalKey, PropertyPriceSnapshot> storedPrices = new HashMap<>();
+        Set<PropertyNaturalKey> seenKeys;
+        if (refreshTargets == null) {
+            seenKeys = new HashSet<>(propertyLoadWriter.findLoadedNaturalKeys(district.getDistrictName()));
+        } else {
+            storedPrices.putAll(propertyLoadWriter.findLoadedPrices(district.getDistrictName()));
+            seenKeys = new HashSet<>(storedPrices.keySet());
+            if (!fetchComplete) {
+                log.warn("[매물 갱신] {} — 실거래가 수집이 일부 실패해 기존 매물 시세는 갱신하지 않는다",
+                        district.getDistrictName());
+                storedPrices.clear();
+            }
+        }
+        List<MarketPriceUpdate> pendingUpdates = new ArrayList<>();
 
         // 같은 건물 · 같은 지번이 여러 번 나온다. 구 단위 실행 동안만 사는 메모라 인스턴스 간에
         // 공유할 상태가 아니다. 이것이 없으면 같은 주소를 수십 번 외부에 묻는다.
@@ -141,18 +195,37 @@ public class PropertyLoadService {
             }
             if (!seenKeys.add(registration.naturalKey())) {
                 report.skipDuplicate();
+                PropertyPriceSnapshot stored = storedPrices.remove(registration.naturalKey());
+                if (stored != null && priceDiffers(stored, registration)) {
+                    pendingUpdates.add(new MarketPriceUpdate(stored.propertyId(), registration.marketPrice(),
+                            registration.priceType(), registration.priceDate()));
+                    if (pendingUpdates.size() >= SAVE_CHUNK_SIZE) {
+                        updatePriceChunk(pendingUpdates, district, report, refreshTargets);
+                        pendingUpdates.clear();
+                    }
+                }
                 continue;
             }
             pending.add(registration);
 
             if (pending.size() >= SAVE_CHUNK_SIZE) {
-                report.addSaved(saveChunk(pending, district, report));
+                saveChunk(pending, district, report, refreshTargets);
                 pending.clear();
             }
         }
         if (!pending.isEmpty()) {
-            report.addSaved(saveChunk(pending, district, report));
+            saveChunk(pending, district, report, refreshTargets);
         }
+        if (!pendingUpdates.isEmpty()) {
+            updatePriceChunk(pendingUpdates, district, report, refreshTargets);
+        }
+    }
+
+    /** 새로 계산한 시세 · 산출 근거 · 기준일 중 하나라도 저장값과 다른가. */
+    private boolean priceDiffers(PropertyPriceSnapshot stored, PropertyRegistration registration) {
+        return !Objects.equals(stored.marketPrice(), registration.marketPrice())
+                || stored.priceType() != registration.priceType()
+                || !Objects.equals(stored.priceDate(), registration.priceDate());
     }
 
     /**
@@ -314,17 +387,43 @@ public class PropertyLoadService {
      * <p>여기서 막지 않으면 덩어리 하나의 저장 실패가 자치구 반복문 밖으로 나가, 그때까지의 건수와
      * 실패 목록이 출력되기 전에 실행이 끝난다.
      */
-    private int saveChunk(List<PropertyRegistration> pending, SeoulDistrict district,
-                          PropertyLoadReport report) {
+    private void saveChunk(List<PropertyRegistration> pending, SeoulDistrict district,
+                           PropertyLoadReport report, RefreshTargets refreshTargets) {
+        List<Long> savedIds;
         try {
-            return propertyLoadWriter.saveAll(pending);
+            savedIds = propertyLoadWriter.saveAll(pending);
         } catch (RuntimeException cause) {
             String reason = "저장 실패 — %s %d건 (%s)"
                     .formatted(district.getDistrictName(), pending.size(), cause);
             report.failUnexpected(reason);
             log.warn("[매물 적재] {}", reason, cause);
-            return 0;
+            return;
         }
+        report.addSaved(savedIds.size());
+        if (refreshTargets != null) {
+            refreshTargets.newPropertyIds.addAll(savedIds);
+        }
+    }
+
+    /**
+     * 기존 매물 한 덩어리의 시세를 갱신한다. 실패하면 그 덩어리만 버린다 — 저장 덩어리와 같은 이유다. 버린 덩어리의 매물은
+     * 저장값이 그대로이므로 다음 회차에 다시 비교된다.
+     */
+    private void updatePriceChunk(List<MarketPriceUpdate> pending, SeoulDistrict district,
+                                  PropertyLoadReport report, RefreshTargets refreshTargets) {
+        List<Long> priceChangedIds;
+        try {
+            priceChangedIds = propertyLoadWriter.updateMarketPrices(pending);
+        } catch (RuntimeException cause) {
+            String reason = "시세 갱신 실패 — %s %d건 (%s)"
+                    .formatted(district.getDistrictName(), pending.size(), cause);
+            report.failUnexpected(reason);
+            log.warn("[매물 갱신] {}", reason, cause);
+            return;
+        }
+        report.addPriceUpdated(pending.size());
+        report.addPriceChanged(priceChangedIds.size());
+        refreshTargets.priceChangedPropertyIds.addAll(priceChangedIds);
     }
 
     /**
@@ -347,6 +446,14 @@ public class PropertyLoadService {
                 transaction.legalDongName(),
                 transaction.jibun(),
                 transaction.buildingName());
+    }
+
+    /**
+     * 갱신 적재가 모으는 식별자. 한 번의 {@link #refresh} 동안만 산다 — 인스턴스 간에 공유할 상태가 아니다.
+     */
+    private static final class RefreshTargets {
+        private final List<Long> newPropertyIds = new ArrayList<>();
+        private final List<Long> priceChangedPropertyIds = new ArrayList<>();
     }
 
     private LocalDate basePriceDate(LocalDate baseDate) {

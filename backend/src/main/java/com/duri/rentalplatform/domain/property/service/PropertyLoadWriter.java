@@ -6,12 +6,16 @@ import com.duri.rentalplatform.domain.property.enums.CodeGroup;
 import com.duri.rentalplatform.domain.property.enums.PropertyStatus;
 import com.duri.rentalplatform.domain.property.repository.PropertyCodeRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
+import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
+import com.duri.rentalplatform.domain.property.vo.PropertyPriceSnapshot;
 import com.duri.rentalplatform.domain.property.vo.PropertyRegistration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -47,10 +51,28 @@ public class PropertyLoadWriter {
     }
 
     /**
-     * 한 덩어리를 저장한다. 이 메서드 하나가 트랜잭션 경계다.
+     * 이미 적재된 매물의 저장된 시세를 자연키로 모은다. 갱신 적재(RISK-08)가 새 시세와 견주는 비교 대상이다.
+     *
+     * <p>자연키가 같은 매물이 둘 이상이면 먼저 읽힌 쪽만 남긴다. 자연키 중복은 적재가 막으므로(자연키 주석) 정상 경로에서는
+     * 생기지 않는다.
+     */
+    @Transactional(readOnly = true)
+    public Map<PropertyNaturalKey, PropertyPriceSnapshot> findLoadedPrices(String district) {
+        return propertyRepository.findAllByDistrict(district).stream()
+                .collect(Collectors.toMap(
+                        Property::naturalKey,
+                        property -> new PropertyPriceSnapshot(property.getPropertyId(), property.getMarketPrice(),
+                                property.getPriceType(), property.getPriceDate()),
+                        (first, second) -> first));
+    }
+
+    /**
+     * 한 덩어리를 저장하고 새 매물 식별자를 돌려준다. 이 메서드 하나가 트랜잭션 경계다.
+     *
+     * <p>식별자는 IDENTITY 라 저장 시점에 채워진다. 갱신 배치(RISK-08)가 새 매물을 판정 대상으로 넘기는 데 쓴다.
      */
     @Transactional
-    public int saveAll(List<PropertyRegistration> registrations) {
+    public List<Long> saveAll(List<PropertyRegistration> registrations) {
         List<Property> properties = registrations.stream()
                 .map(registration -> Property.register(
                         registration,
@@ -60,7 +82,29 @@ public class PropertyLoadWriter {
                 .toList();
 
         propertyRepository.saveAll(properties);
-        return properties.size();
+        return properties.stream().map(Property::getPropertyId).toList();
+    }
+
+    /**
+     * 기존 매물 한 덩어리의 시세를 갱신하고, 시세 금액이 바뀐 매물 식별자를 돌려준다. 이 메서드 하나가 트랜잭션 경계다.
+     *
+     * <p>값이 같은지는 엔티티가 한 번 더 본다 — 같으면 손대지 않으므로 UPDATE 도 나가지 않는다. 변경은 변경 감지가 반영한다.
+     * 그 사이 지워진 매물은 조회되지 않아 건너뛴다.
+     *
+     * @return 시세 금액이 바뀐 매물 식별자. 기준일만 바뀐 매물은 들지 않는다
+     */
+    @Transactional
+    public List<Long> updateMarketPrices(List<MarketPriceUpdate> updates) {
+        Map<Long, MarketPriceUpdate> byId = updates.stream()
+                .collect(Collectors.toMap(MarketPriceUpdate::propertyId, Function.identity(), (first, second) -> first));
+        List<Long> priceChanged = new ArrayList<>();
+        for (Property property : propertyRepository.findAllById(byId.keySet())) {
+            MarketPriceUpdate update = byId.get(property.getPropertyId());
+            if (property.refreshMarketPrice(update.marketPrice(), update.priceType(), update.priceDate())) {
+                priceChanged.add(property.getPropertyId());
+            }
+        }
+        return priceChanged;
     }
 
     /**

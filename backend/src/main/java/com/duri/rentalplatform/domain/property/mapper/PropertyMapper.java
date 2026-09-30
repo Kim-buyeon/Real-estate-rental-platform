@@ -3,6 +3,7 @@ package com.duri.rentalplatform.domain.property.mapper;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertySearchCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyCondition;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse;
 import com.duri.rentalplatform.domain.property.vo.DistrictCountRow;
@@ -33,4 +34,10 @@ public interface PropertyMapper {
 
     /** 매물 상세. 없으면 null. */
     PropertyDetailRow selectDetail(PropertyDetailCondition condition);
+
+    /**
+     * 최신 판정(is_latest)이 없는 매물 식별자를 식별자 오름차순으로 {@code limit} 건. 매물 갱신 배치(RISK-08)의 판정 대상이다.
+     * 식별자 자체가 커서라 동률이 없다.
+     */
+    List<Long> selectUnanalyzedPropertyIds(UnanalyzedPropertyCondition condition);
 }

@@ -7,6 +7,7 @@ import com.duri.rentalplatform.TestcontainersConfiguration;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertySearchCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyCondition;
 import com.duri.rentalplatform.domain.property.dto.request.DistrictCountRequest;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse;
@@ -448,6 +449,51 @@ class PropertyMapperTest {
     @DisplayName("상세: 없는 매물은 null")
     void detailNotFound() {
         assertThat(propertyMapper.selectDetail(new PropertyDetailCondition(Long.MAX_VALUE, null))).isNull();
+    }
+
+    // ---------- 최신 판정 없는 매물(매물 갱신 배치 RISK-08) ----------
+    // 공유 컨테이너에 다른 테스트가 커밋한 매물이 있을 수 있다. 식별자는 늘어나기만 하므로, 이 테스트가 넣은 첫 매물의 바로
+    // 앞 식별자를 커서로 주면 이 테스트의 픽스처만 본다.
+
+    @Test
+    @DisplayName("미판정: 최신 판정이 있는 매물은 빠지고, 판정이 없거나 최신이 아닌 판정만 있는 매물은 식별자 순으로 나온다")
+    void unanalyzedExcludesOnlyLatestAnalysis() {
+        long none = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long latest = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long superseded = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        insertRisk(latest, "SAFE", "60.00", true, false);
+        insertRisk(superseded, "DANGER", "95.00", false, false);
+
+        List<Long> ids = propertyMapper.selectUnanalyzedPropertyIds(new UnanalyzedPropertyCondition(none - 1, 100));
+
+        assertThat(ids).containsExactly(none, superseded);
+    }
+
+    @Test
+    @DisplayName("미판정: 커서 다음부터 limit 건만, 마지막 페이지는 limit 보다 적게 나온다")
+    void unanalyzedPagesByIdCursor() {
+        long first = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long second = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long third = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+
+        List<Long> firstPage = propertyMapper.selectUnanalyzedPropertyIds(new UnanalyzedPropertyCondition(first - 1, 2));
+        List<Long> lastPage = propertyMapper.selectUnanalyzedPropertyIds(
+                new UnanalyzedPropertyCondition(firstPage.getLast(), 2));
+
+        assertThat(firstPage).containsExactly(first, second);
+        assertThat(lastPage).containsExactly(third);
+    }
+
+    @Test
+    @DisplayName("미판정: 커서가 없으면 처음부터 읽는다 — 이 테스트가 넣은 매물은 대상에 든다")
+    void unanalyzedWithoutCursorStartsFromBeginning() {
+        long id = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long count = jdbc.queryForObject("SELECT count(*) FROM property", Long.class);
+
+        List<Long> ids = propertyMapper.selectUnanalyzedPropertyIds(
+                new UnanalyzedPropertyCondition(null, (int) count));
+
+        assertThat(ids).contains(id).isSorted();
     }
 
     // ---------- 픽스처 ----------

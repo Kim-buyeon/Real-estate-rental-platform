@@ -86,6 +86,7 @@ dependencies {
 // 배치가 끼어든다. 시스템 속성은 application.yml 을 이기고, 테스트가 직접 띄우는 두 번째 컨텍스트에도 걸린다.
 tasks.withType(Test).configureEach {
 	systemProperty 'risk.batch.registry-refresh.enabled', 'false'
+	systemProperty 'property.batch.refresh.enabled', 'false'
 }
 
 // 단위 테스트만 돈다. 컨테이너를 띄우는 것은 @Tag("integration") 으로 갈라 뺀다.

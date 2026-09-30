@@ -83,7 +83,8 @@ class RedisPubSubStartupTest {
                         "--spring.data.redis.host=" + DockerClientFactory.instance().dockerHostIpAddress(),
                         "--spring.data.redis.port=" + redisPort,
                         "--spring.data.redis.password=",
-                        "--risk.batch.registry-refresh.enabled=false");
+                        "--risk.batch.registry-refresh.enabled=false",
+                        "--property.batch.refresh.enabled=false");
     }
 
     @AfterAll
