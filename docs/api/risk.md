@@ -40,7 +40,7 @@
 | personalConditions[] | 배열 | 시스템이 판정하지 않는 개인 자격 확인 사항. ANNUAL_INCOME, APPLICATION_DEADLINE, NEW_OR_RENEWAL, RESIDENTIAL_USE_NOTATION, BROKER_CONTRACT(SGI), MOVE_IN_AND_FIXED_DATE(대항력) |
 | rightViolations[] | 배열 | 판정에 반영된 권리 침해 항목 (압류·가압류·경매개시결정·신탁) |
 | warnings[] | 배열 | 판정에 반영되지 않는 경고 (가등기·임차권등기명령 등) |
-| consistency | 객체 | 명의 일치·주소 일치·위반건축물·면적 대조 결과 |
+| consistency | 객체 | 명의 일치·주소 일치·위반건축물·면적 대조 결과. 대장에서 오는 `addressMatched` · `violationBuilding` · `areaMatched` 는 **nullable** — `null` = 확인 불가(대장을 떼지 못했거나 대장에 항목이 없다. 위반건축물은 건축HUB API 가 주지 않아 실연동에서 항상 `null`). 확인 불가는 보증 불가 사유가 아니다 |
 | analyzedAt | 일시 | 분석 기준 시각 |
 
 GET /api/properties/2048/risk — 응답

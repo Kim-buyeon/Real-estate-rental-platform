@@ -217,6 +217,10 @@ GET /api/properties/1024
 
 ### 1.8 건축물대장 응답
 
+- 대장을 떼지 못한 매물(조회 키 없음 · 필지에 맞는 표제부 없음)은 200 에 `propertyId` 만 채우고 나머지 필드는 `null`
+- `violationBuilding` · `isResidential` 은 nullable — `null` = 확인 불가. 위반건축물은 건축HUB API 에 항목이 없어 실연동에서 항상 `null`
+- `dataSource` — 수집 경로 `MOCK` · `BUILDING_HUB`. 대장이 없으면 `null`
+
 ```json
 {
   "success": true,
@@ -228,6 +232,7 @@ GET /api/properties/1024
     "totalFloorArea": 480.2,
     "exclusiveArea": 42.5,
     "approvalDate": "2015-04-18",
+    "dataSource": "BUILDING_HUB",
     "collectedAt": "2026-07-28T02:10:00+09:00"
   }
 }
