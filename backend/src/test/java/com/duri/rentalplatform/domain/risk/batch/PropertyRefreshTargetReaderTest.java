@@ -21,7 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link PropertyRefreshTargetReader} — 시세 변경 매물을 먼저, 최신 판정 없는 매물을 뒤에, 둘 다 DB 에서 식별자 커서로 한 페이지씩
+ * {@link PropertyRefreshTargetReader} — 최신 판정 없는 새 매물을 먼저, 시세 변경 매물을 뒤에, 둘 다 DB 에서 식별자 커서로 한 페이지씩
  * 내준다. 메모리 목록을 넘겨받지 않는다.
  */
 class PropertyRefreshTargetReaderTest {
@@ -36,49 +36,49 @@ class PropertyRefreshTargetReaderTest {
     }
 
     @Test
-    @DisplayName("시세 변경 매물을 페이지를 넘어 재분석 대상으로 먼저, 이어서 미판정 매물을 페이지를 넘어 첫 판정 대상으로 내준다")
-    void priceChangedFirstThenUnanalyzedAcrossPages() {
-        priceChangedPage(null, 3L, 7L);
-        priceChangedPage(7L, 9L);
+    @DisplayName("미판정 매물을 페이지를 넘어 첫 판정 대상으로 먼저, 이어서 시세 변경 매물을 페이지를 넘어 재분석 대상으로 내준다")
+    void unanalyzedFirstThenPriceChangedAcrossPages() {
         unanalyzedPage(null, 1L, 2L);
         unanalyzedPage(2L, 10L);
+        priceChangedPage(null, 3L, 7L);
+        priceChangedPage(7L, 9L);
 
         List<PropertyRefreshTarget> targets = readAll(reader());
 
         assertThat(targets).containsExactly(
-                PropertyRefreshTarget.priceChanged(3L),
-                PropertyRefreshTarget.priceChanged(7L),
-                PropertyRefreshTarget.priceChanged(9L),
                 PropertyRefreshTarget.unanalyzed(1L),
                 PropertyRefreshTarget.unanalyzed(2L),
-                PropertyRefreshTarget.unanalyzed(10L));
+                PropertyRefreshTarget.unanalyzed(10L),
+                PropertyRefreshTarget.priceChanged(3L),
+                PropertyRefreshTarget.priceChanged(7L),
+                PropertyRefreshTarget.priceChanged(9L));
     }
 
     @Test
     @DisplayName("한 갈래가 페이지 크기와 딱 맞게 끝나면 빈 페이지를 한 번 더 조회하고 다음 갈래로 넘어간다")
     void fullLastPageIsFollowedByEmptyPage() {
-        priceChangedPage(null, 3L, 7L);
-        priceChangedPage(7L);
-        unanalyzedPage(null, 1L);
+        unanalyzedPage(null, 3L, 7L);
+        unanalyzedPage(7L);
+        priceChangedPage(null, 1L);
 
         List<PropertyRefreshTarget> targets = readAll(reader());
 
         assertThat(targets).containsExactly(
-                PropertyRefreshTarget.priceChanged(3L),
-                PropertyRefreshTarget.priceChanged(7L),
-                PropertyRefreshTarget.unanalyzed(1L));
-        verify(propertyMapper, times(2)).selectPriceChangedPropertyIds(any());
+                PropertyRefreshTarget.unanalyzed(3L),
+                PropertyRefreshTarget.unanalyzed(7L),
+                PropertyRefreshTarget.priceChanged(1L));
+        verify(propertyMapper, times(2)).selectUnanalyzedPropertyIds(any());
     }
 
     @Test
     @DisplayName("페이지 크기보다 적게 오면 마지막 페이지로 보고 더 조회하지 않는다")
     void shortPageEndsReading() {
-        priceChangedPage(null);
-        unanalyzedPage(null, 1L);
+        unanalyzedPage(null);
+        priceChangedPage(null, 1L);
 
         List<PropertyRefreshTarget> targets = readAll(reader());
 
-        assertThat(targets).containsExactly(PropertyRefreshTarget.unanalyzed(1L));
+        assertThat(targets).containsExactly(PropertyRefreshTarget.priceChanged(1L));
         verify(propertyMapper, times(1)).selectPriceChangedPropertyIds(any());
         verify(propertyMapper, times(1)).selectUnanalyzedPropertyIds(any());
     }
@@ -106,14 +106,14 @@ class PropertyRefreshTargetReaderTest {
     }
 
     @Test
-    @DisplayName("시세 변경 매물을 다 내주기 전에는 미판정 조회를 하지 않는다")
-    void unanalyzedQueryWaitsForPriceChanged() {
-        priceChangedPage(null, 5L);
+    @DisplayName("미판정 매물을 다 내주기 전에는 시세 변경 조회를 하지 않는다")
+    void priceChangedQueryWaitsForUnanalyzed() {
+        unanalyzedPage(null, 5L);
         PropertyRefreshTargetReader reader = reader();
 
-        assertThat(reader.read()).isEqualTo(PropertyRefreshTarget.priceChanged(5L));
+        assertThat(reader.read()).isEqualTo(PropertyRefreshTarget.unanalyzed(5L));
 
-        verify(propertyMapper, never()).selectUnanalyzedPropertyIds(any());
+        verify(propertyMapper, never()).selectPriceChangedPropertyIds(any());
     }
 
     @Test
