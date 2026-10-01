@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.duri.rentalplatform.TestcontainersConfiguration;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -23,7 +24,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * {@link DistributedLockAspect} 를 실제 Redis 에 대고 확인한다 — 획득과 만료, 경합 대기, 대기 초과 503, 토큰 비교 해제(Lua),
- * 예외 시 해제.
+ * 예외 시 해제, 실행 중 연장(만료보다 오래 도는 메서드 유지 · 토큰이 바뀌면 미연장 · 잘못된 간격 거절 · 연장 없음).
  *
  * <p>목으로는 {@code SET NX PX} 의 배타성, 스크립트 문법 · 반환 타입, 프록시로 관점이 실제로 끼는지를 확인할 수 없다. 대상은
  * 테스트 전용 빈이다 — 도메인 빈을 쓰면 락과 무관한 저장소 · 외부 연동이 끌려온다. 컨테이너는
@@ -114,6 +115,74 @@ class DistributedLockAspectTest {
         assertThat(stringRedisTemplate.hasKey(KEY)).isFalse();
     }
 
+    @Test
+    @DisplayName("연장: 만료(1s)보다 오래 도는 메서드 동안 락이 유지되고(같은 토큰), 끝나면 키가 없어진다")
+    void renewalKeepsLockPastLease() {
+        AtomicReference<String> tokenAtStart = new AtomicReference<>();
+        AtomicReference<String> tokenAtEnd = new AtomicReference<>();
+
+        target.renewing(ID, () -> {
+            tokenAtStart.set(stringRedisTemplate.opsForValue().get(KEY));
+            sleep(2_500);
+            tokenAtEnd.set(stringRedisTemplate.opsForValue().get(KEY));
+        });
+
+        assertThat(tokenAtStart.get()).isNotBlank();
+        assertThat(tokenAtEnd.get()).isEqualTo(tokenAtStart.get());
+        assertThat(stringRedisTemplate.hasKey(KEY)).isFalse();
+    }
+
+    @Test
+    @DisplayName("연장 없음: renewInterval 이 비면 만료(0.5s)가 지나 실행 중에 락이 풀린다 — 기존 동작")
+    void withoutRenewIntervalLockExpiresDuringRun() {
+        AtomicBoolean heldAfterLease = new AtomicBoolean(true);
+
+        target.notRenewing(ID, () -> {
+            sleep(1_200);
+            heldAfterLease.set(Boolean.TRUE.equals(stringRedisTemplate.hasKey(KEY)));
+        });
+
+        assertThat(heldAfterLease).isFalse();
+    }
+
+    @Test
+    @DisplayName("연장: 토큰이 바뀌면(다른 값으로 덮였다) 연장이 그 값의 만료를 늘리지 않는다 — 예외 없이 메서드는 끝난다")
+    void renewalDoesNotExtendOthersValue() {
+        AtomicBoolean heldAfterOthersExpiry = new AtomicBoolean(true);
+
+        String result = target.renewing(ID, () -> {
+            stringRedisTemplate.opsForValue().set(KEY, "other", Duration.ofMillis(500));
+            sleep(1_500); // 연장 간격(200ms)이 여러 번 지난다
+            heldAfterOthersExpiry.set(Boolean.TRUE.equals(stringRedisTemplate.hasKey(KEY)));
+        });
+
+        assertThat(result).isEqualTo("done");
+        assertThat(heldAfterOthersExpiry).isFalse();
+    }
+
+    @Test
+    @DisplayName("연장 간격이 만료 이상이면 IllegalStateException — 락을 잡지 않고 메서드도 실행하지 않는다")
+    void renewIntervalNotShorterThanLeaseIsRejectedBeforeAcquire() {
+        AtomicBoolean ran = new AtomicBoolean(false);
+
+        assertThatThrownBy(() -> target.intervalEqualsLease(ID, () -> ran.set(true)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> target.intervalZero(ID, () -> ran.set(true)))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(ran).isFalse();
+        assertThat(stringRedisTemplate.hasKey(KEY)).isFalse();
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
     @TestConfiguration
     static class TargetConfig {
 
@@ -134,6 +203,33 @@ class DistributedLockAspectTest {
 
         @DistributedLock(key = "'test:lock:' + #id", waitTimeout = "3s", pollInterval = "20ms", leaseTime = "5s")
         public String longWait(Long id, Runnable body) {
+            body.run();
+            return "done";
+        }
+
+        @DistributedLock(key = "'test:lock:' + #id", waitTimeout = "200ms", pollInterval = "20ms", leaseTime = "1s",
+                renewInterval = "200ms")
+        public String renewing(Long id, Runnable body) {
+            body.run();
+            return "done";
+        }
+
+        @DistributedLock(key = "'test:lock:' + #id", waitTimeout = "200ms", pollInterval = "20ms", leaseTime = "500ms")
+        public String notRenewing(Long id, Runnable body) {
+            body.run();
+            return "done";
+        }
+
+        @DistributedLock(key = "'test:lock:' + #id", waitTimeout = "200ms", pollInterval = "20ms", leaseTime = "1s",
+                renewInterval = "1s")
+        public String intervalEqualsLease(Long id, Runnable body) {
+            body.run();
+            return "done";
+        }
+
+        @DistributedLock(key = "'test:lock:' + #id", waitTimeout = "200ms", pollInterval = "20ms", leaseTime = "1s",
+                renewInterval = "0s")
+        public String intervalZero(Long id, Runnable body) {
             body.run();
             return "done";
         }
