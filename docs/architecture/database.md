@@ -335,7 +335,7 @@
 | Is Latest | is_latest |  | ● | BOOLEAN | 1 | — | TRUE | 최신 분석 결과 여부 |
 | Analyzed At | analyzed_at |  | ● | TIMESTAMP | — | — | now() | 분석 일시 |
 
-인덱스 — (property_id) INCLUDE (risk_id, risk_grade, lease_ratio, registry_id) WHERE is_latest UNIQUE: 매물마다 최신 분석은 하나다. 두 인스턴스의 동시 첫 분석을 DB 가 막고, 목록 · 지도 · 집계의 최신 분석 조인을 겸한다. INCLUDE 열은 지도가 읽는 판정 열이라 지도의 조인이 인덱스 전용 스캔이 된다(V9 → V19 교체, 이름 `uq_risk_analysis_latest` 유지). / (ledger_id): 대장을 떼거나 지울 때 참조하는 분석 행을 찾는다. FK 는 인덱스를 만들지 않는다(V19).
+인덱스 — (property_id) INCLUDE (risk_id, risk_grade, lease_ratio, registry_id) WHERE is_latest UNIQUE: 매물마다 최신 분석은 하나다. 두 인스턴스의 동시 첫 분석을 DB 가 막고, 목록 · 지도 · 집계의 최신 분석 조인을 겸한다. INCLUDE 열은 지도가 읽는 판정 열이라 지도의 조인이 인덱스 전용 스캔이 된다(V9 → V19 교체, 이름 `uq_risk_analysis_latest` 유지). / (ledger_id): 대장을 떼거나 지울 때 참조하는 분석 행을 찾는다. FK 는 인덱스를 만들지 않는다(V19). / (lease_ratio, property_id) INCLUDE (risk_grade) WHERE is_latest AND lease_ratio IS NOT NULL: 자치구 · 매물 조건 필터가 없는 전세가율순 목록이 이 순서로 읽고 LIMIT 에서 멈춘다 — 운영 측정 필터 없음 오름 693.5 → 0.3ms(V20 주석, #347). 질의에 전세가율 범위 조건(미분석 대체값 경계)이 있어야 플래너가 이 부분 인덱스를 정렬에 쓰므로, 그 경계 밖(판정 없는 매물)은 지금 정렬로 이어 읽는다. 매물 조건 필터가 있으면 오히려 느려져(93.9 → 313.3ms) 쓰지 않는다(V20).
 
 ### 17. LOAN_REGULATION — 대출 규제
 
