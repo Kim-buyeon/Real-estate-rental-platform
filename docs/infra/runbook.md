@@ -389,7 +389,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 **승격 전 반드시 점검 모드로 전환한다.** 구 primary가 부분적으로 살아 있는 상태에서 standby를 승격하면 양쪽이 쓰기를 받는 스플릿 브레인이 발생한다. 자동 페일오버를 도입하지 않고 수동 승격을 채택한 이유가 여기에 있다. 감시 인력이 1인인 환경에서 자동 승격은 오탐 시 손상이 더 크다.
 
-**읽기 분산(`DB_REPLICA_ENABLED=true`)이 켜져 있어도 이 절차는 같다** — 6단계에서 `DB_HOST`만 바꾸고 `DB_REPLICA_HOSTS`는 두지 않는다. 읽기용 풀은 그 목록에서 standby를 먼저 고르고 없으면 남은 노드로 가므로, 승격 · 재구축에 따라 드라이버가 대상을 바꾼다(`application.yml`의 `app.datasource.replica` 주석, #343).
+**읽기 분산(`DB_REPLICA_ENABLED=true`)이 켜져 있어도 이 절차는 같다** — 6단계에서 `DB_HOST`만 바꾸고 `DB_REPLICA_HOSTS`는 그대로 둔다(바꾸지 않는다). 3노드에서 실제로 밟는 순서는 6.3절이다. 읽기용 풀은 그 목록에서 standby를 먼저 고르고 없으면 남은 노드로 가므로, 승격 · 재구축에 따라 드라이버가 대상을 바꾼다(`application.yml`의 `app.datasource.replica` 주석, #343).
 
 ### 6.2 페일백 절차
 
@@ -460,7 +460,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 3 | 구 primary 격리 — 노드가 죽었으면 할 일이 없다. **살아 있으면 DB-01에서 `docker compose stop postgres`** | — |
 | 4 | DB-02 `SELECT pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn()` | `t`여야 다음. 3.4초 |
 | 5 | DB-02 `SELECT pg_promote(true, 60)` | `pg_is_in_recovery() = f`, timeline +1. **7.3초** |
-| 6 | APP-01 `.env` `DB_HOST=10.20.20.10` → `docker compose up -d --no-deps app-1 app-2 postgres-exporter` | **두 슬롯 healthy가 멈춤 조건** — 92.1초(JVM 기동) |
+| 6 | APP-01 `.env` `DB_HOST=10.20.20.10` → `docker compose up -d --no-deps app-1 app-2 postgres-exporter` | **두 슬롯 healthy가 멈춤 조건** — 92.1초(JVM 기동). 읽기 분산을 켰어도 `DB_REPLICA_HOSTS`는 그대로 — 드라이버가 승격된 노드로 붙는다(6.1절 끝 문단) |
 | 7 | APP-01 `bash maintenance.sh off` → 밖에서 API 200 · `smoke.sh` 두 슬롯 | **94.4초**, 실패 0 |
 | 8 | 새 primary(DB-02)에 표식 행 Q · **논리 백업 수동 1회**(`systemctl start rental-backup`) | primary로 판정해 백업 · S3 사본까지 됐다. 페일백 2의 멈춤 조건이 이것을 본다 |
 
