@@ -6,6 +6,7 @@ import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -45,9 +46,11 @@ import org.springframework.util.StringUtils;
  * 에 있기 때문이다 — 배포 · OOM 으로 프로세스가 죽으면 {@code finally} 가 돌지 않아, 만료 23시간으로 잡던 날짜 락이 그대로 남았다
  * (2026-10-01 02:15 배포로 끊긴 회차의 락 때문에 08:43 기동 뒤 따라잡기가 「다른 인스턴스가 실행 중」으로 건너뛰었다, #340).
  * 연장하면 만료를 짧게 잡아도 오래 도는 회차 중에 풀리지 않고, 프로세스가 죽으면 연장도 함께 멈춰 짧은 만료 안에 풀린다. 간격은
- * 만료의 1/3 이하로 둔다 — 연장을 두 번 놓쳐도 유지된다. 토큰이 다르면(만료로 풀린 뒤 다른 인스턴스가 잡았다) 경고를 남기고 그
+ * 만료의 1/3 이하로 둔다 — 고정 지연이라 마지막 성공에서 다음 시도까지 간격 + 수행 시간이 걸리므로, 연장을 한 번 놓쳐도
+ * 유지되고 두 번 놓치면 풀린다. 토큰이 다르면(만료로 풀린 뒤 다른 인스턴스가 잡았다) 경고를 남기고 그
  * 연장만 멈춘다 — 주 로직은 그대로 두고 예외로 덮지 않는다(해제 실패와 같은 원칙). 연장 실패(Redis 장애)도 경고만 남기고 다음
- * 간격에 다시 시도한다. 연장은 전용 데몬 스레드 하나가 맡고, 빈이 내려갈 때 멈춘다.
+ * 간격에 다시 시도한다. 연장은 전용 데몬 스레드 하나가 맡고, 빈이 내려갈 때 멈춘다. 그 뒤에 들어온 실행처럼 연장을 예약하지
+ * 못하면 경고만 남기고 연장 없이 진행한다 — 예약은 락을 잡은 뒤 {@code try} 안에서 하므로 어떤 경우든 해제가 돈다.
  *
  * <p><b>순서</b> — 트랜잭션 프록시(가장 낮은 우선순위)보다 바깥에서 돈다. 안쪽이면 커밋 전에 락이 풀려, 다음 요청이 반영 전 값을
  * 읽는다. 다만 {@code HIGHEST_PRECEDENCE} 는 쓰지 않는다 — 스프링이 체인 맨 앞에 두는 {@code ExposeInvocationInterceptor}
@@ -108,8 +111,11 @@ public class DistributedLockAspect implements DisposableBean {
         }
 
         String token = acquire(key, waitTimeout, pollInterval, leaseTime);
-        Renewal renewal = renewInterval == null ? null : startRenewal(key, token, leaseTime, renewInterval);
+        Renewal renewal = null;
         try {
+            if (renewInterval != null) {
+                renewal = startRenewal(key, token, leaseTime, renewInterval);
+            }
             return joinPoint.proceed();
         } finally {
             if (renewal != null) {
@@ -139,11 +145,21 @@ public class DistributedLockAspect implements DisposableBean {
         }
     }
 
+    /**
+     * 연장을 예약한다. 예약하지 못하면(빈이 내려가 실행기가 멈춘 뒤의 {@link RejectedExecutionException} 등) 경고만 남기고 null 을
+     * 돌려준다 — 주 로직은 연장 없이 진행하고 락은 만료로 지킨다. 예약 실패가 주 로직으로 올라가면 잡은 락을 해제하지 못한 채
+     * 호출이 실패한다(관점의 예외는 주 로직과 격리한다 — 횡단 관심사 설계서 1.2).
+     */
     private Renewal startRenewal(String key, String token, Duration leaseTime, Duration renewInterval) {
         Renewal renewal = new Renewal(key, token, String.valueOf(leaseTime.toMillis()));
         long intervalMillis = renewInterval.toMillis();
-        renewal.future = renewalExecutor.scheduleWithFixedDelay(
-                renewal, intervalMillis, intervalMillis, TimeUnit.MILLISECONDS);
+        try {
+            renewal.future = renewalExecutor.scheduleWithFixedDelay(
+                    renewal, intervalMillis, intervalMillis, TimeUnit.MILLISECONDS);
+        } catch (RuntimeException e) {
+            log.warn("분산 락 연장 예약 실패 — 연장 없이 진행하고 만료({})로 지킨다. key={}", leaseTime, key, e);
+            return null;
+        }
         return renewal;
     }
 

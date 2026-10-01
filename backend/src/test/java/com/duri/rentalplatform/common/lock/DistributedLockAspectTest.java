@@ -21,6 +21,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.test.annotation.DirtiesContext;
 
 /**
  * {@link DistributedLockAspect} 를 실제 Redis 에 대고 확인한다 — 획득과 만료, 경합 대기, 대기 초과 503, 토큰 비교 해제(Lua),
@@ -43,6 +44,9 @@ class DistributedLockAspectTest {
 
     @Autowired
     StringRedisTemplate stringRedisTemplate;
+
+    @Autowired
+    DistributedLockAspect aspect;
 
     @BeforeEach
     void clear() {
@@ -158,6 +162,25 @@ class DistributedLockAspectTest {
 
         assertThat(result).isEqualTo("done");
         assertThat(heldAfterOthersExpiry).isFalse();
+    }
+
+    @Test
+    @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+    @DisplayName("연장 예약 실패: 연장 실행기가 내려간 뒤 연장 락 메서드를 불러도 예외 없이 주 로직이 진행되고, 끝나면 키가 풀린다")
+    void renewalSchedulingFailureProceedsAndReleases() {
+        aspect.destroy();
+        AtomicBoolean ran = new AtomicBoolean(false);
+        AtomicReference<String> heldToken = new AtomicReference<>();
+
+        String result = target.renewing(ID, () -> {
+            heldToken.set(stringRedisTemplate.opsForValue().get(KEY));
+            ran.set(true);
+        });
+
+        assertThat(result).isEqualTo("done");
+        assertThat(ran).isTrue();
+        assertThat(heldToken.get()).isNotBlank();
+        assertThat(stringRedisTemplate.hasKey(KEY)).isFalse();
     }
 
     @Test
