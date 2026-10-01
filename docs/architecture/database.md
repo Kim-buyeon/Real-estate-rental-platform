@@ -141,7 +141,7 @@
 | Latitude | latitude |  |  | NUMERIC | 10 | 7 | — | 위도 |
 | Longitude | longitude |  |  | NUMERIC | 10 | 7 | — | 경도 |
 | Registered At | registered_at |  | ● | TIMESTAMP | — | — | now() | 매물 등록일시 |
-| Reanalysis Pending | is_reanalysis_pending |  | ● | BOOLEAN | 1 | — | FALSE | 시세 금액이 바뀌어 재분석을 기다린다. 갱신 배치가 세우고 재분석이 성공하면 내린다. 부분 인덱스 `ix_property_reanalysis_pending (property_id) WHERE is_reanalysis_pending` |
+| Reanalysis Pending | is_reanalysis_pending |  | ● | BOOLEAN | 1 | — | FALSE | 시세 금액이 바뀌어 재분석을 기다린다. 갱신 배치가 세우고 판정이 성공하면 내린다 — 시세 변경 재분석뿐 아니라 최신 판정이 없던 매물의 첫 판정도 포함(#338). 부분 인덱스 `ix_property_reanalysis_pending (property_id) WHERE is_reanalysis_pending` |
 | Sigungu Code | sigungu_code |  |  | VARCHAR | 5 | — | — | 건축물대장 조회 키 — 시군구 코드. 넷(시군구 · 법정동 · 번 · 지)이 모두 있거나 모두 없다(CHECK) |
 | Bjdong Code | bjdong_code |  |  | VARCHAR | 5 | — | — | 법정동 코드(도로명주소 API admCd 뒤 5자리) |
 | Bun | bun |  |  | VARCHAR | 4 | — | — | 번(0 채움) |
