@@ -72,6 +72,11 @@ import tools.jackson.databind.json.JsonMapper;
  * 기다림 상한 안에 못 받으면 {@link BuildingLedgerRateLimitedException} 이다. 초당 몫을 먼저 받는 이유는 일일 몫을 받고 초당에서
  * 포기하면 일일 몫 하나가 요청 없이 사라져서다.
  *
+ * <p><b>일일 상한이 이미 찬 날</b> — 초당 몫을 받기 전에 {@link BuildingLedgerDailyQuota#remaining()} 을 읽고(몫을 쓰지 않는다)
+ * 0 이면 초당 몫 없이 빈 값이다. 받으면 보내지도 않을 요청마다 초당 한도 줄을 서 0.2초씩 기다린다 — 2026-10-01 운영에서 일일
+ * 9,000/9,000 상태의 배치 첫 판정이 분당 300건(초당 카운터 매초 5)에 묶여 새 매물 13,567건에 약 45분이 걸렸고, 사용자 상세
+ * 조회도 같은 경로를 탄다(#336). 읽은 뒤 {@code tryAcquire} 전에 상한이 차면 기존대로 {@code tryAcquire} 실패로 빈 값이다.
+ *
  * <p><b>제공처의 한도 응답</b> — 제공처(공공데이터포털 게이트웨이)는 한도에 걸리면 {@code response.header} 대신
  * {@code OpenAPI_ServiceResponse.cmmMsgHeader} 를 보낸다({@code _type=json} 이어도 JSON 또는 XML). {@code errMsg} ·
  * {@code returnAuthMsg} 에 다음 코드가 있으면 장애가 아니라 한도로 본다.
@@ -190,6 +195,10 @@ public class RealBuildingLedgerClient implements BuildingLedgerClient {
     private Optional<List<TitleRow>> fetchTitleRows(LedgerLookupKey key) {
         List<TitleRow> rows = new ArrayList<>();
         for (int pageNo = 1; pageNo <= MAX_PAGES; pageNo++) {
+            if (dailyQuota.remaining() == 0) {
+                // 일일 상한이 이미 찼다. 초당 몫을 받지 않는다 — 받으면 보내지도 않을 요청이 초당 한도 줄을 선다(클래스 주석).
+                return Optional.empty();
+            }
             if (!rateLimiter.acquire()) {
                 throw new BuildingLedgerRateLimitedException("건축HUB 초당 요청 몫을 기다림 상한 안에 받지 못했다");
             }

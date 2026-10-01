@@ -2,6 +2,7 @@ package com.duri.rentalplatform.external.buildingledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -239,6 +241,7 @@ class RealBuildingLedgerClientTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
         when(quota.tryAcquire()).thenReturn(false);
+        when(quota.remaining()).thenReturn(100L);
 
         Optional<BuildingLedgerDocument> document =
                 clientOf(builder, ENCODED_KEY, quota).fetch(lookup(PropertyType.APARTMENT, KEY));
@@ -259,6 +262,7 @@ class RealBuildingLedgerClientTest {
                 item("101동", "0", "공동주택", "", "14544.66", "19921125")), MediaType.APPLICATION_JSON));
         BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
         when(quota.tryAcquire()).thenReturn(true);
+        when(quota.remaining()).thenReturn(100L);
 
         Optional<BuildingLedgerDocument> document =
                 clientOf(builder, ENCODED_KEY, quota).fetch(lookup(PropertyType.APARTMENT, KEY));
@@ -277,6 +281,7 @@ class RealBuildingLedgerClientTest {
                 item("101동", "0", "공동주택", "", "14544.66", "19921125")), MediaType.APPLICATION_JSON));
         BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
         when(quota.tryAcquire()).thenReturn(true, false);
+        when(quota.remaining()).thenReturn(100L);
 
         Optional<BuildingLedgerDocument> document =
                 clientOf(builder, ENCODED_KEY, quota).fetch(lookup(PropertyType.APARTMENT, KEY));
@@ -297,6 +302,69 @@ class RealBuildingLedgerClientTest {
         verify(quota, times(0)).tryAcquire();
     }
 
+    // ---------- 일일 한도가 찬 날의 사전 확인(#336) ----------
+
+    @Test
+    @DisplayName("일일 한도가 찬 날(remaining 0)은 초당 몫 · 일일 몫 · 제공처 요청 없이 빈 값이다")
+    void quotaAlreadyExhaustedSkipsRateLimiterAndRequest() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+        when(quota.remaining()).thenReturn(0L);
+        BuildingLedgerRateLimiter limiter = mock(BuildingLedgerRateLimiter.class);
+
+        Optional<BuildingLedgerDocument> document =
+                clientOf(builder, ENCODED_KEY, quota, limiter).fetch(lookup(PropertyType.APARTMENT, KEY));
+
+        server.verify();
+        assertThat(document).isEmpty();
+        verify(limiter, never()).acquire();
+        verify(quota, never()).tryAcquire();
+    }
+
+    @Test
+    @DisplayName("일일 한도가 남은 날은 초당 몫 → 일일 몫 → 요청 순으로 기존처럼 간다")
+    void quotaRemainingProceedsAsBefore() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(uriOf(1))).andRespond(withSuccess(body(1,
+                item("101동", "0", "공동주택", "", "14544.66", "19921125")), MediaType.APPLICATION_JSON));
+        BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+        when(quota.remaining()).thenReturn(1L);
+        when(quota.tryAcquire()).thenReturn(true);
+        BuildingLedgerRateLimiter limiter = mock(BuildingLedgerRateLimiter.class);
+        when(limiter.acquire()).thenReturn(true);
+
+        Optional<BuildingLedgerDocument> document =
+                clientOf(builder, ENCODED_KEY, quota, limiter).fetch(lookup(PropertyType.APARTMENT, KEY));
+
+        server.verify();
+        assertThat(document).isPresent();
+        InOrder order = inOrder(limiter, quota);
+        order.verify(limiter).acquire();
+        order.verify(quota).tryAcquire();
+    }
+
+    @Test
+    @DisplayName("확인 뒤 한도가 차면(remaining 1 → tryAcquire false) 기존 경로대로 요청 없이 빈 값이다")
+    void quotaFilledAfterCheckReturnsEmpty() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+        when(quota.remaining()).thenReturn(1L);
+        when(quota.tryAcquire()).thenReturn(false);
+        BuildingLedgerRateLimiter limiter = mock(BuildingLedgerRateLimiter.class);
+        when(limiter.acquire()).thenReturn(true);
+
+        Optional<BuildingLedgerDocument> document =
+                clientOf(builder, ENCODED_KEY, quota, limiter).fetch(lookup(PropertyType.APARTMENT, KEY));
+
+        server.verify();
+        assertThat(document).isEmpty();
+        verify(limiter, times(1)).acquire();
+        verify(quota, times(1)).tryAcquire();
+    }
+
     // ---------- 초당 상한 · 제공처 한도 응답(PROP-04, #318) ----------
 
     /** 2026-09-30 운영에서 받은 초당 한도 응답의 모양. {@code _type=json} 이어도 이 모양이다. 메시지 문구는 줄였다. */
@@ -312,6 +380,7 @@ class RealBuildingLedgerClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
+        when(quota.remaining()).thenReturn(100L);
         BuildingLedgerRateLimiter limiter = mock(BuildingLedgerRateLimiter.class);
         when(limiter.acquire()).thenReturn(false);
 
@@ -333,6 +402,7 @@ class RealBuildingLedgerClientTest {
                 item("101동", "0", "공동주택", "", "14544.66", "19921125")), MediaType.APPLICATION_JSON));
         BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
         when(quota.tryAcquire()).thenReturn(true);
+        when(quota.remaining()).thenReturn(100L);
         BuildingLedgerRateLimiter limiter = mock(BuildingLedgerRateLimiter.class);
         when(limiter.acquire()).thenReturn(true);
 
@@ -383,6 +453,7 @@ class RealBuildingLedgerClientTest {
                 """, MediaType.TEXT_XML));
         BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
         when(quota.tryAcquire()).thenReturn(true);
+        when(quota.remaining()).thenReturn(100L);
 
         Optional<BuildingLedgerDocument> document =
                 clientOf(builder, ENCODED_KEY, quota).fetch(lookup(PropertyType.APARTMENT, KEY));
@@ -482,6 +553,7 @@ class RealBuildingLedgerClientTest {
     private RealBuildingLedgerClient clientOf(RestClient.Builder builder, String apiKey) {
         BuildingLedgerDailyQuota quota = mock(BuildingLedgerDailyQuota.class);
         when(quota.tryAcquire()).thenReturn(true);
+        when(quota.remaining()).thenReturn(100L);
         return clientOf(builder, apiKey, quota);
     }
 
