@@ -23,7 +23,7 @@ APP-01 · DB-01 · DB-02 세 노드의 구성과 상시 경로(그림 기준). *
 | APP-01 | Nginx, 애플리케이션 두 슬롯, 정적 화면(web), Redis, NAT(3노드 겸임). 1차 배포(옛 단일 노드)에서는 PostgreSQL도 함께 두었다(2.1절) |
 | APP-02 | 애플리케이션 두 슬롯(2026-09-26 · #255). 앞단 Nginx · web · Redis는 APP-01의 것을 쓴다 — 요청은 APP-01 Nginx가 사설망으로 넘기고, 슬롯은 APP-01 Redis에 TLS로 붙는다. 사설 서브넷(AZ-c) |
 | DB-01 | PostgreSQL Primary. WAL을 오브젝트 스토리지로 아카이빙 |
-| DB-02 | PostgreSQL Standby. 복제만 수신하며 트래픽을 받지 않는다. DB-01과 다른 가용 영역 |
+| DB-02 | PostgreSQL Standby. 복제를 수신하고 쓰기를 받지 않는다. 기본은 조회도 받지 않는다 — **읽기 분산을 켜면 지도 조회(자치구 집계 · 목록 · 지도 묶음)를 받는다**(#343, 앱 `.env`의 `DB_REPLICA_ENABLED` · `DB_REPLICA_HOSTS`, 기본 끔). DB-02가 standby가 아니거나 닿지 않으면 앱의 드라이버가 그 조회를 DB-01로 보낸다. DB-01과 다른 가용 영역 |
 | NAS-01(옛 설계 — 3노드: 두지 않는다) | NFS 서버 — 백업 저장소(INF-08). 사설 서브넷 |
 | NAT-01(옛 설계 — 3노드: APP-01 겸임) | NAT 인스턴스 — 사설 서브넷의 인터넷 출구(INF-07). 공개 서브넷 |
 
