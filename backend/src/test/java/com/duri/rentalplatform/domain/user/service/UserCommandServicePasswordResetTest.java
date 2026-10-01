@@ -31,6 +31,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * {@link UserCommandService} 의 비밀번호 재설정(USER-06) — API 명세(회원) 1.3.
@@ -63,7 +64,8 @@ class UserCommandServicePasswordResetTest {
         tokenStore = mock(PasswordResetTokenStore.class);
         mailSender = mock(PasswordResetMailSender.class);
         service = new UserCommandService(mock(UserRepository.class), userAuthRepository, passwordEncoder,
-                mock(JwtTokenProvider.class), refreshTokenStore, tokenStore, mailSender);
+                mock(JwtTokenProvider.class), refreshTokenStore, tokenStore, mailSender,
+                mock(PlatformTransactionManager.class));
     }
 
     @Test
