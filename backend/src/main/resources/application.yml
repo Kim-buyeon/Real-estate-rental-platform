@@ -40,6 +40,9 @@ spring:
       # 채운다(ProxyLeakTask.java:59). 누수가 없어도 모든 대여가 이 값을 치른다 — 2026-09-29 프로파일에서 지도 2단계 요청
       # 표본의 13.3 % 가 여기였다(JIT 컴파일이 섞인 프로파일이라 비중은 참고치다). 운영에서 반납 누락은 스택 대신 Hikari 대기 지표로 드러난다.
       leak-detection-threshold: ${HIKARI_LEAK_DETECTION_THRESHOLD:30000}
+      # 풀 이름 — Hikari 지표의 pool 태그다. 읽기 분산(app.datasource.replica)을 켜면 읽기용 풀이 replica 로 따로 나온다.
+      # 이름을 주지 않으면 HikariPool-1 처럼 생성 순서로 붙는다.
+      pool-name: primary
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -95,6 +98,40 @@ spring:
       # 기동할 때 Job 을 자동으로 돌리지 않는다. 등기 재조회 배치는 스케줄이 날짜 락 안에서만 시작한다 — 기동마다 돌면 두 인스턴스가
       # 락 없이 각자 관심 매물 등기를 뗀다. Boot 기본값은 true 다(spring-boot-batch 4.1.1 메타데이터).
       enabled: false
+
+# 읽기 분산(INF-03 확장, #343). 지도 조회(자치구 집계 · 목록 · 지도 묶음 — @ReplicaRead)를 DB-02(standby)로 보낸다.
+# 근거: #342 측정 — 동시 2 부터 DB-01 CPU 가 100 % 에 붙고 13 TPS 에서 멈췄다. 조회를 반반 나누면 받을 수 있는 양이 2배가 된다.
+# 꺼져 있거나(enabled false) 주소가 비면 읽기용 풀을 만들지 않고 모든 조회가 위 spring.datasource 풀로 간다 — 지금과 같다.
+# 켜져도 Flyway · JPA · MyBatis · 트랜잭션 매니저는 하나다. 표시 없는 조회와 모든 쓰기는 위 풀로 간다(ReplicaDataSourceConfig 주석).
+app:
+  datasource:
+    replica:
+      enabled: ${DB_REPLICA_ENABLED:false}
+      # 쉼표로 이은 host:port 목록. 비면 꺼진 것과 같다. standby 를 먼저 고르는 것은 순서가 아니라 아래 preferSecondary 다.
+      hosts: ${DB_REPLICA_HOSTS:}
+      # targetServerType=preferSecondary — 목록에서 standby 를 먼저 고르고, 없으면(DB-02 정지 · 승격으로 standby 가 사라짐) 아무
+      #   노드나 받는다(DB-01). 노드 상태는 드라이버가 기억해 두고 hostRecheckSeconds(기본 10초 — pgJDBC 42.7.13 PGProperty)마다
+      #   다시 본다. 그래서 DB-02 장애에 앱 코드 · 운영 절차가 할 일이 없다.
+      #   대가: DB-02 가 돌아와도 그사이 DB-01 에 맺은 읽기 커넥션은 아래 max-lifetime(30분)이 지나 새로 맺을 때까지 DB-01 에 남는다.
+      # connectTimeout=1 — 초. pgJDBC 기본은 10초다. 사설망의 정상 연결은 밀리초에 끝나므로, 죽은 노드에 커넥션 하나가 10초씩
+      #   매달리지 않게 1초에 다음 주소로 넘긴다.
+      # TLS 등 접속 옵션은 위 기본 풀과 같게 둔다 — 기본 풀 url 에 옵션이 없으므로 여기도 없다. 둘 다 pgJDBC 기본 sslmode=prefer 를
+      #   따른다(서버가 TLS 를 받으면 TLS, DB 노드의 pg_hba.conf 가 VPC 평문을 거절한다 — 시스템 구성서 3장). 기본 풀에 옵션을 붙이면
+      #   여기도 같이 붙인다. spring.datasource.hikari.data-source-properties 로 준 옵션은 아래 풀에도 그대로 입혀진다.
+      # 주소는 위 hosts(= DB_REPLICA_HOSTS)를 읽는다 — 켜짐 판정과 접속 주소가 한 값에서 나온다.
+      url: jdbc:postgresql://${app.datasource.replica.hosts}/${POSTGRES_DB:rental}?targetServerType=preferSecondary&connectTimeout=1
+      # 사용자 · 비밀번호는 기본 풀과 같은 계정이다 — standby 는 primary 의 역할을 복제로 그대로 갖는다.
+      username: ${POSTGRES_USER:rental}
+      password: ${POSTGRES_PASSWORD:rental}
+      # spring.datasource.hikari 의 값을 먼저 입히고 여기 적은 것만 덮는다(시간 상한 · max-lifetime · 누수 감지 등은 위와 같다).
+      hikari:
+        pool-name: replica
+        # 커넥션을 읽기 전용으로 연다. DB-02 가 없어 DB-01 에 붙어도 이 풀로는 쓰지 못한다.
+        read-only: true
+        # 슬롯당 4 — 기본 풀 8 의 절반. 4슬롯(APP-01 · APP-02 × 2) × 4 = 16 으로 DB-02 의 max_connections 48(운영 Compose — 두
+        # 노드가 같은 목록)보다 작다. 설계 값이다 — #343 승인. DB-02 가 없어 전부 DB-01 로 오면 기본 풀 32 와 더해 48 이 되어
+        # max_connections 의 여유 16(exporter · 백업 · 운영자 접속)을 다 쓴다 — 두 풀이 모두 가득 찼을 때의 최대치다.
+        maximum-pool-size: 4
 
 server:
   # 종료 신호를 받으면 새 요청을 받지 않고 처리 중인 요청을 끝낸 뒤 내려간다. 슬롯 교체 배포(운영 절차서 3장)가 drain 뒤에
