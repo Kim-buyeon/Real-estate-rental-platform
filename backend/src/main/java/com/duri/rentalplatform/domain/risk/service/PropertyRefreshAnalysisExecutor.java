@@ -23,7 +23,7 @@ import org.springframework.stereotype.Service;
  * ({@link RiskAnalysisCommandService#analyzeWithCollectedLedger}). 시세는 대장과 무관하고, 떼면 대장 없는 매물마다 건축HUB
  * 초당 한도를 기다리게 된다(#328). 첫 판정만 등기 · 대장을 수집한다({@link RiskAnalysisCommandService#analyze}). 두 메서드는
  * 판정 저장을 공유하므로 이전 등급 보존과 이벤트는 같다 — 직전 판정이 없는 첫 판정에서는 이벤트가 나지 않는다. 재분석 대기
- * 표시는 있으나 판정 이력이 없는 매물은 대장 없이 판정되며, 그 대장은 Mock 대장 교체 배치(대장 행 없음 · 조회 키 있음)가 채운다.
+ * 표시가 있어도 최신 판정이 없는 매물은 첫 판정 갈래로 오므로 등기 · 대장을 수집한다(#338).
  *
  * <p><b>락</b> — 사용자 재분석 · 등기 재조회 배치와 같은 키 {@code risk:analysis:lock:{propertyId}} 를 기다리지 않고 한 번만
  * 시도한다. 못 잡으면 다른 쪽이 같은 매물을 이미 판정하고 있으므로 건너뛴다. 이때 관점이
@@ -31,9 +31,13 @@ import org.springframework.stereotype.Service;
  *
  * <p><b>실패</b> — 락 안의 예외는 잡아 결과에 담는다. 그래서 이 메서드 밖으로 나오는 예외는 락 획득 단계의 것뿐이다.
  *
- * <p><b>재분석 대기 표시</b> — 시세 변경 재분석은 판정을 마치면 매물의 재분석 대기 표시(V18)를 내린다. 판정 단계는 이 표시로
- * 대상을 DB 에서 읽으므로, 내리지 않으면 결론이 같아 판정 행이 늘지 않는 매물까지 매 회차 다시 나온다. 판정이 실패하면 내리지 않아
- * 다음 회차가 다시 잡는다. 내리는 호출은 판정 저장과 별도 트랜잭션이다 — 실패하면 다음 회차에 한 번 더 판정할 뿐이다.
+ * <p><b>재분석 대기 표시</b> — 두 갈래 모두 판정을 마치면 매물의 재분석 대기 표시(V18)를 내린다. 판정 단계는 이 표시로
+ * 대상을 DB 에서 읽으므로, 내리지 않으면 결론이 같아 판정 행이 늘지 않는 매물까지 매 회차 다시 나온다. 첫 판정도 내리는 이유는
+ * 표시가 있던 새 매물이 판정 뒤 최신 판정을 얻어 다음 회차에 시세 변경으로 다시 나오지 않게 하려는 것이다(#338). 표시가 이미
+ * 내려가 있으면 변경 감지가 UPDATE 를 내지 않아 기본 키 조회 1회만 든다. 판정이 실패하면 내리지 않아 다음 회차가 다시 잡는다.
+ * 내리는 호출은 판정 저장과 별도 트랜잭션이다 — 판정은 성공하고 이 호출만 실패하면 표시가 남는다. 시세 변경 갈래면 다음 회차가
+ * 다시 잡는다. 첫 판정 갈래면 그 매물이 「최신 판정 있음 + 대기 표시」가 되어 <b>같은 회차의 시세 변경 갈래</b>에서 한 번 더
+ * 판정된다 — 집계에는 실패 1 · 재분석 1로 잡힌다. 어느 쪽이든 결론이 같으면 판정 행은 늘지 않는다.
  *
  * <p><b>트랜잭션</b> — 열지 않는다. 두 갈래 모두 외부 호출을 포함할 수 있다 — 첫 판정은 등기 · 대장 수집을, 시세 변경 재분석은
  * 등기가 없을 때 등기 수집을. 판정 서비스 · 적재 쓰기 서비스가 각자 경계를 긋는다.
@@ -68,6 +72,7 @@ public class PropertyRefreshAnalysisExecutor {
                 propertyLoadWriter.completeReanalysis(target.propertyId());
             } else {
                 riskAnalysisCommandService.analyze(target.propertyId());
+                propertyLoadWriter.completeReanalysis(target.propertyId());
             }
             return PropertyRefreshAttempt.analyzed(target);
         } catch (RuntimeException e) {

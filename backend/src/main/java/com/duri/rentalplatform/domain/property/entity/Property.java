@@ -220,8 +220,8 @@ public class Property extends CreatedAtEntity {
     }
 
     /**
-     * 갱신 배치(RISK-08)가 시세 변경 재분석을 마쳤다. 재분석 대기 표시를 내린다. 판정 결론이 같아 새 판정 행이 생기지 않았어도
-     * 내린다 — 바뀐 시세로 판정한 것은 같다.
+     * 갱신 배치(RISK-08)가 시세 변경 재분석 또는 첫 판정을 마쳤다. 재분석 대기 표시를 내린다 — 두 갈래 모두 부른다(#338). 판정
+     * 결론이 같아 새 판정 행이 생기지 않았어도 내린다 — 바뀐 시세로 판정한 것은 같다.
      */
     public void completeReanalysis() {
         reanalysisPending = false;

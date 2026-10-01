@@ -79,7 +79,7 @@ class PropertyRefreshJobLauncherTest {
     }
 
     @Test
-    @DisplayName("적재 뒤 시세 변경 매물은 재분석, 미판정 매물은 첫 판정으로 청크를 넘어 전부 처리하고 회차 집계로 돌려준다")
+    @DisplayName("적재 뒤 미판정 매물은 첫 판정을 먼저, 시세 변경 매물은 재분석을 뒤에 청크를 넘어 전부 처리하고 회차 집계로 돌려준다")
     void loadsThenAnalyzesAllTargets() {
         loadReturns(2, 1);
         priceChangedPage(null, 5L);
@@ -90,10 +90,10 @@ class PropertyRefreshJobLauncherTest {
 
         InOrder order = inOrder(propertyLoadService, executor);
         order.verify(propertyLoadService).refresh(eq(MONTHS), any());
-        order.verify(executor).analyze(PropertyRefreshTarget.priceChanged(5L));
         order.verify(executor).analyze(PropertyRefreshTarget.unanalyzed(1L));
         order.verify(executor).analyze(PropertyRefreshTarget.unanalyzed(21L));
         order.verify(executor).analyze(PropertyRefreshTarget.unanalyzed(22L));
+        order.verify(executor).analyze(PropertyRefreshTarget.priceChanged(5L));
         assertThat(report.getNewProperties()).isEqualTo(2);
         assertThat(report.getPriceChangedProperties()).isEqualTo(1);
         assertThat(report.getAnalysisTargets()).isEqualTo(4);

@@ -97,7 +97,27 @@ class PropertyRefreshAnalysisExecutorTest {
         verify(riskAnalysisCommandService).analyze(PROPERTY_ID);
         verify(riskAnalysisCommandService, never()).analyzeWithCollectedLedger(PROPERTY_ID);
         assertThat(attempt.analyzed()).isTrue();
-        // 미판정 갈래는 재분석 대기 매물을 빼고 조회하므로 내릴 표시가 없다.
+    }
+
+    @Test
+    @DisplayName("첫 판정을 마치면 판정 뒤에 재분석 대기 표시를 내린다 — 판정 없이 표시가 선 새 매물이 다음 회차에 다시 나오지 않게")
+    void clearsReanalysisPendingAfterFirstAnalysis() {
+        executor.analyze(PropertyRefreshTarget.unanalyzed(PROPERTY_ID));
+
+        InOrder order = inOrder(riskAnalysisCommandService, propertyLoadWriter);
+        order.verify(riskAnalysisCommandService).analyze(PROPERTY_ID);
+        order.verify(propertyLoadWriter).completeReanalysis(PROPERTY_ID);
+    }
+
+    @Test
+    @DisplayName("첫 판정이 실패하면 재분석 대기 표시를 내리지 않는다")
+    void keepsReanalysisPendingWhenFirstAnalysisFails() {
+        when(riskAnalysisCommandService.analyze(PROPERTY_ID))
+                .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
+
+        PropertyRefreshAttempt attempt = executor.analyze(PropertyRefreshTarget.unanalyzed(PROPERTY_ID));
+
+        assertThat(attempt.isFailed()).isTrue();
         verify(propertyLoadWriter, never()).completeReanalysis(PROPERTY_ID);
     }
 

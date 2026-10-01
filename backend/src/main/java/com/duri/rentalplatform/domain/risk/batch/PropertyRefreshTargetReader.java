@@ -14,15 +14,20 @@ import org.springframework.batch.infrastructure.item.ItemReader;
  * 매물 갱신 배치(RISK-08) 판정 스텝의 읽기 단계. 두 갈래를 차례로, 둘 다 DB 에서 식별자 커서로 한 페이지씩 내준다.
  *
  * <ol>
- *   <li><b>시세가 바뀐 매물</b> — 적재가 재분석 대기로 표시한 매물(V18). 재분석 대상이다. 판정을 마치면 표시가 내려간다. 이번 회차 적재가 바꾼 매물과,
- *       앞 회차에 재분석이 실패 · 경합으로 끝나 남은 매물이 함께 나온다</li>
- *   <li><b>최신 판정이 없는 매물</b> — 이번 회차의 신규 매물과, 앞 회차에 첫 판정이 실패해 남은 매물</li>
+ *   <li><b>최신 판정이 없는 매물</b> — 이번 회차의 신규 매물과, 앞 회차에 첫 판정이 실패해 남은 매물. 재분석 대기 표시가 있어도
+ *       최신 판정이 없으면 여기서 나온다</li>
+ *   <li><b>시세가 바뀐 매물</b> — 적재가 재분석 대기로 표시한 매물(V18) 중 최신 판정이 있는 매물. 재분석 대상이다. 판정을 마치면
+ *       표시가 내려간다. 이번 회차 적재가 바꾼 매물과, 앞 회차에 재분석이 실패 · 경합으로 끝나 남은 매물이 함께 나온다</li>
  * </ol>
+ *
+ * <p><b>순서</b> — 새 매물이 먼저다(#338). 시세 변경 매물은 판정이 늦어도 이전 등급이 보이지만, 새 매물은 판정 전까지 「미분석」으로
+ * 보인다. 시세 변경을 먼저 읽던 때는 2026-10-01 회차의 새 매물 13,567건이 시세 변경 약 13.6만 건 뒤로 밀렸다. 대가로 일일 한도가
+ * 남은 날은 새 매물 첫 판정의 대장 조회가 도는 동안 시세 변경 재판정이 늦어진다.
  *
  * <p><b>메모리</b> — 한 번에 한 페이지(페이지 크기만큼의 식별자)만 든다. 적재 단계가 식별자를 모아 넘기던 방식은 신규 · 시세 변경
  * 매물 수만큼 회차 내내 목록이 남았다(2026-09-30 운영 회차, 신규 23만여 건).
  *
- * <p><b>겹침</b> — 없다. 둘째 갈래는 재분석 대기 매물을 빼고 조회한다.
+ * <p><b>겹침</b> — 없다. 첫 갈래는 최신 판정이 없는 매물만, 둘째 갈래는 최신 판정이 있는 매물만 조회한다.
  *
  * <p><b>커서</b> — 이전 페이지의 마지막 식별자가 다음 조회 조건이다. 앞 페이지에서 판정된 매물은 조회에서 빠지지만 커서가 식별자라
  * 건너뛰거나 다시 읽지 않는다. 페이지 크기보다 적게 오면 그 갈래의 마지막 페이지로 보고 더 조회하지 않는다. 첫 갈래를 다 내준 뒤에
@@ -33,28 +38,28 @@ import org.springframework.batch.infrastructure.item.ItemReader;
  */
 public class PropertyRefreshTargetReader implements ItemReader<PropertyRefreshTarget> {
 
-    private final IdCursor priceChanged;
     private final IdCursor unanalyzed;
+    private final IdCursor priceChanged;
 
     public PropertyRefreshTargetReader(PropertyMapper propertyMapper, int pageSize) {
         if (pageSize < 1) {
             throw new IllegalArgumentException("페이지 크기는 1 이상이어야 한다: " + pageSize);
         }
-        this.priceChanged = new IdCursor(pageSize, (lastId, limit) ->
-                propertyMapper.selectPriceChangedPropertyIds(new PriceChangedPropertyCondition(lastId, limit)));
         this.unanalyzed = new IdCursor(pageSize, (lastId, limit) ->
                 propertyMapper.selectUnanalyzedPropertyIds(new UnanalyzedPropertyCondition(lastId, limit)));
+        this.priceChanged = new IdCursor(pageSize, (lastId, limit) ->
+                propertyMapper.selectPriceChangedPropertyIds(new PriceChangedPropertyCondition(lastId, limit)));
     }
 
-    /** 다음 대상. 더 없으면 null — 스텝은 null 을 읽기 끝으로 본다. */
+    /** 다음 대상. 새 매물을 다 내준 뒤 시세 변경 매물. 더 없으면 null — 스텝은 null 을 읽기 끝으로 본다. */
     @Override
     public PropertyRefreshTarget read() {
-        Long next = priceChanged.next();
+        Long next = unanalyzed.next();
         if (next != null) {
-            return PropertyRefreshTarget.priceChanged(next);
+            return PropertyRefreshTarget.unanalyzed(next);
         }
-        next = unanalyzed.next();
-        return next == null ? null : PropertyRefreshTarget.unanalyzed(next);
+        next = priceChanged.next();
+        return next == null ? null : PropertyRefreshTarget.priceChanged(next);
     }
 
     /** 식별자 오름차순 커서 한 갈래. 한 페이지만 든다. */
