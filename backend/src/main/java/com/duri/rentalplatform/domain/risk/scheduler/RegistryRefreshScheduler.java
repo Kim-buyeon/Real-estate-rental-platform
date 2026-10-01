@@ -3,6 +3,7 @@ package com.duri.rentalplatform.domain.risk.scheduler;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.domain.risk.batch.RegistryRefreshJobLauncher;
+import com.duri.rentalplatform.domain.risk.enums.DailyBatchRunOutcome;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -44,21 +45,22 @@ public class RegistryRefreshScheduler {
     /**
      * 오늘(서울) 회차를 돌린다. 실패는 예외로 올린다.
      *
-     * @return 날짜 락을 잡아 회차를 돌렸으면 true, 다른 인스턴스가 잡고 있어 건너뛰었으면 false. 예약 실행에서는 스케줄러가
-     *         반환값을 버리고, 기동 뒤 따라잡기가 건너뛴 배치를 다시 확인할지 가르는 데 쓴다
+     * @return 날짜 락을 잡아 회차를 돌렸으면 {@link DailyBatchRunOutcome#RAN}, 다른 인스턴스가 잡고 있어 건너뛰었으면
+     *         {@link DailyBatchRunOutcome#CONTENDED}. 예약 실행에서는 스케줄러가 반환값을 버리고(spring-context 7.0.9
+     *         {@code @Scheduled} 주석), 기동 뒤 따라잡기가 건너뛴 배치를 다시 확인할지 가르는 데 쓴다
      */
     @Scheduled(cron = "${risk.batch.registry-refresh.cron}", zone = "Asia/Seoul")
-    public boolean refreshWishlistedRegistries() {
+    public DailyBatchRunOutcome refreshWishlistedRegistries() {
         LocalDate today = LocalDate.now(clock.withZone(SEOUL));
         try {
             jobLauncher.run(today);
-            return true;
+            return DailyBatchRunOutcome.RAN;
         } catch (BusinessException e) {
             if (e.getErrorCode() != ErrorCode.EXTERNAL_API_UNAVAILABLE) {
                 throw e;
             }
             log.info("[등기 재조회 배치] {} 회차는 다른 인스턴스가 실행 중이다 — 건너뜀", today);
-            return false;
+            return DailyBatchRunOutcome.CONTENDED;
         }
     }
 }

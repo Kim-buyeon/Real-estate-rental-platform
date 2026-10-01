@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.duri.rentalplatform.domain.risk.enums.DailyBatchRunOutcome;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.domain.risk.batch.MockLedgerReplaceJobLauncher;
@@ -47,19 +48,19 @@ class MockLedgerReplaceSchedulerTest {
     void runsWithSeoulDate() {
         when(jobLauncher.run(SEOUL_DATE)).thenReturn(new MockLedgerReplaceReport());
 
-        boolean ran = scheduler.replaceMockLedgers();
+        DailyBatchRunOutcome ran = scheduler.replaceMockLedgers();
 
         verify(jobLauncher).run(SEOUL_DATE);
-        assertThat(ran).isTrue();
+        assertThat(ran).isEqualTo(DailyBatchRunOutcome.RAN);
     }
 
     @Test
-    @DisplayName("날짜 락을 다른 인스턴스가 잡고 있으면(503) 예외 없이 끝내고 false 를 돌려준다")
+    @DisplayName("날짜 락을 다른 인스턴스가 잡고 있으면(503) 예외 없이 끝내고 CONTENDED 를 돌려준다")
     void dateLockContentionEndsQuietly() {
         when(jobLauncher.run(SEOUL_DATE)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
 
         assertThatCode(() -> scheduler.replaceMockLedgers()).doesNotThrowAnyException();
-        assertThat(scheduler.replaceMockLedgers()).isFalse();
+        assertThat(scheduler.replaceMockLedgers()).isEqualTo(DailyBatchRunOutcome.CONTENDED);
     }
 
     @Test

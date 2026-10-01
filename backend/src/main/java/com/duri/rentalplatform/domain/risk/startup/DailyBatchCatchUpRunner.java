@@ -1,6 +1,7 @@
 package com.duri.rentalplatform.domain.risk.startup;
 
 import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
+import com.duri.rentalplatform.domain.risk.enums.DailyBatchRunOutcome;
 import com.duri.rentalplatform.domain.risk.scheduler.MockLedgerReplaceScheduler;
 import com.duri.rentalplatform.domain.risk.scheduler.PropertyRefreshScheduler;
 import com.duri.rentalplatform.domain.risk.scheduler.RegistryRefreshScheduler;
@@ -14,7 +15,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.ObjectProvider;
@@ -36,7 +37,7 @@ import org.springframework.stereotype.Component;
  * <p><b>하루 한 번</b> — 오늘 이미 성공한 배치는 다시 시작하지 않는다. 외부 호출 한도가 하루 단위라 기동이 잦아도 호출이 늘지 않는다.
  * 실패한 날은 기록이 없으므로 다음 기동이나 다음 예약 시각에 다시 돈다.
  *
- * <p><b>락 경합은 다시 확인한다</b> — 스케줄러가 「다른 인스턴스가 실행 중」으로 건너뛰면(진입점이 false 를 돌려준다) 그 배치를
+ * <p><b>락 경합은 다시 확인한다</b> — 스케줄러가 「다른 인스턴스가 실행 중」으로 건너뛰면(진입점이 {@link DailyBatchRunOutcome#CONTENDED} 를 돌려준다) 그 배치를
  * {@code batch.startup-catchup.retry-interval} 마다 다시 확인한다. 회차 도중 노드를 멈추면(배포 · OOM) 해제가 돌지 않아 날짜
  * 락이 남는다 — 예전에는 만료가 23시간이라 그날 회차가 통째로 빠졌다(2026-10-01 02:15 배포로 끊긴 회차의 락 때문에 08:43 따라잡기가
  * 건너뛰었다, #340). 이제 날짜 락은 실행 중 연장하고 짧은 만료로 잡으므로, 죽은 프로세스의 락은 곧 풀리고 다음 확인에서 이
@@ -120,7 +121,7 @@ public class DailyBatchCatchUpRunner implements DisposableBean {
         LocalDate today = today();
         List<DailyBatch> contended = new ArrayList<>();
         for (DailyBatch batch : DailyBatch.values()) {
-            BooleanSupplier entry = entryOf(batch);
+            Supplier<DailyBatchRunOutcome> entry = entryOf(batch);
             if (entry == null) {
                 log.info("[기동 뒤 따라잡기] {} — 꺼져 있다 · 건너뜀", batch.getLabel());
                 continue;
@@ -151,14 +152,17 @@ public class DailyBatchCatchUpRunner implements DisposableBean {
     }
 
     /** 오늘 성공 기록이 없으면 진입점을 부른다. 예외는 로그로 남기고 실패로 돌려준다 — 다시 확인하지 않는다. */
-    private Outcome runIfMissing(DailyBatch batch, BooleanSupplier entry, LocalDate today) {
+    private Outcome runIfMissing(DailyBatch batch, Supplier<DailyBatchRunOutcome> entry, LocalDate today) {
         try {
             if (successStore.hasSucceeded(batch, today)) {
                 log.info("[기동 뒤 따라잡기] {} — {} 회차는 이미 성공했다 · 건너뜀", batch.getLabel(), today);
                 return Outcome.ALREADY_SUCCEEDED;
             }
             log.info("[기동 뒤 따라잡기] {} — {} 회차 실행", batch.getLabel(), today);
-            return entry.getAsBoolean() ? Outcome.RAN : Outcome.CONTENDED;
+            return switch (entry.get()) {
+                case RAN -> Outcome.RAN;
+                case CONTENDED -> Outcome.CONTENDED;
+            };
         } catch (RuntimeException e) {
             log.error("[기동 뒤 따라잡기] {} — {} 회차 실패 · 다음 배치로 넘어간다", batch.getLabel(), today, e);
             return Outcome.FAILED;
@@ -179,7 +183,7 @@ public class DailyBatchCatchUpRunner implements DisposableBean {
         return LocalDate.now(clock.withZone(SEOUL));
     }
 
-    private BooleanSupplier entryOf(DailyBatch batch) {
+    private Supplier<DailyBatchRunOutcome> entryOf(DailyBatch batch) {
         return switch (batch) {
             case PROPERTY_REFRESH -> propertyRefreshScheduler == null
                     ? null : propertyRefreshScheduler::refreshProperties;
