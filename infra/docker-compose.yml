@@ -237,10 +237,10 @@ x-app: &app
 # max_connections 48 — 앱 풀 32(슬롯 넷 — APP-01 둘 · APP-02 둘 — × 풀 8, application.yml 의 maximum-pool-size)에
 # exporter · 백업 · 운영자 접속 여유 16 을 더했다(INF-01, 2026-09-26 — 전에는 슬롯 둘의 풀 16 + 16 = 32 였다. 슬롯이 넷이 되면
 # 앱 풀만으로 옛 상한을 채운다). Flyway · 배치는 앱과 같은 풀에서 빌리므로 따로 세지 않는다.
-# 읽기 분산(DB_REPLICA_ENABLED, 기본 끔 — #343)을 켜면 읽기용 풀 슬롯 넷 × 4 = 16 이 위 여유 16 을 같이 쓴다. 평시에는 DB-02 로
-# 가지만, DB-02 가 없거나 페일오버 뒤 한 노드로 몰리면 앱만 32 + 16 = 48 로 max_connections 와 같아진다(APP-02 를 끈 지금은 최대 24).
-# 앱 계정(POSTGRES_USER)이 superuser 라 superuser_reserved_connections 도 exporter · 백업 · 운영자 몫을 지키지 못한다.
-# 이 겹침은 미해결이다 — 값을 올릴지 · 풀을 줄일지 · 계정을 나눌지는 별도 결정이 필요하다. 그때까지 값은 그대로 둔다.
+# 읽기 분산(DB_REPLICA_ENABLED — #343, 운영 켜짐)을 켜면 읽기용 풀 슬롯 넷 × 2 = 8 이 위 여유 16 을 같이 쓴다. 평시에는 DB-02 로
+# 가지만, DB-02 가 없거나 페일오버 뒤 한 노드로 몰리면 앱만 32 + 8 = 40 · 여유 8(APP-02 를 끈 지금은 최대 20).
+# 앱 계정(POSTGRES_USER)이 superuser 라 superuser_reserved_connections 는 앱도 쓸 수 있다 — 여유 8 은 앱 풀이 상한을 지킨다는
+# 전제의 값이다. 읽기용 풀이 슬롯당 4 였을 때는 48 로 여유가 0 이라 슬롯당 2 로 줄였다(#349). 값은 그대로 둔다.
 # 반영 순서 — **standby 먼저, 그다음 primary.** hot standby 는 max_connections 가 primary 이상이어야 기동하므로(위) primary 를
 # 먼저 48 로 올리면 32 인 standby 가 WAL 의 설정 변경 기록을 받고 복구를 멈춘다.
 # autovacuum 은 autovacuum_work_mem 기본이 -1 이라 maintenance_work_mem 을 그대로 쓰므로 워커 수와 함께 묶는다.
