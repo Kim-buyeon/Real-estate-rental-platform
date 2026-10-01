@@ -6,10 +6,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
+import com.duri.rentalplatform.common.CursorCodec;
 import com.duri.rentalplatform.common.CursorPage;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.domain.property.calculator.GeoDistanceCalculator;
@@ -27,6 +29,7 @@ import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerRespon
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkersResponse;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
+import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.property.vo.BoundingBox;
@@ -404,5 +407,191 @@ class PropertyQueryServiceTest {
                             .isEqualTo(ErrorCode.INVALID_REQUEST));
         }
         verify(propertyMapper, never()).selectClusterCells(any());
+    }
+
+    // ---------- 목록: 전세가율 인덱스 분기 · 이어 붙이기 (PROP-01 · #347) ----------
+    // 좌표 네 값은 search() 가 앞에서 INVALID_REQUEST 로 거부해 이 분기에 닿지 않는다 — 여기서 다루지 않는다.
+
+    private static PropertySearchRequest ratioRequest(String sort, String cursor, int size, String district,
+            ContractType contractType, Long depositMin, Long depositMax, Long monthlyRentMax,
+            PropertyType propertyType, List<RiskGrade> grades, BigDecimal areaMin, BigDecimal areaMax) {
+        return new PropertySearchRequest(district, contractType, depositMin, depositMax, monthlyRentMax,
+                propertyType, grades, areaMin, areaMax, null, null, null, null, null, null, null,
+                sort, cursor, size);
+    }
+
+    private static PropertySearchRequest ratioRequest(String sort, String cursor, int size) {
+        return ratioRequest(sort, cursor, size, null, null, null, null, null, null, null, null, null);
+    }
+
+    private static PropertyListResponse ratioRow(long propertyId, String ratio) {
+        return new PropertyListResponse(propertyId, "강남구", "역삼동 100-1", PropertyType.APARTMENT,
+                ContractType.DEPOSIT_ONLY, 300_000_000L, 0L, new BigDecimal("59.90"), 3,
+                null, ratio == null ? null : new BigDecimal(ratio), OffsetDateTime.now(ZoneOffset.UTC));
+    }
+
+    private List<PropertySearchCondition> capturedSelectList(int times) {
+        ArgumentCaptor<PropertySearchCondition> captor = ArgumentCaptor.forClass(PropertySearchCondition.class);
+        verify(propertyMapper, times(times)).selectList(captor.capture());
+        return captor.getAllValues();
+    }
+
+    @SuppressWarnings("unchecked")
+    private CursorPage<PropertyListResponse> searchPage(PropertySearchRequest request) {
+        return (CursorPage<PropertyListResponse>) service.search(request);
+    }
+
+    @Test
+    @DisplayName("전세가율순 · 자치구 없음 · 매물 조건 필터 없음이면 인덱스 매퍼로 읽고 selectList 는 부르지 않는다")
+    void leaseRatioListWithoutFiltersUsesIndexMapper() {
+        when(propertyMapper.selectListByLeaseRatioIndex(any()))
+                .thenReturn(List.of(ratioRow(1L, "10.00"), ratioRow(2L, "20.00"), ratioRow(3L, "30.00")));
+
+        service.search(ratioRequest("debtRatio,asc", null, 2));
+        service.search(ratioRequest("debtRatio,desc", null, 2));
+
+        verify(propertyMapper, times(2)).selectListByLeaseRatioIndex(any());
+        verify(propertyMapper, never()).selectList(any());
+    }
+
+    @Test
+    @DisplayName("등급 필터만 있으면 인덱스 매퍼를 쓰고 조건을 그대로 넘긴다")
+    void leaseRatioListWithRiskGradeFilterStillUsesIndexMapper() {
+        when(propertyMapper.selectListByLeaseRatioIndex(any()))
+                .thenReturn(List.of(ratioRow(1L, "10.00"), ratioRow(2L, "20.00"), ratioRow(3L, "30.00")));
+
+        service.search(ratioRequest("debtRatio,asc", null, 2, null, null, null, null, null, null,
+                List.of(RiskGrade.SAFE), null, null));
+
+        ArgumentCaptor<PropertySearchCondition> captor = ArgumentCaptor.forClass(PropertySearchCondition.class);
+        verify(propertyMapper).selectListByLeaseRatioIndex(captor.capture());
+        assertThat(captor.getValue().riskGrades()).containsExactly(RiskGrade.SAFE);
+        verify(propertyMapper, never()).selectList(any());
+    }
+
+    @Test
+    @DisplayName("자치구 · 계약 · 유형 · 보증금 · 월세 · 면적 필터가 하나라도 있으면 selectList 로 읽는다")
+    void leaseRatioListWithAnyPropertyFilterUsesSelectList() {
+        when(propertyMapper.selectList(any())).thenReturn(List.of());
+        String s = "debtRatio,asc";
+        List<PropertySearchRequest> requests = List.of(
+                ratioRequest(s, null, 2, "강남구", null, null, null, null, null, null, null, null),
+                ratioRequest(s, null, 2, null, ContractType.DEPOSIT_ONLY, null, null, null, null, null, null, null),
+                ratioRequest(s, null, 2, null, null, 1L, null, null, null, null, null, null),
+                ratioRequest(s, null, 2, null, null, null, 2L, null, null, null, null, null),
+                ratioRequest(s, null, 2, null, null, null, null, 3L, null, null, null, null),
+                ratioRequest(s, null, 2, null, null, null, null, null, PropertyType.OFFICETEL, null, null, null),
+                ratioRequest(s, null, 2, null, null, null, null, null, null, null, BigDecimal.ONE, null),
+                ratioRequest(s, null, 2, null, null, null, null, null, null, null, null, BigDecimal.TEN));
+
+        requests.forEach(service::search);
+
+        verify(propertyMapper, never()).selectListByLeaseRatioIndex(any());
+        capturedSelectList(requests.size());
+    }
+
+    @Test
+    @DisplayName("전세가율이 아닌 정렬이면 필터가 없어도 selectList 로 읽는다")
+    void otherSortUsesSelectList() {
+        when(propertyMapper.selectList(any())).thenReturn(List.of());
+
+        service.search(ratioRequest("deposit,asc", null, 2));
+        service.search(ratioRequest(null, null, 2));
+
+        verify(propertyMapper, never()).selectListByLeaseRatioIndex(any());
+        capturedSelectList(2);
+    }
+
+    @Test
+    @DisplayName("앞부분이 limit 보다 적으면 오름은 (1000, Long.MIN) 커서와 남은 건수로 selectList 를 이어 부르고 합쳐 돌려준다")
+    void ascAppendsTailWithBoundaryCursorAndRemainingLimit() {
+        // size 3 → limit 4. 앞부분 2건 → 남은 2건.
+        when(propertyMapper.selectListByLeaseRatioIndex(any()))
+                .thenReturn(List.of(ratioRow(1L, "10.00"), ratioRow(2L, "20.00")));
+        when(propertyMapper.selectList(any()))
+                .thenReturn(List.of(ratioRow(8L, null), ratioRow(9L, null)));
+
+        CursorPage<PropertyListResponse> page = searchPage(ratioRequest("debtRatio,asc", null, 3));
+
+        PropertySearchCondition tail = capturedSelectList(1).get(0);
+        assertThat(tail.limit()).isEqualTo(2);
+        assertThat(tail.ascending()).isTrue();
+        assertThat(tail.lastDebtRatio()).isEqualByComparingTo("1000");
+        assertThat(tail.lastId()).isEqualTo(Long.MIN_VALUE);
+        assertThat(page.items()).extracting(PropertyListResponse::propertyId).containsExactly(1L, 2L, 8L);
+        assertThat(page.hasNext()).isTrue();
+        CursorCodec.Cursor next = CursorCodec.decode(page.nextCursor());
+        assertThat(next.id()).isEqualTo(8L);
+        assertThat(next.v()).isEqualTo("1000");
+        assertThat(next.s()).isEqualTo("DEBT_RATIO,asc");
+    }
+
+    @Test
+    @DisplayName("내림은 (-1000, Long.MAX) 커서로 이어 부르고, 끝부분이 비면 앞부분만으로 hasNext=false 다")
+    void descAppendsTailWithBoundaryCursorAndEndsWhenTailEmpty() {
+        when(propertyMapper.selectListByLeaseRatioIndex(any()))
+                .thenReturn(List.of(ratioRow(1L, "90.00"), ratioRow(2L, "80.00")));
+        when(propertyMapper.selectList(any())).thenReturn(List.of());
+
+        CursorPage<PropertyListResponse> page = searchPage(ratioRequest("debtRatio,desc", null, 3));
+
+        PropertySearchCondition tail = capturedSelectList(1).get(0);
+        assertThat(tail.limit()).isEqualTo(2);
+        assertThat(tail.ascending()).isFalse();
+        assertThat(tail.lastDebtRatio()).isEqualByComparingTo("-1000");
+        assertThat(tail.lastId()).isEqualTo(Long.MAX_VALUE);
+        assertThat(page.items()).extracting(PropertyListResponse::propertyId).containsExactly(1L, 2L);
+        assertThat(page.hasNext()).isFalse();
+        assertThat(page.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("앞부분이 limit 건을 다 채우면 끝부분을 부르지 않고 다음 커서는 마지막 앞부분 행이다")
+    void fullHeadSkipsTailAndCursorPointsAtHead() {
+        when(propertyMapper.selectListByLeaseRatioIndex(any()))
+                .thenReturn(List.of(ratioRow(1L, "10.00"), ratioRow(2L, "20.00"), ratioRow(3L, "30.00")));
+
+        CursorPage<PropertyListResponse> page = searchPage(ratioRequest("debtRatio,asc", null, 2));
+
+        verify(propertyMapper, never()).selectList(any());
+        assertThat(page.items()).extracting(PropertyListResponse::propertyId).containsExactly(1L, 2L);
+        assertThat(page.hasNext()).isTrue();
+        CursorCodec.Cursor next = CursorCodec.decode(page.nextCursor());
+        assertThat(next.id()).isEqualTo(2L);
+        assertThat(next.v()).isEqualTo("20.00");
+    }
+
+    @Test
+    @DisplayName("끝부분 커서(오름 ≥ 1000 · 내림 ≤ -1000)는 인덱스 매퍼 없이 받은 조건 그대로 selectList 로 간다")
+    void cursorInTailGoesStraightToSelectList() {
+        when(propertyMapper.selectList(any())).thenReturn(List.of(ratioRow(9L, null)));
+
+        service.search(ratioRequest("debtRatio,asc", CursorCodec.encode("DEBT_RATIO,asc", "1000", 8L), 3));
+        service.search(ratioRequest("debtRatio,asc", CursorCodec.encode("DEBT_RATIO,asc", "1000.01", 8L), 3));
+        service.search(ratioRequest("debtRatio,desc", CursorCodec.encode("DEBT_RATIO,desc", "-1000", 8L), 3));
+        service.search(ratioRequest("debtRatio,desc", CursorCodec.encode("DEBT_RATIO,desc", "-1000.01", 8L), 3));
+
+        verify(propertyMapper, never()).selectListByLeaseRatioIndex(any());
+        List<PropertySearchCondition> calls = capturedSelectList(4);
+        assertThat(calls).extracting(PropertySearchCondition::lastId).containsOnly(8L);
+        assertThat(calls).extracting(PropertySearchCondition::limit).containsOnly(4);
+    }
+
+    @Test
+    @DisplayName("앞부분 안 커서(오름 999.99 · 내림 -999.99)는 인덱스 매퍼로 가고 커서 값을 그대로 넘긴다")
+    void cursorJustInsideHeadUsesIndexMapper() {
+        when(propertyMapper.selectListByLeaseRatioIndex(any()))
+                .thenReturn(List.of(ratioRow(1L, "1.00"), ratioRow(2L, "2.00"), ratioRow(3L, "3.00"),
+                        ratioRow(4L, "4.00")));
+
+        service.search(ratioRequest("debtRatio,asc", CursorCodec.encode("DEBT_RATIO,asc", "999.99", 5L), 3));
+        service.search(ratioRequest("debtRatio,desc", CursorCodec.encode("DEBT_RATIO,desc", "-999.99", 5L), 3));
+
+        ArgumentCaptor<PropertySearchCondition> captor = ArgumentCaptor.forClass(PropertySearchCondition.class);
+        verify(propertyMapper, times(2)).selectListByLeaseRatioIndex(captor.capture());
+        assertThat(captor.getAllValues()).extracting(PropertySearchCondition::lastId).containsOnly(5L);
+        assertThat(captor.getAllValues().get(0).lastDebtRatio()).isEqualByComparingTo("999.99");
+        assertThat(captor.getAllValues().get(1).lastDebtRatio()).isEqualByComparingTo("-999.99");
+        verify(propertyMapper, never()).selectList(any());
     }
 }

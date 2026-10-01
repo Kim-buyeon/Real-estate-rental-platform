@@ -233,9 +233,12 @@ public class PropertyQueryService {
         }
 
         int size = request.size();
-        List<PropertyListResponse> rows = propertyMapper.selectList(PropertySearchCondition.ofList(
+        PropertySearchCondition condition = PropertySearchCondition.ofList(
                 request.toFilter(), sortKey, ascending, nullDebtRatio,
-                lastDeposit, lastDebtRatio, lastRegisteredAt, lastId, size + 1));
+                lastDeposit, lastDebtRatio, lastRegisteredAt, lastId, size + 1);
+        List<PropertyListResponse> rows = usesLeaseRatioIndex(condition)
+                ? selectListByLeaseRatio(condition)
+                : propertyMapper.selectList(condition);
 
         boolean hasNext = rows.size() > size;
         List<PropertyListResponse> items = hasNext ? rows.subList(0, size) : rows;
@@ -245,6 +248,74 @@ public class PropertyQueryService {
             nextCursor = CursorCodec.encode(sortSignature, sortValue(last, sortKey, nullDebtRatio), last.propertyId());
         }
         return new CursorPage<>(List.copyOf(items), nextCursor, hasNext);
+    }
+
+    /**
+     * 판정 표의 전세가율 인덱스(V20)에서 출발할 목록인가 — 자치구가 없고, 전세가율순이고, 매물 조건 필터(계약 · 유형 · 보증금 ·
+     * 월세 · 면적 · 좌표)가 모두 없을 때만. 매물 조건 필터가 있으면 걸러지는 만큼 인덱스를 더 읽어 오름에서 93.9 → 313.3ms 로
+     * 나빠졌다(#347 운영 측정). 등급 필터는 인덱스에 담긴 판정 열이라 허용한다. 자치구가 있으면 selectList 의 LATERAL 분기가 맡는다.
+     */
+    private static boolean usesLeaseRatioIndex(PropertySearchCondition c) {
+        return c.sortKey() == PropertySortKey.DEBT_RATIO
+                && (c.district() == null || c.district().isEmpty())
+                && c.contractType() == null && c.propertyType() == null
+                && c.depositMin() == null && c.depositMax() == null && c.monthlyRentMax() == null
+                && c.areaMin() == null && c.areaMax() == null
+                && c.minLat() == null && c.maxLat() == null && c.minLng() == null && c.maxLng() == null;
+    }
+
+    /**
+     * 자치구 없는 전세가율순 목록을 앞부분 · 끝부분으로 나눠 읽는다. 결과 · 순서 · 커서는 selectList 한 번과 같다.
+     *
+     * <p>selectList 는 COALESCE(전세가율, 대체값) 으로 정렬해 판정이 없는 매물을 대체값 자리(방향과 무관하게 맨 뒤)에 둔다. 이
+     * 순서를 대체값 경계에서 둘로 자른다.
+     * <ul>
+     *   <li>앞부분 — 전세가율이 대체값보다 앞(오름 &lt; 1000 · 내림 &gt; -1000). 판정 표의 인덱스에서 출발하는
+     *       selectListByLeaseRatioIndex 가 읽는다. 정렬 값이 전세가율 그대로라 selectList 의 정렬 값과 같다.</li>
+     *   <li>끝부분 — 정렬 값이 대체값이거나 그 너머(판정 없음, 전세가율이 경계 바깥). selectList 가 읽는다. lease_ratio 가
+     *       NUMERIC(5,2) NOT NULL 이라 지금은 판정 없는 매물뿐이고, 등급 필터가 있으면 비어 있다.</li>
+     * </ul>
+     * 두 구간의 정렬 값은 겹치지 않아(앞부분 &lt; 대체값 ≤ 끝부분, 내림은 반대) 이어 붙이면 중복 없이 정렬이 유지된다.
+     *
+     * <ul>
+     *   <li>커서가 끝부분(오름 ≥ 대체값 · 내림 ≤ 대체값)이면 앞부분은 이미 다 읽었다 — 받은 조건 그대로 selectList.</li>
+     *   <li>아니면 앞부분을 limit(요청 크기 + 1) 건 읽고, 모자라면(앞부분이 끝남) 끝부분 처음부터 모자란 수만큼 selectList 로
+     *       이어 읽는다. 끝부분의 처음은 커서 (대체값, 식별자 하한) 으로 연다 — 키셋 조건 「정렬 값 &gt; 대체값 또는
+     *       (= 대체값 이고 식별자 &gt; 하한)」이 정렬 값이 대체값 이상인 행 전부가 된다. 내림은 (대체값, 식별자 상한) 과 &lt;.</li>
+     * </ul>
+     * 합친 건수는 limit 을 넘지 않으므로 hasNext 판정(limit 초과 여부)과 다음 커서(마지막 행의 정렬 값 · 식별자)는 호출자가
+     * selectList 결과와 똑같이 만든다.
+     *
+     * <p>끝부분 조회는 selectList 의 느린 계획(COALESCE 정렬 · 전체 읽기)이다. 앞부분(판정이 있는 매물 전부)을 다 넘긴 마지막 페이지에서만
+     * 돈다. 두 조회는 각자의 스냅숏을 본다(읽기 전용 트랜잭션의 기본 격리 수준) — 사이에 판정이 바뀐 매물은 한쪽에서 빠지거나 두
+     * 번 보일 수 있다. 커서를 넘기는 페이지 사이에서도 이미 같은 일이 생기므로 새 경우가 아니다.
+     */
+    private List<PropertyListResponse> selectListByLeaseRatio(PropertySearchCondition c) {
+        boolean ascending = c.ascending();
+        BigDecimal boundary = c.nullDebtRatio();
+        if (c.lastId() != null) {
+            int cmp = c.lastDebtRatio().compareTo(boundary);
+            if (ascending ? cmp >= 0 : cmp <= 0) {
+                return propertyMapper.selectList(c);
+            }
+        }
+        List<PropertyListResponse> head = propertyMapper.selectListByLeaseRatioIndex(c);
+        int remaining = c.limit() - head.size();
+        if (remaining <= 0) {
+            return head;
+        }
+        // 식별자는 BIGINT 라 이 하한 · 상한과 같은 매물은 없다 — 끝부분 첫 행을 빠뜨리지 않는다.
+        long idBound = ascending ? Long.MIN_VALUE : Long.MAX_VALUE;
+        List<PropertyListResponse> tail = propertyMapper.selectList(new PropertySearchCondition(
+                c.district(), c.contractType(), c.depositMin(), c.depositMax(), c.monthlyRentMax(),
+                c.propertyType(), c.riskGrades(), c.areaMin(), c.areaMax(),
+                c.minLat(), c.maxLat(), c.minLng(), c.maxLng(),
+                c.sortKey(), ascending, boundary, c.lastDeposit(), boundary, c.lastRegisteredAt(),
+                idBound, remaining, c.cellLat(), c.cellLng(), c.maxCellIndex()));
+        if (tail.isEmpty()) {
+            return head;
+        }
+        return Stream.concat(head.stream(), tail.stream()).toList();
     }
 
     /** 커서에 담을 정렬 값. SQL 정렬 식과 같은 값이어야 한다 — 전세가율은 대체값, 등록일은 서울 벽시계 시각. */
