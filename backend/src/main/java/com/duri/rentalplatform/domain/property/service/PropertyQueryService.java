@@ -4,6 +4,7 @@ import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.CursorCodec;
 import com.duri.rentalplatform.common.CursorPage;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.common.datasource.ReplicaRead;
 import com.duri.rentalplatform.domain.property.calculator.GeoDistanceCalculator;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
@@ -61,7 +62,8 @@ public class PropertyQueryService {
     private final PropertyMapper propertyMapper;
     private final DistrictCountCacheStore districtCountCacheStore;
 
-    /** 자치구 집계. 같은 필터 조합은 캐시에서 돌려준다. */
+    /** 자치구 집계. 같은 필터 조합은 캐시에서 돌려준다. 읽기 분산이 켜지면 읽기용 풀에서 읽는다(#343). */
+    @ReplicaRead
     public DistrictCountsResponse getDistrictCounts(DistrictCountRequest filter) {
         return districtCountCacheStore.find(filter).orElseGet(() -> {
             DistrictCountsResponse response = DistrictCountsResponse.of(
@@ -74,8 +76,9 @@ public class PropertyQueryService {
 
     /**
      * 반경 조건이 있으면 마커, 없으면 목록. 반환 형태가 달라 호출자가 그대로 봉투에 담는다.
-     * 표시 영역 좌표는 받지 않는다 — 하나라도 오면 INVALID_REQUEST. 명세 1.3.
+     * 표시 영역 좌표는 받지 않는다 — 하나라도 오면 INVALID_REQUEST. 명세 1.3. 읽기 분산이 켜지면 읽기용 풀에서 읽는다(#343).
      */
+    @ReplicaRead
     public Object search(PropertySearchRequest request) {
         if (request.minLat() != null) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "minLat");
@@ -105,8 +108,9 @@ public class PropertyQueryService {
 
     /**
      * 지도 묶음. 격자 칸 집계를 먼저 하고, 합계가 임계 이하면 영역 전량을 마커로, 넘으면 두 건 이상인 칸은
-     * 묶음 · 한 건뿐인 칸은 마커로 돌려준다. API 명세서(매물) 1.12.
+     * 묶음 · 한 건뿐인 칸은 마커로 돌려준다. API 명세서(매물) 1.12. 읽기 분산이 켜지면 읽기용 풀에서 읽는다(#343).
      */
+    @ReplicaRead
     public PropertyMapClustersResponse getMapClusters(PropertyMapClustersRequest request) {
         BoundingBox box = validBox(request);
         DistrictCountRequest filter = request.toFilter();
@@ -150,6 +154,10 @@ public class PropertyQueryService {
         return new BoundingBox(request.minLat(), request.maxLat(), request.minLng(), request.maxLng());
     }
 
+    /**
+     * 매물 상세. {@link ReplicaRead} 를 붙이지 않는다 — 응답에 로그인 사용자의 관심 여부가 들어가는데, 관심 등록 · 해제 직후
+     * 다시 여는 화면이라 쓰기 직후 읽기다. standby 는 비동기 복제라 방금 커밋한 관심이 아직 없을 수 있어 기본 풀에서 읽는다(#343).
+     */
     public PropertyDetailResponse getDetail(Long propertyId, Long userId) {
         PropertyDetailRow row = propertyMapper.selectDetail(new PropertyDetailCondition(propertyId, userId));
         if (row == null) {
