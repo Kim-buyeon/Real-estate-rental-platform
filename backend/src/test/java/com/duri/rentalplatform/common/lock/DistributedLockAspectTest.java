@@ -2,15 +2,20 @@ package com.duri.rentalplatform.common.lock;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.TestcontainersConfiguration;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.reflect.MethodSignature;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -20,8 +25,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.env.Environment;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.annotation.DirtiesContext;
 
 /**
  * {@link DistributedLockAspect} 를 실제 Redis 에 대고 확인한다 — 획득과 만료, 경합 대기, 대기 초과 503, 토큰 비교 해제(Lua),
@@ -46,7 +51,7 @@ class DistributedLockAspectTest {
     StringRedisTemplate stringRedisTemplate;
 
     @Autowired
-    DistributedLockAspect aspect;
+    Environment environment;
 
     @BeforeEach
     void clear() {
@@ -165,17 +170,30 @@ class DistributedLockAspectTest {
     }
 
     @Test
-    @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
-    @DisplayName("연장 예약 실패: 연장 실행기가 내려간 뒤 연장 락 메서드를 불러도 예외 없이 주 로직이 진행되고, 끝나면 키가 풀린다")
-    void renewalSchedulingFailureProceedsAndReleases() {
-        aspect.destroy();
+    @DisplayName("연장 예약 실패: 연장 실행기가 내려간 관점이 연장 락 메서드를 만나도 예외 없이 주 로직이 진행되고, 끝나면 키가 풀린다")
+    void renewalSchedulingFailureProceedsAndReleases() throws Throwable {
+        // 공유 관점 빈을 내리면 컨텍스트가 닫혀 싱글턴 컨테이너가 죽는다 — 따로 만든 관점만 내린다.
+        DistributedLockAspect downAspect = new DistributedLockAspect(stringRedisTemplate, environment);
+        downAspect.destroy();
+        Method method = LockedTarget.class.getMethod("renewing", Long.class, Runnable.class);
+        DistributedLock annotation = method.getAnnotation(DistributedLock.class);
+        LockedTarget realTarget = new LockedTarget();
         AtomicBoolean ran = new AtomicBoolean(false);
         AtomicReference<String> heldToken = new AtomicReference<>();
 
-        String result = target.renewing(ID, () -> {
+        ProceedingJoinPoint joinPoint = mock(ProceedingJoinPoint.class);
+        MethodSignature signature = mock(MethodSignature.class);
+        when(signature.getMethod()).thenReturn(method);
+        when(joinPoint.getSignature()).thenReturn(signature);
+        when(joinPoint.getTarget()).thenReturn(realTarget);
+        when(joinPoint.getArgs()).thenReturn(new Object[] {ID, (Runnable) () -> { }});
+        when(joinPoint.proceed()).thenAnswer(invocation -> {
             heldToken.set(stringRedisTemplate.opsForValue().get(KEY));
             ran.set(true);
+            return "done";
         });
+
+        Object result = downAspect.lock(joinPoint, annotation);
 
         assertThat(result).isEqualTo("done");
         assertThat(ran).isTrue();
