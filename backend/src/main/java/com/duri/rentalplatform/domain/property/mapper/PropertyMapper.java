@@ -38,13 +38,14 @@ public interface PropertyMapper {
 
     /**
      * 최신 판정(is_latest)이 없는 매물 식별자를 식별자 오름차순으로 {@code limit} 건. 매물 갱신 배치(RISK-08)의 판정 대상이다.
-     * 재분석 대기 매물은 들지 않는다 — {@link #selectPriceChangedPropertyIds} 가 내준다. 식별자 자체가 커서라 동률이 없다.
+     * 재분석 대기 표시와 무관하다 — 표시가 있어도 최신 판정이 없으면 여기서 나온다(#338). 식별자 자체가 커서라 동률이 없다.
      */
     List<Long> selectUnanalyzedPropertyIds(UnanalyzedPropertyCondition condition);
 
     /**
-     * 시세 금액이 바뀌어 재분석을 기다리는 매물(is_reanalysis_pending) 식별자를 식별자 오름차순으로 {@code limit} 건. 매물 갱신
-     * 배치(RISK-08)의 재분석 대상이다. 식별자 자체가 커서라 동률이 없다.
+     * 시세 금액이 바뀌어 재분석을 기다리는 매물(is_reanalysis_pending) 중 최신 판정이 있는 매물의 식별자를 식별자 오름차순으로
+     * {@code limit} 건. 매물 갱신 배치(RISK-08)의 재분석 대상이다. 최신 판정이 없는 대기 매물은
+     * {@link #selectUnanalyzedPropertyIds} 가 내주므로 두 조회가 겹치지 않는다. 식별자 자체가 커서라 동률이 없다.
      */
     List<Long> selectPriceChangedPropertyIds(PriceChangedPropertyCondition condition);
 }

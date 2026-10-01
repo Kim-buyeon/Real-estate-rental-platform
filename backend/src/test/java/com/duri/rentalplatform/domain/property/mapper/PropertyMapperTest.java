@@ -721,20 +721,26 @@ class PropertyMapperTest {
     // 위 미판정 조회와 같이 이 테스트가 넣은 첫 매물의 바로 앞 식별자를 커서로 준다.
 
     @Test
-    @DisplayName("재분석 대기: 표시가 선 매물만 판정 유무와 무관하게 식별자 순으로 나온다")
-    void priceChangedSelectsOnlyPendingProperties() {
+    @DisplayName("재분석 대기: 표시가 서고 최신 판정이 있는 매물만 식별자 순으로 나온다 — 표시만 선 새 매물 · 판정만 있는 매물은 빠진다")
+    void priceChangedSelectsOnlyPendingAnalyzedProperties() {
         long pendingAnalyzed = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
         long notPending = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
         long pendingUnanalyzed = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long pendingSuperseded = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long pendingAnalyzed2 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
         insertRisk(pendingAnalyzed, "SAFE", "60.00", true, false);
         insertRisk(notPending, "SAFE", "60.00", true, false);
+        insertRisk(pendingSuperseded, "DANGER", "95.00", false, false);
+        insertRisk(pendingAnalyzed2, "SAFE", "60.00", true, false);
         markReanalysisPending(pendingAnalyzed);
         markReanalysisPending(pendingUnanalyzed);
+        markReanalysisPending(pendingSuperseded);
+        markReanalysisPending(pendingAnalyzed2);
 
         List<Long> ids = propertyMapper.selectPriceChangedPropertyIds(
                 new PriceChangedPropertyCondition(pendingAnalyzed - 1, 100));
 
-        assertThat(ids).containsExactly(pendingAnalyzed, pendingUnanalyzed);
+        assertThat(ids).containsExactly(pendingAnalyzed, pendingAnalyzed2);
     }
 
     @Test
@@ -743,7 +749,10 @@ class PropertyMapperTest {
         long first = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
         long second = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
         long third = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
-        List.of(first, second, third).forEach(this::markReanalysisPending);
+        List.of(first, second, third).forEach(id -> {
+            insertRisk(id, "SAFE", "60.00", true, false);
+            markReanalysisPending(id);
+        });
 
         List<Long> firstPage = propertyMapper.selectPriceChangedPropertyIds(
                 new PriceChangedPropertyCondition(first - 1, 2));
@@ -758,6 +767,7 @@ class PropertyMapperTest {
     @DisplayName("재분석 대기: 커서가 없으면 처음부터 읽는다 — 이 테스트가 넣은 매물은 대상에 든다")
     void priceChangedWithoutCursorStartsFromBeginning() {
         long id = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        insertRisk(id, "SAFE", "60.00", true, false);
         markReanalysisPending(id);
         long count = jdbc.queryForObject("SELECT count(*) FROM property", Long.class);
 
@@ -768,15 +778,22 @@ class PropertyMapperTest {
     }
 
     @Test
-    @DisplayName("미판정: 재분석 대기 매물은 판정이 없어도 빠진다 — 재분석 대기 갈래가 내주므로 두 갈래가 겹치지 않는다")
-    void unanalyzedExcludesReanalysisPending() {
-        long pending = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
-        long plain = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
-        markReanalysisPending(pending);
+    @DisplayName("두 갈래: 표시가 선 새 매물은 미판정에만, 표시가 선 판정 있는 매물은 재분석 대기에만 나온다 — 겹치지 않는다")
+    void branchesDoNotOverlapForPendingProperties() {
+        long pendingNew = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long pendingAnalyzed = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        long plainNew = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.50, 126.80, T0);
+        insertRisk(pendingAnalyzed, "SAFE", "60.00", true, false);
+        markReanalysisPending(pendingNew);
+        markReanalysisPending(pendingAnalyzed);
 
-        List<Long> ids = propertyMapper.selectUnanalyzedPropertyIds(new UnanalyzedPropertyCondition(pending - 1, 100));
+        List<Long> unanalyzed = propertyMapper.selectUnanalyzedPropertyIds(
+                new UnanalyzedPropertyCondition(pendingNew - 1, 100));
+        List<Long> priceChanged = propertyMapper.selectPriceChangedPropertyIds(
+                new PriceChangedPropertyCondition(pendingNew - 1, 100));
 
-        assertThat(ids).containsExactly(plain);
+        assertThat(unanalyzed).containsExactly(pendingNew, plainNew);
+        assertThat(priceChanged).containsExactly(pendingAnalyzed);
     }
 
     private void markReanalysisPending(long propertyId) {
