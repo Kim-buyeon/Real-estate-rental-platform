@@ -159,8 +159,13 @@ public class RiskAnalysisCommandService {
     }
 
     /**
-     * 대장 수집을 건너뛰고 분석한다 — Mock 대장 교체 배치가 대장을 방금 교체 · 삭제한 뒤에 부른다. {@link #analyze} 로 부르면
-     * 삭제한 매물(뗄 대장 없음)의 대장을 다시 떼어 같은 빈 값을 받느라 일일 호출 상한을 한 번 더 쓴다. 등기는 없으면 수집한다.
+     * 대장 수집을 건너뛰고 분석한다. 등기는 없으면 수집한다. 부르는 쪽은 둘이다.
+     * <ul>
+     *   <li>Mock 대장 교체 배치 — 대장을 방금 교체 · 삭제한 뒤. {@link #analyze} 로 부르면 삭제한 매물(뗄 대장 없음)의 대장을
+     *       다시 떼어 같은 빈 값을 받느라 일일 호출 상한을 한 번 더 쓴다.</li>
+     *   <li>매물 갱신 배치의 시세 변경 재판정 — 시세는 대장과 무관하다. {@link #analyze} 로 부르면 대장 없는 매물마다 건축HUB
+     *       초당 한도를 기다려 판정 단계가 그 한도에 묶인다(#328).</li>
+     * </ul>
      *
      * @throws BusinessException {@link ErrorCode#PROPERTY_NOT_FOUND} — 매물이 없을 때,
      *                           {@link ErrorCode#EXTERNAL_API_UNAVAILABLE} — 등기 수집이 실패했을 때
