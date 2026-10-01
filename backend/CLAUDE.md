@@ -27,7 +27,8 @@ com.duri.rentalplatform
 │       ├── response/
 │       └── condition/
 ├── common/                    ApiResponse · CursorPage · ErrorCode · BusinessException · BaseEntity
-│   └── lock/                   분산 락 애노테이션과 그 관점(@Aspect)
+│   ├── lock/                   분산 락 애노테이션과 그 관점(@Aspect)
+│   └── datasource/             읽기 분산 애노테이션 · 그 관점(@Aspect) · 커넥션 풀 라우팅
 ├── config/
 └── external/<연동 대상>/       인터페이스 + Mock · Real · Fault 구현
 ```

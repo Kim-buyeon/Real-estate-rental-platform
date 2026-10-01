@@ -237,6 +237,10 @@ x-app: &app
 # max_connections 48 — 앱 풀 32(슬롯 넷 — APP-01 둘 · APP-02 둘 — × 풀 8, application.yml 의 maximum-pool-size)에
 # exporter · 백업 · 운영자 접속 여유 16 을 더했다(INF-01, 2026-09-26 — 전에는 슬롯 둘의 풀 16 + 16 = 32 였다. 슬롯이 넷이 되면
 # 앱 풀만으로 옛 상한을 채운다). Flyway · 배치는 앱과 같은 풀에서 빌리므로 따로 세지 않는다.
+# 읽기 분산(DB_REPLICA_ENABLED, 기본 끔 — #343)을 켜면 읽기용 풀 슬롯 넷 × 4 = 16 이 위 여유 16 을 같이 쓴다. 평시에는 DB-02 로
+# 가지만, DB-02 가 없거나 페일오버 뒤 한 노드로 몰리면 앱만 32 + 16 = 48 로 max_connections 와 같아진다(APP-02 를 끈 지금은 최대 24).
+# 앱 계정(POSTGRES_USER)이 superuser 라 superuser_reserved_connections 도 exporter · 백업 · 운영자 몫을 지키지 못한다.
+# 이 겹침은 미해결이다 — 값을 올릴지 · 풀을 줄일지 · 계정을 나눌지는 별도 결정이 필요하다. 그때까지 값은 그대로 둔다.
 # 반영 순서 — **standby 먼저, 그다음 primary.** hot standby 는 max_connections 가 primary 이상이어야 기동하므로(위) primary 를
 # 먼저 48 로 올리면 32 인 standby 가 WAL 의 설정 변경 기록을 받고 복구를 멈춘다.
 # autovacuum 은 autovacuum_work_mem 기본이 -1 이라 maintenance_work_mem 을 그대로 쓰므로 워커 수와 함께 묶는다.
@@ -672,7 +676,8 @@ services:
   # 스트리밍 복제 standby(INF-03) — 비동기 · 물리 슬롯 standby_1(인프라 기술 스택 3장).
   # 단일 노드(프로필 app,db,standby)에서는 **같은 노드의 컨테이너다** — 전환 절차를 검증하는 자리이고,
   # 노드 장애에는 primary 와 함께 사라진다 — 노드 장애 대응은 성립하지 않는다. 3노드에서는 DB-02 에 이것만 뜬다(프로필 standby).
-  # 트래픽을 받지 않는다. 앱은 postgres 만 본다. 단일 노드에서는 primary 에 Compose 네트워크로 붙고, DB-02 에서는 DB-01 사설 IP 로 붙는다.
+  # 쓰기는 받지 않는다. 읽기 분산(DB_REPLICA_ENABLED, 기본 끔 — #343)을 켜면 앱의 읽기용 풀이 지도 · 목록 · 구별 집계 읽기를
+  # 이리로 보내고, 끄면 트래픽을 받지 않는다(앱은 postgres 만 본다). 단일 노드에서는 primary 에 Compose 네트워크로 붙고, DB-02 에서는 DB-01 사설 IP 로 붙는다.
   postgres-standby:
     profiles: ["standby"]
     image: postgres:17-alpine
