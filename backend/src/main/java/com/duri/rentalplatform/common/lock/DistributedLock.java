@@ -45,7 +45,8 @@ public @interface DistributedLock {
     /**
      * 실행하는 동안 만료를 연장하는 간격. 비면(기본) 연장하지 않는다. 두면 간격마다 만료를 {@link #leaseTime()} 으로 되돌린다 —
      * 만료를 짧게 잡고도 오래 도는 실행 중에 풀리지 않고, 잡은 프로세스가 죽으면 연장이 멈춰 짧은 만료 안에 풀린다. 만료보다
-     * 짧아야 하며 만료의 1/3 이하로 둔다(두 번 놓쳐도 유지된다). 동작은 {@link DistributedLockAspect} 「연장」.
+     * 짧아야 하며 만료의 1/3 이하로 둔다 — 연장은 앞 연장이 끝난 뒤 간격을 세므로(고정 지연) 마지막 성공에서 다음 시도까지
+     * 간격 + 수행 시간이 걸린다. 1/3 이면 한 번 놓쳐도 유지되고, 두 번 놓치면 풀린다. 동작은 {@link DistributedLockAspect} 「연장」.
      */
     String renewInterval() default "";
 }
