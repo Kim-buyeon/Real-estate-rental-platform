@@ -27,8 +27,8 @@ import org.springframework.stereotype.Component;
  * 매물은 다음 날 회차가 이어 간다(Mock 집합에서 빠진 매물은 다시 읽히지 않는다). 스텝 구성은 {@link MockLedgerReplaceJobFactory}.
  *
  * <p><b>하루 한 번 · Job 파라미터 · 트랜잭션</b> — {@link RegistryRefreshJobLauncher} 와 같다. 날짜 키
- * {@code risk:batch:mock-ledger-replace:{yyyy-MM-dd}} 의 분산 락을 기다리지 않고 한 번만 시도하고, 날짜와 실행 시각을 식별
- * 파라미터로 넣으며, 트랜잭션은 열지 않는다.
+ * {@code risk:batch:mock-ledger-replace:{yyyy-MM-dd}} 의 분산 락을 기다리지 않고 한 번만 시도하고(짧은 만료 · 실행 중 연장),
+ * 날짜와 실행 시각을 식별 파라미터로 넣으며, 트랜잭션은 열지 않는다.
  *
  * <p><b>전용 Job 실행기</b> — 앱의 Job 실행기 빈이 아니라 이 배치 전용 저장소({@link MockLedgerReplaceJobFactory#jobRepository()})로
  * 만든 실행기를 쓴다. 기동 뒤 따라잡기는 예약 시각과 무관하게 돌므로 같은 프로세스에서 등기 재조회 배치와 겹칠 수 있다 — 저장소를
@@ -74,7 +74,8 @@ public class MockLedgerReplaceJobLauncher {
     @DistributedLock(
             key = "'risk:batch:mock-ledger-replace:' + #date",
             waitTimeout = "0s",
-            leaseTime = "${risk.batch.mock-ledger-replace.lock-lease-time}")
+            leaseTime = "${risk.batch.mock-ledger-replace.lock-lease-time}",
+            renewInterval = "${risk.batch.mock-ledger-replace.lock-renew-interval}")
     public MockLedgerReplaceReport run(LocalDate date) {
         log.info("[Mock 대장 교체 배치] 시작 — {}", date);
         MockLedgerReplaceReport report = new MockLedgerReplaceReport();

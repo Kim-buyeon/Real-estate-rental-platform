@@ -26,9 +26,10 @@ import org.springframework.stereotype.Component;
  * 뒤처진 매물을 재분석한다. 등급 변경 알림은 재분석이 발행하는 이벤트의 몫이다. 스텝 구성은 {@link RegistryRefreshJobFactory}.
  *
  * <p><b>하루 한 번</b> — 앱이 두 프로세스로 뜨고 둘 다 같은 시각에 스케줄이 돈다. 날짜 키 {@code risk:batch:registry-refresh:
- * {yyyy-MM-dd}} 의 분산 락을 기다리지 않고 한 번만 시도해, 못 잡은 인스턴스는 Job 을 시작하지 않는다. 만료는 하루보다 짧게 둔다 —
- * 끝나도 해제되므로 만료는 잡은 인스턴스가 죽었을 때만 쓰이고, 다음 날 같은 시각에는 반드시 풀려 있어야 한다. 날짜를 인자로 받는
- * 이유는 락 키가 인자로만 만들어지기 때문이다. Job 을 락 안에서 동기로 실행하므로 락은 스텝이 끝날 때까지 유지된다.
+ * {yyyy-MM-dd}} 의 분산 락을 기다리지 않고 한 번만 시도해, 못 잡은 인스턴스는 Job 을 시작하지 않는다. 만료는 짧게 잡고 도는
+ * 동안 연장한다({@code lock-renew-interval}) — 끝나면 해제되므로 만료는 잡은 인스턴스가 죽었을 때만 쓰이고, 그때 연장이 함께 멈춰
+ * 곧 풀리므로 같은 날 기동 뒤 따라잡기가 다시 잡을 수 있다. 날짜를 인자로 받는 이유는 락 키가 인자로만 만들어지기 때문이다. Job 을
+ * 락 안에서 동기로 실행하므로 락은 스텝이 끝날 때까지 유지된다.
  *
  * <p><b>Job 파라미터</b> — 날짜와 실행 시각을 둘 다 식별 파라미터로 넣는다. 날짜만 넣으면 같은 날 두 번째 실행(수동 재실행 ·
  * 락 해제 뒤 다른 인스턴스)이 「이미 완료된 Job 인스턴스」로 거절된다. 실행 여부는 날짜 락이 가르므로 Batch 의 중복 판정에 기대지
@@ -80,7 +81,8 @@ public class RegistryRefreshJobLauncher {
     @DistributedLock(
             key = "'risk:batch:registry-refresh:' + #date",
             waitTimeout = "0s",
-            leaseTime = "${risk.batch.registry-refresh.lock-lease-time}")
+            leaseTime = "${risk.batch.registry-refresh.lock-lease-time}",
+            renewInterval = "${risk.batch.registry-refresh.lock-renew-interval}")
     public RegistryRefreshReport run(LocalDate date) {
         log.info("[등기 재조회 배치] 시작 — {}", date);
         RegistryRefreshReport report = new RegistryRefreshReport();

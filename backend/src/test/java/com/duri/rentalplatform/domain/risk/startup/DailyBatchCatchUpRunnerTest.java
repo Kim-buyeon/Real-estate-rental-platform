@@ -2,11 +2,15 @@ package com.duri.rentalplatform.domain.risk.startup;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static com.duri.rentalplatform.domain.risk.enums.DailyBatchRunOutcome.CONTENDED;
+import static com.duri.rentalplatform.domain.risk.enums.DailyBatchRunOutcome.RAN;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -16,14 +20,20 @@ import com.duri.rentalplatform.domain.risk.scheduler.PropertyRefreshScheduler;
 import com.duri.rentalplatform.domain.risk.scheduler.RegistryRefreshScheduler;
 import com.duri.rentalplatform.domain.risk.store.BatchSuccessStore;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.mockito.InOrder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBooleanProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -32,8 +42,12 @@ import org.springframework.dao.QueryTimeoutException;
 
 /**
  * {@link DailyBatchCatchUpRunner} — 오늘(서울) 성공 기록이 없는 배치만 정해진 순서로 스케줄러 진입점을 부르고, 한 배치가 실패해도
- * 다음 배치로 넘어가며, 스케줄러 빈이 없는 배치는 건너뛴다. 날짜 락 · 락 경합 처리는 각 스케줄러 테스트가 본다.
+ * 다음 배치로 넘어가며, 스케줄러 빈이 없는 배치는 건너뛴다. 락 경합으로 건너뛴 배치는 간격마다 다시 확인하고(성공 기록 · 날짜
+ * 변경 · 종료에서 멈추며 실패는 다시 하지 않는다), 날짜 락 자체와 경합 판정은 각 스케줄러 테스트가 본다.
+ *
+ * <p>재확인 루프가 멈추지 않는 결함이 매달림으로 나타나지 않도록 클래스에 타임아웃을 건다.
  */
+@Timeout(value = 10, unit = TimeUnit.SECONDS)
 class DailyBatchCatchUpRunnerTest {
 
     /** UTC 9/29 17:00 = 서울 9/30 02:00. 오늘이 서버 시간대가 아니라 서울로 정해지는지 가른다. */
@@ -45,12 +59,19 @@ class DailyBatchCatchUpRunnerTest {
     private MockLedgerReplaceScheduler mockLedgerReplace;
     private BatchSuccessStore successStore;
 
+    /** 재확인 간격 — 테스트에서는 아주 짧게 둔다. */
+    private static final Duration RETRY = Duration.ofMillis(10);
+
     @BeforeEach
     void setUp() {
         propertyRefresh = mock(PropertyRefreshScheduler.class);
         registryRefresh = mock(RegistryRefreshScheduler.class);
         mockLedgerReplace = mock(MockLedgerReplaceScheduler.class);
         successStore = mock(BatchSuccessStore.class);
+        // 목의 기본값 CONTENDED 는 「락 경합」으로 읽혀 재확인 루프가 끝나지 않는다 — 평소에는 돌렸다(RAN)고 둔다.
+        when(propertyRefresh.refreshProperties()).thenReturn(RAN);
+        when(registryRefresh.refreshWishlistedRegistries()).thenReturn(RAN);
+        when(mockLedgerReplace.replaceMockLedgers()).thenReturn(RAN);
     }
 
     @Test
@@ -118,7 +139,7 @@ class DailyBatchCatchUpRunnerTest {
     void startupHandsOffToExecutor() {
         List<Runnable> submitted = new ArrayList<>();
         DailyBatchCatchUpRunner scheduler = new DailyBatchCatchUpRunner(
-                propertyRefresh, registryRefresh, mockLedgerReplace, successStore, UTC_CLOCK, submitted::add);
+                propertyRefresh, registryRefresh, mockLedgerReplace, successStore, UTC_CLOCK, submitted::add, RETRY);
 
         scheduler.catchUpOnStartup();
 
@@ -143,8 +164,96 @@ class DailyBatchCatchUpRunnerTest {
         assertThat(enabled.value()).containsExactly("batch.startup-catchup.enabled");
     }
 
+    @Test
+    @DisplayName("락 경합으로 건너뛴 배치는 간격 뒤 다시 진입점을 불러 돌리고, 돌리면 멈춘다 — 경합이 없던 배치는 다시 부르지 않는다")
+    void retriesContendedBatchUntilItRuns() {
+        when(propertyRefresh.refreshProperties()).thenReturn(CONTENDED, CONTENDED, RAN);
+
+        catchUp(propertyRefresh, registryRefresh, mockLedgerReplace).catchUp();
+
+        verify(propertyRefresh, times(3)).refreshProperties();
+        verify(registryRefresh, times(1)).refreshWishlistedRegistries();
+        verify(mockLedgerReplace, times(1)).replaceMockLedgers();
+    }
+
+    @Test
+    @DisplayName("재확인 중 오늘 성공 기록이 생기면(다른 인스턴스가 끝냈다) 진입점을 다시 부르지 않고 멈춘다")
+    void stopsRetryWhenSuccessRecorded() {
+        when(propertyRefresh.refreshProperties()).thenReturn(CONTENDED);
+        when(successStore.hasSucceeded(DailyBatch.PROPERTY_REFRESH, SEOUL_TODAY)).thenReturn(false, true);
+
+        catchUp(propertyRefresh, registryRefresh, mockLedgerReplace).catchUp();
+
+        verify(propertyRefresh, times(1)).refreshProperties();
+        verify(successStore, times(2)).hasSucceeded(DailyBatch.PROPERTY_REFRESH, SEOUL_TODAY);
+    }
+
+    @Test
+    @DisplayName("재확인을 기다리는 사이 서울 날짜가 바뀌면 다시 확인하지 않고 멈춘다")
+    void stopsRetryWhenSeoulDateChanges() {
+        AtomicReference<Instant> now = new AtomicReference<>(UTC_CLOCK.instant());
+        Clock movable = new Clock() {
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return now.get();
+            }
+        };
+        // 경합으로 건너뛰는 순간 시계를 서울 10/1 로 넘긴다 — UTC 9/30 17:00 = 서울 10/1 02:00.
+        when(propertyRefresh.refreshProperties()).thenAnswer(invocation -> {
+            now.set(Instant.parse("2026-09-30T17:00:00Z"));
+            return CONTENDED;
+        });
+        DailyBatchCatchUpRunner runner = new DailyBatchCatchUpRunner(
+                propertyRefresh, registryRefresh, mockLedgerReplace, successStore, movable, Runnable::run, RETRY);
+
+        runner.catchUp();
+
+        verify(propertyRefresh, times(1)).refreshProperties();
+        verify(successStore, never()).hasSucceeded(DailyBatch.PROPERTY_REFRESH, LocalDate.of(2026, 10, 1));
+    }
+
+    @Test
+    @DisplayName("이 인스턴스에서 예외로 끝난 배치는 다시 확인하지 않는다 — 재시도는 락 경합만이다")
+    void failureIsNotRetried() {
+        when(propertyRefresh.refreshProperties())
+                .thenThrow(new IllegalStateException("boom"))
+                .thenReturn(RAN);
+
+        catchUp(propertyRefresh, registryRefresh, mockLedgerReplace).catchUp();
+
+        verify(propertyRefresh, times(1)).refreshProperties();
+    }
+
+    @Test
+    @DisplayName("destroy() 가 재확인의 기다림을 끊는다 — 긴 간격이어도 바로 돌아오고 진입점을 다시 부르지 않는다")
+    void destroyInterruptsWaiting() throws Exception {
+        when(propertyRefresh.refreshProperties()).thenReturn(CONTENDED);
+        DailyBatchCatchUpRunner runner = new DailyBatchCatchUpRunner(
+                propertyRefresh, registryRefresh, mockLedgerReplace, successStore, UTC_CLOCK, Runnable::run,
+                Duration.ofHours(1));
+
+        CompletableFuture<Void> waiting = CompletableFuture.runAsync(runner::catchUp);
+        verify(propertyRefresh, timeout(5_000)).refreshProperties();
+        assertThat(waiting).isNotDone();
+
+        runner.destroy();
+
+        waiting.get(5, TimeUnit.SECONDS);
+        verify(propertyRefresh, times(1)).refreshProperties();
+    }
+
     private DailyBatchCatchUpRunner catchUp(
             PropertyRefreshScheduler property, RegistryRefreshScheduler registry, MockLedgerReplaceScheduler mockLedger) {
-        return new DailyBatchCatchUpRunner(property, registry, mockLedger, successStore, UTC_CLOCK, Runnable::run);
+        return new DailyBatchCatchUpRunner(property, registry, mockLedger, successStore, UTC_CLOCK, Runnable::run, RETRY);
     }
 }

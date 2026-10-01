@@ -6,11 +6,16 @@ import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.springframework.beans.factory.DisposableBean;
 import org.springframework.boot.convert.ApplicationConversionService;
 import org.springframework.context.expression.MethodBasedEvaluationContext;
 import org.springframework.core.DefaultParameterNameDiscoverer;
@@ -36,6 +41,17 @@ import org.springframework.util.StringUtils;
  * 끝난 쪽이 남의 락을 지우면 안 된다. 비교와 삭제 사이에 끼어들 틈이 없도록 Lua 스크립트 하나로 실행한다. 해제 실패(Redis
  * 장애)는 기록만 하고 올리지 않는다 — 락은 만료로 풀리고, 주 로직의 결과나 예외를 해제 실패가 덮으면 안 된다.
  *
+ * <p><b>연장</b> — {@code renewInterval} 을 둔 락만. 획득 뒤 간격마다 토큰이 같을 때만 만료를 {@code leaseTime} 으로 되돌리고
+ * (비교와 연장을 Lua 하나로), 메서드가 끝나면 연장을 멈춘 뒤 위처럼 해제한다. 날짜 락이 이것을 쓰는 이유는 해제가 {@code finally}
+ * 에 있기 때문이다 — 배포 · OOM 으로 프로세스가 죽으면 {@code finally} 가 돌지 않아, 만료 23시간으로 잡던 날짜 락이 그대로 남았다
+ * (2026-10-01 02:15 배포로 끊긴 회차의 락 때문에 08:43 기동 뒤 따라잡기가 「다른 인스턴스가 실행 중」으로 건너뛰었다, #340).
+ * 연장하면 만료를 짧게 잡아도 오래 도는 회차 중에 풀리지 않고, 프로세스가 죽으면 연장도 함께 멈춰 짧은 만료 안에 풀린다. 간격은
+ * 만료의 1/3 이하로 둔다 — 고정 지연이라 마지막 성공에서 다음 시도까지 간격 + 수행 시간이 걸리므로, 연장을 한 번 놓쳐도
+ * 유지되고 두 번 놓치면 풀린다. 토큰이 다르면(만료로 풀린 뒤 다른 인스턴스가 잡았다) 경고를 남기고 그
+ * 연장만 멈춘다 — 주 로직은 그대로 두고 예외로 덮지 않는다(해제 실패와 같은 원칙). 연장 실패(Redis 장애)도 경고만 남기고 다음
+ * 간격에 다시 시도한다. 연장은 전용 데몬 스레드 하나가 맡고, 빈이 내려갈 때 멈춘다. 그 뒤에 들어온 실행처럼 연장을 예약하지
+ * 못하면 경고만 남기고 연장 없이 진행한다 — 예약은 락을 잡은 뒤 {@code try} 안에서 하므로 어떤 경우든 해제가 돈다.
+ *
  * <p><b>순서</b> — 트랜잭션 프록시(가장 낮은 우선순위)보다 바깥에서 돈다. 안쪽이면 커밋 전에 락이 풀려, 다음 요청이 반영 전 값을
  * 읽는다. 다만 {@code HIGHEST_PRECEDENCE} 는 쓰지 않는다 — 스프링이 체인 맨 앞에 두는 {@code ExposeInvocationInterceptor}
  * ({@code HIGHEST_PRECEDENCE + 1}) 보다 앞서면 애노테이션 인자 바인딩이 호출마다 {@code IllegalStateException} 이 된다.
@@ -47,10 +63,14 @@ import org.springframework.util.StringUtils;
 @Aspect
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
-public class DistributedLockAspect {
+public class DistributedLockAspect implements DisposableBean {
 
     private static final RedisScript<Long> RELEASE_SCRIPT = new DefaultRedisScript<>(
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+            Long.class);
+
+    private static final RedisScript<Long> RENEW_SCRIPT = new DefaultRedisScript<>(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end",
             Long.class);
 
     private static final ExpressionParser PARSER = new SpelExpressionParser();
@@ -58,10 +78,23 @@ public class DistributedLockAspect {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final Environment environment;
+    private final ScheduledThreadPoolExecutor renewalExecutor;
 
     public DistributedLockAspect(StringRedisTemplate stringRedisTemplate, Environment environment) {
         this.stringRedisTemplate = stringRedisTemplate;
         this.environment = environment;
+        this.renewalExecutor = new ScheduledThreadPoolExecutor(1, task -> {
+            Thread thread = new Thread(task, "distributed-lock-renewal");
+            thread.setDaemon(true);
+            return thread;
+        });
+        // 끝난 실행의 연장 작업을 취소하면 큐에서 바로 뺀다 — 남겨 두면 다음 예정 시각까지 쌓인다.
+        this.renewalExecutor.setRemoveOnCancelPolicy(true);
+    }
+
+    @Override
+    public void destroy() {
+        renewalExecutor.shutdownNow();
     }
 
     @Around("@annotation(distributedLock)")
@@ -70,11 +103,24 @@ public class DistributedLockAspect {
         Duration waitTimeout = durationOf(distributedLock.waitTimeout());
         Duration pollInterval = durationOf(distributedLock.pollInterval());
         Duration leaseTime = durationOf(distributedLock.leaseTime());
+        Duration renewInterval = optionalDurationOf(distributedLock.renewInterval());
+        if (renewInterval != null && (renewInterval.isNegative() || renewInterval.isZero()
+                || renewInterval.compareTo(leaseTime) >= 0)) {
+            throw new IllegalStateException("분산 락 연장 간격은 0 보다 크고 만료보다 짧아야 한다: " + renewInterval
+                    + " / " + leaseTime + " @ " + key);
+        }
 
         String token = acquire(key, waitTimeout, pollInterval, leaseTime);
+        Renewal renewal = null;
         try {
+            if (renewInterval != null) {
+                renewal = startRenewal(key, token, leaseTime, renewInterval);
+            }
             return joinPoint.proceed();
         } finally {
+            if (renewal != null) {
+                renewal.stop();
+            }
             release(key, token);
         }
     }
@@ -97,6 +143,24 @@ public class DistributedLockAspect {
                 throw new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE);
             }
         }
+    }
+
+    /**
+     * 연장을 예약한다. 예약하지 못하면(빈이 내려가 실행기가 멈춘 뒤의 {@link RejectedExecutionException} 등) 경고만 남기고 null 을
+     * 돌려준다 — 주 로직은 연장 없이 진행하고 락은 만료로 지킨다. 예약 실패가 주 로직으로 올라가면 잡은 락을 해제하지 못한 채
+     * 호출이 실패한다(관점의 예외는 주 로직과 격리한다 — 횡단 관심사 설계서 1.2).
+     */
+    private Renewal startRenewal(String key, String token, Duration leaseTime, Duration renewInterval) {
+        Renewal renewal = new Renewal(key, token, String.valueOf(leaseTime.toMillis()));
+        long intervalMillis = renewInterval.toMillis();
+        try {
+            renewal.future = renewalExecutor.scheduleWithFixedDelay(
+                    renewal, intervalMillis, intervalMillis, TimeUnit.MILLISECONDS);
+        } catch (RuntimeException e) {
+            log.warn("분산 락 연장 예약 실패 — 연장 없이 진행하고 만료({})로 지킨다. key={}", leaseTime, key, e);
+            return null;
+        }
+        return renewal;
     }
 
     private void release(String key, String token) {
@@ -122,5 +186,60 @@ public class DistributedLockAspect {
     private Duration durationOf(String value) {
         String resolved = environment.resolveRequiredPlaceholders(value);
         return ApplicationConversionService.getSharedInstance().convert(resolved, Duration.class);
+    }
+
+    /** {@link #durationOf} 와 같되, 비어 있으면(풀린 값이 비어도) null — 그 기능을 쓰지 않는다. */
+    private Duration optionalDurationOf(String value) {
+        String resolved = environment.resolveRequiredPlaceholders(value);
+        if (!StringUtils.hasText(resolved)) {
+            return null;
+        }
+        return ApplicationConversionService.getSharedInstance().convert(resolved.trim(), Duration.class);
+    }
+
+    /**
+     * 실행 하나의 연장 작업. 락을 잃으면 스스로 멈춘다. {@link #stop()} 뒤에 돌던 연장이 해제와 겹쳐 0 을 받아도 경고를 남기지
+     * 않는다 — 끝난 실행이 해제한 것이지 잃은 것이 아니다.
+     */
+    private final class Renewal implements Runnable {
+
+        private final String key;
+        private final String token;
+        private final String leaseMillis;
+        private volatile boolean stopped;
+        private volatile ScheduledFuture<?> future;
+
+        private Renewal(String key, String token, String leaseMillis) {
+            this.key = key;
+            this.token = token;
+            this.leaseMillis = leaseMillis;
+        }
+
+        @Override
+        public void run() {
+            if (stopped) {
+                stop(); // 예약이 future 를 넘겨받기 전에 멈춘 경우까지 취소한다
+                return;
+            }
+            Long renewed;
+            try {
+                renewed = stringRedisTemplate.execute(RENEW_SCRIPT, List.of(key), token, leaseMillis);
+            } catch (RuntimeException e) {
+                log.warn("분산 락 연장 실패 — 다음 간격에 다시 시도한다. key={}", key, e);
+                return;
+            }
+            if (!stopped && (renewed == null || renewed == 0L)) {
+                log.warn("분산 락을 잃었다 — 만료로 풀린 뒤 다른 실행이 잡았을 수 있다. 연장을 멈춘다. key={}", key);
+                stop();
+            }
+        }
+
+        void stop() {
+            stopped = true;
+            ScheduledFuture<?> scheduled = future;
+            if (scheduled != null) {
+                scheduled.cancel(false);
+            }
+        }
     }
 }
