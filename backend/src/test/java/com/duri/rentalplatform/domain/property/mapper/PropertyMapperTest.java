@@ -464,6 +464,167 @@ class PropertyMapperTest {
         assertThat(desc).containsExactly(high, tieB, tieA, none);
     }
 
+    // ---------- 목록: 전세가율 인덱스 출발(selectListByLeaseRatioIndex, V20) ----------
+
+    /** 앞부분 대조 픽스처 — 같은 전세가율 동률 셋 · 등급 다른 둘 · 판정 없음 하나. */
+    private long[] insertLeaseRatioFixture() {
+        long t1 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long t2 = insertProperty(D2, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long t3 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long low = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long high = insertProperty(D2, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long none = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        insertRisk(t1, "CAUTION", "70.00", true, false);
+        insertRisk(t2, "CAUTION", "70.00", true, false);
+        insertRisk(t3, "CAUTION", "70.00", true, false);
+        insertRisk(low, "SAFE", "30.00", true, false);
+        insertRisk(high, "DANGER", "95.00", true, false);
+        insertRisk(low, "DANGER", "99.00", false, false); // 옛 분석은 순서에 끼지 않는다
+        return new long[] {t1, t2, t3, low, high, none};
+    }
+
+    private List<Long> mineOf(List<PropertyListResponse> rows, long[] fixture) {
+        List<Long> mine = java.util.Arrays.stream(fixture).boxed().toList();
+        return ids(rows).stream().filter(mine::contains).toList();
+    }
+
+    /** selectList 결과에서 판정 없는 매물(끝부분)을 뺀 것 — 새 쿼리가 돌려줘야 할 앞부분. */
+    private List<Long> headOfSelectList(DistrictCountRequest f, boolean asc, BigDecimal lastRatio, Long lastId,
+            long[] fixture) {
+        long none = fixture[5];
+        return mineOf(propertyMapper.selectList(listBy(f, PropertySortKey.DEBT_RATIO, asc, lastRatio, lastId, 1000)),
+                fixture).stream().filter(id -> id != none).toList();
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발: 오름 · 내림 결과와 순서가 selectList 의 앞부분과 같고 판정 없는 매물은 빠진다")
+    void leaseRatioIndexMatchesSelectListHead() {
+        long[] fx = insertLeaseRatioFixture();
+        for (boolean asc : new boolean[] {true, false}) {
+            List<Long> viaIndex = mineOf(propertyMapper.selectListByLeaseRatioIndex(
+                    listBy(filter(null), PropertySortKey.DEBT_RATIO, asc, null, null, 1000)), fx);
+
+            assertThat(viaIndex).isEqualTo(headOfSelectList(filter(null), asc, null, null, fx));
+            assertThat(viaIndex).doesNotContain(fx[5]).hasSize(5);
+        }
+        assertThat(mineOf(propertyMapper.selectListByLeaseRatioIndex(
+                listBy(filter(null), PropertySortKey.DEBT_RATIO, true, null, null, 1000)), fx))
+                .containsExactly(fx[3], fx[0], fx[1], fx[2], fx[4]);
+        assertThat(mineOf(propertyMapper.selectListByLeaseRatioIndex(
+                listBy(filter(null), PropertySortKey.DEBT_RATIO, false, null, null, 1000)), fx))
+                .containsExactly(fx[4], fx[2], fx[1], fx[0], fx[3]);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발: 등급 필터는 selectList 와 같은 매물을 같은 순서로 거른다")
+    void leaseRatioIndexAppliesRiskGradeFilterLikeSelectList() {
+        long[] fx = insertLeaseRatioFixture();
+        DistrictCountRequest f = new DistrictCountRequest(null, null, null, null, null, null,
+                List.of(RiskGrade.CAUTION, RiskGrade.DANGER), null, null);
+
+        for (boolean asc : new boolean[] {true, false}) {
+            List<Long> viaIndex = mineOf(propertyMapper.selectListByLeaseRatioIndex(
+                    listBy(f, PropertySortKey.DEBT_RATIO, asc, null, null, 1000)), fx);
+
+            assertThat(viaIndex).isEqualTo(headOfSelectList(f, asc, null, null, fx));
+            assertThat(viaIndex).doesNotContain(fx[3]).hasSize(4); // SAFE 는 빠진다
+        }
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발: 같은 전세가율 동률 한가운데서 이은 커서가 selectList 와 같고 앞 페이지와 겹치지 않는다")
+    void leaseRatioIndexKeysetInsideTiesMatchesSelectList() {
+        long[] fx = insertLeaseRatioFixture();
+        BigDecimal seventy = new BigDecimal("70.00");
+
+        for (boolean asc : new boolean[] {true, false}) {
+            List<Long> viaIndex = mineOf(propertyMapper.selectListByLeaseRatioIndex(
+                    listBy(filter(null), PropertySortKey.DEBT_RATIO, asc, seventy, fx[1], 1000)), fx);
+
+            assertThat(viaIndex).isEqualTo(headOfSelectList(filter(null), asc, seventy, fx[1], fx));
+            assertThat(viaIndex).doesNotContain(fx[1]); // 커서 행 자신은 다음 페이지에 없다
+        }
+        assertThat(mineOf(propertyMapper.selectListByLeaseRatioIndex(
+                listBy(filter(null), PropertySortKey.DEBT_RATIO, true, seventy, fx[1], 1000)), fx))
+                .containsExactly(fx[2], fx[4]);
+        assertThat(mineOf(propertyMapper.selectListByLeaseRatioIndex(
+                listBy(filter(null), PropertySortKey.DEBT_RATIO, false, seventy, fx[1], 1000)), fx))
+                .containsExactly(fx[0], fx[3]);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발: limit 은 정렬 앞에서부터 자른다")
+    void leaseRatioIndexLimitCutsFromTheFront() {
+        long[] fx = insertLeaseRatioFixture();
+
+        List<PropertyListResponse> rows = propertyMapper.selectListByLeaseRatioIndex(
+                listBy(filter(null), PropertySortKey.DEBT_RATIO, true, null, null, 2));
+
+        assertThat(ids(rows)).containsExactly(fx[3], fx[0]);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발: SELECT 목록의 모든 필드를 값으로 채우고 selectList 의 같은 행과 같다")
+    void leaseRatioIndexMapsAllFields() {
+        long id = insertProperty(D1, "MONTHLY_RENT", "OFFICETEL", 230_000_000L, 350_000L, 37.55, 126.85, T0);
+        insertRisk(id, "SAFE", "68.00", true, false);
+
+        List<PropertyListResponse> rows = propertyMapper.selectListByLeaseRatioIndex(listBy(filter(D1),
+                PropertySortKey.DEBT_RATIO, true, null, null, 10));
+
+        assertThat(rows).hasSize(1);
+        PropertyListResponse row = rows.get(0);
+        assertThat(row.propertyId()).isEqualTo(id);
+        assertThat(row.district()).isEqualTo(D1);
+        assertThat(row.address()).isEqualTo("서울특별시 " + D1 + " 시험로 1");
+        assertThat(row.propertyType()).isEqualTo(PropertyType.OFFICETEL);
+        assertThat(row.contractType()).isEqualTo(ContractType.MONTHLY_RENT);
+        assertThat(row.deposit()).isEqualTo(230_000_000L);
+        assertThat(row.monthlyRent()).isEqualTo(350_000L);
+        assertThat(row.areaSqm()).isEqualByComparingTo("42.50");
+        assertThat(row.floor()).isEqualTo(3);
+        assertThat(row.riskGrade()).isEqualTo(RiskGrade.SAFE);
+        assertThat(row.debtRatio()).isEqualByComparingTo("68.00");
+        assertThat(row.registeredAt().getOffset()).isEqualTo(ZoneOffset.ofHours(9));
+        assertThat(row.registeredAt().toLocalDateTime()).isEqualTo(T0);
+
+        PropertyListResponse viaSelectList = propertyMapper.selectList(list(PropertySortKey.DEBT_RATIO, true,
+                null, null, null, null, 10)).get(0);
+        assertThat(row).isEqualTo(viaSelectList);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발: 앞부분 마지막 행 다음 커서로 부르면 빈 결과다")
+    void leaseRatioIndexAfterLastHeadRowIsEmpty() {
+        long[] fx = insertLeaseRatioFixture();
+
+        // 오름차순 앞부분의 마지막은 high(95.00), 내림차순은 low(30.00)
+        assertThat(propertyMapper.selectListByLeaseRatioIndex(listBy(filter(null), PropertySortKey.DEBT_RATIO,
+                true, new BigDecimal("95.00"), fx[4], 1000))).isEmpty();
+        assertThat(propertyMapper.selectListByLeaseRatioIndex(listBy(filter(null), PropertySortKey.DEBT_RATIO,
+                false, new BigDecimal("30.00"), fx[3], 1000))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("목록: 끝부분 커서(대체값, 극단 식별자)로 selectList 를 부르면 판정 없는 매물만 전부 순서대로 나온다")
+    void selectListTailCursorReturnsOnlyUnjudged() {
+        long[] fx = insertLeaseRatioFixture();
+        long none2 = insertProperty(D2, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        List<Long> unjudged = List.of(fx[5], none2);
+
+        List<PropertyListResponse> asc = propertyMapper.selectList(listBy(filter(null), PropertySortKey.DEBT_RATIO,
+                true, new BigDecimal("1000"), Long.MIN_VALUE, 1000));
+        List<PropertyListResponse> desc = propertyMapper.selectList(listBy(filter(null), PropertySortKey.DEBT_RATIO,
+                false, new BigDecimal("-1000"), Long.MAX_VALUE, 1000));
+
+        assertThat(mineOf(asc, fx)).containsExactly(fx[5]);
+        assertThat(ids(asc)).filteredOn(unjudged::contains).containsExactly(fx[5], none2);
+        assertThat(ids(desc)).filteredOn(unjudged::contains).containsExactly(none2, fx[5]);
+        // 판정 있는 매물은 하나도 섞이지 않는다
+        assertThat(asc).extracting(PropertyListResponse::riskGrade).containsOnlyNulls();
+        assertThat(desc).extracting(PropertyListResponse::riskGrade).containsOnlyNulls();
+    }
+
     @Test
     @DisplayName("목록: 전세가율 오름차순 키셋 — 같은 전세가율은 식별자로 갈라 페이지 사이에서 밀리거나 겹치지 않는다")
     void listDebtRatioAscKeysetWithTies() {

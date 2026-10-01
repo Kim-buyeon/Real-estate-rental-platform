@@ -269,6 +269,18 @@ class SchemaMigrationTest {
     }
 
     @Test
+    @DisplayName("V20: 전세가율 목록 인덱스는 최신 판정만 (lease_ratio, property_id) 순으로 담고 등급을 INCLUDE 로 둔다")
+    void leaseRatioListIndex() {
+        String def = jdbcTemplate.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' "
+                        + "AND indexname = 'ix_risk_analysis_latest_lease_ratio'", String.class);
+
+        assertThat(def).contains("risk_analysis", "(lease_ratio, property_id)", "INCLUDE (risk_grade)",
+                "WHERE", "is_latest", "lease_ratio IS NOT NULL");
+        assertThat(def).doesNotContain("UNIQUE");
+    }
+
+    @Test
     @DisplayName("V6: 위험 등급 기준은 CAUTION 경계가 깡통전세 선 이상이면 거부된다")
     void riskCriteriaRejectsNonMonotonicThresholds() {
         assertThatThrownBy(() -> jdbcTemplate.update(
