@@ -116,7 +116,7 @@ app:
       # connectTimeout=1 — 초. pgJDBC 기본은 10초다. 사설망의 정상 연결은 밀리초에 끝나므로, 죽은 노드에 커넥션 하나가 10초씩
       #   매달리지 않게 1초에 다음 주소로 넘긴다.
       # TLS 등 접속 옵션은 위 기본 풀과 같게 둔다 — 기본 풀 url 에 옵션이 없으므로 여기도 없다. 둘 다 pgJDBC 기본 sslmode=prefer 를
-      #   따른다(서버가 TLS 를 받으면 TLS, DB 노드의 pg_hba.conf 가 VPC 평문을 거절한다 — 시스템 구성서 3장). 기본 풀에 옵션을 붙이면
+      #   따른다(서버가 TLS 를 받으면 TLS, DB 노드의 pg_hba.conf 가 VPC 평문을 거절한다 — 시스템 구성서 4장). 기본 풀에 옵션을 붙이면
       #   여기도 같이 붙인다. spring.datasource.hikari.data-source-properties 로 준 옵션은 아래 풀에도 그대로 입혀진다.
       # 주소는 위 hosts(= DB_REPLICA_HOSTS)를 읽는다 — 켜짐 판정과 접속 주소가 한 값에서 나온다.
       url: jdbc:postgresql://${app.datasource.replica.hosts}/${POSTGRES_DB:rental}?targetServerType=preferSecondary&connectTimeout=1
@@ -126,7 +126,9 @@ app:
       # spring.datasource.hikari 의 값을 먼저 입히고 여기 적은 것만 덮는다(시간 상한 · max-lifetime · 누수 감지 등은 위와 같다).
       hikari:
         pool-name: replica
-        # 커넥션을 읽기 전용으로 연다. DB-02 가 없어 DB-01 에 붙어도 이 풀로는 쓰지 못한다.
+        # 커넥션을 읽기 전용으로 연다. 단 pgJDBC 42.7.13 의 readOnlyMode 기본값 transaction(PGProperty)에서는 트랜잭션 안에서만
+        #   읽기 전용이 강제되고 autocommit 문장에는 걸리지 않는다. 표시한 조회 셋은 QueryService 클래스 수준 readOnly 트랜잭션
+        #   안에서 돌므로, DB-02 가 없어 DB-01 에 붙어도 지금은 쓰기가 거절된다 — 트랜잭션 밖에서 이 풀을 쓰면 막히지 않는다.
         read-only: true
         # 슬롯당 4 — 기본 풀 8 의 절반. 4슬롯(APP-01 · APP-02 × 2) × 4 = 16 으로 DB-02 의 max_connections 48(운영 Compose — 두
         # 노드가 같은 목록)보다 작다. 설계 값이다 — #343 승인. DB-02 가 없어 전부 DB-01 로 오면 기본 풀 32 와 더해 48 이 되어
