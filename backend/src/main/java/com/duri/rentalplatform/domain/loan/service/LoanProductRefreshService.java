@@ -22,8 +22,8 @@ import org.springframework.stereotype.Service;
  * <p><b>트랜잭션</b> — 열지 않는다. 외부 호출을 끝낸 뒤 매물 유형마다 {@link LoanProductRefreshWriter} 가 한 경계로 쓴다.
  *
  * <p><b>한 번만</b> — 앱이 두 프로세스로 뜬다. 기준월 키 {@code loan:batch:rate-refresh:{yyyy-MM}} 의 분산 락을 기다리지 않고
- * 한 번만 시도해, 못 잡은 인스턴스는 {@code EXTERNAL_API_UNAVAILABLE} 을 받고 아무것도 하지 않는다. 반영은 자연키 갱신이라
- * 락이 만료된 뒤 다시 돌아도 결과가 같다.
+ * 한 번만 시도해, 못 잡은 인스턴스는 {@code EXTERNAL_API_UNAVAILABLE} 을 받고 아무것도 하지 않는다. 만료는 짧게 잡고 도는
+ * 동안 연장한다 — 잡은 인스턴스가 죽으면 연장이 멈춰 곧 풀린다. 반영은 자연키 갱신이라 락이 만료된 뒤 다시 돌아도 결과가 같다.
  *
  * <p><b>실패</b> — 한 매물 유형의 연동 실패 · 실적 없음은 그 유형만 건너뛰고 기존 행을 둔다. 데이터 적재 설계서 1.5 「실패해도
  * 기존 데이터를 훼손하지 않는다」.
@@ -56,7 +56,8 @@ public class LoanProductRefreshService {
     @DistributedLock(
             key = "'loan:batch:rate-refresh:' + #baseMonth",
             waitTimeout = "0s",
-            leaseTime = "${loan.batch.rate-refresh.lock-lease-time}")
+            leaseTime = "${loan.batch.rate-refresh.lock-lease-time}",
+            renewInterval = "${loan.batch.rate-refresh.lock-renew-interval}")
     public LoanProductRefreshReport refresh(YearMonth baseMonth) {
         LoanProductRefreshReport report = new LoanProductRefreshReport();
         for (PropertyType houseType : PropertyType.values()) {

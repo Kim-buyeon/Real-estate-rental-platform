@@ -45,16 +45,24 @@ public class MockLedgerReplaceScheduler {
         this.clock = clock;
     }
 
+    /**
+     * 오늘(서울) 회차를 돌린다. 실패는 예외로 올린다.
+     *
+     * @return 날짜 락을 잡아 회차를 돌렸으면 true, 다른 인스턴스가 잡고 있어 건너뛰었으면 false. 예약 실행에서는 스케줄러가
+     *         반환값을 버리고, 기동 뒤 따라잡기가 건너뛴 배치를 다시 확인할지 가르는 데 쓴다
+     */
     @Scheduled(cron = "${risk.batch.mock-ledger-replace.cron}", zone = "Asia/Seoul")
-    public void replaceMockLedgers() {
+    public boolean replaceMockLedgers() {
         LocalDate today = LocalDate.now(clock.withZone(SEOUL));
         try {
             jobLauncher.run(today);
+            return true;
         } catch (BusinessException e) {
             if (e.getErrorCode() != ErrorCode.EXTERNAL_API_UNAVAILABLE) {
                 throw e;
             }
             log.info("[Mock 대장 교체 배치] {} 회차는 다른 인스턴스가 실행 중이다 — 건너뜀", today);
+            return false;
         }
     }
 }

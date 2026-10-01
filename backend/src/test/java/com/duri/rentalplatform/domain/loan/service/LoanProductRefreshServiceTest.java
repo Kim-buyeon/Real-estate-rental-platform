@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.common.lock.DistributedLock;
 import com.duri.rentalplatform.domain.loan.repository.LoanProductRepository;
 import com.duri.rentalplatform.domain.loan.vo.LoanProductRefreshReport;
 import com.duri.rentalplatform.domain.loan.vo.LoanProductWriteResult;
@@ -107,6 +108,18 @@ class LoanProductRefreshServiceTest {
 
         when(repository.existsByHouseTypeAndBaseMonthGreaterThanEqual(PropertyType.OFFICETEL, first)).thenReturn(true);
         assertThat(service.isStale(BASE_MONTH)).isFalse();
+    }
+
+    @Test
+    @DisplayName("기준월 락이 대기 0 · 설정 만료 · 설정 연장 간격으로 붙어 있다")
+    void monthLockAnnotation() throws NoSuchMethodException {
+        DistributedLock lock = LoanProductRefreshService.class.getMethod("refresh", YearMonth.class)
+                .getAnnotation(DistributedLock.class);
+
+        assertThat(lock).isNotNull();
+        assertThat(lock.waitTimeout()).isEqualTo("0s");
+        assertThat(lock.leaseTime()).isEqualTo("${loan.batch.rate-refresh.lock-lease-time}");
+        assertThat(lock.renewInterval()).isEqualTo("${loan.batch.rate-refresh.lock-renew-interval}");
     }
 
     private void givenRates(LoanRateHouseType houseType, List<BankLoanRate> rates) {

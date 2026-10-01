@@ -183,7 +183,7 @@ class RegistryRefreshJobLauncherTest {
     }
 
     @Test
-    @DisplayName("배치 진입점에 날짜 키 분산 락이 대기 0 · 설정 만료로 붙어 있고, 키는 risk:batch:registry-refresh:{yyyy-MM-dd} 로 풀린다")
+    @DisplayName("배치 진입점에 날짜 키 분산 락이 대기 0 · 설정 만료 · 설정 연장 간격으로 붙어 있고, 키는 risk:batch:registry-refresh:{yyyy-MM-dd} 로 풀린다")
     void dateLockAnnotation() throws NoSuchMethodException {
         Method run = RegistryRefreshJobLauncher.class.getMethod("run", LocalDate.class);
         DistributedLock lock = run.getAnnotation(DistributedLock.class);
@@ -191,6 +191,7 @@ class RegistryRefreshJobLauncherTest {
         assertThat(lock).isNotNull();
         assertThat(lock.waitTimeout()).isEqualTo("0s");
         assertThat(lock.leaseTime()).isEqualTo("${risk.batch.registry-refresh.lock-lease-time}");
+        assertThat(lock.renewInterval()).isEqualTo("${risk.batch.registry-refresh.lock-renew-interval}");
 
         // 관점과 같은 방식으로 평가한다 — 인자 이름 #date 가 읽히는지까지 확인한다.
         MethodBasedEvaluationContext context = new MethodBasedEvaluationContext(

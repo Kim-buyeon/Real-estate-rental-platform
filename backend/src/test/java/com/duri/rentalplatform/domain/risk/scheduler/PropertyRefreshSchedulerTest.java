@@ -45,17 +45,19 @@ class PropertyRefreshSchedulerTest {
     void runsWithSeoulDate() {
         when(jobLauncher.run(SEOUL_DATE)).thenReturn(new PropertyRefreshReport());
 
-        scheduler.refreshProperties();
+        boolean ran = scheduler.refreshProperties();
 
         verify(jobLauncher).run(SEOUL_DATE);
+        assertThat(ran).isTrue();
     }
 
     @Test
-    @DisplayName("날짜 락을 다른 인스턴스가 잡고 있으면(503) 예외 없이 끝낸다")
+    @DisplayName("날짜 락을 다른 인스턴스가 잡고 있으면(503) 예외 없이 끝내고 false 를 돌려준다")
     void dateLockContentionEndsQuietly() {
         when(jobLauncher.run(SEOUL_DATE)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
 
         assertThatCode(() -> scheduler.refreshProperties()).doesNotThrowAnyException();
+        assertThat(scheduler.refreshProperties()).isFalse();
     }
 
     @Test

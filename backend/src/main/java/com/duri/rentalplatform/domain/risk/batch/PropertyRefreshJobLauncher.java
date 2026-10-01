@@ -83,7 +83,8 @@ public class PropertyRefreshJobLauncher {
     @DistributedLock(
             key = "'property:batch:refresh:' + #date",
             waitTimeout = "0s",
-            leaseTime = "${property.batch.refresh.lock-lease-time}")
+            leaseTime = "${property.batch.refresh.lock-lease-time}",
+            renewInterval = "${property.batch.refresh.lock-renew-interval}")
     public PropertyRefreshReport run(LocalDate date) {
         log.info("[매물 갱신 배치] 시작 — {}", date);
         PropertyRefreshReport report = new PropertyRefreshReport();

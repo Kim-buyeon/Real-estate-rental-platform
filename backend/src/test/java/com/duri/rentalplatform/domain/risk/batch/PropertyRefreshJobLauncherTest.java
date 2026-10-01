@@ -200,7 +200,7 @@ class PropertyRefreshJobLauncherTest {
     }
 
     @Test
-    @DisplayName("배치 진입점에 날짜 키 분산 락이 대기 0 · 설정 만료로 붙어 있고, 키는 property:batch:refresh:{yyyy-MM-dd} 로 풀린다")
+    @DisplayName("배치 진입점에 날짜 키 분산 락이 대기 0 · 설정 만료 · 설정 연장 간격으로 붙어 있고, 키는 property:batch:refresh:{yyyy-MM-dd} 로 풀린다")
     void dateLockAnnotation() throws NoSuchMethodException {
         Method run = PropertyRefreshJobLauncher.class.getMethod("run", LocalDate.class);
         DistributedLock lock = run.getAnnotation(DistributedLock.class);
@@ -208,6 +208,7 @@ class PropertyRefreshJobLauncherTest {
         assertThat(lock).isNotNull();
         assertThat(lock.waitTimeout()).isEqualTo("0s");
         assertThat(lock.leaseTime()).isEqualTo("${property.batch.refresh.lock-lease-time}");
+        assertThat(lock.renewInterval()).isEqualTo("${property.batch.refresh.lock-renew-interval}");
 
         MethodBasedEvaluationContext context = new MethodBasedEvaluationContext(
                 launcher(AT_0200), run, new Object[] {DATE}, new DefaultParameterNameDiscoverer());
