@@ -13,25 +13,26 @@ import com.duri.rentalplatform.domain.user.dto.response.TokenResponse;
 import com.duri.rentalplatform.domain.user.entity.User;
 import com.duri.rentalplatform.domain.user.entity.UserAuth;
 import com.duri.rentalplatform.domain.user.enums.AuthType;
+import com.duri.rentalplatform.domain.user.enums.Role;
 import com.duri.rentalplatform.domain.user.repository.UserAuthRepository;
 import com.duri.rentalplatform.domain.user.repository.UserRepository;
 import com.duri.rentalplatform.domain.user.sender.PasswordResetMailSender;
 import com.duri.rentalplatform.domain.user.store.PasswordResetTokenStore;
 import com.duri.rentalplatform.domain.user.store.RefreshTokenStore;
 import java.time.LocalDateTime;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 사용자와 인증 수단을 변경하는 서비스. 이메일 회원 가입, 로그인·재발급·로그아웃, 자격 정보 수정, 비밀번호 재설정을 담당한다.
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class UserCommandService {
 
     private final UserRepository userRepository;
@@ -41,6 +42,29 @@ public class UserCommandService {
     private final RefreshTokenStore refreshTokenStore;
     private final PasswordResetTokenStore passwordResetTokenStore;
     private final PasswordResetMailSender passwordResetMailSender;
+    private final TransactionTemplate readTransaction;
+    private final TransactionTemplate writeTransaction;
+
+    public UserCommandService(
+            UserRepository userRepository,
+            UserAuthRepository userAuthRepository,
+            PasswordEncoder passwordEncoder,
+            JwtTokenProvider jwtTokenProvider,
+            RefreshTokenStore refreshTokenStore,
+            PasswordResetTokenStore passwordResetTokenStore,
+            PasswordResetMailSender passwordResetMailSender,
+            PlatformTransactionManager transactionManager) {
+        this.userRepository = userRepository;
+        this.userAuthRepository = userAuthRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtTokenProvider = jwtTokenProvider;
+        this.refreshTokenStore = refreshTokenStore;
+        this.passwordResetTokenStore = passwordResetTokenStore;
+        this.passwordResetMailSender = passwordResetMailSender;
+        this.readTransaction = new TransactionTemplate(transactionManager);
+        this.readTransaction.setReadOnly(true);
+        this.writeTransaction = new TransactionTemplate(transactionManager);
+    }
 
     @Transactional
     public void signUpWithEmail(SignupRequest request) {
@@ -70,25 +94,43 @@ public class UserCommandService {
     /**
      * 이메일과 비밀번호를 대조하고 토큰을 발급한다.
      *
-     * <p>쓰기 트랜잭션을 여는 이유는 최종 로그인 시각 갱신 때문이다. 변경 감지가 UPDATE를 내보내려면
-     * 엔티티가 이 경계 안에서 영속 상태로 남아 있어야 한다.
+     * <p><b>트랜잭션을 메서드 전체에 걸지 않는 이유</b> — 비밀번호 대조(BCrypt)는 일부러 느린 연산이고, 토큰 보관은 Redis
+     * 왕복이다. 둘 다 데이터베이스를 쓰지 않는데 경계 안에 두면 그동안 커넥션을 붙잡는다. 2026-09-29 로그인 50 RPS 측정에서
+     * 커넥션 한 번 사용 시간이 평소 28 ms 에서 최대 801 ms 로 늘고 커넥션 대기가 최대 164(네 슬롯 합)에 닿았다 — 풀 크기만큼의
+     * 스레드가 BCrypt 를 계산하며 커넥션을 쥐고 있었다(성능 원인 조사 결과서 2절). {@link #reissue} 와 같은 원칙이다.
+     *
+     * <p>그래서 경계를 셋으로 나눈다. ① 인증 수단 조회는 짧은 읽기 트랜잭션에서 하고, 뒤에 쓸 값(식별자 · 역할 · 해시)을
+     * 그 안에서 꺼내 둔다 — 회원은 지연 로딩이라 경계 밖에서 역할을 읽으면 초기화할 세션이 없다. ② 대조는 경계 밖에서 한다.
+     * ③ 최종 로그인 시각만 짧은 쓰기 트랜잭션에서 갱신하고, 토큰 발급 · 보관은 그 경계가 닫힌 뒤에 한다.
+     *
+     * <p>방식은 {@link TransactionTemplate} 이다 — 애노테이션으로는 같은 클래스 안에서 이 경계를 그을 수 없고, 갱신은 한 행
+     * 이라 벌크 질의({@code @Modifying})가 아니라 조회한 엔티티의 변경 메서드로 한다(backend/CLAUDE.md Repository).
      */
-    @Transactional
     public TokenResponse login(LoginRequest request) {
-        UserAuth userAuth = userAuthRepository
+        LoginCredential credential = readTransaction.execute(status -> userAuthRepository
                 .findByAuthTypeAndProviderId(AuthType.EMAIL, request.email())
-                .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL));
+                .map(LoginCredential::from)
+                .orElse(null));
 
         // 가입되지 않은 이메일과 비밀번호 불일치에 같은 코드를 주는 이유: 둘을 구분해 응답하면 응답만 보고
         // 어떤 이메일이 가입돼 있는지 하나씩 확인할 수 있다. 가입 여부는 그 자체로 알려 줄 정보가 아니다.
-        if (!passwordEncoder.matches(request.password(), userAuth.getPasswordHash())) {
+        if (credential == null) {
+            throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL);
+        }
+        if (!passwordEncoder.matches(request.password(), credential.passwordHash())) {
             throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL);
         }
 
-        // 조회한 엔티티의 변경 메서드를 부르는 것으로 끝낸다. 변경 감지가 UPDATE를 수행하므로 save를 부르지 않는다.
-        userAuth.updateLastLoginAt(LocalDateTime.now());
+        LocalDateTime loggedInAt = LocalDateTime.now();
+        writeTransaction.executeWithoutResult(status -> {
+            // 조회와 대조 사이에 인증 수단이 사라졌다(탈퇴 등). 대조는 통과했지만 로그인시킬 대상이 없으니 실패와 같게 답한다.
+            UserAuth userAuth = userAuthRepository.findById(credential.authId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL));
+            // 조회한 엔티티의 변경 메서드를 부르는 것으로 끝낸다. 변경 감지가 UPDATE를 수행하므로 save를 부르지 않는다.
+            userAuth.updateLastLoginAt(loggedInAt);
+        });
 
-        return issueTokens(userAuth.getUser());
+        return issueTokens(credential.userId(), credential.role());
     }
 
     /**
@@ -112,7 +154,7 @@ public class UserCommandService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL));
 
-        return issueTokens(user);
+        return issueTokens(user.getUserId(), user.getRole());
     }
 
     /**
@@ -199,11 +241,22 @@ public class UserCommandService {
     }
 
     /** 토큰 두 벌을 발급하고 리프레시 토큰을 보관한다. 같은 키에 덮어쓰는 것이 곧 회전이다. */
-    private TokenResponse issueTokens(User user) {
-        String accessToken = jwtTokenProvider.createAccessToken(user.getUserId(), user.getRole().name());
-        String refreshToken = jwtTokenProvider.createRefreshToken(user.getUserId());
-        refreshTokenStore.save(user.getUserId(), refreshToken);
+    private TokenResponse issueTokens(Long userId, Role role) {
+        String accessToken = jwtTokenProvider.createAccessToken(userId, role.name());
+        String refreshToken = jwtTokenProvider.createRefreshToken(userId);
+        refreshTokenStore.save(userId, refreshToken);
 
         return TokenResponse.of(accessToken, refreshToken, jwtTokenProvider.getAccessTokenValiditySeconds());
+    }
+
+    /**
+     * 로그인에 필요한 값만 담는다. 읽기 트랜잭션 안에서 채워 경계 밖으로 엔티티(와 지연 로딩 연관)를 들고 나가지 않는다.
+     */
+    private record LoginCredential(Long authId, Long userId, Role role, String passwordHash) {
+
+        static LoginCredential from(UserAuth userAuth) {
+            User user = userAuth.getUser();
+            return new LoginCredential(userAuth.getAuthId(), user.getUserId(), user.getRole(), userAuth.getPasswordHash());
+        }
     }
 }

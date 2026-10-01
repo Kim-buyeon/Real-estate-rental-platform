@@ -34,8 +34,12 @@ spring:
       # 밀리초(5분). 유휴 커넥션을 주기적으로 찔러 살아 있는지 확인한다.
       keepalive-time: 300000
       # 밀리초(30초). 이 시간이 지나도 반납되지 않은 커넥션을 로그로 드러낸다. 반납 누락은 풀 고갈로만
-      # 드러나면 원인을 찾기 어렵다.
-      leak-detection-threshold: 30000
+      # 드러나면 원인을 찾기 어렵다. 로컬 · CI · 테스트는 이 기본값으로 켠다.
+      # **운영은 0(끔)이다** — 운영 .env 의 HIKARI_LEAK_DETECTION_THRESHOLD. 0 이 아니면 커넥션을 빌릴 때마다 감시 작업을
+      # 하나 만들어 예약하고(HikariCP 7.0.2 ProxyLeakTaskFactory.java:40), 그 생성자가 new Exception(...) 으로 호출 스택을
+      # 채운다(ProxyLeakTask.java:59). 누수가 없어도 모든 대여가 이 값을 치른다 — 2026-09-29 프로파일에서 지도 2단계 요청
+      # 표본의 13.3 % 가 여기였다(JIT 컴파일이 섞인 프로파일이라 비중은 참고치다). 운영에서 반납 누락은 스택 대신 Hikari 대기 지표로 드러난다.
+      leak-detection-threshold: ${HIKARI_LEAK_DETECTION_THRESHOLD:30000}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
