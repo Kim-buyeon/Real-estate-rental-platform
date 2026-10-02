@@ -1,0 +1,2476 @@
+{
+  "id": null,
+  "uid": "rental-bottleneck",
+  "title": "병목 지도",
+  "tags": [
+    "rental"
+  ],
+  "description": "요청이 지나가는 길 순서(Nginx → 슬롯 → JVM → 커넥션 풀 → DB → 디스크 → Redis → OS)대로 구간마다 포화 지표를 둔 화면 — 관측 설계서 4.2. 정의는 저장소 infra/grafana/dashboards/bottleneck.json 이고 infra/grafana/apply.sh 로 반영한다. 화면에서 고치면 저장소에도 옮긴다.",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "ds_logs",
+        "label": "로그",
+        "query": "loki",
+        "regex": "",
+        "hide": 0,
+        "multi": false,
+        "includeAll": false,
+        "refresh": 1,
+        "current": {},
+        "options": []
+      },
+      {
+        "type": "datasource",
+        "name": "ds_traces",
+        "label": "추적",
+        "query": "tempo",
+        "regex": "",
+        "hide": 0,
+        "multi": false,
+        "includeAll": false,
+        "refresh": 1,
+        "current": {},
+        "options": []
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "운영 요약",
+      "type": "link",
+      "url": "/d/rental-ops-summary",
+      "icon": "dashboard",
+      "tooltip": "관리자가 먼저 여는 화면",
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tags": []
+    }
+  ],
+  "liveNow": false,
+  "fiscalYearStartMonth": 0,
+  "weekStart": "",
+  "version": 0,
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "이 화면 보는 법",
+      "description": "무엇: 병목 지도를 읽는 순서.\n\n위험: 없음 — 안내 글이다.\n\n할 일: 느린 원인을 좁힐 때 연다. 평소 상태는 운영 요약 대시보드가 먼저다 — 운영 절차서 2장.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**요청이 지나가는 길 순서대로 구간마다 포화 지표를 둔다 — 병목은 줄이 처음 생기는 곳이다.** ① Nginx → ② 슬롯(Tomcat) → ③ JVM → ④ 커넥션 풀 → ⑤ DB → ⑥ 디스크 → ⑦ Redis → ⑧ OS. 그 아래는 원인을 더 좁히는 패널이다.\n\n**읽는 순서** — 응답 지연이 오르면 ④ 커넥션 풀 대기부터. 0보다 크면 ⑤ DB(대기 종류 none = CPU → 질의 · 인덱스, IO → 메모리 · 디스크, Lock → 쓰기 경합), 0이면 ② · ③(앱 자체). 앱이 빠른데 사용자 쪽이 느리면 ① Nginx. 어느 구간이든 같은 시간대의 ⑥ · ⑧을 겹쳐 본다. 느린 요청 하나는 맨 아래 추적 목록에서 연다 — 관측 설계서 4.2.\n\n**색이 없는 패널은 기준값이 아직 없는 것이다**(관측 설계서 5.3 — 1주 관찰 뒤 정한다). 패널 제목의 (i)에 무엇 · 위험 값 · 할 일이 있다. 위쪽 데이터 소스 선택(로그 · 추적)은 스택에 하나씩이라 첫 항목 그대로 둔다. **노드를 꺼 둔 동안은 No data 가 정상이다.**"
+      }
+    },
+    {
+      "id": 2,
+      "type": "row",
+      "title": "① Nginx(APP-01) — 동시 연결 · 슬롯 응답 시간",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Nginx 동시 연결",
+      "description": "무엇: 앞단 Nginx(APP-01)가 지금 열어 둔 클라이언트 연결 수(stub_status 의 active). 알림 SSE 연결이 오래 열려 있어 사용자 수만큼 바닥에 깔린다.\n\n위험: 기준값 미확정(관측 설계서 5.3) — 색 없음. 요청률이 같은데 연결만 늘면 응답이 늦어 연결이 쌓이는 것이다.\n\n할 일: 오른쪽 슬롯 응답 시간과 함께 본다 — 슬롯이 느리면 ②부터, 슬롯이 빠르면 입구 · 노드 간 홉(관측 설계서 3.1 W7).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "nginx_connections_active{job=\"nginx\"}",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "슬롯별 응답 시간 p95(Nginx 로그)",
+      "description": "무엇: 앞단 접근 로그의 urt=(슬롯 응답 시간)를 슬롯 주소별 p95 로 낸 값(5분, /api/ 만 · 알림 SSE 제외). 질의는 운영 절차서 2장 「슬롯별 응답 시간 보기」와 같다. 재시도로 슬롯을 여럿 거친 줄은 빠진다.\n\n위험: 노랑 300ms · 빨강 500ms — 운영 요약 「응답 p95」와 같은 경계(시험 계획서 2.3). 한 슬롯만 높으면 그 슬롯, 모두 높으면 뒤(DB)다.\n\n할 일: 같은 시각 Explore 에서 rt=(전체)와 견준다 — rt= 만 크면 입구 · 노드 간 홉, urt= 가 크면 앱, uct= 가 크면 슬롯까지의 연결(관측 설계서 3.1 W7).",
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_logs}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 6,
+        "w": 16,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_logs}"
+          },
+          "editorMode": "code",
+          "queryType": "range",
+          "expr": "quantile_over_time(0.95, {node=\"app-01\", service=\"nginx\"} |= \"/api/\" != \"/api/notifications/stream\" | regexp \"upstream=(?P<slot>[0-9.:]+) rt=[^ ]+ rid=[^ ]+ uct=[^ ]+ urt=(?P<urt>[0-9.]+)\" | unwrap urt | __error__=\"\" [5m]) by (slot)",
+          "legendFormat": "{{slot}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.3
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "② 슬롯(Tomcat) — 바쁜 스레드 ÷ 최대",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Tomcat 바쁜 스레드 ÷ 최대",
+      "description": "무엇: 슬롯마다 요청을 처리 중인 Tomcat 스레드 수를 최대 스레드 수로 나눈 값(관측 설계서 3.1 W4). 슬롯은 instance(APP-01 127.0.0.1:8081 · :8082, APP-02 사설 IP:8081 · :8082).\n\n위험: 기준값 미확정 — 색 없음. 100% 에 붙으면 새 요청이 스레드를 기다린다.\n\n할 일: ④ 커넥션 풀 대기가 0인데 이 값이 높으면 앱 자체(③ GC 와 함께). 풀 대기도 크면 스레드가 DB 를 기다리는 중이다 — ⑤로.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, instance) (tomcat_threads_busy_threads{job=\"app\"}) / sum by (node, instance) (tomcat_threads_config_max_threads{job=\"app\"})",
+          "legendFormat": "{{node}} {{instance}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "③ JVM — GC 멈춤",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "GC 멈춤 시간 비율",
+      "description": "무엇: 슬롯마다 1초 중 GC 로 멈춘 시간의 비율(5분 — jvm_gc_pause_seconds 합의 증가율). 힙은 컨테이너 상한의 35%(관측 설계서 3.1 W5).\n\n위험: 기준값 미확정 — 색 없음. 아래 「JVM 힙」이 상한에 붙은 채 이 값이 오르면 메모리 부족이다(2026-09-30 슬롯 OOM 이력).\n\n할 일: 아래 「JVM 힙 · 힙 밖」을 같은 시각으로 본다. 한 슬롯만이면 그 슬롯의 부하 · 배포 시각을 확인한다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, instance) (rate(jvm_gc_pause_seconds_sum{job=\"app\"}[5m]))",
+          "legendFormat": "{{node}} {{instance}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "④ 커넥션 풀 — 쓰기(primary) · 읽기(replica) 따로",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "커넥션 풀 대기 — 쓰기(primary)",
+      "description": "무엇: 슬롯마다 쓰기용 풀(pool=\"primary\")에서 커넥션을 기다리는 요청 수(hikaricp_connections_pending). 풀 최대는 쓰기 8 · 읽기 2(관측 설계서 3.1 W3).\n\n위험: 노랑 1 이상 — 관측 설계서 4.2 읽는 순서의 갈림길(0보다 크면 DB 쪽부터 본다). 알림 기준은 미확정(5.3).\n\n할 일: 0보다 크면 ⑤ DB 의 대기 종류를 본다. 0이면 ② · ③(앱 자체).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 6,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, instance) (hikaricp_connections_pending{job=\"app\",pool=\"primary\"})",
+          "legendFormat": "{{node}} {{instance}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "커넥션 획득 시간 — 쓰기(primary)",
+      "description": "무엇: 슬롯마다 쓰기용 풀에서 커넥션 하나를 얻는 데 걸린 평균 시간(5분 — hikaricp_connections_acquire_seconds 합 ÷ 횟수).\n\n위험: 기준값 미확정 — 색 없음. 대기 수와 함께 오르면 풀이 모자라거나 DB 가 커넥션을 오래 쥐고 있다.\n\n할 일: ⑤ DB 의 활성 세션 · 연결 수 비율을 본다. 풀 크기의 근거는 #349(DB 한 대일 때 최악 40 · 여유 8).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 31,
+        "w": 6,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, instance) (rate(hikaricp_connections_acquire_seconds_sum{job=\"app\",pool=\"primary\"}[5m])) / sum by (node, instance) (rate(hikaricp_connections_acquire_seconds_count{job=\"app\",pool=\"primary\"}[5m]))",
+          "legendFormat": "{{node}} {{instance}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 3,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "커넥션 풀 대기 — 읽기(replica)",
+      "description": "무엇: 슬롯마다 읽기용 풀(pool=\"replica\")에서 커넥션을 기다리는 요청 수(hikaricp_connections_pending). 풀 최대는 쓰기 8 · 읽기 2(관측 설계서 3.1 W3).\n\n위험: 노랑 1 이상 — 관측 설계서 4.2 읽는 순서의 갈림길(0보다 크면 DB 쪽부터 본다). 알림 기준은 미확정(5.3).\n\n할 일: 0보다 크면 ⑤ DB 의 대기 종류를 본다. 0이면 ② · ③(앱 자체).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 6,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, instance) (hikaricp_connections_pending{job=\"app\",pool=\"replica\"})",
+          "legendFormat": "{{node}} {{instance}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "line+area"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "커넥션 획득 시간 — 읽기(replica)",
+      "description": "무엇: 슬롯마다 읽기용 풀에서 커넥션 하나를 얻는 데 걸린 평균 시간(5분 — hikaricp_connections_acquire_seconds 합 ÷ 횟수).\n\n위험: 기준값 미확정 — 색 없음. 대기 수와 함께 오르면 풀이 모자라거나 DB 가 커넥션을 오래 쥐고 있다.\n\n할 일: ⑤ DB 의 활성 세션 · 연결 수 비율을 본다. 풀 크기의 근거는 #349(DB 한 대일 때 최악 40 · 여유 8).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 31,
+        "w": 6,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, instance) (rate(hikaricp_connections_acquire_seconds_sum{job=\"app\",pool=\"replica\"}[5m])) / sum by (node, instance) (rate(hikaricp_connections_acquire_seconds_count{job=\"app\",pool=\"replica\"}[5m]))",
+          "legendFormat": "{{node}} {{instance}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 3,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "row",
+      "title": "⑤ DB — 대기 종류별 활성 세션 · 연결 수(DB-01 · DB-02)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "대기 종류별 활성 세션 — DB-01",
+      "description": "무엇: DB-01 의 활성(active) 클라이언트 세션을 대기 종류(wait_event_type)별로 쌓은 것(관측 설계서 3.3 D6 — rental_pg_sessions_count). none 은 대기 없이 CPU 에서 도는 중이다.\n\n위험: 기준값 미확정 — 색 없음. CPU 를 쓰는 몫은 none(대기 없음) 높이다 — 그것이 vCPU 수(t3.small 2)를 넘게 이어지면 CPU 포화로 본다(경험칙, 기준값 미확정). Client · Lock 대기는 CPU 를 쓰지 않는다.\n\n할 일: 가장 큰 색으로 원인을 고른다 — none 이면 질의 · 인덱스(아래 질의 통계 상위 10 · 운영 절차서 2장 질의 통계), IO 면 메모리 · 디스크(⑥), Lock 이면 쓰기 경합(아래 막힌 세션), Client 면 앱이 결과를 늦게 가져간다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (wait_event_type) (rental_pg_sessions_count{job=\"postgres\",node=\"db-01\",state=\"active\"})",
+          "legendFormat": "{{wait_event_type}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 40,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "대기 종류별 활성 세션 — DB-02",
+      "description": "무엇: DB-02 의 활성(active) 클라이언트 세션을 대기 종류(wait_event_type)별로 쌓은 것(관측 설계서 3.3 D6 — rental_pg_sessions_count). none 은 대기 없이 CPU 에서 도는 중이다.\n\n위험: 기준값 미확정 — 색 없음. CPU 를 쓰는 몫은 none(대기 없음) 높이다 — 그것이 vCPU 수(t3.small 2)를 넘게 이어지면 CPU 포화로 본다(경험칙, 기준값 미확정). Client · Lock 대기는 CPU 를 쓰지 않는다.\n\n할 일: 가장 큰 색으로 원인을 고른다 — none 이면 질의 · 인덱스(아래 질의 통계 상위 10 · 운영 절차서 2장 질의 통계), IO 면 메모리 · 디스크(⑥), Lock 이면 쓰기 경합(아래 막힌 세션), Client 면 앱이 결과를 늦게 가져간다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 39,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (wait_event_type) (rental_pg_sessions_count{job=\"postgres\",node=\"db-02\",state=\"active\"})",
+          "legendFormat": "{{wait_event_type}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 40,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "연결 수 ÷ max_connections",
+      "description": "무엇: DB 노드마다 클라이언트 연결 수(상태 무관)를 max_connections(48)로 나눈 값(관측 설계서 3.3 D2). 앱 풀의 설계상 최악은 DB 한 대일 때 40 · 여유 8(#349).\n\n위험: 기준값 미확정 — 색 없음. 100% 에 닿으면 새 연결이 거부된다.\n\n할 일: 어느 상태가 많은지는 Explore 에서 sum by (state) (rental_pg_sessions_count) 로 본다 — idle in transaction 이 많으면 트랜잭션을 오래 여는 코드다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 39,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node) (rental_pg_sessions_count{job=\"postgres\"}) / on (node) max by (node) (rental_pg_max_connections{job=\"postgres\"})",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "row",
+      "title": "⑥ 디스크 — util% · 대기열 · CPU iowait",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "디스크 util%",
+      "description": "무엇: 노드마다 가장 바쁜 블록 장치가 IO 를 처리하느라 바빴던 시간의 비율(5분 — node_disk_io_time_seconds_total 증가율).\n\n위험: 기준값 미확정 — 색 없음. 천장은 볼륨(gp3 3,000 IOPS)이 아니라 인스턴스(t3.small 기준 1,000 IOPS · 21.75 MB/s)다(관측 설계서 3.2 O8).\n\n할 일: DB 노드에서 높고 ⑤의 IO 대기가 함께 크면 메모리(shared_buffers)가 모자라거나 질의가 많이 읽는 것이다 — 아래 질의 통계의 디스크 읽기 블록.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max by (node) (rate(node_disk_io_time_seconds_total{job=\"node\"}[5m]))",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "디스크 평균 대기열 길이",
+      "description": "무엇: 노드마다 가장 붐비는 블록 장치에 처리 중 · 대기 중인 IO 요청의 평균 개수(5분 — node_disk_io_time_weighted_seconds_total 증가율). util% 가 100% 에 붙은 뒤에도 얼마나 밀렸는지를 보여 준다(관측 설계서 3.2 O8).\n\n위험: 기준값 미확정 — 색 없음. util% 와 함께 계속 오르면 디스크(인스턴스 EBS 한도)가 병목이다.\n\n할 일: DB 노드면 ⑤의 IO 대기 · 아래 질의 통계의 디스크 읽기 블록을 함께 본다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 48,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max by (node) (rate(node_disk_io_time_weighted_seconds_total{job=\"node\"}[5m]))",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 2,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "CPU iowait 비율",
+      "description": "무엇: 노드마다 CPU 가 디스크 IO 를 기다리며 논 시간의 비율(5분 — node_cpu_seconds_total 의 iowait, 코어 평균).\n\n위험: 기준값 미확정 — 색 없음. util% 와 함께 오르면 디스크가 병목이다.\n\n할 일: 왼쪽 util% · 대기열과 ⑧ 을 같은 시각으로 겹쳐 본다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 48,
+        "w": 8,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "avg by (node) (rate(node_cpu_seconds_total{job=\"node\",mode=\"iowait\"}[5m]))",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "row",
+      "title": "⑦ Redis — 클라이언트 지연",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 55,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Redis 명령 평균 지연(앱 쪽)",
+      "description": "무엇: 슬롯마다 Redis(APP-01) 명령 하나에 걸린 평균 시간(5분 — 앱의 Lettuce 지표 lettuce_seconds 합 ÷ 횟수). Redis 구간은 추적에 잡히지 않아 이 지표가 대신한다(관측 설계서 3.1 W9).\n\n위험: 기준값 미확정 — 색 없음. APP-02 슬롯만 높으면 노드 간 홉, 모두 높으면 Redis 자체다.\n\n할 일: 같은 시각 APP-01 의 ⑧(load · steal)과 가져온 Redis 대시보드(메모리 · 명령 수)를 본다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, instance) (rate(lettuce_seconds_sum{job=\"app\"}[5m])) / sum by (node, instance) (rate(lettuce_seconds_count{job=\"app\"}[5m]))",
+          "legendFormat": "{{node}} {{instance}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 4,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 24,
+      "type": "row",
+      "title": "⑧ OS — load ÷ vCPU · steal",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 63,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "CPU steal",
+      "description": "무엇: 노드마다 같은 물리 호스트의 다른 손님에게 빼앗긴 CPU 시간의 비율(5분 — node_cpu_seconds_total 의 steal, 코어 평균). 가상 머신에서만 생기는 포화다(관측 설계서 3.2 O3).\n\n위험: 기준값 미확정 — 색 없음. 부하가 그대로인데 이 값과 함께 지연이 오르면 원인은 우리 쪽이 아니다.\n\n할 일: 이어지면 노드를 멈췄다 켜서 다른 호스트로 옮기는 것을 검토한다(EC2 stop · start). 네 노드가 unlimited 모드라 크레딧 고갈로는 느려지지 않는다(관측 설계서 3.2 O15).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "avg by (node) (rate(node_cpu_seconds_total{job=\"node\",mode=\"steal\"}[5m]))",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "load ÷ vCPU",
+      "description": "무엇: 노드마다 1분 load average(실행 중 · 실행 대기 · IO 에 막힌 프로세스 수)를 vCPU 수로 나눈 값(관측 설계서 3.2 O2). 1 이면 CPU 수만큼 일이 쌓여 있다.\n\n위험: 기준값 미확정 — 색 없음. 1 을 넘게 이어지면 CPU 를 기다리는 일이 있다 — iowait 가 함께 크면 디스크 쪽이다.\n\n할 일: 같은 노드의 ⑥ · steal 을 겹쳐 본다. DB 노드면 ⑤ 활성 세션, 앱 노드면 ② · ③.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 64,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max by (node) (node_load1{job=\"node\"}) / count by (node) (node_cpu_seconds_total{job=\"node\",mode=\"idle\"})",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 2,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 27,
+      "type": "row",
+      "title": "원인 좁히기 — JVM · 복제 · 통계 · 잠금 · 정기 작업 · conntrack · 질의 · 추적",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 71,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "JVM 힙",
+      "description": "무엇: 슬롯마다 힙 사용량(jvm_memory_used_bytes, area=heap — 영역 합). 힙 상한은 컨테이너 상한의 35%(운영 Compose MaxRAMPercentage).\n\n위험: 기준값 미확정 — 색 없음. GC 뒤에도 바닥이 계속 오르면 누수, 상한에 붙으면 ③ GC 가 늘고 결국 OOM 이다(2026-09-30 이력).\n\n할 일: ③ GC 멈춤과 같은 시각으로 본다. 슬롯이 재기동됐으면 docker inspect 의 OOMKilled 로 확인한다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, instance) (jvm_memory_used_bytes{job=\"app\",area=\"heap\"})",
+          "legendFormat": "{{node}} {{instance}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "JVM 힙 밖",
+      "description": "무엇: 슬롯마다 힙 밖 사용량(jvm_memory_used_bytes, area=nonheap — 메타스페이스 · 코드 캐시 등). 컨테이너 상한에서 힙을 뺀 몫을 나눠 쓴다.\n\n위험: 기준값 미확정 — 색 없음. 힙이 평평한데 이 값이 계속 오르면 컨테이너 상한에 닿아 슬롯이 강제 종료된다.\n\n할 일: 배포 직후 오르는 것은 정상(클래스 적재 · JIT). 이어 오르면 배포 판을 기록하고 이슈로 남긴다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 72,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, instance) (jvm_memory_used_bytes{job=\"app\",area=\"nonheap\"})",
+          "legendFormat": "{{node}} {{instance}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "복제 지연 — 시간(standby)",
+      "description": "무엇: standby 노드가 마지막으로 적용한 트랜잭션 뒤 지난 시간(pg_replication_lag_seconds). primary 에서는 늘 0이라 standby(pg_replication_is_replica 1)만 그린다(관측 설계서 3.3 D10). 읽기 분산에서 사용자가 몇 초 전 데이터를 보는가다.\n\n위험: 기준값 미확정 — 색 없음. 쓰기가 없을 때도 시간이 흐르므로 오른쪽 바이트와 함께 본다 — 바이트가 0이면 지연이 아니다.\n\n할 일: 바이트도 계속 크면 운영 절차서 6장 — DB-01 의 pg_stat_replication state, standby 컨테이너 로그.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 79,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "pg_replication_lag_seconds{job=\"postgres\"} and on (node) (pg_replication_is_replica{job=\"postgres\"} == 1)",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "복제 지연 — 바이트(primary)",
+      "description": "무엇: primary 가 쓴 WAL 위치와 standby 가 받은 위치의 차(pg_stat_replication_pg_wal_lsn_diff — 운영 요약 「복제」와 같은 값).\n\n위험: 기준값 미확정 — 색 없음. 계속 커지면 standby 가 따라오지 못한다. 줄이 사라지면 복제가 끊긴 것이다.\n\n할 일: 운영 절차서 6장 — DB-01 에서 pg_stat_replication 의 state 가 streaming 인지.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 79,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max by (node) (pg_stat_replication_pg_wal_lsn_diff{job=\"postgres\"})",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "옵티마이저 통계 신선도",
+      "description": "무엇: primary 의 주요 테이블 여섯마다 마지막 ANALYZE 뒤 바뀐 행의 비율(n_mod_since_analyze ÷ n_live_tup — 관측 설계서 3.4 S3). 자동 ANALYZE 문턱은 10%다 — 넘으면 통계가 새로 잡혀 실행 계획이 바뀔 수 있다.\n\n위험: 기준값 미확정 — 색 없음. 10% 바로 아래에 머무는 테이블은 다음 적재 뒤 계획이 바뀔 수 있다(2026-10-02 실측 risk_analysis 8.8% 등).\n\n할 일: 배치 뒤 계획이 나빠졌으면 운영 절차서 2장 질의 통계로 해당 질의를 찾고 EXPLAIN 으로 추정 행 vs 실제 행을 본다(관측 설계서 3.4 S6).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 86,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "(max by (node, relname) (pg_stat_user_tables_n_mod_since_analyze{job=\"postgres\"}) / max by (node, relname) (pg_stat_user_tables_n_live_tup{job=\"postgres\"})) and on (node) (pg_replication_is_replica{job=\"postgres\"} == 0)",
+          "legendFormat": "{{relname}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "가시성 맵 비율",
+      "description": "무엇: 노드마다 주요 테이블 여섯의 전부 보이는 페이지 비율(relallvisible ÷ relpages — rental_pg_table_visibility_ratio, 관측 설계서 3.3 D12). 낮을수록 인덱스 전용 스캔이 테이블을 다시 읽는다.\n\n위험: 기준값 미확정 — 색 없음. 배치로 많이 바뀐 직후 낮아지고 자동 VACUUM 뒤 회복한다(2026-10-02 risk_analysis Heap Fetches 241,489).\n\n할 일: 낮은 채 오래 머물면 그 테이블의 자동 VACUUM 이 도는지(마지막 자동 VACUUM) 본다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 86,
+        "w": 12,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max by (node, relname) (rental_pg_table_visibility_ratio{job=\"postgres\"})",
+          "legendFormat": "{{node}} {{relname}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 34,
+      "type": "timeseries",
+      "title": "막힌 세션",
+      "description": "무엇: 노드마다 다른 세션의 잠금에 막힌 세션 수와 그중 가장 오래 기다린 시간(rental_pg_blocked_sessions · rental_pg_blocked_max_wait_seconds — 관측 설계서 3.3 D5).\n\n위험: 기준값 미확정 — 색 없음. 오래 이어지면 ⑤의 Lock 대기가 함께 오른다.\n\n할 일: 누가 누구를 막는지는 그 노드에서 pg_blocking_pids() 로 본다. 오래 열린 트랜잭션(pg_stat_activity_max_tx_duration)을 함께 의심한다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 93,
+        "w": 10,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max by (node) (rental_pg_blocked_sessions{job=\"postgres\"})",
+          "legendFormat": "{{node}} 막힌 세션",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max by (node) (rental_pg_blocked_max_wait_seconds{job=\"postgres\"})",
+          "legendFormat": "{{node}} 가장 오래 기다림",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 35,
+      "type": "table",
+      "title": "systemd 실패 유닛",
+      "description": "무엇: 네 노드에서 지금 실패(failed) 상태인 유닛 — 저장소의 정기 작업(rental-*) · dnf-automatic · chronyd · docker · sshd · firewalld 만 본다(관측 설계서 3.2 O14). 비어 있으면 실패 없음이다.\n\n위험: 기준값 미확정 — 색 없음. 백업 · WAL 전송 · 인증서 갱신이 systemd 타이머라 여기 뜨면 그 작업이 멈춘 것이다.\n\n할 일: 그 노드에서 systemctl status <유닛> · journalctl -u <유닛> — 운영 절차서 2장 · 9.3.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 93,
+        "w": 7,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "node_systemd_unit_state{job=\"node\",state=\"failed\"} == 1",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "state": true,
+              "type": true
+            },
+            "renameByName": {
+              "node": "노드",
+              "name": "유닛"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "type": "timeseries",
+      "title": "conntrack 사용률 — APP-01",
+      "description": "무엇: APP-01 의 연결 추적 표 사용률(node_nf_conntrack_entries ÷ _limit). APP-01 이 NAT 을 겸해 DB 노드의 인터넷 출구 연결도 여기 쌓인다(관측 설계서 3.2 O11 — 실측 69 / 65,536).\n\n위험: 기준값 미확정 — 색 없음. 100% 에 닿으면 새 연결이 버려진다 — 입구 · NAT 이 함께 끊긴다.\n\n할 일: 그 노드에서 conntrack -C 와 ss -s 로 연결이 어디서 늘었는지 본다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 17,
+        "y": 93,
+        "w": 7,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "node_nf_conntrack_entries{job=\"node\",node=\"app-01\"} / node_nf_conntrack_entries_limit{job=\"node\",node=\"app-01\"}",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 2,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 37,
+      "type": "table",
+      "title": "질의 통계 상위 10",
+      "description": "무엇: DB 노드마다 앱 DB 의 질의 중 누적 실행 시간 상위 10(rental_pg_top_statements_* — 관측 설계서 3.4 S1)을 최근 5분 증가율로 본 표. 초당 실행 시간이 클수록 DB CPU 를 많이 쓴다. 평균 = 초당 실행 시간 ÷ 초당 호출. 질의 문장은 queryid 로 찾는다.\n\n위험: 기준값 미확정 — 색 없음. 순위에 막 들어온 질의는 수집 두 번(15초 간격, 약 30초) 뒤에 값이 생긴다. 앱 DB 에 pg_stat_statements 확장이 없으면 비어 있다(운영 절차서 2장 「질의 통계」).\n\n할 일: 위 질의의 문장은 운영 절차서 2장 「질의 통계」 방법으로 SELECT query FROM pg_stat_statements WHERE queryid = <값>. 디스크 읽기 블록이 크면 ⑥, 임시 블록이 크면 work_mem 이다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "grafanacloud-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 100,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, queryid) (rate(rental_pg_top_statements_total_exec_time_seconds{job=\"postgres\"}[5m]))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, queryid) (rate(rental_pg_top_statements_calls{job=\"postgres\"}[5m]))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, queryid) (rate(rental_pg_top_statements_total_exec_time_seconds{job=\"postgres\"}[5m])) / sum by (node, queryid) (rate(rental_pg_top_statements_calls{job=\"postgres\"}[5m]))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, queryid) (rate(rental_pg_top_statements_rows{job=\"postgres\"}[5m]))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, queryid) (rate(rental_pg_top_statements_shared_blks_read{job=\"postgres\"}[5m]))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "F",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node, queryid) (rate(rental_pg_top_statements_temp_blks_written{job=\"postgres\"}[5m]))",
+          "legendFormat": "",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "평균(초)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "초당 실행 시간"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "초당 실행 시간",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "node": 0,
+              "queryid": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4,
+              "Value #D": 5,
+              "Value #E": 6,
+              "Value #F": 7
+            },
+            "renameByName": {
+              "node": "노드",
+              "queryid": "queryid",
+              "Value #A": "초당 실행 시간",
+              "Value #B": "초당 호출",
+              "Value #C": "평균(초)",
+              "Value #D": "초당 반환 행",
+              "Value #E": "초당 디스크 읽기 블록",
+              "Value #F": "초당 임시 블록"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "type": "table",
+      "title": "느린 요청 추적(500ms 넘는 것)",
+      "description": "무엇: 앱(service.name rental-app)이 보낸 추적 중 전체 시간이 500ms 를 넘는 요청 목록(Tempo — TraceQL). 하나를 누르면 구간별 시간이 나와 어느 SQL 이 오래 걸렸는지 보인다(관측 설계서 6장). Redis 구간은 잡히지 않는다 — ⑦.\n\n위험: 500ms 는 운영 요약 「응답 p95」의 빨강 경계(시험 계획서 2.3)다. 목록이 길면 많은 요청이 기준을 넘는 것이다.\n\n할 일: 느린 SQL 이 같은 것으로 반복되면 아래쪽부터 — 질의 통계 상위 10 · 옵티마이저 통계 신선도. 같은 시각 ④ · ⑤ 를 함께 본다.",
+      "datasource": {
+        "type": "tempo",
+        "uid": "${ds_traces}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 109,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "tempo",
+            "uid": "${ds_traces}"
+          },
+          "queryType": "traceql",
+          "limit": 20,
+          "tableType": "traces",
+          "query": "{resource.service.name=\"rental-app\"} | duration > 500ms"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "fields": ""
+        }
+      }
+    }
+  ]
+}
