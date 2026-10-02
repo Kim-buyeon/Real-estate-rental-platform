@@ -91,6 +91,24 @@ class LogbackConsolePatternTest {
     }
 
     @Test
+    @DisplayName("에이전트가 넣는 trace_id 와 trace_flags 가 한 대괄호에 실린다")
+    void includesOtelTraceIdAndFlags() {
+        MDC.put("traceId", "abc-123");
+        MDC.put("trace_id", "4bf92f3577b34da6a3ce929d0e0e4736");
+        MDC.put("trace_flags", "00");
+
+        assertThat(render("checked")).contains("[abc-123] [4bf92f3577b34da6a3ce929d0e0e4736 00]");
+    }
+
+    @Test
+    @DisplayName("에이전트가 없으면 분산 추적 칸을 통째로 지운다 — 빈 대괄호를 남기지 않는다")
+    void omitsOtelBlockWithoutAgent() {
+        String line = render("startup");
+
+        assertThat(line).contains("[no-trace]").doesNotContain("[ ]", "[]");
+    }
+
+    @Test
     @DisplayName("패턴을 거친 출력에서 민감 값이 가려진다")
     void masksSensitiveValues() {
         String line = render("User[email=tenant@example.com, creditScore=780]");
