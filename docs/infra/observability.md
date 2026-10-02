@@ -159,7 +159,7 @@
 | 7 | Redis | 명령 지연(W9) |
 | 8 | OS | load ÷ vCPU · steal(O2 · O3) |
 
-`rental` 폴더 · UID `rental-bottleneck`(#365). 패널의 식 · 설명 · 색은 `infra/grafana/dashboards/bottleneck.json`이 정본이다. 위 여덟 줄 아래에 원인을 좁히는 패널 — JVM 힙 · 힙 밖(W5), 복제 지연 시간 · 바이트(D10), 옵티마이저 통계 신선도(S3), 가시성 맵(D12), 막힌 세션(D5), systemd 실패 유닛(O14), conntrack(O11), 질의 통계 상위 10(S1), 느린 요청 추적 목록(6장) — 을 둔다. **색은 근거가 있는 것만 칠했다** — 슬롯 응답 p95(운영 요약 「응답 p95」와 같은 경계)와 커넥션 풀 대기 1 이상(아래 읽는 순서의 갈림길). 나머지는 기준값이 정해지면(5.3) 칠한다. 로그(Loki) · 추적(Tempo) 데이터 소스는 대시보드 변수로 고른다 — 저장소에 그 UID 기록이 없다.
+`rental` 폴더 · UID `rental-bottleneck`(#365). 패널의 식 · 설명 · 색은 `infra/grafana/dashboards/bottleneck.json`이 정본이다. 위 여덟 줄 아래에 원인을 좁히는 패널 — JVM 힙 · 힙 밖(W5), 복제 지연 시간 · 바이트(D10), 옵티마이저 통계 신선도(S3), 가시성 맵(D12), 막힌 세션(D5), systemd 실패 유닛(O14), conntrack(O11), 질의 통계 상위 10(S1), 느린 요청 추적 목록(6장) — 을 둔다. **색은 근거가 있는 것만 칠했다** — 슬롯 응답 p95(운영 요약 「응답 p95」와 같은 경계)와 커넥션 풀 대기 1 이상(아래 읽는 순서의 갈림길). 나머지는 기준값이 정해지면(5.3) 칠한다. 로그(Loki) · 추적(Tempo) 데이터 소스는 대시보드 변수로 고른다 — UID(`grafanacloud-logs` · `grafanacloud-traces`)를 박지 않는 것은 스택을 다시 만들 때 UID 규칙을 확인하지 않아서다. 이 스택의 Loki 데이터 소스는 셋(`…-alert-state-history` · `…-logs` · `…-usage-insights`)이라 `ds_logs`는 이름이 `-logs`로 끝나는 것만 고른다(#373). Tempo 는 하나다.
 
 | 구간 | 지금 화면 |
 |---|---|
@@ -252,7 +252,7 @@ Grafana 밖에서 AWS CloudWatch가 거는 경보다. **무엇을 거는지만 �
 | 에이전트의 지표 · 로그 내보내기 | 끈다 — 설정 파일에 지표 · 로그 공급자를 두지 않는다 | 지표는 이미 Prometheus로, 로그는 Vector로 간다. 켜면 시계열이 겹쳐 2.3 예산을 먹는다 |
 | 전송 | OTLP/HTTP, gzip 압축 | 추적 하나 평균 1.7 KB → 0.2 KB(#363 로컬 실측, 아래) |
 | **기본 꺼짐** | 운영 Compose의 `OTEL_JAVAAGENT_ENABLED` 기본값이 `false` — 노드 `infra/.env`에 켜는 줄을 넣어야 돈다 | 내보낼 곳 없이 켜면 앱은 뜨지만 에이전트가 기본 주소(`localhost:4318`)로 보내다 실패해 **내보낼 때마다 ERROR와 스택 트레이스를 앱 로그에 남긴다**(아래 실측) — 그 로그가 Loki로 간다. 이미지 · Compose를 먼저 배포하고, 주소 · 인증을 넣은 노드에서만 켠다 |
-| 로그와 추적 잇기 | 앱 로그 줄에 요청 ID와 함께 에이전트의 `trace_id` · `trace_flags`를 찍는다(#364) — `[요청 ID] [trace_id trace_flags]` | 요청 ID(Nginx 접근 로그의 `rid`)로 접근 로그와 앱 로그를 잇고, 그 줄의 `trace_id`로 Tempo의 추적을 연다. **샘플러가 버린 요청 · 배치의 줄에도 `trace_id`가 찍힌다** — `trace_flags`의 끝자리가 홀수면 Tempo에 남은 것, 짝수면 버려진 것이다. 로컬 실측에서 남은 구간은 `03`, 버려진 `/actuator` 요청의 로그 줄은 `02`였다 |
+| 로그와 추적 잇기 | 앱 로그 줄에 요청 ID와 함께 에이전트의 `trace_id` · `trace_flags`를 찍는다(#364) — `[요청 ID] [trace_id=<trace_id> flags=<trace_flags>]`(`trace_id=` 글자는 아래 기본 파생 필드에 걸리게 하려는 것, #373) | 요청 ID(Nginx 접근 로그의 `rid`)로 접근 로그와 앱 로그를 잇고, 그 줄의 `trace_id`로 Tempo의 추적을 연다. **샘플러가 버린 요청 · 배치의 줄에도 `trace_id`가 찍힌다** — `trace_flags`의 끝자리가 홀수면 Tempo에 남은 것, 짝수면 버려진 것이다. 로컬 실측에서 남은 구간은 `03`, 버려진 `/actuator` 요청의 로그 줄은 `02`였다 |
 
 **켜는 법**(반영 묶음) — 앱 노드(APP-01 · APP-02)의 `infra/.env`에 세 키를 넣고 슬롯을 다시 만든다. 키 이름과 값의 형식은 `.env.example`의 「추적」.
 
@@ -264,7 +264,7 @@ Grafana 밖에서 AWS CloudWatch가 거는 경보다. **무엇을 거는지만 �
 
 슬롯 구분은 리소스 속성 `service.instance.id`(`app-01-app-1` 처럼 노드 이름 + 슬롯 — 운영 Compose가 넣는다), 서비스 이름은 `rental-app`이다.
 
-**보는 법** — Grafana Cloud 탐색(Explore)에서 Tempo 데이터 소스를 고르고 서비스 `rental-app`으로 찾는다. 앱 로그에서 출발할 때는 그 줄의 `trace_id`로 검색한다. 로그 줄에서 바로 추적으로 건너가는 연결과 추적 패널은 화면 묶음이다.
+**보는 법** — Grafana Cloud 탐색(Explore)에서 Tempo 데이터 소스를 고르고 서비스 `rental-app`으로 찾는다. **로그 ↔ 추적은 Grafana Cloud 기본 데이터 소스 설정이 잇는다**(2026-10-02 API 로 읽어 확인, 둘 다 읽기 전용) — Loki(`grafanacloud-logs`)의 파생 필드가 정규식 `[tT]race_?[iI][dD]"?[:=]"?(\w+)`로 로그 줄의 `trace_id=…`를 잡아 Tempo 로, Tempo(`grafanacloud-traces`)의 `tracesToLogs`가 추적에서 그 시각의 로그로 간다(#373). 느린 요청 목록은 병목 지도의 추적 패널이다.
 
 **로컬 실측**(#363, 2026-10-02 — 운영 이미지 + 에이전트 2.31.1 + 이 설정, 한 슬롯, 외부 연동 mock, 수신기는 받은 것을 메모리에서 세기만 했다)
 
