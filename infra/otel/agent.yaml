@@ -1,0 +1,62 @@
+# OpenTelemetry 자바 에이전트 선언형 설정 — 앱 슬롯(app-1 · app-2)이 읽는다(INF-05, #363). 무엇을 거두는지는 관측 설계서 6장.
+# 슬롯의 JAVA_TOOL_OPTIONS 가 -Dotel.config.file 로 이 파일을 가리킨다(운영 Compose x-app). 에이전트 jar 는 이미지 안에 있다.
+#
+# 이 파일을 쓰면 OTEL_* 환경 변수 설정은 **읽히지 않는다**(#363 실측). 값은 아래 ${env:…} 치환으로만 들어온다.
+# 예외는 에이전트 기동 전에 읽는 키 — OTEL_JAVAAGENT_ENABLED(켜고 끄는 스위치, 운영 Compose 기본 false)는 환경 변수로 동작한다.
+# 치환할 값이 없으면 빈 값이 된다. 형식이 「still experimental」이라 에이전트 버전을 올릴 때 이 파일이 그대로 읽히는지 본다.
+#
+# 시간 값은 밀리초 정수로 적는다. 지표 · 로그 공급자(meter_provider · logger_provider)를 두지 않으면 꺼진다 —
+# 지표는 Prometheus 로, 로그는 Vector 로 이미 나간다(관측 설계서 6장).
+file_format: "1.1"
+
+resource:
+  attributes:
+    - name: service.name
+      value: rental-app
+    # 슬롯 구분 — 운영 Compose 의 app-1 · app-2 가 <노드>-app-1 처럼 넣는다
+    - name: service.instance.id
+      value: ${env:OTEL_SERVICE_INSTANCE_ID}
+
+propagator:
+  composite:
+    - tracecontext:
+    - baggage:
+
+tracer_provider:
+  processors:
+    - batch:
+        exporter:
+          otlp_http:
+            # Grafana Cloud OTLP 주소(…/otlp/v1/traces)와 인증 헤더(Authorization=Basic …). 값은 노드 infra/.env 에 둔다
+            endpoint: ${env:OTEL_EXPORTER_OTLP_TRACES_ENDPOINT}
+            headers_list: ${env:OTEL_EXPORTER_OTLP_HEADERS}
+            # 추적 하나 1.7 KB → 0.2 KB(#363 실측)
+            compression: gzip
+  # 업무 요청만 남긴다. 규칙은 위에서부터 처음 맞는 하나가 정한다.
+  # 환경 변수로는 부모 없는 JDBC 구간(배치 · 스케줄) · /actuator 서버 구간을 끌 수 없다(에이전트 2.31.1 — #363).
+  sampler:
+    composite/development:
+      rule_based:
+        rules:
+          # 요청 밖에서 시작한 구간 — 배치 · 스케줄의 JDBC · 외부 API 호출 · 내부 구간
+          - parent: [none]
+            span_kinds: [client, internal, producer, consumer]
+            sampler:
+              always_off:
+          # 수집기의 지표 긁기 · 헬스체크
+          - attribute_patterns:
+              key: url.path
+              included: ["/actuator/*", "/actuator"]
+            span_kinds: [server]
+            sampler:
+              always_off:
+          # 업무 요청 — 전부(비율 1.0, 관측 설계서 6장 「샘플링」)
+          - parent: [none]
+            sampler:
+              probability:
+                ratio: 1.0
+          # 그 아래 구간은 부모를 따른다
+          - sampler:
+              parent_threshold:
+                root:
+                  always_off:

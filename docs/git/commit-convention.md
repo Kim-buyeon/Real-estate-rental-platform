@@ -81,6 +81,7 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 | `infra/backup/` | 데이터 백업 작업 — 스크립트와 그것을 거는 systemd 유닛, 오프사이트 저장소(S3 버킷 · IAM 역할) 정책 정의(`aws/`) |
 | `infra/os/` | 노드 설정 — firewalld · NFS 공유 · 노드 정기 작업 · sshd · journald |
 | `infra/prometheus/` · `infra/vector/` | 관측 수집기 설정 — 지표 스크레이프 · 전송, 로그 전송 |
+| `infra/otel/` | 추적 — 앱 슬롯의 OpenTelemetry 에이전트 설정(샘플링 · 내보내기) |
 | `infra/tls/` | 입구 HTTPS 인증서 발급 · 갱신 — 스크립트와 systemd 유닛 |
 | `infra/grafana/` | Grafana Cloud 정의 — 운영 요약 대시보드 · 알림 규칙 · 메일 템플릿, 반영 스크립트 `apply.sh` |
 | `infra/alertmanager/` | 자체 호스팅으로 되돌릴 때의 자리. 지금은 없다 |
@@ -182,6 +183,7 @@ Nginx는 upstream 호스트명을 설정 로드 시점에 한 번만 해석한�
 | 셸 스크립트 | `bash -n` |
 | Prometheus agent 설정 | 기동 셸로 자리표시자를 채운 사본에 `promtool check config` — 저장소 파일은 자리표시자가 든 틀이다 |
 | Vector 설정 | `vector validate --no-environment` — 환경 변수는 더미로 준다 |
+| OpenTelemetry 에이전트 설정(`infra/otel/`) | 같은 이미지로 일회용 슬롯을 띄우고 OTLP 수신기 하나로 받는다 — 업무 요청만 추적으로 오는지, 스위치(`OTEL_JAVAAGENT_ENABLED`)를 끄면 「Agent is disabled」가 찍히고 아무것도 오지 않는지. 문법만 보는 명령이 없다 |
 | 부하 시험 설정(`chaos-harness/load/`) | `k6 inspect <스크립트>` |
 
 부하 시험 설정(k6)의 확인 명령은 부하 시험이 범위로 돌아와(2026-09-26) 위 표에 되살렸다. 관측 수집기의 확인 명령은 수집기가 정해져(인프라 기술 스택 4.1) 위 표에 더했다 — exporter는 Compose 서비스라 `docker compose config`에 이미 걸린다. Rocky 노드 설정은 이 PC에서 적용해 볼 수 없는 것이 많다. **문법만 본 것과 노드에서 동작을 본 것을 구분해 적는다.**
