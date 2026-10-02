@@ -25,6 +25,12 @@ scrape_configs:
   - job_name: node
     static_configs:
       - targets: ["127.0.0.1:9100"]
+    # systemd 유닛 상태(관측 설계서 3.2 O14) — 수집기는 유닛마다 상태 다섯 줄(active · activating · deactivating · inactive · failed)을 낸다.
+    # 알림 후보는 실패뿐이라(5.3) state="failed" 줄만 남긴다. RE2 에 부정 전방 탐색이 없어 나머지 넷을 버린다
+    metric_relabel_configs:
+      - source_labels: [__name__, state]
+        regex: 'node_systemd_unit_state;(active|activating|deactivating|inactive)'
+        action: drop
 
   # 그 노드의 PostgreSQL(DB-01 postgres · DB-02 postgres-standby). 노드는 external_labels 의 node 로 갈린다.
   # 질의 파일(postgres-queries.yaml)의 rental_pg_* 도 이 대상에서 온다.

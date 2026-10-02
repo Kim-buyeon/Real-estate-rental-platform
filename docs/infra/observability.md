@@ -43,6 +43,7 @@
 |---|---|
 | 지금 | **약 7,670** — 수집 대상 11곳의 `/metrics` 주석 아닌 줄 수 합. 대상마다 붙는 `up` 등 메타 시계열은 빠졌다 |
 | 큰 몫 | DB 지표 수집기 1,539(그중 테이블별 통계 957 · 설정값 274), node exporter 넷 3,307(754 ~ 973), 앱 슬롯 넷 2,127(491 ~ 586), Redis 643, Nginx 57 |
+| 더할 몫 | systemd 실패 유닛(O14) **약 90** — 어림(실패 줄 APP-01 9 · APP-02 7 · DB 노드 15씩 + 타이머 13 + 상태별 유닛 수 등 28), 반영 때 실측. DB-02 노드 확인(#361, SELinux enforcing)에서 유닛 12 · 타이머 4가 나왔다. 유닛을 목록으로 좁히고 `failed`만 남겨 이 크기다 — 전체 유닛 · 다섯 상태면 수백 유닛 × 5 |
 | **목표** | **8,500 이하** — 배포 때 경로 라벨 등으로 늘어날 몫을 남긴다. DB-02 수집기(3.3)를 그대로 더하면 약 9,200이라 같은 다이어트(3.3 끝)를 함께 한다 |
 
 ---
@@ -61,7 +62,7 @@
 | W4 | **Tomcat 스레드 — 바쁨 ÷ 최대**(`tomcat_threads_busy_threads` · `tomcat_threads_config_max_threads`) | 상시 · 화면 | 구현 · 화면 없음 | USE 포화. 트래픽 정의서가 「스레드 지표」로 인용한다 |
 | W5 | JVM — 힙 · 힙 밖(`jvm_memory_used_bytes{area="nonheap"}`) · GC 멈춤 시간 | 상시 · 화면 | 구현 · 화면 없음 | 힙은 상한의 35%(운영 Compose `MaxRAMPercentage`), 2026-09-30 슬롯 OOM 이력 |
 | W6 | 비동기 작업 · 스케줄러 큐(`executor_*{name="applicationTaskExecutor" \| "taskScheduler"}`) | 상시 | 구현 | 배치 · 비동기 작업이 밀리는지 |
-| W7 | **슬롯 연결 시간 · 슬롯 응답 시간 — Nginx 접근 로그** | 로그 | **미구현** | 지금 로그 형식은 전체 시간(`rt=`)과 슬롯 주소(`upstream=`)만 있다. `$upstream_connect_time` · `$upstream_response_time`을 더해야 「입구 · 노드 간 홉」과 「앱」이 갈린다 |
+| W7 | **슬롯 연결 시간 · 슬롯 응답 시간 — Nginx 접근 로그** | 로그 | 구현 — 반영 대기 | 로그 형식(`main` · `no_query`) 끝에 `uct=`(`$upstream_connect_time`) · `urt=`(`$upstream_response_time`)를 더했다 — 전체 시간(`rt=`)과 견주어 「입구 · 노드 간 홉」과 「앱」을 가른다. **읽는 법** — 단위는 초다. **알림 SSE(`/api/notifications/stream`)의 값은 응답 시간이 아니라 연결이 열려 있던 시간**이라 응답 시간 집계에서 뺀다. 재시도로 슬롯을 여럿 거치면 값이 `, `로 이어진다(`upstream=`과 같은 순서 — 마지막이 응답한 슬롯). 뒤로 넘기지 않은 요청(점검 응답 503 · 상한 429 · `/actuator` 404)은 `-`이고, 화면 경로(`/`)의 값은 슬롯이 아니라 화면 컨테이너(web)의 것이다. 보는 질의는 운영 절차서 2장 |
 | W8 | Nginx 동시 연결 · 요청 수 | 상시 | 구현 | 슬롯별 상태는 오픈소스 `stub_status`에 없다(인프라 API 명세 1장) — W7이 맡는다 |
 | W9 | Redis — 메모리 · 연결 · 명령 지연 · 적중/빗나감 · 퇴출, 앱 쪽 클라이언트 지연(`lettuce_*`) | 상시 · 화면 | 구현 · 화면 없음 | 토큰 · 락 · 캐시 · Pub/Sub를 한 대(APP-01)가 맡는다. **Redis 구간은 추적에 잡히지 않아(6장) 이 지표가 대신한다** |
 
@@ -82,7 +83,7 @@
 | O11 | **conntrack 사용률 — APP-01** | 상시 · 화면 · 알림 후보 | 구현 · 화면 없음 | APP-01이 NAT을 겸한다(시스템 구성서 4장). 실측 69 / 65,536 |
 | O12 | 시간 동기 상태 · 오차(`node_timex_*`) | 상시 · 알림 후보 | 구현 | 토큰 만료 · 배치 날짜 락이 시각에 기댄다. 실측 네 노드 동기 |
 | O13 | 부팅 시각 | 상시 | 구현 | 예상하지 않은 재부팅 — EC2 자동 복구 경보(5.2)와 대조 |
-| O14 | **systemd 실패 유닛** | 상시 · 알림 후보 | **미구현** — 네 노드 모두 수집기(`systemd`)가 꺼져 있다 | 백업 · WAL 전송 · 인증서 갱신이 systemd 타이머다 |
+| O14 | **systemd 실패 유닛** | 상시 · 알림 후보 | 구현 — 반영 대기 — node exporter `systemd` 수집기(기본 꺼짐)를 켰다. 유닛은 저장소의 정기 작업(`rental-*`) · `dnf-automatic` · chronyd · docker · sshd · firewalld만, 상태는 수집기 설정의 relabel로 `failed` 줄만 남긴다(`node_systemd_unit_state{state="failed"}`). 타이머별 마지막 실행 시각(`node_systemd_timer_last_trigger_seconds`)이 함께 온다. **컨테이너 안에서 D-Bus에 닿는지(SELinux enforcing)는 DB-02에서 확인했다(#361 — 수집 성공, AVC 거부 0)** — 닿지 못하면 이 수집기만 실패한다(`node_scrape_collector_success{collector="systemd"}` 0) | 백업 · WAL 전송 · 인증서 갱신이 systemd 타이머다. 지표 이름은 인프라 API 명세 1장 |
 | O15 | **CPU 크레딧 잔량 · 초과 사용** | 스냅샷(7장) | 미구현 | **네 노드가 `unlimited` 모드**라 크레딧이 바닥나도 느려지지 않고 **초과분이 요금으로 나온다** — 성능이 아니라 비용 항목이다. CloudWatch에만 있다 |
 
 ### 3.3 데이터베이스 — DB-01 · DB-02

@@ -16,10 +16,10 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | INF-01 | 애플리케이션 — 노드 둘 × 슬롯 둘 | APP-01 · APP-02 | 8081 · 8082 | /actuator/health/readiness | 배포 스크립트(APP-01에서 — APP-02 슬롯은 사설망으로) | 슬롯 투입 가능 여부 |
 | INF-05 | 애플리케이션 — 노드 둘 × 슬롯 둘 | APP-01 · APP-02 | 8081 · 8082 | /actuator/prometheus | Prometheus(그 노드의 agent) | 응답 시간, 5xx, Tomcat 스레드, HikariCP, JVM |
-| INF-05 | node exporter | **APP-01 · APP-02 · DB-01 · DB-02** | 9100 | /metrics | Prometheus | CPU · 메모리 · 디스크 · 네트워크 |
+| INF-05 | node exporter | **APP-01 · APP-02 · DB-01 · DB-02** | 9100 | /metrics | Prometheus | CPU · 메모리 · 디스크 · 네트워크, **systemd 유닛 상태**(`systemd` 수집기 — 구현 · 반영 대기): `node_systemd_unit_state{name, state, type}` — 수집기 설정이 `state="failed"` 줄만 남긴다 · `node_systemd_timer_last_trigger_seconds{name}` · `node_systemd_units{state}`. 대상 유닛 · 거르는 이유는 관측 설계서 3.2 O14 |
 | INF-05 | postgres exporter | **DB-01 · DB-02**(#357) | 9187 | /metrics | Prometheus(그 노드의 agent) | 커넥션 수, 복제 지연, 슬로우 쿼리, 캐시 적중률 |
 | INF-05 | redis exporter | APP-01 | 9121 | /metrics | Prometheus | 메모리, 축출 건수, 연결 수 |
-| INF-05 | nginx exporter | APP-01 | 9113 | /metrics | Prometheus | 활성 · 읽기 · 쓰기 · 대기 연결, 수락 · 처리 연결 수, 누적 요청 수. **upstream 상태는 없다** — 오픈소스 Nginx `stub_status`가 내는 값은 이 일곱 가지뿐이다([ngx_http_stub_status_module](https://nginx.org/en/docs/http/ngx_http_stub_status_module.html)). 슬롯별 상태는 액세스 로그의 `upstream=`(Vector → Loki)로 본다 |
+| INF-05 | nginx exporter | APP-01 | 9113 | /metrics | Prometheus | 활성 · 읽기 · 쓰기 · 대기 연결, 수락 · 처리 연결 수, 누적 요청 수. **upstream 상태는 없다** — 오픈소스 Nginx `stub_status`가 내는 값은 이 일곱 가지뿐이다([ngx_http_stub_status_module](https://nginx.org/en/docs/http/ngx_http_stub_status_module.html)). 슬롯별 상태는 액세스 로그의 `upstream=`, 슬롯별 연결 · 응답 시간은 `uct=` · `urt=`(관측 설계서 3.1 W7 — 구현 · 반영 대기)로 본다(Vector → Loki) |
 | INF-05 | Blackbox exporter | APP-01 | 9115 | /probe | Prometheus | 경로 도달 여부, 응답 시간 |
 | INF-05 | Loki | APP-01 | 3100 | /loki/api/v1/push | Promtail | 애플리케이션 · Nginx · PostgreSQL 로그 |
 
