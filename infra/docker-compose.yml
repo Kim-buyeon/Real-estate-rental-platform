@@ -48,16 +48,17 @@ x-logging: &logging
 # (2026-09-23 17:10). 상한은 그 시점의 컨테이너별 실사용(RSS)에서 역산했고, 반영 뒤 다시 쟀다.
 #
 #   서비스        mem_limit   상한 전   반영 후   조회 중   상한의 근거
-#   app-1             600m    454 MiB   424 MiB   445 MiB   힙 210m(35%) + non-heap · 네이티브 390m — 2026-09-30 재배분(x-app 주석)
-#   app-2             600m    455 MiB   423 MiB   446 MiB   위와 같음
+#   app-1             680m    454 MiB   424 MiB   445 MiB   힙 238m(35%) + non-heap · 네이티브 442m — 2026-09-30 재배분, 10-02 추적 에이전트로 600 → 680(x-app 주석)
+#   app-2             680m    455 MiB   423 MiB   446 MiB   위와 같음
 #   postgres          256m     89 MiB    56 MiB    87 MiB   최악값은 담지 못한다 — postgres 서비스 주석. DB 노드는 PG_MEM_LIMIT(768m)
 #   redis             112m    4.6 MiB   3.6 MiB   4.0 MiB   maxmemory 64mb + 단편화 · AOF 버퍼 · 출력 버퍼
 #   nginx              48m    3.7 MiB   3.4 MiB   3.4 MiB   SSE 는 proxy_buffering off 라 연결당 버퍼 없음
 #   web                32m    4.2 MiB   3.4 MiB   3.4 MiB   정적 파일 서빙 nginx
 #   ──────────────────────────────────────────────────────
-#   합계             1648m   1011 MiB   913 MiB   989 MiB
+#   합계             1808m   1011 MiB   913 MiB   989 MiB
 #
 #   「상한 전」은 상한이 없던 구성(2026-09-23 17:10), 나머지 둘은 이 상한을 반영한 뒤다(18:25).
+#   세 실측 열은 그때 값이다 — 앱 상한은 그 뒤 600m(합 1648m)을 거쳐 680m 이 되었고(#363), 에이전트를 켠 노드 값은 반영 묶음에서 잰다.
 #   **「조회 중」은 부하가 아니다** — smoke.sh 의 대표 조회 60건 직후 값이다. 부하를 준 상태의 수치는
 #   부하 시험(INF-06, 차기 범위)에서 처음 나온다.
 #   힙 천장을 478 → 360 으로 내리고 shared_buffers 를 128 → 64MB 로 줄인 뒤 앱과 PostgreSQL 이 함께 줄었다.
@@ -73,7 +74,7 @@ x-logging: &logging
 #   postgres-exporter        64m    8.4 MiB
 #   redis-exporter           64m    8.5 MiB
 #   ──────────────────────────────────────────────
-#   합계                    492m   79.5 MiB   위 표와 더해 상한 합 2140m
+#   합계                    492m   79.5 MiB   위 표와 더해 상한 합 2300m
 #
 #   임시 구성을 걷고 이것으로 바꿔 올리므로 노드 실사용의 순증은 없다(실측 79.5 MiB 는 이미 노드에 있다).
 #
@@ -82,7 +83,7 @@ x-logging: &logging
 #   서비스              mem_limit   실측              상한의 근거
 #   postgres-standby        256m   (노드 적용 뒤)    primary 와 같다 — 승격되면 primary 역할을 한다. DB 노드는 PG_MEM_LIMIT
 #   ──────────────────────────────────────────────
-#   위 두 표와 더해 상한 합 2396m. 노드 실사용은 이만큼 순증한다(로컬 Docker 에서 빈 DB 로 띄운 값은 17 MiB 였다 —
+#   위 두 표와 더해 상한 합 2556m. 노드 실사용은 이만큼 순증한다(로컬 Docker 에서 빈 DB 로 띄운 값은 17 MiB 였다 —
 #   이 노드 · 이 DB 크기의 값이 아니다).
 #
 # nginx 지표(INF-05) — 앞단 nginx 의 stub_status 를 긁는다.
@@ -90,22 +91,23 @@ x-logging: &logging
 #   서비스              mem_limit   실측              상한의 근거
 #   nginx-exporter           32m   (노드 적용 뒤)    같은 Go 단일 바이너리 exporter 셋의 실측이 8.4 ~ 9.6 MiB(위 수집기 표)
 #   ──────────────────────────────────────────────
-#   위 세 표와 더해 상한 합 2428m.
+#   위 세 표와 더해 상한 합 2588m.
 #
 # 앱 노드 APP-02(INF-01, 프로필 app-node) — 같은 t3.small 이고 위 표들의 상한을 그대로 쓴다.
 #
 #   서비스                  mem_limit   실측
-#   app-1 · app-2          600m × 2   (노드 적용 뒤)
+#   app-1 · app-2          680m × 2   (노드 적용 뒤)
 #   prom-agent-app-node        150m   (노드 적용 뒤)
 #   vector                     150m   (노드 적용 뒤)
 #   node-exporter               64m   (노드 적용 뒤)
 #   ──────────────────────────────────────────────
-#   상한 합 1564m. PostgreSQL · Redis · nginx 가 없어 APP-01 에서 잰 가용량 1645(아래)보다 작다 — 같은 인스턴스 유형이라
-#   옮겨 쓴 값이고 APP-02 의 free -m · OS 실사용은 노드 적용 뒤에 잰다. 아래 「상한의 합이 …」는 APP-01 의 이야기다.
+#   상한 합 1724m. APP-01 에서 잰 가용량 1645(아래)를 넘는다 — 앱 상한이 600m(합 1564m)일 때는 그보다 작았으나 680m(#363)으로
+#   넘게 되었다. 1645 는 같은 인스턴스 유형이라 옮겨 쓴 값이고 APP-02 의 free -m · OS 실사용은 노드 적용 뒤에 잰다.
+#   아래 「상한의 합이 …」의 논리(상한은 예약이 아니다 · 전역 OOM killer 구간이 생긴다)가 APP-02 에도 걸린다.
 #
 # **상한의 합이 노드 가용 메모리를 넘는다. 의도한 것이고, 대가가 있다.**
-#   1909(총량) − 264(OS · dockerd 실측) = 1645 이고 상한 합 1648 은 그것을 넘는다. 수집기를 더하면 2140,
-#   standby 까지 더하면 2396, nginx exporter 까지 더하면 2428 이다.
+#   1909(총량) − 264(OS · dockerd 실측) = 1645 이고 상한 합 1808 은 그것을 넘는다. 수집기를 더하면 2300,
+#   standby 까지 더하면 2556, nginx exporter 까지 더하면 2588 이다(앱 상한 600m 일 때는 1648 · 2140 · 2396 · 2428).
 #   mem_limit 은 **예약이 아니라 상한**이라 쓰지 않는 몫을 붙들지 않는다. 평시 실사용 합이 913(수집기 더해 약 993,
 #   standby 실측은 노드 적용 뒤)이므로
 #   평시에는 여유가 있고, 상한의 목적은 총합을 보장하는 것이 아니라 **폭주하는 하나를 가두어 나머지를
@@ -169,7 +171,8 @@ x-app: &app
   env_file: .env
   restart: unless-stopped
   logging: *logging
-  mem_limit: 600m
+  # 600m → 680m(#363) — 추적 에이전트(x-app 환경 변수의 OTel 주석)가 힙 밖을 더 쓴다. 근거는 그 주석
+  mem_limit: 680m
   # graceful 종료 대기(application.yml 30초)보다 길게 준다. Compose 기본 10초면 30초를 채우기 전에 SIGKILL 된다.
   stop_grace_period: 40s
   # 슬롯 공통 환경 변수. YAML 병합 키(<<)는 최상위 키만 병합하므로, 서비스가 자기 environment 를 쓰면 앵커의 environment 가
@@ -179,11 +182,11 @@ x-app: &app
     # 앱 로그(KST)와 9시간 어긋나 대조가 되지 않는다.
     TZ: Asia/Seoul
     # 컨테이너 메모리 제한이 없으면 JVM 은 호스트 전체를 기준으로 잡는다 — 제한을 걸기 전 노드에서 힙 상한이
-    # 478 MiB(호스트 1.865 GiB 의 25%)로 잡혀 있었다. mem_limit 600m 기준 35% = 210m 이 힙이고 나머지 390m 이
-    # non-heap 몫이다.
+    # 478 MiB(호스트 1.865 GiB 의 25%)로 잡혀 있었다. mem_limit 680m 기준 35% = 238m 이 힙이고 나머지 442m 이
+    # non-heap 몫이다(600m 일 때 210m · 390m — 아래 기록들은 600m 때 값이다).
     #
     # UseG1GC 를 명시하는 이유 — JVM 의 server-class 판정은 2 CPU 이상 **이고** 메모리 1792 MB 이상일 때만 통과하는데,
-    # 컨테이너 인식 이후 그 메모리는 호스트가 아니라 mem_limit 을 본다. 600m 은 기준에 미치지 못해 명시하지 않으면
+    # 컨테이너 인식 이후 그 메모리는 호스트가 아니라 mem_limit 을 본다. 680m 은 기준에 미치지 못해 명시하지 않으면
     # SerialGC 로 떨어진다. 제한을 걸기 전 노드는 G1 으로 돌고 있었으므로(실측), 명시하지 않으면 이 변경이 GC 를
     # 단일 스레드로 낮추는 셈이 된다 — 운영 절차서 3.3 의 p95 1초 판정에 직접 닿는다.
     #
@@ -201,8 +204,19 @@ x-app: &app
     # 두 번 죽었다(anon-rss 605,272 · 608,300kB). 40%(240m)면 합이 약 598 로 여유가 2MiB 뿐이라 35% = 210m(여유 약 32MiB — 네이티브는
     # 쉬는 슬롯 값이라 배치 중엔 더 늘 수 있다)로 둔다. 배치가 그보다 힙을 더 쓰면 커널 kill 대신 자바
     # OOM 이 나고 힙 덤프(/tmp)가 남아 무엇이 쓰는지 볼 수 있다. 값은 미확정 — 다음 회차의 힙 사용량으로 확정한다.
-    JAVA_TOOL_OPTIONS: "-XX:+UseG1GC -XX:MaxRAMPercentage=35.0 -XX:MaxDirectMemorySize=64m -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp"
+    #
+    # 추적 에이전트(INF-05, #363 — 관측 설계서 6장) — jar 는 이미지 안(/app/otel), 설정은 infra/otel/agent.yaml(아래 volumes).
+    # -javaagent 는 늘 붙어 있고 **켜고 끄는 것은 OTEL_JAVAAGENT_ENABLED** 다. 기본 false — 노드 infra/.env 에 켜는 줄과 내보낼 곳 ·
+    # 인증(OTEL_EXPORTER_OTLP_TRACES_ENDPOINT · OTEL_EXPORTER_OTLP_HEADERS)을 넣기 전에는 배포해도 에이전트가 돌지 않는다.
+    # 설정 파일을 쓰면 다른 OTEL_* 환경 변수는 읽히지 않는다 — 값은 agent.yaml 의 ${env:…} 치환으로 들어간다(내보낼 곳 · 인증은
+    # env_file 로, 슬롯 구분 OTEL_SERVICE_INSTANCE_ID 는 각 슬롯의 environment 로).
+    # 상한 600m → 680m — 로컬 실측(#363, 운영 이미지 + 에이전트 2.31.1 + 이 설정, 업무 요청 600회 · /actuator 긁기 · 갱신 배치 mock,
+    # 상한 600m)에서 슬롯 최대 580.9 MiB(에이전트 없음 542.2), 힙 밖 +40.5 MiB. 600m 이면 배치 중 여유 19 MiB 라 올렸다.
+    # 힙은 상한의 35% 라 210m → 238m 로 함께 늘고, 늘어난 힙 28 을 더해도 약 609 로 680m 의 여유 약 71 MiB(10%).
+    # 680m 으로 다시 잰 값(같은 조건, 배치 판정 단계는 12분까지) — 최대 575.3 MiB(85%). 노드 값은 반영 묶음에서 잰다.
+    JAVA_TOOL_OPTIONS: "-XX:+UseG1GC -XX:MaxRAMPercentage=35.0 -XX:MaxDirectMemorySize=64m -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp -javaagent:/app/otel/opentelemetry-javaagent.jar -Dotel.config.file=/etc/rental/otel/agent.yaml"
     MALLOC_ARENA_MAX: "2"
+    OTEL_JAVAAGENT_ENABLED: ${OTEL_JAVAAGENT_ENABLED:-false}
   depends_on:
     # required: false — 3노드에서는 postgres 가 다른 노드(DB-01)라 이 노드의 활성 프로필에 없다. 없으면 기다리지 않고
     # 뜨고, 있으면(단일 노드) 지금처럼 healthy 를 기다린다
@@ -223,6 +237,8 @@ x-app: &app
   # 같은 자리를 슬롯에 붙이면 앱 컨테이너가 Redis 서버 키를 읽는다. 슬롯에는 CA 하나만 든 디렉터리를 붙인다.
   volumes:
     - ${REDIS_TLS_CA_DIR:-/etc/rental/redis-tls-ca}:/etc/rental/redis-tls:ro
+    # 추적 에이전트 설정(위 JAVA_TOOL_OPTIONS 의 -Dotel.config.file). 스위치가 꺼져 있으면 읽지 않는다
+    - ./otel/agent.yaml:/etc/rental/otel/agent.yaml:ro
 
 # PostgreSQL 서버 설정 — primary(postgres) · standby(postgres-standby)가 **같은 목록**을 쓴다(INF-03).
 # hot standby 는 max_connections · max_worker_processes · max_locks_per_transaction · max_prepared_transactions 가
@@ -458,6 +474,8 @@ services:
     environment:
       <<: *app-env
       SERVER_PORT: 8081
+      # 추적의 슬롯 구분(infra/otel/agent.yaml 의 service.instance.id). 노드 이름은 RENTAL_NODE — APP-01 은 비워 두므로 기본값 app-01
+      OTEL_SERVICE_INSTANCE_ID: ${RENTAL_NODE:-app-01}-app-1
       # 단일 노드에서는 infra/.env 에 DB_HOST 를 두지 않는다 — 비우면 postgres. 3노드의 APP-01 은 DB-01 사설 IP 다(파일 머리 프로필).
       # 페일오버 6단계(운영 절차서 6.1)에서
       # DB_HOST=postgres-standby 로 바꾸고 슬롯을 순서대로 재생성한다. app-2 도 같은 값을 읽는다
@@ -485,6 +503,7 @@ services:
     environment:
       <<: *app-env
       SERVER_PORT: 8082
+      OTEL_SERVICE_INSTANCE_ID: ${RENTAL_NODE:-app-01}-app-2
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: 5432
       REDIS_HOST: ${APP_REDIS_HOST:-redis}
