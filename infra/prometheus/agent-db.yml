@@ -8,8 +8,8 @@
 # 값은 저장소에도 노드 디스크에도 남지 않는다.
 # 자리표시자는 작은따옴표 안에 둔다 — 값에 : · # 이 들어가도 YAML 이 깨지지 않는다(값 안의 ' 는 기동 셸이 '' 로 바꾼다).
 #
-# APP-01 의 틀(agent.yml)과 나눈 이유 — DB 노드에는 node exporter 하나만 뜬다. postgres exporter 는 APP-01 에 남아
-# 현재 primary(DB_HOST)를 본다.
+# APP-01 의 틀(agent.yml)과 나눈 이유 — DB 노드에는 node exporter 와 postgres exporter 만 뜬다. postgres exporter 는
+# 노드마다 하나이고 그 노드의 DB(primary 든 standby 든)를 본다(#357 — 예전에는 APP-01 에 하나가 현재 primary 만 봤다).
 
 global:
   scrape_interval: 15s
@@ -18,13 +18,37 @@ global:
     node: '@RENTAL_NODE@'
 
 # 대상은 127.0.0.1 이다. prom-agent-db 가 호스트 네트워크라 루프백이 호스트를 가리키고, node exporter 는 루프백에
-# 바인딩한다 — 9100 을 노드 밖에 열지 않는다.
+# 바인딩하고 postgres exporter 는 루프백에 게시한다 — 9100 · 9187 을 노드 밖에 열지 않는다.
 # 정기 작업 결과(rental_job_last_success_timestamp_seconds · rental_wal_ship_pending_files)도 이 대상에서 온다 —
 # node exporter 의 textfile 수집기가 백업 · WAL 전송 스크립트가 쓴 파일을 읽는다.
 scrape_configs:
   - job_name: node
     static_configs:
       - targets: ["127.0.0.1:9100"]
+
+  # 그 노드의 PostgreSQL(DB-01 postgres · DB-02 postgres-standby). 노드는 external_labels 의 node 로 갈린다.
+  # 질의 파일(postgres-queries.yaml)의 rental_pg_* 도 이 대상에서 온다.
+  - job_name: postgres
+    static_configs:
+      - targets: ["127.0.0.1:9187"]
+    # 시계열 덜어 내기(관측 설계서 2.3 예산 · 3.3 「거두지 않을 것」, #357). exporter 에는 테이블 필터가 없어 여기서 거른다.
+    metric_relabel_configs:
+      # 테이블별 통계는 주요 테이블 여섯만 — #353 실측 행 수 상위. 질의 파일의 rental_pg_table_visibility 와 같은 목록이다.
+      # RE2 에 부정 전방 탐색이 없어 두 단계로 한다 — 남길 줄에 임시 라벨을 달고, 표시 없는 테이블별 줄을 버린 뒤 임시 라벨을 지운다
+      - source_labels: [__name__, relname]
+        regex: '(pg_stat_user_tables|pg_statio_user_tables)_.+;(property|risk_analysis|ownership_history|building_registry|mortgage_history|building_ledger)'
+        target_label: __tmp_keep_table
+        replacement: '1'
+      - source_labels: [__name__, __tmp_keep_table]
+        regex: '(pg_stat_user_tables|pg_statio_user_tables)_.+;'
+        action: drop
+      - regex: __tmp_keep_table
+        action: labeldrop
+      # 내장 연결 수 — 라벨 일곱(datname · state · usename · application_name · backend_type · wait_event_type · wait_event)이라
+      # 활동이 늘면 시계열이 불어난다. 상태별 · 대기 종류별 연결 수(D2 · D6)는 질의 파일의 rental_pg_sessions_count 가 맡는다
+      - source_labels: [__name__]
+        regex: pg_stat_activity_count
+        action: drop
 
 remote_write:
   - url: '@GRAFANA_CLOUD_PROM_URL@'
