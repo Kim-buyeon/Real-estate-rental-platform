@@ -27,8 +27,8 @@
 - **APP-02의 앱 슬롯(8081 · 8082)은 예외로 그 노드의 사설 IP에 게시한다**(2026-09-26 · #255) — APP-01의 Nginx와 배포 스크립트가 다른 노드에서 붙어야 한다. 그 노드의 수집기(`prom-agent-app-node`)도 그 주소로 긁는다. 게시 주소와 보안 그룹은 시스템 구성서 4장. node exporter는 다른 노드처럼 루프백이다.
 - **DB 노드의 5432는 이 표의 관측 지점이 아니다** — 앱 · 복제 경로이며 3노드에서는 DB-01 · DB-02 사설 IP에 게시하고 TLS만 받는다. 게시 주소와 접근 통제는 시스템 구성서 4장. **3노드의 DB 노드 node exporter는 그 노드의 수집기(`prom-agent-db`)가 긁어 직접 보낸다**(2026-09-25 · #243) — APP-01이 노드 밖에서 긁지 않으므로 9100을 열지 않는다
 - **node exporter는 네 노드 모두에 둔다**(APP-02 — #255). DB 노드의 디스크 사용률은 복제 슬롯 적체·WAL 아카이브 관련 알림과 시험의 판정 지표이며, APP-01의 지표로는 알 수 없다. DB 노드의 9100은 그 노드의 수집기가 루프백으로 긁는다 — 노드 밖에 열지 않는다(3노드, #243).
-- **정기 작업 결과 지표**(node exporter textfile, 2026-09-25 · #243) — DB 노드의 `/var/lib/rental-metrics/*.prom`을 node exporter가 읽는다. `rental_job_last_success_timestamp_seconds{task="wal_ship|logical_backup|physical_backup"}`(APP-01 은 `task="tls_cert"` — 입구 인증서 확인 · 발급 성공, 2026-09-28 · #288)(마지막 성공 시각, epoch 초 — 성공으로 끝날 때만 바뀐다, standby의 「아무것도 안 함」은 쓰지 않는다) · `rental_wal_ship_pending_files`(아직 보내지 못한 WAL 파일 수). 라벨 이름이 `job`이 아니라 `task`인 것은 수집 때 붙는 `job="node"`와 겹치지 않게다. 알림 규칙은 운영 절차서 2장
-- **입구 인증서 지표**(APP-01 textfile, 2026-09-28 · #288) — `rental_tls_cert_expiry_timestamp_seconds`(Nginx 가 내보내는 인증서의 만료 시각, epoch 초) · `rental_tls_cert_self_signed`(0 · 1 — 임시 자체 서명이면 1). `infra/tls/issue-cert.sh` 가 실행마다 쓴다(실패로 끝나도). 알림 규칙은 운영 절차서 2장
+- **정기 작업 결과 지표**(node exporter textfile, 2026-09-25 · #243) — DB 노드의 `/var/lib/rental-metrics/*.prom`을 node exporter가 읽는다. `rental_job_last_success_timestamp_seconds{task="wal_ship|logical_backup|physical_backup"}`(APP-01 은 `task="tls_cert"` — 입구 인증서 확인 · 발급 성공, 2026-09-28 · #288)(마지막 성공 시각, epoch 초 — 성공으로 끝날 때만 바뀐다, standby의 「아무것도 안 함」은 쓰지 않는다) · `rental_wal_ship_pending_files`(아직 보내지 못한 WAL 파일 수). 라벨 이름이 `job`이 아니라 `task`인 것은 수집 때 붙는 `job="node"`와 겹치지 않게다. 알림 규칙은 관측 설계서 5.1
+- **입구 인증서 지표**(APP-01 textfile, 2026-09-28 · #288) — `rental_tls_cert_expiry_timestamp_seconds`(Nginx 가 내보내는 인증서의 만료 시각, epoch 초) · `rental_tls_cert_self_signed`(0 · 1 — 임시 자체 서명이면 1). `infra/tls/issue-cert.sh` 가 실행마다 쓴다(실패로 끝나도). 알림 규칙은 관측 설계서 5.1
 - Nginx는 `/actuator`로 시작하는 경로를 차단한다.
 - Prometheus 스크레이프 주기는 15초, Blackbox 프로브 주기는 30초다.
 - 스크레이프 실패는 오류를 발생시키지 않고 해당 지표가 비어 있는 상태가 된다.
@@ -69,7 +69,7 @@ probe_http_status_code 200
 probe_ssl_earliest_cert_expiry 1.7924e+09
 ```
 
-- 검사 대상은 헬스 엔드포인트가 아니라 실제 사용자 API 경로를 사용한다. 감시 대상은 **API 경로 3개**이며, 구체적인 경로는 미확정이고 1주차에 확정한다(`docs/infra/observability.md` 2장).
+- 검사 대상은 헬스 엔드포인트가 아니라 실제 사용자 API 경로를 사용한다. 감시 대상은 **API 경로 3개**이며, 구체적인 경로는 미확정이다(`docs/infra/observability.md` 3.5 — 외부 경로 감시를 구현하는 묶음에서 정한다).
 
 ---
 
