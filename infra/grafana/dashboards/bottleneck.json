@@ -23,7 +23,7 @@
         "name": "ds_logs",
         "label": "로그",
         "query": "loki",
-        "regex": "",
+        "regex": "/-logs$/",
         "hide": 0,
         "multi": false,
         "includeAll": false,
