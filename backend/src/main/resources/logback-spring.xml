@@ -34,9 +34,13 @@
         [%X{traceId:-no-trace}] — RequestIdFilter 가 넣는 요청 추적 값. 한 요청의 로그를 두 슬롯의 출력에서
                                   골라내고 앞단 접근 로그와 잇는다. 기본값을 주는 이유는 요청 밖에서 나는 로그
                                   (기동 · 스케줄 배치)에 빈 대괄호만 남아 줄이 어지러워지는 것을 막기 위해서다.
-        [<trace_id> <trace_flags>]
+        [trace_id=<trace_id> flags=<trace_flags>]
                                 — OpenTelemetry 자바 에이전트가 MDC 에 넣는 분산 추적 값. 로그 한 줄에서 Tempo 의
-                                  추적으로 건너간다. 예: [4bf92f3577b34da6a3ce929d0e0e4736 03]
+                                  추적으로 건너간다. 예: [trace_id=4bf92f3577b34da6a3ce929d0e0e4736 flags=03]
+                                  · trace_id= 글자를 붙이는 이유 — Grafana Cloud 의 Loki 데이터 소스(읽기 전용)에
+                                    기본으로 걸린 파생 필드가 정규식 [tT]race_?[iI][dD]"?[:=]"?(\w+) 로 줄에서 추적
+                                    ID 를 찾아 Tempo 로 잇는다(2026-10-02 데이터 소스 설정을 읽어 확인, #373). 이 모양이면
+                                    데이터 소스를 고치지 않고 로그 → 추적이 된다. 요청 ID 칸은 접두사가 없어 걸리지 않는다
                                   · trace_flags 를 함께 찍는 이유 — 에이전트는 span 컨텍스트가 유효하면 샘플링
                                     여부와 상관없이 trace_id 를 넣는다. 샘플러가 버린 요청 · 배치의 줄에도 trace_id
                                     가 찍히고, 그 추적은 Tempo 에 없다. 마지막 비트(sampled)로 가른다 — 끝자리가
@@ -44,7 +48,7 @@
                                     버려진 것 02(random 비트가 함께 켜진다, #363).
                                   · span_id 는 넣지 않는다 — 추적을 찾는 열쇠는 trace_id 하나고, 추적 안의 어느
                                     span 인지는 Tempo 화면에서 시각 · 이름으로 보인다. 16자를 줄마다 더할 값이 없다.
-                                  · 에이전트가 없으면(로컬 · CI · 테스트) 두 키가 비어 대괄호째 지운다(%replace).
+                                  · 에이전트가 없으면(로컬 · CI · 테스트) 두 키가 비어 대괄호째 지운다(%replace — 빈 모양 「 [trace_id= flags=]」).
                                     요청 ID 처럼 기본값을 찍지 않는 이유는 이 칸이 비는 것이 「요청 밖」이 아니라
                                     「에이전트 없는 실행」이라 줄마다 알릴 정보가 아니어서다.
         %maskedMessage          — %m 대신. 위 마스킹 변환기
@@ -59,7 +63,7 @@
                                  없지만, 남겨 두면 나중에 같은 값이 두 번 찍힌다
     -->
     <property name="CONSOLE_LOG_PATTERN"
-              value="%clr(%d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd'T'HH:mm:ss.SSSXXX}}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}){} %clr(${PID:-}){magenta} %clr(--- [%15.15t] [%X{traceId:-no-trace}]%replace( [%X{trace_id} %X{trace_flags}]){'^ \[ \]$', ''}){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %maskedMessage%n%maskedWex"/>
+              value="%clr(%d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd'T'HH:mm:ss.SSSXXX}}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}){} %clr(${PID:-}){magenta} %clr(--- [%15.15t] [%X{traceId:-no-trace}]%replace( [trace_id=%X{trace_id} flags=%X{trace_flags}]){'^ \[trace_id= flags=\]$', ''}){faint} %clr(%-40.40logger{39}){cyan} %clr(:){faint} %maskedMessage%n%maskedWex"/>
 
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
     <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
