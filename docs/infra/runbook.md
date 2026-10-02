@@ -53,7 +53,7 @@
 
 **경보가 울리면(메일 「rental-<노드>-instance-check-reboot」 ALARM)** — ① `aws cloudwatch describe-alarm-history --alarm-name <경보>`로 재부팅이 실행됐는지 ② 그 노드가 돌아왔는지 — 1장 재부팅 표의 기동 뒤 확인(APP 노드는 API 200 · 슬롯 readiness, DB-01은 복제 `streaming`, DB-02는 복제 수신) ③ 이전 부팅의 커널 로그(`journalctl -k -b -1`)에서 원인(OOM · hung task)을 찾는다 ④ 7장 장애 대응 흐름과 장애 보고서로 잇는다 — 자동 복구는 원인을 없애지 않는다. **메일 알림은 SNS 주제 `rental-node-alarms`의 이메일 구독이 확인돼야 온다**(스크립트 실행 뒤 AWS 확인 메일의 링크).
 
-**질의 통계 — DB CPU를 어느 질의가 쓰는가**(2026-09-27 · #270). primary · standby 모두 `pg_stat_statements`를 적재한다(`x-postgres-command` 주석). 뷰는 **primary의 `postgres` 데이터베이스**에 한 번 만든다(복제로 standby에도 생긴다) — DB-01에서 `docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d postgres -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements"'`(작은따옴표 안이라 변수는 컨테이너 안에서 풀린다. 앱 DB · Flyway를 건드리지 않는다. 수집은 클러스터 전체다). 보는 법 — 같은 방식으로 `-d postgres`에 접속해 `SELECT calls, round(total_exec_time) AS total_ms, round(mean_exec_time::numeric, 2) AS mean_ms, rows, left(query, 120) FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10`. 구간을 재려면 시작 전에 `SELECT pg_stat_statements_reset()`. 부하 시험의 결과는 용량 산정 리포트가 갖는다.
+**질의 통계 — DB CPU를 어느 질의가 쓰는가**(2026-09-27 · #270). primary · standby 모두 `pg_stat_statements`를 적재한다(`x-postgres-command` 주석). 뷰는 **primary의 `postgres` 데이터베이스**에 한 번 만든다(복제로 standby에도 생긴다) — DB-01에서 `docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d postgres -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements"'`(작은따옴표 안이라 변수는 컨테이너 안에서 풀린다. 수집은 클러스터 전체다). **#357부터 앱 DB에도 만든다** — DB 지표 수집기가 앱 DB에 접속해 이 뷰를 읽는다(질의 통계 상위 10, 관측 설계서 3.4 S1). 같은 명령에서 `-d postgres`를 `-d "$POSTGRES_DB"`로 바꿔 primary에서 한 번 — Flyway 마이그레이션과 무관한 손 작업이고 반영 묶음에서 한다. 부수 효과 — 앱 DB 논리 덤프(5장)에 `CREATE EXTENSION`이 실린다. 복원 확인(9.3 「논리 백업 복원」)은 superuser(`-U postgres`)로 풀어 통과할 것으로 보나 **확인하지 않았다** — 반영 뒤 첫 복원 확인에서 본다. 보는 법 — 같은 방식으로 `-d postgres`에 접속해 `SELECT calls, round(total_exec_time) AS total_ms, round(mean_exec_time::numeric, 2) AS mean_ms, rows, left(query, 120) FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10`. 구간을 재려면 시작 전에 `SELECT pg_stat_statements_reset()`. 부하 시험의 결과는 용량 산정 리포트가 갖는다.
 
 **APP-01 멈춤 경보 — 상태 검사가 못 잡는 멈춤**(2026-09-26 · #266). 사고 ②(19:18 ~ 20:23)는 SSH · HTTP 무응답인데 상태 검사가 ok 여서 위 경보가 울리지 않았다. 그 멈춤은 **NetworkOut 5분 합이 평소 유휴(약 780 ~ 960 KB)의 절반 아래(약 365 ~ 455 KB)**로 떨어진 것으로 가려졌다 — 커널의 NAT 중계는 흐르고 APP-01 자신의 송신만 끊긴다. 경보 `rental-APP-01-stall-reboot`: 550 KB 미만 3구간(15분) 연속 → **재부팅** + 같은 SNS 메일. 만드는 것은 `infra/aws/stall-alarm.sh`(멱등, 알림 주제는 위 스크립트가 먼저 만든다). 기준 근거 · 다른 노드에 걸지 않는 이유는 스크립트 머리 주석. **표본은 하루치라 잠정값이다** — 울리면 위 ① ~ ④에 더해 직전 한 시간의 NetworkOut을 보고 멈춤이었는지 오탐이었는지 가린다. 오탐이면 기준을 낮추고 이 문단을 고친다. 실제 멈춤으로 울린 적은 아직 없다.
 
@@ -343,7 +343,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 3 | 구 primary 격리 — 살아 있으면 정지한다(같은 노드: `docker compose stop postgres`). **정지만으로는 다음 `docker compose up -d`에서 다시 뜬다** — 페일백 전까지 Compose 전체를 올리는 명령(배포 포함)을 쓰지 않고 서비스를 지정해 `--no-deps`로만 다룬다 | 1분 | 스플릿 브레인 방지. 앱의 접속 대상이 바뀐 뒤에는 구 primary로 가는 쓰기가 없다 |
 | 4 | standby의 복제 지연 확인 (`pg_last_wal_receive_lsn` · `pg_last_wal_replay_lsn`) | 2분 | 받은 것과 재생한 것이 같다. 지연이 크면 WAL 아카이브 추가 재생 |
 | 5 | standby 승격 (`SELECT pg_promote(true, 60)` — `pg_ctl promote`와 같다) | 3분 | `pg_is_in_recovery()`가 `f`, 타임라인이 하나 는다 |
-| 6 | 애플리케이션의 DB 접속 대상 전환 후 재기동 — 같은 노드: `.env`에 `DB_HOST=postgres-standby` → `docker compose up -d --no-deps app-1 app-2 postgres-exporter`(exporter도 `DB_HOST`를 따른다) | 5분 | 설정 변경 + 롤링 재기동 |
+| 6 | 애플리케이션의 DB 접속 대상 전환 후 재기동 — 같은 노드: `.env`에 `DB_HOST=postgres-standby` → `docker compose up -d --no-deps app-1 app-2`. DB 지표 수집기는 바꾸지 않는다 — DB 노드마다 그 노드의 DB를 본다(#357, 운영 Compose `postgres-exporter` 주석) | 5분 | 설정 변경 + 롤링 재기동 |
 | 7 | 점검 모드 해제, 핵심 기능 확인 | 5분 | 로그인·매물 조회·위험도 조회 |
 | 8 | 신규 standby 재구축 | 30분 | 서비스 정상화 이후 수행. RTO에 미포함 |
 | 9 | 장애 보고서 작성 | — | 원인·조치·재발 방지 |
@@ -411,7 +411,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 3 | 따라잡기 대기 | `postgres-standby`의 `pg_stat_replication`에 `streaming`, `replay_lag` < 1초. 표식 행이 `postgres`에서 보인다 |
 | 5 | `bash maintenance.sh on` | — |
 | 6 | `postgres-standby`에서 `SELECT pg_current_wal_lsn()` 기록 → `docker compose stop postgres-standby` → `postgres`에서 `pg_last_wal_replay_lsn()` 확인 → `SELECT pg_promote(true, 60)` | replay LSN이 기록한 값 **이상**이다. **같을 수는 없다** — 정상 종료가 종료 체크포인트 레코드를 하나 더 쓰고 standby가 그것까지 받는다(로컬 실측 종료 전 `0/5000160` → replay `0/5000210`). 승격 뒤 `pg_is_in_recovery()` = `f` |
-| 7 | `.env`에서 `DB_HOST` · `PG_BOOTSTRAP_FROM` 줄 삭제 → `docker compose up -d --no-deps postgres app-1 app-2 postgres-exporter` → readiness. 점검 모드 안이라 두 슬롯을 한꺼번에 재생성한다 | `postgres`가 기존 데이터로 primary로 뜬다. 두 슬롯 API 200 |
+| 7 | `.env`에서 `DB_HOST` · `PG_BOOTSTRAP_FROM` 줄 삭제 → `docker compose up -d --no-deps postgres app-1 app-2` → readiness. 점검 모드 안이라 두 슬롯을 한꺼번에 재생성한다 | `postgres`가 기존 데이터로 primary로 뜬다. 두 슬롯 API 200 |
 | 8 | `bash maintenance.sh off` → `docker compose rm -sf postgres-standby` → `docker volume rm rental-prod_pgdata-standby` → 슬롯 `standby_1`이 없으면 만든다(6장 머리 「standby 구성 순서」 2) → `docker compose up -d --no-deps postgres-standby` → 표식 행 삭제 | `streaming` · `async` · 슬롯 active |
 
 - 2단계의 `postgres`는 **슬롯 없이** 붙는다. 받을 때 원본(옛 standby)의 `postgresql.auto.conf`에서 `primary_slot_name='standby_1'`이 따라오는데, 초기화 스크립트가 슬롯 없이 받은 경우 그 줄을 지운다(#207). 2차 리허설(#205)은 이 처리 전이라 새 primary에 슬롯을 만들어 풀었다. 슬롯이 없으니 페일백 동안 새 primary가 WAL을 붙들어 주지 않는다 — 3단계의 `streaming` 확인이 그 구간을 짧게 둔다.
@@ -425,6 +425,8 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 승격된 노드가 목표 처리량을 감당하는지는 실측된 바 없다. 7주차 시나리오 3에서 페일오버 직후 상태의 처리량을 함께 기록하고, 감당하지 못하면 페일백을 계획이 아니라 즉시 조치로 재분류한다.
 
 ### 6.3 3노드 — 실제로 밟은 순서
+
+**아래 두 표 6행의 `postgres-exporter` 재생성은 #357 이후 하지 않는다** — 그때는 APP-01의 수집기가 `DB_HOST`를 따랐고, 지금은 DB 노드마다 그 노드의 DB를 본다(운영 Compose `postgres-exporter` 주석). 표는 그날 밟은 기록이라 고치지 않는다.
 
 2026-09-25 14:01 ~ 14:10(#239). 장애는 **DB-01 인스턴스를 통째로 멈춰**(`aws ec2 stop-instances`) 만들었다. 명령은 노드별 체크아웃(`/home/deploy/rental/infra`)에서 `deploy`로 돈다. SQL은 해당 노드의 DB 컨테이너 안 `psql`. **시각은 각 단계 명령을 낸 운영자 PC의 시각이고, 경과는 그 시각끼리의 차다.**
 
@@ -771,3 +773,4 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 - **옛 노드에서는 전체 `docker compose up -d`를 하지 않는다.** 프로필 · `depends_on` 변경으로 두 앱 슬롯이 한꺼번에 재생성된다(`up --dry-run`으로 확인). 옛 노드 `.env`에는 `COMPOSE_PROFILES=app,db,standby`를 넣어 둔다
 - 새 서비스 주소는 APP-01 공인 IP(켤 때마다 바뀐다 — 9.1 「켜고 끄기」). 카카오맵 JS 키의 사이트 도메인에 그 주소를 등록해야 지도가 뜬다
 - **4노드 — 앱 노드 APP-02를 더했다**(2026-09-26 · #255). 순서와 실측은 9.1 「앱 노드 APP-02 준비」. APP-02의 `.env`는 위 2의 DB 노드와 달리 APP-01 사본에서 줄이지 않았다
+- **DB 지표 수집기를 DB 노드로 옮겼다**(#357 — 반영 대기). 반영 때 위 2의 DB 노드 키 목록에 `POSTGRES_MONITOR_USER` · `POSTGRES_MONITOR_PASSWORD`가 더해지고, DB-02는 `PG_EXPORTER_HOST=postgres-standby`도 둔다(운영 Compose `postgres-exporter` 주석). APP-01의 그 둘과 `PG_EXPORTER_SSLMODE`는 쓰이지 않는다

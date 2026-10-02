@@ -14,16 +14,13 @@ global:
     node: app-01
 
 # 대상은 전부 127.0.0.1 이다. prom-agent 가 호스트 네트워크라 루프백이 호스트를 가리키고, exporter 는
-# 호스트 루프백에 게시되거나(postgres · redis · app) 루프백에 바인딩한다(node · nginx). 컨테이너 IP 로 긁지 않는다 —
+# 호스트 루프백에 게시되거나(redis · app) 루프백에 바인딩한다(node · nginx). 컨테이너 IP 로 긁지 않는다 —
 # 컨테이너를 다시 만들면 IP 가 바뀐다.
+# PostgreSQL 은 여기서 긁지 않는다 — postgres exporter 는 DB 노드마다 있고 그 노드의 수집기(agent-db.yml)가 긁는다(#357).
 scrape_configs:
   - job_name: node
     static_configs:
       - targets: ["127.0.0.1:9100"]
-
-  - job_name: postgres
-    static_configs:
-      - targets: ["127.0.0.1:9187"]
 
   - job_name: redis
     static_configs:

@@ -87,36 +87,38 @@
 
 ### 3.3 데이터베이스 — DB-01 · DB-02
 
-**DB-02에는 DB 지표 수집기가 없다.** postgres exporter는 APP-01에 하나만 있고 `DB_HOST`(primary)만 본다(운영 Compose). 그런데 2026-10-01부터 DB-02가 지도 · 목록 · 구별 집계 읽기를 받는다(#343) — 아래 표의 DB-02 열이 모두 「미구현」인 이유다.
+**DB-02에는 DB 지표 수집기가 없다.** postgres exporter는 APP-01에 하나만 있고 `DB_HOST`(primary)만 본다(운영 Compose). 그런데 2026-10-01부터 DB-02가 지도 · 목록 · 구별 집계 읽기를 받는다(#343) — 아래 표의 DB-02 열이 모두 「미구현」이던 이유다.
+
+**수집기를 DB 노드마다 하나로 옮겼다**(#357 — 「구현 — 반영 대기」는 저장소에 있고 노드에 아직 반영하지 않은 것이다). 그 노드의 DB를 역할과 무관하게 보고 그 노드의 수집기가 긁는다. 내장 수집기로 안 되는 D2 · D5 · D6 · D12와 S1은 exporter의 사용자 질의 파일(`infra/prometheus/postgres-queries.yaml`)이 낸다. 지표 이름은 인프라 API 명세 1장 「DB 사용자 질의 지표」가 갖는다.
 
 | # | 항목 | 수단 | DB-01 | DB-02 | 근거 |
 |---|---|---|---|---|---|
-| D1 | **DB-02 수집기** | 상시 | — | **미구현** | 위 |
-| D2 | 연결 수 — 상태별(`active` · `idle` · `idle in transaction` …) ÷ `max_connections` 48 | 상시 · 화면 · 알림 후보 | 구현 · 화면 없음 | 미구현 | 「DB 한 대일 때 최악 40 · 여유 8」(#349)을 실제로 확인한다 |
-| D3 | 가장 오래 열린 트랜잭션(`pg_stat_activity_max_tx_duration`) | 상시 · 화면 · 알림 후보 | 구현 · 화면 없음 | 미구현 | VACUUM을 막고 락을 쥔다 |
-| D4 | 초당 커밋 · 롤백 · 데드락 | 상시 · 화면 | 구현 · 화면 없음 | 미구현 | 황금 신호의 트래픽 · 오류 |
-| D5 | **잠금 — 막힌 세션 수 · 가장 오래 막힌 시간** | 상시 · 화면 | **미구현** — 지금은 종류별 락 개수(`pg_locks_count`)뿐 | 미구현 | 「누가 누구를 막나」는 `pg_blocking_pids()`로 만든다 |
-| D6 | **대기 종류별 활성 세션 수** — 몇 초마다 `pg_stat_activity`의 `wait_event_type`을 센다 | 상시 · **화면(병목 지도)** | **미구현** | 미구현 | DB 시간이 어디에 쓰이는지 — `Lock` · `LWLock` · `IO` · `Client` · `IPC` 등([PG 17 대기 종류](https://www.postgresql.org/docs/17/monitoring-stats.html)), **대기 종류가 비어 있는 활성 세션은 CPU에서 도는 중**이다. 수집기의 연결 수 지표에 대기 라벨이 있으나 값이 채워지는지는 확인하지 못했다 — 직접 센다 |
-| D7 | 버퍼 적중률 · 임시 파일 | 상시 · 화면 | 구현 · 화면 없음 | 미구현 | `shared_buffers` 64MB · `work_mem` 4MB가 버티는지. 임시 파일 누적 1.38GB |
-| D8 | **블록 읽기 · 쓰기 시간 — `track_io_timing`** | 상시 | **꺼져 있어 늘 0** | 미구현 | 켜기 전에 `pg_test_timing`으로 잰다 — PG 문서: 「운영 체제에 현재 시각을 반복해 묻기 때문에 일부 플랫폼에서 큰 오버헤드가 될 수 있다」([PG 17](https://www.postgresql.org/docs/17/runtime-config-statistics.html)) |
-| D9 | 체크포인트(`pg_stat_checkpointer`) | 상시 | **미구현** — 뷰는 있고(PG 17) 수집기가 읽지 않는다 | 미구현 | 쓰기가 디스크로 몰리는 때 |
-| D10 | **복제 지연** — 바이트(primary) · **시간(standby)** | 상시 · 화면 · 알림 후보 | 바이트 구현 · 화면 있음 | **시간 미구현** | 읽기 분산에서 사용자가 몇 초 전 데이터를 보는가. primary의 `pg_replication_lag_seconds`는 늘 0이라 standby에서 재야 한다 |
-| D11 | standby 조회 충돌(`pg_stat_database_conflicts`) | 상시 | — | 미구현 | 복제 반영 때문에 읽기 질의가 취소되는가 |
-| D12 | 죽은 행 · 마지막 자동 VACUUM · **가시성 맵 비율**(`relallvisible ÷ relpages`) — 주요 테이블 | 상시 · 화면 | 죽은 행 구현 · **가시성 미구현** | 미구현 | 2026-10-02 배치 뒤 `risk_analysis` 인덱스 전용 스캔이 테이블을 241,489번 다시 읽었다(Heap Fetches) |
+| D1 | **DB-02 수집기** | 상시 | — | 구현 — 반영 대기 | 위 |
+| D2 | 연결 수 — 상태별(`active` · `idle` · `idle in transaction` …) ÷ `max_connections` 48 | 상시 · 화면 · 알림 후보 | 구현 · 화면 없음 — 원천을 질의 파일로 바꿨다(구현 — 반영 대기) | 구현 — 반영 대기 | 「DB 한 대일 때 최악 40 · 여유 8」(#349)을 실제로 확인한다. 내장 연결 수는 라벨이 일곱이라 수집기에서 버리고 D6과 같은 사용자 질의가 상태별로 낸다. 분모 48도 사용자 질의가 낸다(설정값 지표를 끄므로) |
+| D3 | 가장 오래 열린 트랜잭션(`pg_stat_activity_max_tx_duration`) | 상시 · 화면 · 알림 후보 | 구현 · 화면 없음 | 구현 — 반영 대기 | VACUUM을 막고 락을 쥔다 |
+| D4 | 초당 커밋 · 롤백 · 데드락 | 상시 · 화면 | 구현 · 화면 없음 | 구현 — 반영 대기 | 황금 신호의 트래픽 · 오류 |
+| D5 | **잠금 — 막힌 세션 수 · 가장 오래 막힌 시간** | 상시 · 화면 | 구현 — 반영 대기 — 화면 없음 | 구현 — 반영 대기 | 「누가 누구를 막나」는 `pg_blocking_pids()`로 만든다(사용자 질의) |
+| D6 | **대기 종류별 활성 세션 수** — 몇 초마다 `pg_stat_activity`의 `wait_event_type`을 센다 | 상시 · **화면(병목 지도)** | 구현 — 반영 대기 — 화면 없음 | 구현 — 반영 대기 | DB 시간이 어디에 쓰이는지 — `Lock` · `LWLock` · `IO` · `Client` · `IPC` 등([PG 17 대기 종류](https://www.postgresql.org/docs/17/monitoring-stats.html)), **대기 종류가 비어 있는 활성 세션은 CPU에서 도는 중**이다. 수집기의 연결 수 지표에 대기 라벨이 있으나 값이 채워지는지는 확인하지 못했다 — 직접 센다(사용자 질의 — 비어 있으면 `none`) |
+| D7 | 버퍼 적중률 · 임시 파일 | 상시 · 화면 | 구현 · 화면 없음 | 구현 — 반영 대기 | `shared_buffers` 64MB · `work_mem` 4MB가 버티는지. 임시 파일 누적 1.38GB |
+| D8 | **블록 읽기 · 쓰기 시간 — `track_io_timing`** | 상시 | **꺼져 있어 늘 0** | 수집 경로는 반영 대기 · 늘 0 | 켜기 전에 `pg_test_timing`으로 잰다 — PG 문서: 「운영 체제에 현재 시각을 반복해 묻기 때문에 일부 플랫폼에서 큰 오버헤드가 될 수 있다」([PG 17](https://www.postgresql.org/docs/17/runtime-config-statistics.html)) |
+| D9 | 체크포인트(`pg_stat_checkpointer`) | 상시 | 구현 — 반영 대기 — 내장 수집기 `stat_checkpointer`를 켰다(v0.18.1 기본 꺼짐) | 구현 — 반영 대기 | 쓰기가 디스크로 몰리는 때 |
+| D10 | **복제 지연** — 바이트(primary) · **시간(standby)** | 상시 · 화면 · 알림 후보 | 바이트 구현 · 화면 있음 | 시간 구현 — 반영 대기(기본 `replication` 수집기의 `pg_replication_lag_seconds`) | 읽기 분산에서 사용자가 몇 초 전 데이터를 보는가. primary의 `pg_replication_lag_seconds`는 늘 0이라 standby에서 재야 한다 |
+| D11 | standby 조회 충돌(`pg_stat_database_conflicts`) | 상시 | — | 구현 — 반영 대기(기본 `stat_database` 수집기) | 복제 반영 때문에 읽기 질의가 취소되는가 |
+| D12 | 죽은 행 · 마지막 자동 VACUUM · **가시성 맵 비율**(`relallvisible ÷ relpages`) — 주요 테이블 | 상시 · 화면 | 죽은 행 구현 · 가시성 구현 — 반영 대기(사용자 질의) | 구현 — 반영 대기 | 2026-10-02 배치 뒤 `risk_analysis` 인덱스 전용 스캔이 테이블을 241,489번 다시 읽었다(Heap Fetches) |
 | D13 | DB 크기 · WAL 크기 · 아카이브 실패 | 상시 | 구현(아카이브는 화면도) | — | 유지 |
 
 **거두지 않을 것 — 시계열 예산(2.3)**
 
 | 대상 | 지금 | 바꾼다 |
 |---|---|---|
-| 설정값(`pg_settings_*`) | 274 | **뺀다** — 거의 바뀌지 않는다. 바꿀 때 문서와 운영 Compose가 갖는다 |
-| 테이블별 통계(`pg_stat_user_tables_*` · `pg_statio_user_tables_*`) | 957 | **주요 테이블만** — 대상은 구현 묶음에서 실측(행 수 · 쓰기량)으로 고른다 |
+| 설정값(`pg_settings_*`) | 274 | **뺀다** — 거의 바뀌지 않는다. 바꿀 때 문서와 운영 Compose가 갖는다. 구현 — 반영 대기(`--disable-settings-metrics`) |
+| 테이블별 통계(`pg_stat_user_tables_*` · `pg_statio_user_tables_*`) | 957 | **주요 테이블만** — `property` · `risk_analysis` · `ownership_history` · `building_registry` · `mortgage_history` · `building_ledger`(#353 실측 행 수 상위). 구현 — 반영 대기(수집기 `agent-db.yml`의 relabel — exporter에는 테이블 필터가 없다) |
 
 ### 3.4 SQL · 옵티마이저 통계
 
 | # | 항목 | 수단 | 지금 | 근거 |
 |---|---|---|---|---|
-| S1 | **질의별 총 시간 · 평균 · 호출 · 반환 행 · 논리적 읽기(버퍼 적중 / 디스크) · 임시 블록 — 상위 10** | 상시 · 화면 | **미구현** — `pg_stat_statements`가 두 DB에 켜져 쌓이기만 한다(DB-01 546 · DB-02 31개) | 상위만 보내 시계열을 묶는다. 질의 ID가 바뀌면 시계열이 늘어나는 것을 감안한다 |
+| S1 | **질의별 총 시간 · 평균 · 호출 · 반환 행 · 논리적 읽기(버퍼 적중 / 디스크) · 임시 블록 — 상위 10** | 상시 · 화면 | 구현 — 반영 대기 — 사용자 질의(앱 DB의 질의, 수집기 자신의 질의는 뺀다). 반영 때 앱 DB에 확장을 만든다 — 지금 뷰는 `postgres` DB에만 있다(운영 절차서 2장 「질의 통계」). 그전에는 이 지표만 빠진다. `pg_stat_statements`는 두 DB에 켜져 쌓이고 있다(DB-01 546 · DB-02 31개) | 상위만 보내 시계열을 묶는다. 질의 ID가 바뀌면 시계열이 늘어나는 것을 감안한다 |
 | S2 | 질의 통계 전체 | 스냅샷(7장) | 구현(손으로 — 운영 절차서 2장 「질의 통계」) | 상위 10 밖은 조사할 때만 |
 | S3 | **옵티마이저 통계 신선도** — 마지막 ANALYZE 뒤 바뀐 행 비율(`n_mod_since_analyze ÷ n_live_tup`) · 마지막 자동 ANALYZE | 상시 · 화면 | 구현 · 화면 없음 | 실측 세 테이블이 자동 ANALYZE 문턱(10%) 바로 아래 — `risk_analysis` 8.8% · `building_registry` 8.9% · `mortgage_history` 9.0%. 문턱을 넘는 순간 계획이 바뀔 수 있다 |
 | S4 | 통계상 행 수(`reltuples`) vs 실제 행 수 | 스냅샷(7장) | 미구현 | 실측 0 ~ 5% 차(`risk_analysis` 578,674 vs 605,600) |

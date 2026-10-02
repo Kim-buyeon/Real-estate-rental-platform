@@ -8,7 +8,7 @@
 # 값은 저장소에도 노드 디스크에도 남지 않는다.
 # 자리표시자는 작은따옴표 안에 둔다 — 값에 : · # 이 들어가도 YAML 이 깨지지 않는다(값 안의 ' 는 기동 셸이 '' 로 바꾼다).
 #
-# APP-01 의 틀(agent.yml)과 나눈 이유 — 앱 노드에는 nginx · redis 가 없고 postgres exporter 도 APP-01 에만 있다.
+# APP-01 의 틀(agent.yml)과 나눈 이유 — 앱 노드에는 nginx · redis 가 없다(postgres exporter 는 DB 노드마다 있다 — #357).
 # 뜨는 것은 node exporter 와 앱 슬롯 둘뿐이다.
 
 global:

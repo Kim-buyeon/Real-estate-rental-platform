@@ -17,7 +17,7 @@
 | INF-01 | 애플리케이션 — 노드 둘 × 슬롯 둘 | APP-01 · APP-02 | 8081 · 8082 | /actuator/health/readiness | 배포 스크립트(APP-01에서 — APP-02 슬롯은 사설망으로) | 슬롯 투입 가능 여부 |
 | INF-05 | 애플리케이션 — 노드 둘 × 슬롯 둘 | APP-01 · APP-02 | 8081 · 8082 | /actuator/prometheus | Prometheus(그 노드의 agent) | 응답 시간, 5xx, Tomcat 스레드, HikariCP, JVM |
 | INF-05 | node exporter | **APP-01 · APP-02 · DB-01 · DB-02** | 9100 | /metrics | Prometheus | CPU · 메모리 · 디스크 · 네트워크 |
-| INF-05 | postgres exporter | APP-01 | 9187 | /metrics | Prometheus | 커넥션 수, 복제 지연, 슬로우 쿼리, 캐시 적중률 |
+| INF-05 | postgres exporter | **DB-01 · DB-02**(#357) | 9187 | /metrics | Prometheus(그 노드의 agent) | 커넥션 수, 복제 지연, 슬로우 쿼리, 캐시 적중률 |
 | INF-05 | redis exporter | APP-01 | 9121 | /metrics | Prometheus | 메모리, 축출 건수, 연결 수 |
 | INF-05 | nginx exporter | APP-01 | 9113 | /metrics | Prometheus | 활성 · 읽기 · 쓰기 · 대기 연결, 수락 · 처리 연결 수, 누적 요청 수. **upstream 상태는 없다** — 오픈소스 Nginx `stub_status`가 내는 값은 이 일곱 가지뿐이다([ngx_http_stub_status_module](https://nginx.org/en/docs/http/ngx_http_stub_status_module.html)). 슬롯별 상태는 액세스 로그의 `upstream=`(Vector → Loki)로 본다 |
 | INF-05 | Blackbox exporter | APP-01 | 9115 | /probe | Prometheus | 경로 도달 여부, 응답 시간 |
@@ -25,10 +25,11 @@
 
 - APP-01의 지점은 루프백에만 바인딩한다. 인터넷에 노출하지 않는다.
 - **APP-02의 앱 슬롯(8081 · 8082)은 예외로 그 노드의 사설 IP에 게시한다**(2026-09-26 · #255) — APP-01의 Nginx와 배포 스크립트가 다른 노드에서 붙어야 한다. 그 노드의 수집기(`prom-agent-app-node`)도 그 주소로 긁는다. 게시 주소와 보안 그룹은 시스템 구성서 4장. node exporter는 다른 노드처럼 루프백이다.
-- **DB 노드의 5432는 이 표의 관측 지점이 아니다** — 앱 · 복제 경로이며 3노드에서는 DB-01 · DB-02 사설 IP에 게시하고 TLS만 받는다. 게시 주소와 접근 통제는 시스템 구성서 4장. **3노드의 DB 노드 node exporter는 그 노드의 수집기(`prom-agent-db`)가 긁어 직접 보낸다**(2026-09-25 · #243) — APP-01이 노드 밖에서 긁지 않으므로 9100을 열지 않는다
+- **DB 노드의 5432는 이 표의 관측 지점이 아니다** — 앱 · 복제 경로이며 3노드에서는 DB-01 · DB-02 사설 IP에 게시하고 TLS만 받는다. 게시 주소와 접근 통제는 시스템 구성서 4장. **3노드의 DB 노드 node exporter는 그 노드의 수집기(`prom-agent-db`)가 긁어 직접 보낸다**(2026-09-25 · #243) — APP-01이 노드 밖에서 긁지 않으므로 9100을 열지 않는다. **postgres exporter도 DB 노드마다 두고 같은 수집기가 루프백 9187을 긁는다**(#357) — 그 노드의 DB를 역할(primary · standby)과 무관하게 본다
 - **node exporter는 네 노드 모두에 둔다**(APP-02 — #255). DB 노드의 디스크 사용률은 복제 슬롯 적체·WAL 아카이브 관련 알림과 시험의 판정 지표이며, APP-01의 지표로는 알 수 없다. DB 노드의 9100은 그 노드의 수집기가 루프백으로 긁는다 — 노드 밖에 열지 않는다(3노드, #243).
 - **정기 작업 결과 지표**(node exporter textfile, 2026-09-25 · #243) — DB 노드의 `/var/lib/rental-metrics/*.prom`을 node exporter가 읽는다. `rental_job_last_success_timestamp_seconds{task="wal_ship|logical_backup|physical_backup"}`(APP-01 은 `task="tls_cert"` — 입구 인증서 확인 · 발급 성공, 2026-09-28 · #288)(마지막 성공 시각, epoch 초 — 성공으로 끝날 때만 바뀐다, standby의 「아무것도 안 함」은 쓰지 않는다) · `rental_wal_ship_pending_files`(아직 보내지 못한 WAL 파일 수). 라벨 이름이 `job`이 아니라 `task`인 것은 수집 때 붙는 `job="node"`와 겹치지 않게다. 알림 규칙은 관측 설계서 5.1
 - **입구 인증서 지표**(APP-01 textfile, 2026-09-28 · #288) — `rental_tls_cert_expiry_timestamp_seconds`(Nginx 가 내보내는 인증서의 만료 시각, epoch 초) · `rental_tls_cert_self_signed`(0 · 1 — 임시 자체 서명이면 1). `infra/tls/issue-cert.sh` 가 실행마다 쓴다(실패로 끝나도). 알림 규칙은 관측 설계서 5.1
+- **DB 사용자 질의 지표**(postgres exporter의 질의 파일 `infra/prometheus/postgres-queries.yaml`, 2026-10-02 · #357 — 반영 대기) — DB-01 · DB-02 각 노드의 exporter가 앱 DB에서 낸다. `rental_pg_sessions_count{state, wait_event_type}`(클라이언트 연결 수 — 대기 없음은 `wait_event_type="none"`) · `rental_pg_max_connections`(연결 수 비율의 분모 — 설정값 지표를 끄므로 따로 낸다) · `rental_pg_blocked_sessions` · `rental_pg_blocked_max_wait_seconds`(다른 세션에 막힌 세션 수 · 가장 오래 기다린 초) · `rental_pg_table_visibility_ratio{relname}`(주요 테이블 여섯의 `relallvisible ÷ relpages`) · `rental_pg_top_statements_total_exec_time_seconds` · `_calls` · `_rows` · `_shared_blks_hit` · `_shared_blks_read` · `_temp_blks_written`{queryid}(질의 통계 상위 10, 누적값). `rental_pg_top_statements_*`는 앱 DB에 `pg_stat_statements` 확장이 있어야 나온다 — 없으면 그것만 빠지고 `pg_exporter_last_scrape_error`가 1이다. 무엇을 보는지는 관측 설계서 3.3 · 3.4
 - Nginx는 `/actuator`로 시작하는 경로를 차단한다.
 - Prometheus 스크레이프 주기는 15초, Blackbox 프로브 주기는 30초다.
 - 스크레이프 실패는 오류를 발생시키지 않고 해당 지표가 비어 있는 상태가 된다.

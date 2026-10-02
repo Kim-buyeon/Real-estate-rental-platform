@@ -8,12 +8,12 @@
 #
 # 프로필 — 한 파일을 노드마다 다른 몫으로 띄운다. 모든 서비스가 프로필을 가지므로 infra/.env 의 COMPOSE_PROFILES 가
 # 비어 있으면 아무것도 뜨지 않는다.
-#   app       nginx · app-1 · app-2 · web · redis · 관측 수집기(prom-agent · vector · exporter 넷)
+#   app       nginx · app-1 · app-2 · web · redis · 관측 수집기(prom-agent · vector · exporter 셋 — node · redis · nginx)
 #   app-node  app-1 · app-2 · 관측 수집기(node-exporter · prom-agent-app-node · vector) — 앱 노드 APP-02(INF-01).
-#             앞단 nginx · web · redis · exporter(redis · postgres · nginx)는 APP-01 에만 있다. 요청은 APP-01 의 nginx 가
+#             앞단 nginx · web · redis · exporter(redis · nginx)는 APP-01 에만 있다. 요청은 APP-01 의 nginx 가
 #             사설망으로 넘기고(nginx/conf.d/upstream.conf), 슬롯은 APP-01 의 Redis 에 TLS(6380)로 붙는다(redis 서비스 주석)
-#   db        postgres · 관측 수집기(node-exporter · prom-agent-db)
-#   standby   postgres-standby · 관측 수집기(node-exporter · prom-agent-db)
+#   db        postgres · 관측 수집기(node-exporter · postgres-exporter · prom-agent-db)
+#   standby   postgres-standby · 관측 수집기(node-exporter · postgres-exporter · prom-agent-db)
 #   단일 노드(옛 APP-01)   COMPOSE_PROFILES=app,db,standby — 셋이 한 노드의 컨테이너다. standby 는 전환 절차를 검증하는
 #                          자리이고 노드 장애는 막지 못한다. prom-agent-db 는 이 구성을 받지 못한다(그 서비스 주석)
 #   3노드                  APP-01 app · DB-01 db · DB-02 standby. APP-01 의 infra/.env 는 DB_HOST 를 DB-01 사설 IP 로 둔다
@@ -32,7 +32,7 @@ name: rental-prod
 # 서비스 15개(nginx · app-1 · app-2 · web · redis · postgres · postgres-standby + 관측 수집기 prom-agent · prom-agent-db ·
 # prom-agent-app-node · vector · node-exporter · postgres-exporter · redis-exporter · nginx-exporter) × 10m × 3개 = 약 450 MB 가
 # 한 파일 전체의 상한이다. 한 노드에는 그 노드의 프로필에 든 서비스만 뜨므로 노드마다는 이보다 작다
-# (DB 노드는 3개 — 약 90 MB, APP-02 는 5개 — 약 150 MB).
+# (DB 노드는 4개 — 약 120 MB, APP-02 는 5개 — 약 150 MB).
 # vector 가 이 json-file 로그를 Docker API 로 읽어 밖으로 보내므로, 회전은 노드 안의 사본만 줄인다.
 x-logging: &logging
   driver: json-file
@@ -309,8 +309,10 @@ x-postgres-command: &postgres-command
   - max_parallel_workers_per_gather=0
   # 질의 통계(#270) — 어느 질의가 DB CPU 를 쓰는지 합계 · 호출 수 · 평균으로 본다. 부하 시험 T2-⑤(100 RPS 에서 DB-01 CPU
   # 0.83 ~ 0.94)의 원인을 가리려고 넣었고, 운영 중 느린 질의를 찾는 수단으로 남긴다(운영 절차서 2장 「질의 통계」).
-  # 공유 메모리에 적재돼야 수집하므로 **서버 기동 시점에만** 켜진다 — 바꾸면 재생성한다. 확장(뷰)은 앱 DB 가 아니라 postgres
-  # 데이터베이스에 만든다 — 수집은 클러스터 전체라 어디서 보든 같고, 앱 스키마 · Flyway 를 건드리지 않는다.
+  # 공유 메모리에 적재돼야 수집하므로 **서버 기동 시점에만** 켜진다 — 바꾸면 재생성한다. 확장(뷰)은 처음(#270) postgres
+  # 데이터베이스에만 만들었다 — 수집은 클러스터 전체라 어디서 보든 같다. **#357 부터 앱 DB 에도 만든다** — DB 지표 수집기
+  # (postgres-exporter)가 앱 DB 에 접속해 이 뷰를 읽는다(질의 통계 상위 10). Flyway 마이그레이션이 아니라 손 작업이고(반영 묶음),
+  # 앱 스키마의 표는 건드리지 않는다. 대가 — 앱 DB 논리 덤프에 CREATE EXTENSION 이 실린다(운영 절차서 2장 「질의 통계」).
   # 대가 — 공유 메모리 수 MB(기본 pg_stat_statements.max 5000 항목)와 질의마다 해시 · 누적의 작은 부담.
   # track 은 기본값 top 에 기댄다 — 함수 안 질의는 이 앱에 없다. standby 도 같은 목록이다(승격 뒤 같은 수단으로 본다).
   - -c
@@ -596,7 +598,7 @@ services:
     # 기본 256m 은 단일 노드(APP-01 에 앱 · Redis 와 함께) 배분이다. **3노드의 DB 노드는 PostgreSQL 혼자라 PG_MEM_LIMIT 로 올린다**
     # (#276 — DB-01 · DB-02 .env 768m). 부하 시험(INF-06, 2026-09-26 ~ 27)에서 DB-01 의 이 컨테이너가 256m 에 붙어 있었다 —
     # 샘플 최대 250.8 MiB, 여덟 회차 중 일곱이 240 MiB 이상(OOM 은 없었다). 파일 캐시가 이 상한에 과금되므로(머리 주석)
-    # 상한에 닿으면 회수에 몰린다. 768m 은 DB 노드 가용(1905 − OS 약 264 − 수집기 214 ≈ 1427 — 1905 · 264 는 APP-01 에서 잰 값을 옮겨 쓴 것이다. DB-01 의 free -m 총량도 1,905 MiB 였다 — 2026-10-01. OS 몫은 따로 재지 않았다)의 약 절반 — 나머지는
+    # 상한에 닿으면 회수에 몰린다. 768m 은 DB 노드 가용(1905 − OS 약 264 − 수집기 상한 278 ≈ 1363 — 수집기는 node exporter 64 · postgres exporter 64(#357 에서 DB 노드로 옮겼다) · prom-agent-db 150. 1905 · 264 는 APP-01 에서 잰 값을 옮겨 쓴 것이다. DB-01 의 free -m 총량도 1,905 MiB 였다 — 2026-10-01. OS 몫은 따로 재지 않았다)의 절반을 조금 넘는다(#357 전 수집기 214 일 때는 1427 의 약 절반) — 나머지는
     # 커널 page cache · 백업 스크립트 몫이다. standby 도 같은 값이다(승격 뒤 primary)
     mem_limit: ${PG_MEM_LIMIT:-256m}
     # 저장소 자원 상한 — 시스템 구성서 3장. 이미지 기본값(shared_buffers 128MB · max_connections 100)은
@@ -761,7 +763,7 @@ services:
   prom-agent:
     profiles: ["app"]
     image: prom/prometheus:v3.6.0
-    # 호스트 네트워크 — 대상이 전부 호스트 루프백(127.0.0.1:9100 · 9121 · 9187)이라 여기서 127.0.0.1 이 호스트를 가리켜야 한다.
+    # 호스트 네트워크 — 대상이 전부 호스트 루프백(127.0.0.1:9100 · 9113 · 9121 · 앱 슬롯)이라 여기서 127.0.0.1 이 호스트를 가리켜야 한다.
     # 컨테이너 IP 로 긁으면 재생성 때 IP 가 바뀌어 대상이 사라진다.
     network_mode: host
     restart: unless-stopped
@@ -824,11 +826,11 @@ services:
       # agent WAL. 전송이 끊긴 동안의 표본이 여기 남았다가 다시 붙으면 나간다
       - promagent:/prometheus
 
-  # DB 노드(DB-01 · DB-02)의 지표 수집 · 전송 — 대상은 그 노드의 node exporter 하나다. 틀은 prometheus/agent-db.yml
+  # DB 노드(DB-01 · DB-02)의 지표 수집 · 전송 — 대상은 그 노드의 node exporter 와 postgres exporter(#357) 둘이다. 틀은 prometheus/agent-db.yml
   # 각 DB 노드가 직접 Grafana Cloud 로 보낸다(나가는 길은 APP-01 의 NAT). APP-01 의 prom-agent 가 DB 노드를 긁어 가는
-  # 교차 수집을 하지 않는 이유 — 9100 을 노드 밖(보안 그룹 · firewalld)에 열어야 하고, APP-01 이 죽으면 DB 지표도 끊긴다.
+  # 교차 수집을 하지 않는 이유 — 9100 · 9187 을 노드 밖(보안 그룹 · firewalld)에 열어야 하고, APP-01 이 죽으면 DB 지표도 끊긴다.
   # 이미지 · 호스트 네트워크 · 상한 · tmpfs · 기동 셸은 prom-agent 와 같다(앵커). 다른 것은 채울 키(RENTAL_NODE 가 더 있다) ·
-  # 틀 · 저장 볼륨뿐이다. 상한 150m 은 prom-agent 의 실측(대상 다섯)에서 가져왔다 — 대상 하나의 실측은 노드 적용 뒤다.
+  # 틀 · 저장 볼륨뿐이다. 상한 150m 은 prom-agent 의 실측(대상 다섯)에서 가져왔다 — 대상 둘의 실측은 노드 적용 뒤다.
   # **단일 노드 구성(app,db,standby)에서는 쓸 수 없다** — prom-agent 와 같은 호스트에서 127.0.0.1:9090 이 겹치고,
   # 그 노드의 node exporter 는 이미 prom-agent 가 긁는다. 단일 노드로 되돌리면 이 서비스를 띄우지 않는다
   # (docker compose up 에 서비스를 골라 주거나 프로필을 나눈다 — 되돌릴 때 정한다).
@@ -943,29 +945,56 @@ services:
       - /:/host:ro,rslave
 
   # PostgreSQL 지표. 전용 역할로 붙는다 — 앱 소유자 역할의 비밀번호를 수집기에 주지 않는다(pg_monitor 멤버, 최고 권한 아님).
-  # 역할은 노드 적용 때 만든다. 앱과 같이 Compose 네트워크로 postgres 에 닿는다.
-  # 프로필은 app 이다 — 3노드에서도 APP-01 에 남아 DB_HOST(DB-01 사설 IP)로 postgres 에 붙는다.
+  # 역할은 노드 적용 때 primary 에서 만든다(복제로 standby 에도 생긴다).
+  #
+  # **DB 노드마다 하나다**(#357) — 프로필 db(DB-01) · standby(DB-02). 그 노드의 DB 서비스에 Compose 네트워크로 붙고,
+  # 그 노드의 prom-agent-db 가 루프백 9187 을 job="postgres" 로 긁는다(노드 라벨 db-01 · db-02 는 수집기가 붙인다).
+  # 역할(primary · standby)과 무관하게 두 노드를 다 보므로 페일오버 · 페일백 때 바꿀 것이 없다 — 예전에는 APP-01 에 하나를
+  # 두고 DB_HOST(현재 primary)를 따랐다.
+  #
+  # 접속 대상 PG_EXPORTER_HOST — 그 노드의 DB 서비스 이름이다. DB-01 은 비워 둔다(postgres, 기본값),
+  # DB-02 는 postgres-standby 다(승격된 뒤에도 서비스 이름은 같다).
+  # sslmode=disable 인 이유 — Compose 네트워크(컨테이너 망) 안의 접속이라 pg_hba.conf 의 마지막 줄(host all all all
+  # scram-sha-256)이 받는다. VPC 대역(10.20.0.0/16) 평문 거절 줄에 걸리지 않는다 — 노드 사이를 건너지 않는다.
+  #
+  # **반영 때 DB 노드의 infra/.env 에 POSTGRES_MONITOR_USER · POSTGRES_MONITOR_PASSWORD 를 둔다**(DB-02 는 PG_EXPORTER_HOST 도) —
+  # 지금은 APP-01 에만 있다. DB 노드 .env 는 그 노드가 쓰는 키만 남기는 규칙이라(운영 절차서 9.5) 이 키들이 그 목록에 든다.
+  # 비어 있으면 수집기는 뜨지만 접속에 실패해 pg_up 0 만 낸다.
+  #
+  # 단일 노드(app,db,standby)에서는 postgres 를 보는 하나만 뜬다. 그 구성에서는 prom-agent-db 를 쓸 수 없고
+  # prom-agent(agent.yml)는 이 대상을 긁지 않는다 — 단일 노드로 되돌릴 때 정한다(prom-agent-db 주석).
+  #
+  # 플래그 — 시계열을 덜어 내고(관측 설계서 2.3 · 3.3 「거두지 않을 것」) 내장으로 안 되는 것은 질의 파일로 더한다.
+  #   --disable-settings-metrics   pg_settings_* (설정값 274개)를 내지 않는다
+  #   --collector.stat_checkpointer  체크포인트(D9) — v0.18.1 에 있고 기본 꺼짐
+  #   --extend.query-path          사용자 질의(D2 · D5 · D6 · D12 · S1) — prometheus/postgres-queries.yaml
+  # 테이블별 통계를 주요 테이블로 줄이는 것과 pg_stat_activity_count 를 버리는 것은 수집기 쪽(agent-db.yml) relabel 이다 —
+  # exporter 에는 테이블 필터가 없다.
+  # 복제 지연 시간(D10)은 standby 에서 기본 replication 수집기의 pg_replication_lag_seconds, 조회 충돌(D11)은 기본
+  # stat_database 수집기가 낸다.
   postgres-exporter:
-    profiles: ["app"]
+    profiles: ["db", "standby"]
     image: quay.io/prometheuscommunity/postgres-exporter:v0.18.1
     restart: unless-stopped
     logging: *logging
     mem_limit: 64m
+    command:
+      - --disable-settings-metrics
+      - --collector.stat_checkpointer
+      - --extend.query-path=/etc/postgres-exporter/queries.yaml
     environment:
-      # 호스트는 앱과 같은 DB_HOST — 페일오버(운영 절차서 6.1) 뒤에도 현재 primary 를 본다
-      DATA_SOURCE_URI: ${DB_HOST:-postgres}:5432/${POSTGRES_DB}?sslmode=${PG_EXPORTER_SSLMODE:-disable}
+      DATA_SOURCE_URI: ${PG_EXPORTER_HOST:-postgres}:5432/${POSTGRES_DB}?sslmode=disable
       DATA_SOURCE_USER: ${POSTGRES_MONITOR_USER:-}
       DATA_SOURCE_PASS: ${POSTGRES_MONITOR_PASSWORD:-}
       TZ: Asia/Seoul
-    # 호스트 루프백 게시 — prom-agent(호스트 네트워크)가 127.0.0.1 로 긁는다. 다른 게시 포트와 같은 셋째 겹이다
+    volumes:
+      - ./prometheus/postgres-queries.yaml:/etc/postgres-exporter/queries.yaml:ro
+    # 호스트 루프백 게시 — prom-agent-db(호스트 네트워크)가 127.0.0.1 로 긁는다. 다른 게시 포트와 같은 셋째 겹이다
     ports:
       - "127.0.0.1:9187:9187"
-    # required: false — 3노드에서는 postgres 가 다른 노드라 이 노드의 활성 프로필에 없다(x-app 의 depends_on 주석).
-    # 짧은 형식(- postgres)에는 required 를 줄 수 없어 긴 형식으로 쓴다. condition 은 짧은 형식의 기본값 그대로다
-    depends_on:
-      postgres:
-        condition: service_started
-        required: false
+    # depends_on 을 두지 않는다 — DB 가 없거나 아직 안 떴어도 수집기는 돌며 pg_up 0 을 낸다(다음 스크레이프에 다시 붙는다).
+    # 두면 페일오버 격리 중(운영 절차서 6.1 3단계 — 구 primary 를 멈춰 둔 상태) docker compose up -d postgres-exporter 가
+    # 의존 서비스인 옛 primary 를 다시 띄운다.
 
   # Redis 지표
   redis-exporter:
