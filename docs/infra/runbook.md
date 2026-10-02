@@ -83,6 +83,8 @@
 | 백업 · WAL 경과 | 알림 규칙(관측 설계서 5.1)과 같은 기준 |
 | 인증서 남은 시간 빨강 48시간 · 노랑 72시간 | 72시간은 갱신을 시작하는 기준(`issue-cert.sh`), 48시간은 알림 규칙(관측 설계서 5.1)과 같다(4.3) |
 
+**슬롯별 응답 시간 보기**(관측 설계서 3.1 W7 — 구현 · 반영 대기) — 앞단 접근 로그 끝의 `uct=`(슬롯 연결) · `urt=`(슬롯 응답, 초)를 Grafana 탐색에서 LogQL로 뽑는다. 스트림은 4.2 「429 비율 보기」와 같다: `quantile_over_time(0.95, {node="app-01", service="nginx"} |= "/api/" != "/api/notifications/stream" | regexp "upstream=(?P<slot>[0-9.:]+) rt=[^ ]+ rid=[^ ]+ uct=[^ ]+ urt=(?P<urt>[0-9.]+)" | unwrap urt | __error__="" [5m]) by (slot)` — 슬롯별 p95. 재시도로 슬롯을 여럿 거친 줄은 `upstream=`이 `, `로 이어져 이 식에서 빠진다(그런 줄은 `|= ", "`로 따로 본다). 같은 시각에 `rt=`만 크고 `urt=`가 작으면 슬롯 앞(입구 · 노드 간 홉), `urt=`가 크면 슬롯(앱)이다 — `uct=`가 크면 슬롯까지의 연결이다. 읽는 법은 관측 설계서 3.1 W7.
+
 **가져온 대시보드**(`rental` 폴더 — Node Exporter Full · JVM (Micrometer) · NGINX exporter · Redis · PostgreSQL)의 데이터 소스는 `grafanacloud-whitemocha1136-prom`(UID `grafanacloud-prom`)이다. 가져온 공개 대시보드가 빈 화면이던 원인은 셋이다(#253) — NGINX · Node · PostgreSQL은 데이터 소스 변수가 목록 첫 항목(`grafanacloud-usage`)으로 잡혔다. JVM은 패널 일부가 없는 변수 `${DS_PROMETHEUS}`를 가리켰고, `application` 라벨로 거르는데 앱 지표에 그 라벨이 없어 `job="app"`으로 바꿨다. Redis는 처음부터 맞았다.
 
 

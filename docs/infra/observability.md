@@ -62,7 +62,7 @@
 | W4 | **Tomcat 스레드 — 바쁨 ÷ 최대**(`tomcat_threads_busy_threads` · `tomcat_threads_config_max_threads`) | 상시 · 화면 | 구현 · 화면 없음 | USE 포화. 트래픽 정의서가 「스레드 지표」로 인용한다 |
 | W5 | JVM — 힙 · 힙 밖(`jvm_memory_used_bytes{area="nonheap"}`) · GC 멈춤 시간 | 상시 · 화면 | 구현 · 화면 없음 | 힙은 상한의 35%(운영 Compose `MaxRAMPercentage`), 2026-09-30 슬롯 OOM 이력 |
 | W6 | 비동기 작업 · 스케줄러 큐(`executor_*{name="applicationTaskExecutor" \| "taskScheduler"}`) | 상시 | 구현 | 배치 · 비동기 작업이 밀리는지 |
-| W7 | **슬롯 연결 시간 · 슬롯 응답 시간 — Nginx 접근 로그** | 로그 | **미구현** | 지금 로그 형식은 전체 시간(`rt=`)과 슬롯 주소(`upstream=`)만 있다. `$upstream_connect_time` · `$upstream_response_time`을 더해야 「입구 · 노드 간 홉」과 「앱」이 갈린다 |
+| W7 | **슬롯 연결 시간 · 슬롯 응답 시간 — Nginx 접근 로그** | 로그 | 구현 — 반영 대기 | 로그 형식(`main` · `no_query`) 끝에 `uct=`(`$upstream_connect_time`) · `urt=`(`$upstream_response_time`)를 더했다 — 전체 시간(`rt=`)과 견주어 「입구 · 노드 간 홉」과 「앱」을 가른다. **읽는 법** — 단위는 초다. **알림 SSE(`/api/notifications/stream`)의 값은 응답 시간이 아니라 연결이 열려 있던 시간**이라 응답 시간 집계에서 뺀다. 재시도로 슬롯을 여럿 거치면 값이 `, `로 이어진다(`upstream=`과 같은 순서 — 마지막이 응답한 슬롯). 뒤로 넘기지 않은 요청(점검 응답 503 · 상한 429 · `/actuator` 404)은 `-`이고, 화면 경로(`/`)의 값은 슬롯이 아니라 화면 컨테이너(web)의 것이다. 보는 질의는 운영 절차서 2장 |
 | W8 | Nginx 동시 연결 · 요청 수 | 상시 | 구현 | 슬롯별 상태는 오픈소스 `stub_status`에 없다(인프라 API 명세 1장) — W7이 맡는다 |
 | W9 | Redis — 메모리 · 연결 · 명령 지연 · 적중/빗나감 · 퇴출, 앱 쪽 클라이언트 지연(`lettuce_*`) | 상시 · 화면 | 구현 · 화면 없음 | 토큰 · 락 · 캐시 · Pub/Sub를 한 대(APP-01)가 맡는다. **Redis 구간은 추적에 잡히지 않아(6장) 이 지표가 대신한다** |
 
