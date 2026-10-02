@@ -14,6 +14,8 @@ import ch.qos.logback.core.encoder.Encoder;
 import ch.qos.logback.core.status.Status;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -97,7 +99,23 @@ class LogbackConsolePatternTest {
         MDC.put("trace_id", "4bf92f3577b34da6a3ce929d0e0e4736");
         MDC.put("trace_flags", "00");
 
-        assertThat(render("checked")).contains("[abc-123] [4bf92f3577b34da6a3ce929d0e0e4736 00]");
+        assertThat(render("checked")).contains("[abc-123] [trace_id=4bf92f3577b34da6a3ce929d0e0e4736 flags=00]");
+    }
+
+    @Test
+    @DisplayName("Grafana Cloud Loki 의 기본 파생 필드 정규식이 trace_id 를 잡고 요청 ID 는 잡지 않는다")
+    void matchesGrafanaDefaultDerivedField() {
+        MDC.put("traceId", "abc-123");
+        MDC.put("trace_id", "4bf92f3577b34da6a3ce929d0e0e4736");
+        MDC.put("trace_flags", "03");
+        // 2026-10-02 grafanacloud-logs 데이터 소스 설정에서 읽은 값(#373)
+        Pattern derived = Pattern.compile("[tT]race_?[iI][dD]\"?[:=]\"?(\\w+)");
+
+        Matcher m = derived.matcher(render("checked"));
+
+        assertThat(m.find()).isTrue();
+        assertThat(m.group(1)).isEqualTo("4bf92f3577b34da6a3ce929d0e0e4736");
+        assertThat(m.find()).isFalse();
     }
 
     @Test
@@ -105,7 +123,7 @@ class LogbackConsolePatternTest {
     void omitsOtelBlockWithoutAgent() {
         String line = render("startup");
 
-        assertThat(line).contains("[no-trace]").doesNotContain("[ ]", "[]");
+        assertThat(line).contains("[no-trace]").doesNotContain("trace_id=", "flags=", "[ ]", "[]");
     }
 
     @Test
