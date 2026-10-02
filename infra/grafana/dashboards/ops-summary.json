@@ -48,7 +48,7 @@
       "id": 2,
       "type": "stat",
       "title": "서비스",
-      "description": "무엇: 입구 Nginx · 앱 슬롯 하나 이상 · DB · Redis 가 모두 수집기에 닿는지. 넷 중 하나라도 빠지면 「장애」. APP-01 의 수집기가 이 값을 보내므로 APP-01 이 멈추면 0 이다.\n\n위험: 「장애」(0) — 사용자 요청이 실패하고 있을 가능성이 크다.\n\n할 일: 오른쪽 「노드 수집」 · 「앱 슬롯」에서 어느 쪽인지 좁히고, APP-01 에서 docker compose ps 로 nginx · app · postgres-exporter · redis-exporter 상태를 본다 — 운영 절차서 2장 · 7장 장애 대응.",
+      "description": "무엇: 입구 Nginx · 앱 슬롯 하나 이상 · primary DB · Redis 가 모두 수집기에 닿는지. 넷 중 하나라도 빠지면 「장애」. DB 는 복제 중이 아닌 쪽(primary — 보통 DB-01, 페일오버 뒤에는 DB-02)의 pg_up 만 본다 — standby 가 멈춘 것은 「복제」 패널 · 병목 지도가 본다. Nginx · 앱 · Redis 는 APP-01 의 수집기가, DB 는 그 DB 노드의 수집기가 보낸다 — APP-01 이 멈추면 0, primary DB 노드의 수집기가 멈춰도 0 이 된다(노드째 멈추면 마지막 값이 최대 5분 남는다).\n\n위험: 「장애」(0) — 사용자 요청이 실패하고 있을 가능성이 크다.\n\n할 일: 오른쪽 「노드 수집」 · 「앱 슬롯」에서 어느 쪽인지 좁히고, APP-01 에서 docker compose ps 로 nginx · app · redis-exporter, primary DB 노드에서 postgres · postgres-exporter 상태를 본다 — 운영 절차서 2장 · 7장 장애 대응.",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -67,7 +67,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "(max(up{job=\"nginx\"}) or vector(0)) * (clamp_max(sum(up{job=\"app\"}), 1) or vector(0)) * (max(pg_up) or vector(0)) * (max(redis_up) or vector(0))",
+          "expr": "(max(up{job=\"nginx\"}) or vector(0)) * (clamp_max(sum(up{job=\"app\"}), 1) or vector(0)) * (max(pg_up and on (node) pg_replication_is_replica == 0) or vector(0)) *(max(redis_up) or vector(0))",
           "legendFormat": "서비스",
           "range": true,
           "instant": false
@@ -330,7 +330,7 @@
       "id": 5,
       "type": "stat",
       "title": "응답 p95",
-      "description": "무엇: 앱 API 요청의 95번째 백분위 응답 시간(5분). /actuator · 알림 SSE 스트림(수십 초 열려 있다) · UNKNOWN 은 뺐다. 앱은 구간 100ms · 300ms · 500ms · 1s · 3s 만 내므로 값은 구간 사이 보간 — 대략값이다.\n\n위험: 노랑 300ms · 빨강 500ms — 500ms 는 시험 계획서 2.3 의 포화점 판정 기준.\n\n할 일: 「포화점 대비 부하」 · 「DB 노드 CPU」를 같이 본다 — 부하가 높으면 용량, 부하가 낮은데 느리면 질의(운영 절차서 2장 질의 통계).",
+      "description": "무엇: 앱 API 요청의 95번째 백분위 응답 시간(5분). /actuator · 알림 SSE 스트림(수십 초 열려 있다) · UNKNOWN 은 뺐다. 앱은 구간 100ms · 300ms · 500ms · 1s · 3s 만 내므로 값은 구간 사이 보간 — 대략값이다.\n\n위험: 노랑 300ms · 빨강 500ms — 500ms 는 시험 계획서 2.3 의 포화점 판정 기준.\n\n할 일: 「포화점 대비 부하」 · 「노드 CPU」를 같이 본다 — 부하가 높으면 용량, 부하가 낮은데 느리면 질의(운영 절차서 2장 질의 통계). 어느 구간이 느린지는 병목 지도(같은 폴더)에서 좁힌다.",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -576,8 +576,8 @@
     {
       "id": 8,
       "type": "stat",
-      "title": "DB 노드 CPU",
-      "description": "무엇: DB 노드 둘의 CPU 사용률(5분). 부하 시험에서 먼저 한계에 닿은 자원이다. primary 는 보통 DB-01(페일오버 뒤에는 DB-02).\n\n위험: 노랑 50% · 빨강 68% — 기준을 넘은 175 RPS 에서 DB-01 이 0.68 이었다(용량 산정 리포트).\n\n할 일: 운영 절차서 2장 질의 통계(pg_stat_statements)로 어느 질의가 쓰는지 본다.",
+      "title": "노드 CPU",
+      "description": "무엇: 노드 넷의 CPU 사용률(5분). DB 노드는 부하 시험에서 먼저 한계에 닿은 자원이다. primary 는 보통 DB-01(페일오버 뒤에는 DB-02).\n\n위험: 노랑 50% · 빨강 68% — 기준을 넘은 175 RPS 에서 DB-01 이 0.68 이었다(용량 산정 리포트). 앱 노드에는 따로 정한 기준값이 없어 같은 경계를 쓴다.\n\n할 일: DB 노드면 운영 절차서 2장 질의 통계(pg_stat_statements)로 어느 질의가 쓰는지 본다. 앱 노드면 병목 지도의 ② Tomcat · ③ GC 를 본다.",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -596,7 +596,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "1 - avg by (node) (rate(node_cpu_seconds_total{mode=\"idle\",node=~\"db-0[12]\"}[5m]))",
+          "expr": "1 - avg by (node) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))",
           "legendFormat": "{{node}}",
           "range": true,
           "instant": false

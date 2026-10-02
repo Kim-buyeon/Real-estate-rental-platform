@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Grafana Cloud 반영 — 운영 요약 대시보드 · 알림 규칙 그룹 · 메일 템플릿 · 연락처를 저장소의 정의대로 올린다(INF-05). 운영 절차서 2장.
+# Grafana Cloud 반영 — 대시보드(dashboards/*.json — 운영 요약 · 병목 지도) · 알림 규칙 그룹 · 메일 템플릿 · 연락처를 저장소의 정의대로 올린다(INF-05). 운영 절차서 2장.
 #
 #   read -rs GRAFANA_SA_TOKEN && export GRAFANA_SA_TOKEN      토큰은 화면에 치지 않고 받는다 — 명령줄에 두면 셸 기록에 남는다
 #   GRAFANA_STACK_URL=https://<스택>.grafana.net GRAFANA_ALERT_EMAIL=<받을 주소> bash infra/grafana/apply.sh
 #
 # 멱등이다 — 같은 정의를 다시 올리면 덮어쓸 뿐 새로 생기지 않는다(템플릿 · 연락처 · 규칙 그룹은 이름 · UID 로 PUT,
-# 대시보드는 UID rental-ops-summary 에 overwrite). 대시보드 판(version)은 내용이 바뀔 때만 오른다(2026-09-28 — 같은 정의를 다시 올려도 판 2 그대로).
+# 대시보드는 파일마다 그 파일의 UID — rental-ops-summary · rental-bottleneck — 에 overwrite). 대시보드 판(version)은 내용이 바뀔 때만 오른다(2026-09-28 — 같은 정의를 다시 올려도 판 2 그대로).
 #
 # 왜 저장소에 두나 — #253 에서 가져온 대시보드가 빈 화면이던 원인 셋이 모두 화면에서만 고친 것이라 저장소가 몰랐다.
 # 정의를 여기 두고 이 스크립트로만 올린다. 화면에서 고쳤으면 그 JSON 을 저장소에도 옮긴다 — 규칙 · 템플릿 · 연락처는
@@ -17,7 +17,8 @@
 # 메일 주소도 저장소에 두지 않는다 — contact-point-email.json 의 ${GRAFANA_ALERT_EMAIL} 자리를 실행할 때 채운다.
 #
 # 이 스택 전용 값 — 규칙 · 대시보드의 폴더 UID fq8pjr(rental 폴더), 연락처 UID efzdy1y03n8xsb, 데이터 소스 UID grafanacloud-prom.
-# 스택을 새로 만들면 셋 모두 새 값이라 JSON 과 이 스크립트를 함께 고친다.
+# 스택을 새로 만들면 셋 모두 새 값이라 JSON 과 이 스크립트를 함께 고친다. 로그(Loki) · 추적(Tempo) 데이터 소스는 UID 를 박지 않는다 —
+# 병목 지도가 대시보드 변수(유형 loki · tempo)로 고른다. 스택에 하나씩이라 첫 항목이 맞다.
 #
 # JSON 인코딩은 python 으로 한다(Rocky · 이 PC 모두 있다. jq 는 이 PC 에 없다). Windows 의 python3 는 스토어 안내 껍데기일 수 있어
 # 실제로 도는 쪽을 고른다. 경로는 이 스크립트 폴더 기준 상대 경로로 넘긴다 — Windows 의 python 은 /c/... 경로를 읽지 못한다.
@@ -80,16 +81,18 @@ sys.stdout.write(json.dumps(json.load(open("alerting/rules-rental-backup.json", 
 ' | api PUT "/api/v1/provisioning/folder/$FOLDER_UID/rule-groups/rental-backup" > /dev/null
 echo "3/4 규칙 그룹 rental-backup 반영"
 
-# 4. 대시보드 — 폴더 rental 에 UID 로 덮어쓴다
-RES=$("$PY" -c '
+# 4. 대시보드 — dashboards/ 의 JSON 을 모두 폴더 rental 에 각자의 UID 로 덮어쓴다. 파일을 더하면 이 단계가 함께 올린다
+for f in dashboards/*.json; do
+  RES=$("$PY" -c '
 import json, sys
-d = json.load(open("dashboards/ops-summary.json", encoding="utf-8"))
+d = json.load(open(sys.argv[1], encoding="utf-8"))
 sys.stdout.write(json.dumps({"dashboard": d, "folderUid": "'"$FOLDER_UID"'", "overwrite": True, "message": "infra/grafana/apply.sh"}))
-' | api POST /api/dashboards/db)
-OUT=$(printf '%s' "$RES" | "$PY" -c '
+' "$f" | api POST /api/dashboards/db)
+  OUT=$(printf '%s' "$RES" | "$PY" -c '
 import json, sys
 d = json.load(sys.stdin)
 print(d.get("url"), d.get("version"))
 ')
-read -r URL VER <<< "$OUT"
-echo "4/4 대시보드 반영 — $BASE$URL (판 $VER)"
+  read -r URL VER <<< "$OUT"
+  echo "4/4 대시보드 $f 반영 — $BASE$URL (판 $VER)"
+done
