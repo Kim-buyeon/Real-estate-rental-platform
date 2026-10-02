@@ -937,8 +937,21 @@ services:
       # (node_textfile_scrape_error 1)만 남기고 나머지 지표는 그대로 낸다. .prom 으로 끝나는 파일만 읽으므로
       # 스크립트가 쓰는 도중의 임시 파일(.<작업>.prom.tmp)은 걸리지 않는다
       - --collector.textfile.directory=/host/var/lib/rental-metrics
+      # systemd 실패 유닛(관측 설계서 3.2 O14) — 이 수집기는 기본 꺼짐이다. 정기 작업(백업 · WAL 전송 · 설정 사본 · 입구 인증서)이
+      # systemd 타이머라 실패가 저널에만 남는다. 유닛은 아래 목록만 — 전체를 거두면 수백 유닛 × 상태 다섯이 시계열 예산(2.3)을 넘는다.
+      # 수집기가 정규식 앞뒤를 고정한다(^…$). 노드마다 없는 유닛은 그냥 빠진다.
+      #   rental-*      infra/backup/ 넷(rental-backup · rental-basebackup · rental-config-copy · rental-wal-ship) · infra/tls/ 하나(rental-tls)
+      #   dnf-automatic 보안 갱신 타이머(infra/os/dnf/)
+      #   chronyd · docker · sshd · firewalld
+      # 상태는 수집기 설정(prometheus/agent*.yml)의 relabel 이 state="failed" 줄만 남긴다
+      - --collector.systemd
+      - --collector.systemd.unit-include=(rental-.+|dnf-automatic)\.(service|timer)|(chronyd|docker|sshd|firewalld)\.service
     environment:
       TZ: Asia/Seoul
+      # systemd 수집기는 D-Bus 시스템 버스로 붙는다(주소 기본값 /var/run/dbus/system_bus_socket). 호스트 / 를 /host 로 이미 붙였으므로
+      # 그 안의 소켓을 가리킨다 — 마운트를 더하지 않는다. 버스에 닿지 못하면 이 수집기만 실패하고
+      # (node_scrape_collector_success{collector="systemd"} 0) 나머지 지표는 그대로 나온다
+      DBUS_SYSTEM_BUS_ADDRESS: unix:path=/host/run/dbus/system_bus_socket
     volumes:
       # rslave — 호스트에 나중에 붙는 마운트(NAS 등)도 컨테이너 안에 보이게 한다. 파일시스템 지표가 그것을 센다.
       # **여기에 :z · :Z 를 붙이지 않는다** — SELinux 가 호스트 / 전체의 레이블을 다시 쓴다.
