@@ -16,10 +16,12 @@ WITH checks(name, violations) AS (
      (SELECT count(*) FROM loadtest.property_origin o
         JOIN property p ON p.property_id = o.property_id
         JOIN risk_analysis ra ON ra.property_id = o.property_id AND ra.is_latest
-        LEFT JOIN LATERAL (SELECT coalesce(sum(h.max_bond_amount + coalesce(h.prior_tenant_deposit, 0))
-                                           FILTER (WHERE h.senior_debt_yn AND h.is_active), 0) AS s
-                             FROM mortgage_history h WHERE h.registry_id = ra.registry_id) d ON TRUE
-       WHERE ra.lease_ratio <> least(round((d.s + p.deposit) * 100.0 / p.market_price, 2), 999.99))),
+        LEFT JOIN (SELECT h.registry_id, sum(h.max_bond_amount + coalesce(h.prior_tenant_deposit, 0)) AS s
+                     FROM mortgage_history h
+                    WHERE h.senior_debt_yn AND h.is_active
+                      AND h.registry_id > (SELECT max_registry_id FROM loadtest.baseline)
+                    GROUP BY h.registry_id) d ON d.registry_id = ra.registry_id   -- 한 번 묶어 맞댄다(행마다 하위 조회 금지)
+       WHERE ra.lease_ratio <> least(round((coalesce(d.s, 0) + p.deposit) * 100.0 / p.market_price, 2), 999.99))),
     ('등급 · 사유 짝이 맞지 않음',
      (SELECT count(*) FROM risk_analysis
        WHERE NOT ((risk_grade = 'SAFE' AND risk_reason = 'INSURANCE_ELIGIBLE')
@@ -31,8 +33,11 @@ WITH checks(name, violations) AS (
     ('최신 판정의 previous_grade 가 바로 앞 이력 등급과 다름(새 매물)',
      (SELECT count(*) FROM loadtest.property_origin o
         JOIN risk_analysis ra ON ra.property_id = o.property_id AND ra.is_latest
-        JOIN LATERAL (SELECT h.risk_grade FROM risk_analysis h WHERE h.property_id = o.property_id AND NOT h.is_latest
-                       ORDER BY h.analyzed_at DESC LIMIT 1) prev ON TRUE
+        JOIN (SELECT property_id, risk_grade,
+                     row_number() OVER (PARTITION BY property_id ORDER BY analyzed_at DESC) AS rn
+                FROM risk_analysis
+               WHERE NOT is_latest AND risk_id > (SELECT max_risk_id FROM loadtest.baseline)) prev
+          ON prev.property_id = o.property_id AND prev.rn = 1   -- 이력 색인이 없어 행마다 찾으면 비용 6.7e11(2026-10-03 EXPLAIN)
        WHERE ra.previous_grade IS DISTINCT FROM prev.risk_grade)),
     ('알림 before/after 가 이력의 변화가 아님',
      (SELECT count(*) FROM wishlist_notification wn
