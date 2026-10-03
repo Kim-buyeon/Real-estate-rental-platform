@@ -538,7 +538,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 10-DB | **DB 노드만** — 커널 쓰기 상한 `sudo install -m 644 -o root -g root ~/rental/infra/os/sysctl/60-rental-db-dirty.conf /etc/sysctl.d/` → `sudo sysctl --system`. 이유는 서버 운영 기반 설계서 8장 「커널 쓰기 상한」 행 | `sysctl vm.dirty_ratio vm.dirty_background_ratio` → `5` · `2`, 재부팅 뒤 유지 |
 | 11 | **첫 부팅이 끝나면 cloud-init 을 끈다** — `sudo touch /etc/cloud/cloud-init.disabled`. 이유 · 대가 · 되돌리기는 서버 운영 기반 설계서 8장. **네 노드 적용: 2026-09-27 19:30**(#279) — APP-02 재부팅 실측 SSH 29초 · 슬롯 readiness 1분 31초 | 파일이 있다. 재부팅 뒤 `sudo cloud-init status` → `status: disabled`(sudo 없이는 권한 오류), `systemctl is-active cloud-init-local` → `inactive`, SSH · 서비스 정상 |
 
-**9.1 표 11(cloud-init 끄기)은 아래 3노드 · APP-02 표보다 나중에 더했다** — 두 표대로 새 노드를 준비할 때 마지막에 11을 밟는다(네 노드는 2026-09-27에 적용, #279).
+**9.1 표 11(cloud-init 끄기)은 아래 3노드 · APP-02 표보다 나중에 더했다** — 두 표대로 새 노드를 준비할 때 마지막에 11을 밟는다(네 노드는 2026-09-27에 적용, #279). **10-DB(커널 쓰기 상한)도 나중에 더했다** — DB 노드를 준비할 때 10 뒤에 밟는다. 떠 있는 DB-01 · DB-02 에는 2026-10-04 01:23 에 같은 파일을 설치하고 `sysctl -p` 로 바로 걸었다(PostgreSQL 재시작 없음, #382) — 두 노드 `5` · `2`, 라벨 `system_conf_t`, DB-02 재부팅(01:26) 뒤 유지 · standby healthy. deploy 에는 sudo 가 없어 root 컨테이너(`postgres:17-alpine --privileged`)로 설치했다.
 
 **3노드(Rocky 9.8) 준비 — 실제로 밟은 순서**(사용자 본인 계정 · 서울 · 2026-09-25 12:16 ~ 12:31, #233). 위 표의 1 ~ 9를 세 노드에 밟았다 — **단 4의 `rocky` 잠금은 하지 않았다**(아래 6). 10(NFS)은 3노드 결정으로 NAS를 두지 않아 없다. 값(CIDR · 사설 IP · 인스턴스)은 시스템 구성서 2.1 · 3 · 4장이 갖는다.
 
