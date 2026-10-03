@@ -52,7 +52,8 @@
 ├── chaos-harness/        시험 실행 — 부하 시험만. 장애 주입은 차기 범위
 │   ├── load/               k6 프로파일과 토큰 풀
 │   ├── scenarios/          장애 주입·복구 스크립트
-│   └── report/             지표 수집과 결과서 생성
+│   ├── report/             지표 수집과 결과서 생성
+│   └── measure/            JMeter 부하 시험의 측정 — 회차 수집 · 집계 · 그래프 · 결과 보고서 PDF
 │
 ├── .github/
 │   ├── workflows/          빌드·테스트(ci.yml) · 이미지 빌드·스캔·등록(image.yml)

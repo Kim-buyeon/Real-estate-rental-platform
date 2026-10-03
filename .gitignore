@@ -30,3 +30,9 @@ chaos-harness/load/results/
 
 # 부하 시험 데이터 생성 — 파이썬 캐시(INF-06 #376). 원천 · 출력 · 비밀 시드는 저장소 밖(LOADTEST_DATA)
 chaos-harness/load/data/__pycache__/
+
+# 부하 시험 측정 — 회차 결과 · 추적 수신 파일 · 프로파일러 내려받기(INF-06 #378)
+chaos-harness/measure/results/
+chaos-harness/measure/trace-data/
+chaos-harness/measure/.cache/
+chaos-harness/measure/analyze/**/__pycache__/
