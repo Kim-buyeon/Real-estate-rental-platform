@@ -17,8 +17,9 @@ set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 
-# 이미지 고정 — Docker Hub otel/opentelemetry-collector-contrib 의 0.161.0(2026-09-16 릴리스. 0.162.0 은 확인 시점에 이미지가 없었다)
-IMAGE=otel/opentelemetry-collector-contrib:0.161.0
+# 이미지 고정 — Docker Hub otel/opentelemetry-collector-contrib 의 0.136.0. 로컬 검증(#378 — 파일 내보내기의 append 와
+# collect.sh 의 「복사한 뒤 비우기」)을 이 판으로 했다. 판을 올리면 그 검증을 다시 한다(README 「추적 수신기」)
+IMAGE=otel/opentelemetry-collector-contrib:0.136.0
 NAME=rental-trace-receiver
 BIND_ADDR=${BIND_ADDR:-127.0.0.1}
 TRACE_DIR=${TRACE_DIR:-$MEASURE_ROOT/trace-data}

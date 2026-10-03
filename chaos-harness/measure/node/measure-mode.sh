@@ -11,6 +11,8 @@
 #   OTEL_MEASURE_RECEIVER_ENDPOINT=http://<생성기 사설 IP>:4318/v1/traces   그 설정의 두 번째 내보내기(trace-receiver.sh 의 수신기)
 # 를 넣고(off 는 지운다 — 없으면 평시 agent.yaml), 마운트 · 환경이 바뀌었으므로 슬롯을 재생성해야 반영된다.
 # 재생성은 부하가 없는 때(회차 사이)에만 한다 — upstream 에서 빼지 않는다(lib.sh 의 recreate_slots 주석).
+# on 은 모든 앱 노드 .env 의 배치 스위치 넷(lib.sh BATCH_KEYS)이 전부 false 일 때만 켠다 — 하나라도 아니면(줄 없음 = 기본 true)
+# 어느 노드의 .env 도 바꾸지 않고 거부한다. 이유는 set_node 안 주석.
 #
 # 에이전트 자체의 스위치는 OTEL_JAVAAGENT_ENABLED 다(운영 Compose x-app). 이 스크립트는 그 값을 바꾸지 않는다 —
 # true 가 아니면 측정 모드를 켜도 추적이 나오지 않으므로 경고만 한다.
@@ -65,22 +67,34 @@ done
 EOF
 }
 
-set_node() {  # <노드> on|off <주소>
+set_node() {  # <노드> on|off|check <주소> — check 는 on 의 확인만 하고 .env 를 바꾸지 않는다
   local node=$1 mode=$2 endpoint=${3:-}
   log "[$(node_label "$node")] .env — 측정 모드 $mode"
   # 값에는 | · 따옴표가 없다(고정 이름과 http://IP:4318/v1/traces) — sed 구분자를 | 로 쓴다(deploy.sh 의 set_env 와 같은 방식)
-  on_node "$node" "bash -s -- $(q "$NODE_DIR") $mode $(q "$endpoint")" <<'EOF'
+  on_node "$node" "bash -s -- $(q "$NODE_DIR") $mode $(q "$endpoint") $(q "$BATCH_KEYS")" <<'EOF'
 set -eu
 cd "$1"
 test -f .env
 set_env() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi; }
-if [ "$2" = on ]; then
+if [ "$2" = on ] || [ "$2" = check ]; then
   grep -q 'OTEL_AGENT_PROFILE' docker-compose.yml && [ -f otel/agent-measure.yaml ] \
     || { echo "체크아웃이 측정 모드 이전이다 — .env 를 바꾸지 않았다" >&2; exit 1; }
-  # 기동 따라잡기 배치가 켜져 있으면 슬롯을 재생성할 때마다 배치가 돌고, 측정 모드는 그 구간을 남긴다 —
-  # 로컬 실측(#378)에서 기동 한 번이 구간 약 26만 개 · 수신기 파일 1 GB 를 냈다(Grafana 예산도 같이 먹는다)
-  [ "$(grep -E '^BATCH_STARTUPCATCHUP_ENABLED=' .env | tail -1 | cut -d= -f2- | tr -d "\"' ")" = false ] \
-    || { echo "BATCH_STARTUPCATCHUP_ENABLED=false 가 아니다 — 먼저 끈다(.env 를 바꾸지 않았다)" >&2; exit 1; }
+  # 배치 스위치 넷($4)이 전부 false 여야 켠다. 줄이 없으면 앱 기본값 true — 켜진 것으로 본다.
+  # 하나라도 false 가 아니면 .env 를 건드리지 않고 거부한다.
+  # - 측정 모드는 배치 구간도 남긴다 — 로컬 실측(#378)에서 측정 모드 기동 한 번(기동 따라잡기)이 구간 약 26만 개 ·
+  #   수신기 파일 1 GB 를 냈다(Grafana 예산도 같이 먹는다). 슬롯을 재생성할 때마다 다시 돈다
+  # - 메모리 여유가 없다 — 로컬 측정 모드에서 요청만으로 슬롯 메모리가 644/680 MiB 까지 갔다. 배치는 슬롯을 OOM 으로 죽인 이력이 있다
+  bad=""
+  for k in $4; do
+    v=$(grep -E "^$k=" .env | tail -1 | cut -d= -f2- | tr -d "\"' ")
+    [ "$v" = false ] || bad="$bad $k=${v:-없음(기본 true)}"
+  done
+  if [ -n "$bad" ]; then
+    echo "배치 스위치가 꺼져 있지 않다:$bad" >&2
+    echo "  넷 다 false 로 끈 뒤 다시 켠다 — .env 를 바꾸지 않았다" >&2
+    exit 1
+  fi
+  [ "$2" = on ] || exit 0
   set_env OTEL_AGENT_PROFILE agent-measure
   set_env OTEL_MEASURE_RECEIVER_ENDPOINT "$3"
 else
@@ -95,7 +109,13 @@ if [ "$ACTION" = status ]; then
 fi
 
 ENDPOINT=""
-if [ "$ACTION" = on ]; then ENDPOINT="http://$GEN:4318/v1/traces"; fi
+if [ "$ACTION" = on ]; then
+  ENDPOINT="http://$GEN:4318/v1/traces"
+  # 먼저 모든 앱 노드를 확인한다 — 한 노드만 바뀐 채 멈추지 않게
+  for node in $APP_NODES; do
+    set_node "$node" check "" || die "[$(node_label "$node")] 측정 모드를 켤 수 없다(위 이유) — 어느 노드의 .env 도 바꾸지 않았다"
+  done
+fi
 for node in $APP_NODES; do
   set_node "$node" "$ACTION" "$ENDPOINT" || die "[$(node_label "$node")] .env 를 고치지 못했다 — 앞 노드는 이미 바뀌었다. status 로 확인한다"
 done

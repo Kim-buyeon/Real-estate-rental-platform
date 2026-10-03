@@ -42,7 +42,6 @@ mkdir -p "$PRE"
 WARNINGS=()
 note() { WARNINGS+=("$*"); warn "$*"; }
 
-BATCH_KEYS="PROPERTY_BATCH_REFRESH_ENABLED RISK_BATCH_REGISTRYREFRESH_ENABLED RISK_BATCH_MOCKLEDGERREPLACE_ENABLED BATCH_STARTUPCATCHUP_ENABLED"
 TABLES="property risk_analysis ownership_history building_registry mortgage_history building_ledger users wishlist notification_subscription"
 
 # ── DB 상태 — 한 질의가 JSON 한 줄을 낸다 ─────────────────────────────────────────────────

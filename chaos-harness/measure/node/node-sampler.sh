@@ -9,7 +9,8 @@
 # 세션에서 떼어 띄우고 pid 를 파일로 남긴다.
 #
 #   metrics-<노드>.prom.gz   모든 노드. 간격마다 그 노드의 루프백 수집 대상을 긁어 붙인다. 각 본문 앞에
-#                            「# SCRAPE <유닉스 초(소수 3자리)> <대상 이름>」 한 줄. 실패하면 「# SCRAPE_ERROR <대상 이름>」.
+#                            「# SCRAPE <유닉스 초(소수 3자리) — 긁기 시작 시각> <대상 이름>」 한 줄. 본문은 다 받았을 때만 붙인다 —
+#                            실패(연결 · HTTP 오류 · 3초 초과)면 본문 없이 「# SCRAPE_ERROR <대상 이름>」 한 줄만.
 #                            긁을 때마다 gzip 한 덩어리(멤버)로 덧붙인다 — 노드 /tmp 에 원문을 쌓지 않는다(한 시간에 수백 MB).
 #                            여러 멤버를 이은 gzip 은 그대로 하나의 gzip 파일로 읽힌다(gzip · Python gzip 모듈)
 #   wait-<노드>.csv          DB 노드. 1초마다 활성 클라이언트 세션 수를 대기 종류별로(대기 없음 = CPU). 활성이 0 이면 NONE,0 한 줄
@@ -25,20 +26,26 @@ WAIT_APPNAME=rental-measure-wait
 alive() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
 
 # ── 지표 긁기 본체 ────────────────────────────────────────────────────────────
-# 멈춤은 TERM 을 이 프로세스에만 보낸다(stop). bash 는 진행 중인 자식(curl | gzip)이 끝난 뒤에 트랩을 돌리므로
+# 한 번 긁은 본문은 먼저 임시 파일(<출력>.scrape)에 받고, curl 이 성공했을 때만 「# SCRAPE」 줄과 함께 gzip 멤버로 붙인다 —
+# -m 3 에 걸리면 curl 은 본문 일부를 쓴 뒤 실패하므로, 바로 흘려 넣으면 잘린 본문이 표본으로 남는다. 실패면 「# SCRAPE_ERROR」 한 줄만.
+# 멈춤은 TERM 을 이 프로세스에 먼저 보낸다(stop). bash 는 진행 중인 자식(curl · gzip)이 끝난 뒤에 트랩을 돌리므로
 # 마지막 gzip 멤버가 반쯤 쓰인 채 남지 않는다
 loop() {
   local out=$1 interval=$2; shift 2
-  local stop=0 t name url next now d
+  local stop=0 t name url next now d ts tmp=$out.scrape
   trap 'stop=1' TERM INT
   next=$(date +%s%N)
   while [ "$stop" -eq 0 ]; do
     for t in "$@"; do
       [ "$stop" -eq 0 ] || break
       name=${t%%=*} url=${t#*=}
-      { printf '# SCRAPE %s %s\n' "$(date +%s.%3N)" "$name"
-        curl -sf --connect-timeout 1 -m 3 "$url" || printf '\n# SCRAPE_ERROR %s\n' "$name"
-      } | gzip -1 >> "$out"
+      ts=$(date +%s.%3N)
+      if curl -sf --connect-timeout 1 -m 3 -o "$tmp" "$url"; then
+        # 본문이 줄바꿈으로 끝나지 않으면 하나 붙인다 — 다음 멤버의 「# SCRAPE」 줄이 본문 끝에 붙지 않게
+        { printf '# SCRAPE %s %s\n' "$ts" "$name"; cat "$tmp"; [ -z "$(tail -c 1 "$tmp")" ] || echo; } | gzip -1 >> "$out"
+      else
+        printf '# SCRAPE_ERROR %s\n' "$name" | gzip -1 >> "$out"
+      fi
     done
     # 간격을 시각에 맞춘다 — 긁는 시간만큼 밀리지 않게
     next=$((next + interval * 1000000000)); now=$(date +%s%N); d=$((next - now))
@@ -49,6 +56,7 @@ loop() {
       next=$now
     fi
   done
+  rm -f "$tmp"
 }
 
 start() {
@@ -107,11 +115,19 @@ SELECT n.ts, 'NONE', 0 FROM n WHERE NOT EXISTS (SELECT 1 FROM a)
 SQL
         # 멈출 때 이름(application_name)으로 서버 쪽 세션을 끊는다 — docker compose exec 클라이언트만 죽이면 컨테이너 안 psql 이 남을 수 있다
         # shellcheck disable=SC2016  # 컨테이너 안 sh 가 푼다
-        ( cd "$cdir" && setsid nohup docker compose exec -T -e PGAPPNAME=$WAIT_APPNAME "$svc" \
+        # cd 는 따로 둔다 — 「cd && setsid … &」 이면 & 가 목록 전체를 감싸 $! 가 중간 서브셸이 되고, stop 이 실제 프로세스를 놓친다.
+        # 비대화형 bash 의 백그라운드 자식은 그룹 리더가 아니므로 setsid 는 fork 없이 제자리에서 새 세션을 연다 — $! = 세션 id
+        if (
+          cd "$cdir" || exit 1
+          setsid nohup docker compose exec -T -e PGAPPNAME=$WAIT_APPNAME "$svc" \
             sh -c 'exec psql -X -At -F, -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
             < "$d/wait.sql" > "$d/wait-$node.csv" 2> "$d/wait.err" &
-          echo $! > "$d/wait.pid" )
-        echo "대기 종류 표본 시작 — 1초($svc)"
+          echo $! > "$d/wait.pid"
+        ); then
+          echo "대기 종류 표본 시작 — 1초($svc)"
+        else
+          echo "경고: Compose 자리가 없다($cdir) — 대기 종류 표본을 받지 않는다"
+        fi
       fi ;;
   esac
 
@@ -121,23 +137,63 @@ SQL
     else
       since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
       # 표준 출력(접근 로그)만 받는다. 표준 오류(nginx 오류 로그)는 따로 둔다
-      ( cd "$cdir" && id=$(docker compose ps -q nginx) && [ -n "$id" ] \
-          && { setsid nohup docker logs -f --since "$since" "$id" > "$d/nginx-access.log" 2> "$d/nginx-error.log" < /dev/null &
-               echo $! > "$d/nginx.pid"; } ) \
-        && echo "nginx 접근 로그 따라가기 시작 — $since 부터" \
-        || echo "경고: nginx 컨테이너를 찾지 못했다 — 접근 로그를 받지 않는다"
+      # 대기 종류 표본과 같은 꼴 — setsid 를 한 줄에 단독으로 백그라운드에 둬서 $! 가 세션 id 가 되게
+      if (
+        cd "$cdir" || exit 1
+        id=$(docker compose ps -q nginx) && [ -n "$id" ] || exit 1
+        setsid nohup docker logs -f --since "$since" "$id" > "$d/nginx-access.log" 2> "$d/nginx-error.log" < /dev/null &
+        echo $! > "$d/nginx.pid"
+      ); then
+        echo "nginx 접근 로그 따라가기 시작 — $since 부터"
+      else
+        echo "경고: nginx 컨테이너를 찾지 못했다 — 접근 로그를 받지 않는다"
+      fi
     fi
   fi
 }
 
-# 멈춘다 — pid 의 프로세스(지표 긁기)는 TERM 뒤 끝날 때까지 기다리고, 나머지는 세션(프로세스 그룹)째 끝낸다
+# 멈춘다 — pid 파일의 값은 setsid 로 연 세션의 id(= 세션 리더 pid · 프로세스 그룹 id)다(start 주석).
+# 지표 긁기(그룹째 0)는 먼저 리더에만 TERM 을 보내 마지막 gzip 멤버를 마무리하게 기다린다. 그다음 모두 세션째 끝낸다 —
+# 리더가 먼저 끝나도 자식(docker compose exec · docker logs · sleep)이 같은 세션에 남을 수 있으므로 세션 id 로 찾는다.
+# 끝에 그 세션에 남은 프로세스가 없는지 확인해 알린다
+# /proc/<pid>/stat 의 여섯째 칸(이름 괄호 뒤 넷째)이 세션 id 다 — ps(procps) 없이 읽는다
+session_pids() {
+  local f line a
+  for f in /proc/[0-9]*/stat; do
+    { read -r line < "$f"; } 2> /dev/null || continue
+    read -r -a a <<< "${line##*) }"
+    [ "${a[3]:-}" = "$1" ] && echo "${f//[^0-9]/}"
+  done
+  return 0
+}
+wait_gone() {  # <반초 횟수> <명령…> — 명령의 출력이 빌 때까지 기다린다
+  local n=$1; shift
+  for _ in $(seq 1 "$n"); do [ -n "$("$@")" ] || return 0; sleep 0.5; done
+  [ -z "$("$@")" ]
+}
+leader_alive() { kill -0 "$1" 2>/dev/null && echo "$1"; }
 stop_one() {  # <pid 파일> <이름> <그룹째>
-  local f=$1 what=$2 group=$3 pid
-  if ! alive "$f"; then echo "$what — 돌고 있지 않다"; return 0; fi
-  pid=$(cat "$f")
-  if [ "$group" = 1 ]; then kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null; else kill -TERM "$pid" 2>/dev/null; fi
-  for _ in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
-  if kill -0 "$pid" 2>/dev/null; then kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null; echo "$what — 강제 종료"; else echo "$what — 멈춤"; fi
+  local f=$1 what=$2 group=$3 sid left p forced=0
+  [ -f "$f" ] || { echo "$what — 돌고 있지 않다(pid 파일 없음)"; return 0; }
+  sid=$(cat "$f")
+  [[ $sid =~ ^[0-9]+$ ]] || { echo "$what — pid 파일이 올바르지 않다: $f"; return 1; }
+  if [ -z "$(session_pids "$sid")" ]; then echo "$what — 돌고 있지 않다"; return 0; fi
+  if [ "$group" != 1 ] && kill -0 "$sid" 2>/dev/null; then
+    kill -TERM "$sid" 2>/dev/null
+    wait_gone 30 leader_alive "$sid" || true
+  fi
+  # 세션 전체 — 그룹 신호와 세션 구성원 하나하나 둘 다(구성원이 그룹을 바꿨어도 세션은 같다)
+  kill -TERM -- "-$sid" 2>/dev/null
+  for p in $(session_pids "$sid"); do kill -TERM "$p" 2>/dev/null; done
+  if ! wait_gone 30 session_pids "$sid"; then
+    forced=1
+    kill -KILL -- "-$sid" 2>/dev/null
+    for p in $(session_pids "$sid"); do kill -KILL "$p" 2>/dev/null; done
+    wait_gone 10 session_pids "$sid" || true
+  fi
+  left=$(session_pids "$sid" | tr '\n' ' ')
+  if [ -n "$left" ]; then echo "$what — 경고: 세션 $sid 에 남은 프로세스: $left"; return 1; fi
+  if [ "$forced" = 1 ]; then echo "$what — 강제 종료(남은 프로세스 없음)"; else echo "$what — 멈춤(남은 프로세스 없음)"; fi
 }
 
 stop() {

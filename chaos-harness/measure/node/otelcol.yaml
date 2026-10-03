@@ -23,7 +23,9 @@ exporters:
     path: /data/spans.jsonl
     format: json
     # append — 파일을 O_APPEND 로 연다. collect.sh 가 복사한 뒤 비우면 다음 쓰기가 파일 앞부터 다시 쌓인다.
-    # false(기본)면 기동 때 비우고 쓰던 자리 뒤에 계속 써서, 비운 파일 앞이 빈 바이트로 채워진다
+    # false(기본)면 기동 때 비우고 쓰던 자리 뒤에 계속 써서, 비운 파일 앞이 빈 바이트로 채워진다.
+    # 로컬 확인(0.136.0, Docker 볼륨 · Windows 바인드 둘 다) — 두 묶음 → 복사 · 비우기 → 한 묶음이면 true 는 셋째 한 줄 · NUL 0 B,
+    # false 는 앞 666 B 가 NUL 인 999 B 였다. 이미지 판을 올리면 다시 확인한다
     append: true
 
 service:

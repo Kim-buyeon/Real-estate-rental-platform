@@ -14,6 +14,7 @@
 #
 # 결과(stop 뒤)
 #   results/<회차>/meta.json                 {"round", "start_utc", "end_utc", "interval_s", "generator", "nodes", "node_clock_utc"}
+#                                            node_clock_utc 는 노드별 시각 문자열 — 읽지 못한 노드는 null
 #   results/<회차>/metrics/<노드>.prom.gz     노드 이름은 app01 · app02 · db01 · db02
 #   results/<회차>/db/<노드>-wait.csv         머리 ts,wait_event_type,count
 #   results/<회차>/nginx/access.log
@@ -86,14 +87,20 @@ do_start() {
   if [ -f "$RD/meta.json" ] && grep -q '"start_utc"' "$RD/meta.json"; then
     log "meta.json 이 이미 있다 — 시작 시각을 덮지 않는다(다시 시작하려면 회차 이름을 바꾼다)"
   fi
-  local node clocks="" sep=""
+  local node nc clocks="" sep=""
   for node in $NODES; do
     log "[$(node_label "$node")] 표본기 올림"
     on_node "$node" "mkdir -p $(q "$NODE_RD") && cat > $(q "$MEASURE_TMP/node-sampler.sh")" < "$NODE_SCRIPTS/node-sampler.sh" \
       || die "[$(node_label "$node")] 표본기를 올리지 못했다"
     sampler "$node" start "$ROUND" "$node" "$INTERVAL" "$NODE_DIR" | sed "s|^|    [$(node_label "$node")] |"       || die "[$(node_label "$node")] 표본기를 띄우지 못했다 — 이미 띄운 노드는 record.sh stop $ROUND 로 멈춘다"
-    # 노드 시계 — 노드 시각으로 찍힌 표본(지표 · 대기 종류)을 생성기 시각과 맞출 때 어긋남을 본다
-    clocks="$clocks$sep\"$node\": \"$(on_node "$node" 'date -u +%Y-%m-%dT%H:%M:%S.%3NZ')\""
+    # 노드 시계 — 노드 시각으로 찍힌 표본(지표 · 대기 종류)을 생성기 시각과 맞출 때 어긋남을 본다.
+    # 표본기는 이미 떴으므로 여기서 실패해도 멈추지 않는다(set -e 로 조용히 끝나면 meta.json 이 안 남는다) — 그 노드는 null
+    if nc=$(on_node "$node" 'date -u +%Y-%m-%dT%H:%M:%S.%3NZ') && [[ $nc =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$ ]]; then
+      clocks="$clocks$sep\"$node\": \"$nc\""
+    else
+      warn "[$(node_label "$node")] 노드 시각을 읽지 못했다 — meta.json 의 node_clock_utc.$node 는 null. 기록은 계속한다"
+      clocks="$clocks$sep\"$node\": null"
+    fi
     sep=", "
   done
   gen_start

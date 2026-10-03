@@ -28,6 +28,9 @@ MEASURE_TMP=${MEASURE_TMP:-/tmp/rental-measure}
 APP02_ADDR=${APP02_ADDR:-10.20.20.30}
 APP_NODES=${APP_NODES:-app01 app02}
 DB_NODES="db01 db02"
+# 배치 스위치 넷 — 시험 동안 전부 false 여야 한다(.env.example 의 배치 주석). 줄이 없으면 앱 기본값 true 다.
+# pre-round.sh 가 기록 · 경고하고, measure-mode.sh on 이 넷 중 하나라도 false 가 아니면 거부한다
+BATCH_KEYS="PROPERTY_BATCH_REFRESH_ENABLED RISK_BATCH_REGISTRYREFRESH_ENABLED RISK_BATCH_MOCKLEDGERREPLACE_ENABLED BATCH_STARTUPCATCHUP_ENABLED"
 
 log()  { printf '%s >>> %s\n' "$(date '+%F %T')" "$*"; }
 warn() { printf '%s !!! %s\n' "$(date '+%F %T')" "$*" >&2; }

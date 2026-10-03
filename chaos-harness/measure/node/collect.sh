@@ -12,7 +12,8 @@
 #                                 temp_blks_written,blk_read_time_ms,query
 #                                 query 는 공백 · 줄바꿈을 한 칸으로 줄여 앞 300자. blk_read_time_ms 는 PG 17 의 shared_blk_read_time
 #                                 (16 까지의 blk_read_time 이 17 에서 shared · local 로 나뉘었다)
-#   db/<노드>-pgss-all.csv.gz     같은 뷰 전체(모든 DB · 모든 열 · 원문 질의) 앞에 datname 열
+#   db/<노드>-pgss-all.csv.gz     같은 뷰 전체(모든 DB · 모든 열 · 원문 질의). gzip 한 CSV, 머리 있음, 첫 열 datname
+#                                 (dbid 의 DB 이름 — 이어서 pg_stat_statements 의 전 열 그대로). 집계가 이 이름 · 형식으로 읽는다
 #   db/<노드>-dbstats.csv         회차 뒤 pg_stat_database 한 줄(앱 DB) — pre.json 의 blks_hit · blks_read 와 빼서 회차의 적중률
 #   db/<노드>-auto-explain.log    구간의 DB 컨테이너 로그 중 auto_explain 덩어리(「duration:」 과 「plan:」 이 든 항목)만
 #   heavy/<노드>-settings.csv     (--heavy) pg_settings 의 name,setting,unit,source
@@ -136,7 +137,8 @@ done
 
 # ── 추적 파일 ─────────────────────────────────────────────────────────────────────────
 # 수신기(파일 내보내기, append: true)는 파일을 O_APPEND 로 열어 둔다. 옮기면(mv) 수신기가 옮긴 파일에 계속 쓰므로
-# 복사한 뒤 원본을 비운다 — 비운 뒤의 쓰기는 파일 앞부터 다시 쌓인다. 복사와 비우기 사이에 들어온 구간은 잃는다(회차 뒤라 없거나 몇 개)
+# 복사한 뒤 원본을 비운다 — 비운 뒤의 쓰기는 파일 앞부터 다시 쌓인다(0.136.0 에서 로컬 확인 — 빈 바이트 앞머리 없음, 줄 유실 · 중복 없음.
+# otelcol.yaml 의 append 주석). 복사와 비우기 사이에 들어온 구간은 잃는다(회차 뒤라 없거나 몇 개)
 if [ -f "$TRACE_FILE" ]; then
   mkdir -p "$RD/traces"
   if [ -s "$RD/traces/spans.jsonl" ]; then
