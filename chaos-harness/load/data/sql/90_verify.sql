@@ -1,82 +1,98 @@
--- 반영 검증 (#376). 위반 건수가 전부 0 이어야 한다. 0 이 아니면 그 행의 이름과 건수가 나온다.
+-- 반영 검증 (#376). 위반 건수가 전부 0 이어야 한다.
+--
+-- 큰 테이블은 한 번씩만 읽는다. 첫 판(검사 12개를 한 질의에)은 검사마다 테이블을 처음부터 다시 읽었고,
+-- 건물 키(sigungu_code · bjdong_code · bun · ji)에 인덱스가 없는데 매물마다 그 키로 매물 표를 다시 뒤지는 검사가
+-- 있었다 — 2026-10-03 운영에서 26분 동안 끝나지 않고 DB-01 디스크 크레딧을 99 → 66% 썼다(중단).
+--   ① 제약이 보장하는 것은 데이터를 읽지 않고 카탈로그에서 제약이 살아 있는지만 본다
+--   ② 같은 테이블을 보는 검사는 한 번 읽으며 FILTER 로 함께 센다
+--   ③ 전세가율 · 보증 3사 · 등급의 값 대조는 51_guarantee_check.sql 이 앱 산식으로 한다 — 여기서 하지 않는다
+-- 단계마다 \echo 와 \timing 으로 어디까지 왔는지 보인다.
 \set ON_ERROR_STOP 1
-WITH checks(name, violations) AS (
-    VALUES
-    ('최신 판정이 매물당 1건이 아님',
-     (SELECT count(*) FROM (SELECT o.property_id FROM loadtest.property_origin o
-                              LEFT JOIN risk_analysis ra ON ra.property_id = o.property_id AND ra.is_latest
-                             WHERE o.bundled GROUP BY o.property_id HAVING count(ra.risk_id) <> 1) x)),
-    ('대장이 매물당 2건 이상',
-     (SELECT count(*) FROM (SELECT property_id FROM building_ledger GROUP BY property_id HAVING count(*) > 1) x)),
-    ('등기가 매물당 2건 이상',
-     (SELECT count(*) FROM (SELECT property_id FROM building_registry GROUP BY property_id HAVING count(*) > 1) x)),
-    ('조회 키 넷이 일부만 있음',
-     (SELECT count(*) FROM property WHERE num_nulls(sigungu_code, bjdong_code, bun, ji) NOT IN (0, 4))),
-    ('전세가율이 보증금 · 선순위채권 · 시세와 맞지 않음(새 매물 최신 판정)',
-     (SELECT count(*) FROM loadtest.property_origin o
-        JOIN property p ON p.property_id = o.property_id
-        JOIN risk_analysis ra ON ra.property_id = o.property_id AND ra.is_latest
-        LEFT JOIN (SELECT h.registry_id, sum(h.max_bond_amount + coalesce(h.prior_tenant_deposit, 0)) AS s
-                     FROM mortgage_history h
-                    WHERE h.senior_debt_yn AND h.is_active
-                      AND h.registry_id > (SELECT max_registry_id FROM loadtest.baseline)
-                    GROUP BY h.registry_id) d ON d.registry_id = ra.registry_id   -- 한 번 묶어 맞댄다(행마다 하위 조회 금지)
-       WHERE ra.lease_ratio <> least(round((coalesce(d.s, 0) + p.deposit) * 100.0 / p.market_price, 2), 999.99))),
-    ('등급 · 사유 짝이 맞지 않음',
-     (SELECT count(*) FROM risk_analysis
-       WHERE NOT ((risk_grade = 'SAFE' AND risk_reason = 'INSURANCE_ELIGIBLE')
-               OR (risk_grade = 'CAUTION' AND risk_reason = 'LEASE_RATIO_CAUTION')
-               OR (risk_grade = 'DANGER' AND risk_reason IN ('NEGATIVE_EQUITY', 'INSURANCE_INELIGIBLE'))))),
-    ('보증 3사 합이 insurance_eligible 과 다름',
-     (SELECT count(*) FROM risk_analysis
-       WHERE insurance_eligible_yn <> (hug_eligible_yn OR hf_eligible_yn OR sgi_eligible_yn))),
-    ('최신 판정의 previous_grade 가 바로 앞 이력 등급과 다름(새 매물)',
-     (SELECT count(*) FROM loadtest.property_origin o
-        JOIN risk_analysis ra ON ra.property_id = o.property_id AND ra.is_latest
-        JOIN (SELECT property_id, risk_grade,
-                     row_number() OVER (PARTITION BY property_id ORDER BY analyzed_at DESC) AS rn
-                FROM risk_analysis
-               WHERE NOT is_latest AND risk_id > (SELECT max_risk_id FROM loadtest.baseline)) prev
-          ON prev.property_id = o.property_id AND prev.rn = 1   -- 이력 색인이 없어 행마다 찾으면 비용 6.7e11(2026-10-03 EXPLAIN)
-       WHERE ra.previous_grade IS DISTINCT FROM prev.risk_grade)),
-    ('알림 before/after 가 이력의 변화가 아님',
-     (SELECT count(*) FROM wishlist_notification wn
-        JOIN notification n ON n.notif_id = wn.notif_id AND n.user_id >= 100000000
-       WHERE NOT EXISTS (SELECT 1 FROM risk_analysis ra WHERE ra.property_id = wn.property_id
-                            AND ra.previous_grade = wn.before_value AND ra.risk_grade = wn.after_value))),
-    ('관심 매물 monitoring_yn 이 구독 설정과 다름',
-     (SELECT count(*) FROM wishlist w
-        LEFT JOIN notification_subscription ns ON ns.user_id = w.user_id
-                                              AND ns.subscription_type = 'WISHLIST_MONITORING'
-       WHERE w.user_id >= 100000000 AND w.monitoring_yn <> coalesce(ns.is_active, TRUE))),
-    ('주택 보유자인데 소득 0',
-     (SELECT count(*) FROM users WHERE user_id >= 100000000 AND has_house AND annual_income <= 0)),
-    ('가짜 매물이 실매물이 없는 건물에 있음',
-     (SELECT count(*) FROM loadtest.property_origin o JOIN property p ON p.property_id = o.property_id
-       WHERE o.kind = 'FAKE' AND p.sigungu_code IS NOT NULL
-         AND NOT EXISTS (SELECT 1 FROM loadtest.property_origin r JOIN property q ON q.property_id = r.property_id
-                          WHERE r.kind = 'REAL' AND q.sigungu_code = p.sigungu_code AND q.bjdong_code = p.bjdong_code
-                            AND q.bun = p.bun AND q.ji = p.ji)
-         AND NOT EXISTS (SELECT 1 FROM property q WHERE q.property_id <= (SELECT max_property_id FROM loadtest.baseline)
-                            AND q.sigungu_code = p.sigungu_code AND q.bjdong_code = p.bjdong_code
-                            AND q.bun = p.bun AND q.ji = p.ji)))
-)
-SELECT name, violations FROM checks ORDER BY violations DESC, name;
+\timing on
+SET work_mem = '32MB';   -- 건물 키 묶기(해시 집계)가 디스크로 넘치지 않게 — 컨테이너 상한 256m 안
 
--- 분포 — 판단용(위반 아님)
-SELECT 'property' AS what, (SELECT count(*) FROM property) AS total,
-       (SELECT count(*) FROM loadtest.property_origin WHERE kind = 'REAL') AS real_new,
-       (SELECT count(*) FROM loadtest.property_origin WHERE kind = 'FAKE') AS fake_new;
-SELECT o.kind, ra.risk_grade, count(*), round(avg(ra.lease_ratio), 1) AS avg_lease_ratio
-  FROM loadtest.property_origin o JOIN risk_analysis ra ON ra.property_id = o.property_id AND ra.is_latest
- GROUP BY 1, 2 ORDER BY 1, 2;
-SELECT district, count(*) FILTER (WHERE kind = 'REAL') AS real_new, count(*) FILTER (WHERE kind = 'FAKE') AS fake_new
-  FROM loadtest.property_origin GROUP BY district ORDER BY real_new DESC;
-SELECT (SELECT count(*) FROM users WHERE user_id >= 100000000) AS users,
-       (SELECT count(*) FROM wishlist WHERE user_id >= 100000000) AS wishlist,
-       (SELECT count(*) FROM notification_subscription WHERE user_id >= 100000000) AS subscriptions,
-       (SELECT count(*) FROM notification WHERE user_id >= 100000000) AS notifications,
-       (SELECT count(*) FROM building_ledger l JOIN loadtest.property_origin o USING (property_id)
-         WHERE l.data_source = 'BUILDING_HUB') AS new_hub_ledgers,
-       (SELECT count(*) FROM building_ledger l JOIN loadtest.property_origin o USING (property_id)
-         WHERE l.data_source = 'MOCK') AS new_mock_ledgers;
+\echo '① 제약 — 매물당 대장 · 등기 1건 이하, 최신 판정 1건 이하, 관심 중복 없음 (데이터를 읽지 않는다)'
+SELECT i.indexrelid::regclass AS constraint_index,
+       CASE WHEN i.indisunique AND i.indisvalid AND i.indisready THEN 0 ELSE 1 END AS violations
+  FROM pg_index i
+ WHERE i.indexrelid IN ('uq_building_ledger_property_id'::regclass, 'uq_building_registry_property_id'::regclass,
+                        'uq_risk_analysis_latest'::regclass, 'uq_wishlist_user_property'::regclass);
+SELECT conrelid::regclass AS "table", conname AS foreign_key, CASE WHEN convalidated THEN 0 ELSE 1 END AS violations
+  FROM pg_constraint
+ WHERE contype = 'f'
+   AND conrelid IN ('risk_analysis'::regclass, 'building_ledger'::regclass, 'building_registry'::regclass,
+                    'wishlist'::regclass)
+ ORDER BY 1, 2;
+
+\echo '② 판정 표 한 번 — 등급 · 사유 짝, 보증 3사 합, 새 매물의 최신 판정 수'
+SELECT count(*) FILTER (WHERE NOT ((risk_grade = 'SAFE' AND risk_reason = 'INSURANCE_ELIGIBLE')
+                                OR (risk_grade = 'CAUTION' AND risk_reason = 'LEASE_RATIO_CAUTION')
+                                OR (risk_grade = 'DANGER' AND risk_reason IN ('NEGATIVE_EQUITY', 'INSURANCE_INELIGIBLE'))))
+           AS grade_reason_mismatch,
+       count(*) FILTER (WHERE insurance_eligible_yn IS DISTINCT FROM (hug_eligible_yn OR hf_eligible_yn OR sgi_eligible_yn))
+           AS insurance_sum_mismatch,
+       count(*) FILTER (WHERE is_latest AND property_id > (SELECT max_property_id FROM loadtest.baseline))
+           AS new_latest_rows,
+       count(*) FILTER (WHERE NOT is_latest AND property_id > (SELECT max_property_id FROM loadtest.baseline))
+           AS new_history_rows
+  FROM risk_analysis;
+
+\echo '③ 출처 표 한 번 — 묶음을 만든 새 매물 수(②의 new_latest_rows 와 같아야 한다 — 최신 판정은 제약상 1건 이하)'
+SELECT count(*) FILTER (WHERE bundled) AS bundled, count(*) FILTER (WHERE NOT bundled) AS not_bundled,
+       count(*) FILTER (WHERE kind = 'REAL') AS real_new, count(*) FILTER (WHERE kind = 'FAKE') AS fake_new
+  FROM loadtest.property_origin;
+
+\echo '④ 매물 표 한 번 — 조회 키 넷이 일부만 있음, 가짜 매물만 있는 건물(실매물 · 기준선 매물이 없는 건물)'
+-- 건물 키로 묶는다(해시 집계 한 번) — 매물마다 그 키로 매물 표를 다시 뒤지지 않는다. 키가 일부만 있는 행도 같은 읽기에서 센다
+WITH b AS (
+    SELECT p.sigungu_code, p.bjdong_code, p.bun, p.ji,
+           count(*) FILTER (WHERE num_nulls(p.sigungu_code, p.bjdong_code, p.bun, p.ji) NOT IN (0, 4)) AS partial_rows,
+           bool_or(o.kind IS DISTINCT FROM 'FAKE') AS has_real_or_baseline,   -- 출처 표에 없으면 기준선 매물이다
+           count(*) FILTER (WHERE o.kind = 'FAKE') AS fake_rows
+      FROM property p
+      LEFT JOIN loadtest.property_origin o ON o.property_id = p.property_id
+     GROUP BY 1, 2, 3, 4
+)
+SELECT sum(partial_rows) AS partial_lookup_key,
+       coalesce(sum(fake_rows) FILTER (WHERE sigungu_code IS NOT NULL AND NOT has_real_or_baseline), 0)
+           AS fake_without_real_building
+  FROM b;
+
+\echo '⑤ 최신 판정의 previous_grade 가 바로 앞 이력 등급과 같은가 — 표본 1%(property_id % 100 = 0, 새 매물)'
+-- 전수면 판정 표 950만 행을 매물 · 시각으로 정렬해야 한다(이력 색인 없음). 이력 사슬은 생성기 규칙 하나가 만든 것이라
+-- 표본으로 본다 — 표본 크기를 함께 낸다.
+WITH s AS (
+    SELECT property_id, is_latest, previous_grade, risk_grade, analyzed_at
+      FROM risk_analysis
+     WHERE property_id > (SELECT max_property_id FROM loadtest.baseline) AND property_id % 100 = 0
+), ordered AS (
+    SELECT *, lead(risk_grade) OVER (PARTITION BY property_id ORDER BY analyzed_at DESC) AS before_grade
+      FROM s
+)
+SELECT count(*) FILTER (WHERE is_latest) AS sampled_properties,
+       count(*) FILTER (WHERE is_latest AND previous_grade IS DISTINCT FROM before_grade) AS violations
+  FROM ordered;
+
+\echo '⑥ 관심 매물 표 한 번 — monitoring_yn 이 구독 설정과 다름, 사용자 표 한 번 — 주택 보유자인데 소득 0'
+SELECT count(*) FILTER (WHERE w.monitoring_yn <> coalesce(ns.is_active, TRUE)) AS monitoring_mismatch,
+       count(*) AS new_wishlist
+  FROM wishlist w
+  LEFT JOIN notification_subscription ns ON ns.user_id = w.user_id AND ns.subscription_type = 'WISHLIST_MONITORING'
+ WHERE w.user_id >= 100000000;
+SELECT count(*) FILTER (WHERE has_house AND annual_income <= 0) AS house_without_income, count(*) AS new_users
+  FROM users WHERE user_id >= 100000000;
+
+\echo '⑦ 알림 before/after 가 그 매물 판정의 변화인가 — 알림이 있을 때만 의미(notify 뒤). 판정 표를 한 번 해시로 맞댄다'
+WITH wn AS (
+    SELECT wn.property_id, wn.before_value, wn.after_value
+      FROM wishlist_notification wn JOIN notification n ON n.notif_id = wn.notif_id
+     WHERE n.user_id >= 100000000
+), changes AS (
+    SELECT DISTINCT ra.property_id, ra.previous_grade, ra.risk_grade
+      FROM risk_analysis ra
+     WHERE ra.previous_grade IS NOT NULL AND ra.property_id IN (SELECT property_id FROM wn)
+)
+SELECT (SELECT count(*) FROM wn) AS notifications,
+       (SELECT count(*) FROM wn LEFT JOIN changes c ON c.property_id = wn.property_id
+                                      AND c.previous_grade = wn.before_value AND c.risk_grade = wn.after_value
+         WHERE c.property_id IS NULL) AS violations;
