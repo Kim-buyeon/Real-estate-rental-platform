@@ -27,3 +27,6 @@ aws.txt
 # 부하 시험 — 토큰 풀(JWT)과 실행 결과는 커밋하지 않는다(INF-06)
 chaos-harness/load/tokens*.json
 chaos-harness/load/results/
+
+# 부하 시험 데이터 생성 — 파이썬 캐시(INF-06 #376). 원천 · 출력 · 비밀 시드는 저장소 밖(LOADTEST_DATA)
+chaos-harness/load/data/__pycache__/
