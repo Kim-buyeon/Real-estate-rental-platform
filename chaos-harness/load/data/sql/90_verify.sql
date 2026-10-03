@@ -83,6 +83,13 @@ SELECT count(*) FILTER (WHERE has_house AND annual_income <= 0) AS house_without
   FROM users WHERE user_id >= 100000000;
 
 \echo '⑦ 알림 before/after 가 그 매물 판정의 변화인가 — 알림이 있을 때만 의미(notify 뒤). 판정 표를 한 번 해시로 맞댄다'
+-- 알림 생성(42)이 넣는 동안 행 단위 외래키 확인을 껐다 — 그 대신 여기서 해시 반조인 한 번씩으로 본다
+SELECT (SELECT count(*) FROM wishlist_notification wn LEFT JOIN notification n ON n.notif_id = wn.notif_id
+         WHERE n.notif_id IS NULL) AS fk_notif_missing,
+       (SELECT count(*) FROM wishlist_notification wn LEFT JOIN wishlist w ON w.wish_id = wn.wish_id
+         WHERE wn.wish_id IS NOT NULL AND w.wish_id IS NULL) AS fk_wish_missing,  -- 해제한 관심은 NULL(ON DELETE SET NULL),
+       (SELECT count(*) FROM notification n LEFT JOIN users u ON u.user_id = n.user_id
+         WHERE u.user_id IS NULL) AS fk_user_missing;
 WITH wn AS (
     SELECT wn.property_id, wn.before_value, wn.after_value
       FROM wishlist_notification wn JOIN notification n ON n.notif_id = wn.notif_id
