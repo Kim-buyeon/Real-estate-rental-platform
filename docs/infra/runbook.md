@@ -535,6 +535,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 | 8 | Docker CE 설치(공식 RHEL 저장소) | `docker compose version`. 컨테이너 로그 상한은 노드가 아니라 Compose가 갖는다(설계서 8장) — 이 단계에서 할 일이 없다 |
 | 9 | `dnf-automatic`(보안 갱신만 · 자동 재부팅 없음) timer 활성 | `systemctl list-timers` |
 | 10 | NFS 클라이언트 마운트(해당 노드) | 9.3 |
+| 10-DB | **DB 노드만** — 커널 쓰기 상한 `sudo install -m 644 -o root -g root ~/rental/infra/os/sysctl/60-rental-db-dirty.conf /etc/sysctl.d/` → `sudo sysctl --system`. 이유는 서버 운영 기반 설계서 8장 「커널 쓰기 상한」 행 | `sysctl vm.dirty_ratio vm.dirty_background_ratio` → `5` · `2`, 재부팅 뒤 유지 |
 | 11 | **첫 부팅이 끝나면 cloud-init 을 끈다** — `sudo touch /etc/cloud/cloud-init.disabled`. 이유 · 대가 · 되돌리기는 서버 운영 기반 설계서 8장. **네 노드 적용: 2026-09-27 19:30**(#279) — APP-02 재부팅 실측 SSH 29초 · 슬롯 readiness 1분 31초 | 파일이 있다. 재부팅 뒤 `sudo cloud-init status` → `status: disabled`(sudo 없이는 권한 오류), `systemctl is-active cloud-init-local` → `inactive`, SSH · 서비스 정상 |
 
 **9.1 표 11(cloud-init 끄기)은 아래 3노드 · APP-02 표보다 나중에 더했다** — 두 표대로 새 노드를 준비할 때 마지막에 11을 밟는다(네 노드는 2026-09-27에 적용, #279).
