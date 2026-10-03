@@ -89,7 +89,7 @@ WITH senior AS (
       FROM bundle_map m LEFT JOIN mortgage_history h ON h.registry_id = m.new_registry_id
      GROUP BY m.property_id
 ), crit AS (
-    SELECT negative_equity_ratio, caution_lease_ratio FROM risk_criteria ORDER BY risk_criteria_id DESC LIMIT 1
+    SELECT negative_equity_ratio, caution_lease_ratio FROM risk_criteria ORDER BY risk_criteria_id ASC LIMIT 1   -- 앱 findFirstByOrderByRiskCriteriaIdAsc 와 같은 쪽
 ), calc AS (
     SELECT m.*, ra.eligible_guarantee_id, ra.hug_eligible_yn, ra.hf_eligible_yn, ra.sgi_eligible_yn,
            ra.insurance_eligible_yn, ra.analyzed_at, s.senior_debt + m.deposit AS risk_amount, c.*

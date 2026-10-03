@@ -1,5 +1,6 @@
 -- 부하 시험 데이터 반영 준비 (#376). 운영 DB 에 loadtest 스키마와 적재용 표를 만든다.
--- 적재용 표는 UNLOGGED — WAL · 복제를 타지 않는다. 반영이 끝나면 00_drop.sql 로 지운다.
+-- 적재용 표는 UNLOGGED — WAL · 복제를 타지 않는다. 매물 반영이 끝나면 지운다(README 「함정」 — stage_property · tmpl* · hub_ledger · stage_users*).
+-- property_origin · baseline 은 남긴다 — 실 · 가짜 구분의 유일한 수단(#376 사후 승인).
 -- 실행: psql -v ON_ERROR_STOP=1 -f 00_stage.sql
 CREATE SCHEMA IF NOT EXISTS loadtest;
 
