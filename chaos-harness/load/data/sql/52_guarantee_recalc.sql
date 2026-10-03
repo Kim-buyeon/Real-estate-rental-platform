@@ -13,7 +13,7 @@
 --
 -- 실행 (구간마다 한 트랜잭션 — 디스크 IO 한도 아래에서 나눠 돌린다. run.sh guarantee-recalc LO HI [STEP] 이 구간을 돌린다.
 -- lo · hi 를 빼면 새 매물 전체가 한 트랜잭션이다 — 468만 행 · WAL 이 한 번에 나가므로 쓰지 않는다):
---   cat 51_guarantee_calc.inc.sql 52_guarantee_recalc.sql | psql -X -v ON_ERROR_STOP=1 -v new_rows=true -v lo=312662 -v hi=512661
+--   cat 51_guarantee_calc.inc.sql 52_guarantee_recalc.sql | psql -X -v ON_ERROR_STOP=1 -v new_rows=true -v lo=312667 -v hi=512666
 \set ON_ERROR_STOP 1
 \if :{?gc_calc_loaded}
 \else
