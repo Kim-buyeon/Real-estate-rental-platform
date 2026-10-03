@@ -46,7 +46,7 @@
 │   ├── prometheus/ · vector/   관측 수집기 — 지표 · 로그를 노드 밖으로 보낸다. exporter는 Compose 서비스다
 │   ├── otel/               추적 — 앱 슬롯의 OpenTelemetry 에이전트 설정(무엇을 남기고 어디로 보내는가). jar 는 이미지 안
 │   ├── tls/                입구 HTTPS 인증서 — Let's Encrypt IP 인증서 발급 · 갱신 스크립트와 systemd 유닛(APP-01)
-│   ├── grafana/            Grafana Cloud 정의 — 운영 요약 대시보드 · 알림 규칙 · 메일 템플릿과 반영 스크립트
+│   ├── grafana/            Grafana Cloud 정의 — 운영 요약 · 병목 지도 대시보드 · 알림 규칙 · 메일 템플릿과 반영 스크립트
 │   └── alertmanager/       자체 호스팅으로 되돌릴 때의 자리 — 지금은 없다
 │
 ├── chaos-harness/        시험 실행 — 부하 시험만. 장애 주입은 차기 범위

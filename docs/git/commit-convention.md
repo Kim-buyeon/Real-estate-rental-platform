@@ -83,7 +83,7 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 | `infra/prometheus/` · `infra/vector/` | 관측 수집기 설정 — 지표 스크레이프 · 전송, 로그 전송 |
 | `infra/otel/` | 추적 — 앱 슬롯의 OpenTelemetry 에이전트 설정(샘플링 · 내보내기) |
 | `infra/tls/` | 입구 HTTPS 인증서 발급 · 갱신 — 스크립트와 systemd 유닛 |
-| `infra/grafana/` | Grafana Cloud 정의 — 운영 요약 대시보드 · 알림 규칙 · 메일 템플릿, 반영 스크립트 `apply.sh` |
+| `infra/grafana/` | Grafana Cloud 정의 — 운영 요약 · 병목 지도 대시보드 · 알림 규칙 · 메일 템플릿, 반영 스크립트 `apply.sh` |
 | `infra/alertmanager/` | 자체 호스팅으로 되돌릴 때의 자리. 지금은 없다 |
 | `infra/` | `postgresql.conf`, `pg_hba.conf`, 복제 설정 |
 | `infra/` 스크립트 | `deploy.sh` · `smoke.sh` · `maintenance.sh` · 페일오버 |
