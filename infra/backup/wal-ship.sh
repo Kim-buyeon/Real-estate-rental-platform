@@ -135,7 +135,7 @@ install -d -m 700 "$WAL_SHIP_STATE_DIR"
 # ── 2. 보낸 표시 정리 ──
 # 아카이브에서 사라진 이름(물리 백업의 pg_archivecleanup 이 지운 것)의 표시를 지운다 — 표시가 끝없이 쌓이지 않게 한다.
 # 보내기보다 먼저 한다 — 전송이 계속 실패해도 정리는 돈다(3 도 같다). 이름 형식이 맞는 것만 지운다(같은 경로의 다른 것을 건드리지 않는다).
-# 사라진 이름이 다시 생기면 표시가 없어 다시 보내지만, S3 조건부 쓰기가 덮어쓰기를 막는다(아래 3).
+# 사라진 이름이 다시 생기면 표시가 없어 다시 보내지만, S3 조건부 쓰기가 덮어쓰기를 막는다(아래 4).
 REMOVED=0
 while IFS= read -r -d '' mark; do
   name=${mark##*/}
@@ -154,10 +154,15 @@ done < <(find "$WAL_SHIP_STATE_DIR" -mindepth 1 -maxdepth 1 -type f -print0)
 #   (나) 그래도 아카이브 파일시스템 사용률이 WAL_LOCAL_DISK_MAX_PCT 이상이면 보낸 세그먼트를 오래된 것부터 더 지운다
 # 보내지 않은 것은 어떤 경우에도 지우지 않는다 — S3 가 막혀 쌓이는 것은 「WAL 전송 밀림」 알림(관측 설계서 5.1)이 잡는다.
 # 세그먼트만 지운다 — 타임라인 기록(.history) · 백업 기록(.backup)은 작고 복구가 찾는다. 표시는 다음 실행의 2단계가 지운다.
+# 보낸 표시는 목적지(WAL_S3_URI)를 가리지 않는다 — 목적지를 바꾸면 표시 디렉터리를 비운 뒤 다시 보낸다.
+# 비우지 않으면 옛 목적지로 보낸 세그먼트가 새 목적지에 없는 채로 여기서 지워진다.
 WAL_LOCAL_KEEP_HOURS=${WAL_LOCAL_KEEP_HOURS:-6}
 WAL_LOCAL_DISK_MAX_PCT=${WAL_LOCAL_DISK_MAX_PCT:-60}
-[[ "$WAL_LOCAL_KEEP_HOURS" =~ ^[0-9]+$ && "$WAL_LOCAL_DISK_MAX_PCT" =~ ^[0-9]+$ ]] \
-  || { log "!!! WAL_LOCAL_KEEP_HOURS · WAL_LOCAL_DISK_MAX_PCT 는 정수여야 한다"; exit 1; }
+# 0 으로 시작하는 값(08)은 산술에서 8진수 오류가 나 정리 전체가 조용히 빠지므로 받지 않는다. 문턱은 1 ~ 99
+[[ "$WAL_LOCAL_KEEP_HOURS" =~ ^(0|[1-9][0-9]*)$ && "$WAL_LOCAL_DISK_MAX_PCT" =~ ^[1-9][0-9]?$ ]] \
+  || { log "!!! WAL_LOCAL_KEEP_HOURS 는 0 이상 정수, WAL_LOCAL_DISK_MAX_PCT 는 1 ~ 99 여야 한다"; exit 1; }
+# 지우기가 실패해도(권한 등) 멈추지 않는다 — 여기서 끝나면 4단계 전송까지 멈춰 잃는 범위가 는다. 실패는 로그로 남긴다
+prune() { rm -f -- "$WAL_ARCHIVE_DIR/$1" || { log "!!! 로컬 사본을 지우지 못함: $1"; return 1; }; }
 disk_pct() { df --output=pcent "$WAL_ARCHIVE_DIR" | tail -1 | tr -dc '0-9'; }
 PRUNED_AGE=0
 PRUNED_DISK=0
@@ -165,8 +170,7 @@ PRUNED_DISK=0
 while IFS= read -r name; do
   [[ "$name" =~ ^[0-9A-F]{24}$ ]] || continue
   [ -e "$WAL_SHIP_STATE_DIR/$name" ] || continue
-  rm -f -- "$WAL_ARCHIVE_DIR/$name"
-  PRUNED_AGE=$((PRUNED_AGE + 1))
+  prune "$name" && PRUNED_AGE=$((PRUNED_AGE + 1))
 done < <(find "$WAL_ARCHIVE_DIR" -mindepth 1 -maxdepth 1 -type f -mmin +$((WAL_LOCAL_KEEP_HOURS * 60)) -printf '%f\n')
 # (나) 디스크 — 이름순(= 시간순)으로 오래된 것부터, 사용률이 문턱 아래로 내려갈 때까지
 if [ "$(disk_pct)" -ge "$WAL_LOCAL_DISK_MAX_PCT" ]; then
@@ -174,7 +178,7 @@ if [ "$(disk_pct)" -ge "$WAL_LOCAL_DISK_MAX_PCT" ]; then
     [ "$(disk_pct)" -ge "$WAL_LOCAL_DISK_MAX_PCT" ] || break
     [[ "$name" =~ ^[0-9A-F]{24}$ ]] || continue
     [ -e "$WAL_SHIP_STATE_DIR/$name" ] || continue
-    rm -f -- "$WAL_ARCHIVE_DIR/$name"
+    prune "$name" || break
     PRUNED_DISK=$((PRUNED_DISK + 1))
   done < <(find "$WAL_ARCHIVE_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
   [ "$(disk_pct)" -lt "$WAL_LOCAL_DISK_MAX_PCT" ] \

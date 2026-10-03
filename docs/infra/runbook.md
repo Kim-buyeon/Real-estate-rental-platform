@@ -738,7 +738,7 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 | 1 | 역할 정책 · 수명 주기를 `infra/backup/aws/`의 것으로 다시 넣는다(`put-role-policy` 같은 이름 — 덮어쓴다) | 접두어 셋 · 규칙 셋 |
 | 2 | 아카이브 스크립트(0640) 반영 — **`archive-wal.sh`는 파일 하나를 바인드 마운트한다.** 체크아웃이 바뀌면(파일이 새 inode가 되면) 도는 컨테이너는 옛 내용을 본다 → **DB 컨테이너를 재시작해야 반영된다**(primary는 점검 모드 안에서 — 16.3초 실측). 재시작 전 · 재시작 중에 아카이브된 세그먼트는 0600이다 → `sudo find /var/backups/rental/wal -maxdepth 1 -type f -perm 0600 -exec chmod 0640 {} +`를 **재시작 뒤에 한 번 더** | 새 세그먼트 `-rw-r----- 70 backup` |
 | 3 | `sudo install -d -o backup -g backup -m 700 /var/lib/rental-backup`(전송 상태 · GNUPGHOME의 부모 — root로 만들어져 있으면 고친다) → 스크립트 `wal-ship.sh` 설치 · 유닛 `rental-wal-ship.{service,timer}` | — |
-| 4 | `/etc/rental/wal-ship.env`(`backup` 600) — `WAL_S3_URI=s3://rental-backup-890742606734/wal` · `BACKUP_KEY_FILE` · `GNUPGHOME` · `AWS` · `AWS_DEFAULT_REGION`. `basebackup.env`에 `BASEBACKUP_S3_URI=…/physical` · 같은 넷 | — |
+| 4 | `/etc/rental/wal-ship.env`(`backup` 600) — `WAL_S3_URI=s3://rental-backup-890742606734/wal`(**목적지를 바꾸면 보낸 표시 `/var/lib/rental-backup/wal-shipped`를 비운다** — 표시가 목적지를 가리지 않아 옛 목적지로 보낸 것을 6시간 뒤 로컬에서 지운다, #381) · `BACKUP_KEY_FILE` · `GNUPGHOME` · `AWS` · `AWS_DEFAULT_REGION`. `basebackup.env`에 `BASEBACKUP_S3_URI=…/physical` · 같은 넷 | — |
 | 5 | 두 노드 수동 전송 → `enable --now rental-wal-ship.timer` | `WAL 전송 — 보냄 N · 이미 있음 M …`. 보내지 못한 파일이 있으면 **그 파일에서 멈추고 매분 실패를 남긴다**(0600 세그먼트에서 실측) |
 | 6 | 물리 백업 수동 1회 | S3 `physical/<시각>/` 세 파일 |
 
