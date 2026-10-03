@@ -77,7 +77,8 @@ instrumentation/development:
             - name: keyOf
             - name: durationOf
             - name: optionalDurationOf
-            - name: Renewal
+        - class: com.duri.rentalplatform.common.lock.DistributedLockAspect$Renewal
+          methods:
             - name: run
             - name: stop
         - class: com.duri.rentalplatform.common.security.StreamTicketStore
@@ -96,7 +97,8 @@ instrumentation/development:
             - name: loadRiskCriteria
             - name: premiumRateKey
             - name: loanRegulationKey
-            - name: Changes
+        - class: com.duri.rentalplatform.domain.admin.service.CriteriaCommandService$Changes
+          methods:
             - name: decimal
             - name: amount
             - name: add
@@ -121,6 +123,7 @@ instrumentation/development:
             - name: orZero
         - class: com.duri.rentalplatform.domain.loan.service.LoanProductRefreshService
           methods:
+            - name: refresh
             - name: isStale
         - class: com.duri.rentalplatform.domain.loan.service.LoanProductRefreshWriter
           methods:
@@ -131,6 +134,7 @@ instrumentation/development:
             - name: send
         - class: com.duri.rentalplatform.domain.notification.service.NotificationCommandService
           methods:
+            - name: createForWishlist
             - name: afterTransaction
             - name: afterCommit
             - name: afterCompletion
@@ -186,9 +190,6 @@ instrumentation/development:
             - name: MarketPrice
             - name: DongAreaKey
             - name: DistrictAreaKey
-            - name: add
-            - name: toMarketPrice
-            - name: median
         - class: com.duri.rentalplatform.domain.property.service.LedgerCommandService
           methods:
             - name: collectIfAbsent
@@ -220,6 +221,8 @@ instrumentation/development:
             - name: describe
         - class: com.duri.rentalplatform.domain.property.service.PropertyLoadWriter
           methods:
+            - name: findLoadedNaturalKeys
+            - name: findLoadedPrices
             - name: saveAll
             - name: updateMarketPrices
             - name: completeReanalysis
@@ -288,6 +291,7 @@ instrumentation/development:
             - name: calculate
         - class: com.duri.rentalplatform.domain.risk.service.MockLedgerReplaceExecutor
           methods:
+            - name: replaceAndAnalyze
             - name: removeMock
         - class: com.duri.rentalplatform.domain.risk.service.PropertyRefreshAnalysisExecutor
           methods:
@@ -310,6 +314,7 @@ instrumentation/development:
             - name: getRegistry
         - class: com.duri.rentalplatform.domain.risk.service.RegistryRefreshBatchExecutor
           methods:
+            - name: refreshAndAnalyzeIfNeeded
             - name: analysisBehindRegistry
         - class: com.duri.rentalplatform.domain.risk.service.RiskAnalysisCommandService
           methods:
@@ -326,6 +331,9 @@ instrumentation/development:
           methods:
             - name: reanalyze
             - name: retryAfter
+        - class: com.duri.rentalplatform.domain.risk.service.RiskReanalysisExecutor
+          methods:
+            - name: refreshAndAnalyze
         - class: com.duri.rentalplatform.domain.risk.store.BatchSuccessStore
           methods:
             - name: markSucceeded
@@ -347,7 +355,6 @@ instrumentation/development:
             - name: confirmPasswordReset
             - name: issueTokens
             - name: LoginCredential
-            - name: from
         - class: com.duri.rentalplatform.domain.user.service.UserQueryService
           methods:
             - name: getProfile
@@ -366,16 +373,22 @@ instrumentation/development:
             - name: keyOf
         - class: com.duri.rentalplatform.external.address.FaultAddressNormalizeClient
           methods:
+            - name: normalize
             - name: unavailable
         - class: com.duri.rentalplatform.external.address.FaultGeocodeClient
           methods:
+            - name: geocode
             - name: unavailable
         - class: com.duri.rentalplatform.external.address.RealAddressNormalizeClient
           methods:
+            - name: normalize
             - name: unavailable
+            - name: JusoResponse
         - class: com.duri.rentalplatform.external.address.RealGeocodeClient
           methods:
+            - name: geocode
             - name: unavailable
+            - name: KakaoAddressResponse
         - class: com.duri.rentalplatform.external.buildingledger.BuildingLedgerDailyQuota
           methods:
             - name: tryAcquire
@@ -390,6 +403,7 @@ instrumentation/development:
             - name: keyOf
         - class: com.duri.rentalplatform.external.buildingledger.FaultBuildingLedgerClient
           methods:
+            - name: fetch
             - name: unavailable
         - class: com.duri.rentalplatform.external.buildingledger.MockBuildingLedgerClient
           methods:
@@ -400,6 +414,7 @@ instrumentation/development:
             - name: mix
         - class: com.duri.rentalplatform.external.buildingledger.RealBuildingLedgerClient
           methods:
+            - name: fetch
             - name: unavailable
             - name: fetchTitleRows
             - name: request
@@ -411,7 +426,8 @@ instrumentation/development:
             - name: warn
             - name: mask
             - name: masked
-            - name: MaskedCause
+        - class: com.duri.rentalplatform.external.ExternalFallbackLog$MaskedCause
+          methods:
             - name: toString
         - class: com.duri.rentalplatform.external.FaultInjection
           methods:
@@ -420,24 +436,28 @@ instrumentation/development:
             - name: sleep
         - class: com.duri.rentalplatform.external.loanrate.FaultJeonseLoanRateClient
           methods:
+            - name: findBankLoanRates
             - name: unavailable
         - class: com.duri.rentalplatform.external.loanrate.MockJeonseLoanRateClient
           methods:
             - name: findBankLoanRates
         - class: com.duri.rentalplatform.external.loanrate.RealJeonseLoanRateClient
           methods:
+            - name: findBankLoanRates
             - name: unavailable
             - name: request
             - name: parse
             - name: verifyResultCode
         - class: com.duri.rentalplatform.external.mail.FaultMailClient
           methods:
+            - name: sendPasswordResetLink
             - name: unavailable
         - class: com.duri.rentalplatform.external.mail.MockMailClient
           methods:
             - name: sendPasswordResetLink
         - class: com.duri.rentalplatform.external.mail.RealMailClient
           methods:
+            - name: sendPasswordResetLink
             - name: body
             - name: unavailable
         - class: com.duri.rentalplatform.external.realestate.FaultRentTransactionClient

@@ -66,6 +66,11 @@ EXCLUDE |= {
     "RealBuildingLedgerClient.from", "RealBuildingLedgerClient.text", "RealBuildingLedgerClient.area",
     "RealBuildingLedgerClient.date",
     "RealJeonseLoanRateClient.itemsOf", "RealJeonseLoanRateClient.toRate", "RealJeonseLoanRateClient.decimalOf",
+    # Mock 의 같은 자리(구 · 달마다 한 번 — 추적 하나에 575번)와 같은 모양이다
+    "RealRentTransactionClient.findRentTransactions", "RealSaleTransactionClient.findSaleTransactions",
+    "FaultRentTransactionClient.findRentTransactions", "FaultSaleTransactionClient.findSaleTransactions",
+    # 시세 계산의 표본 모음 — 매물(행)마다 더한다
+    "MarketPriceCalculator.Sample.add", "MarketPriceCalculator.Sample.toMarketPrice", "MarketPriceCalculator.Sample.median",
 }
 
 # 메서드 선언 — 접근 제어자 · static 등 뒤에 반환형과 이름, 여는 괄호. 생성자 · 람다 · 호출은 걸리지 않게 한다
@@ -82,8 +87,10 @@ THROWS = re.compile(r"\s*(?:throws\s+[\w.,\s<>]+)?\s*\{")
 
 def is_declaration(text, m):
     """호출 · 생성 식이 아니라 선언인지 — 앞 낱말이 키워드가 아니고, 괄호를 닫은 뒤 (throws …) { 가 온다."""
-    words = m.group(0)[: m.start(1) - m.start(0)].split()
-    if not words or words[-1] in KEYWORDS or "=" in m.group(0):
+    # 이름이 있는 줄만 본다 — 윗줄 어노테이션 인자(key = "…")의 = 를 대입으로 보지 않게
+    line = text[text.rfind("\n", 0, m.start(1)) + 1 : m.start(1)]
+    words = line.split()
+    if not words or words[-1] in KEYWORDS or "=" in line:
         return False
     depth, i = 0, m.end() - 1
     while i < len(text):
@@ -92,6 +99,35 @@ def is_declaration(text, m):
             break
         i += 1
     return bool(THROWS.match(text, i + 1))
+
+
+TYPE = re.compile(r"\b(class|interface|record|enum)\s+(\w+)[^;{]*\{")
+
+
+def blank_literals(text):
+    """주석 · 문자열 · 문자 리터럴을 같은 길이의 # 로 — 중괄호를 세는 데 섞이지 않게(위치는 그대로 둔다).
+    공백으로 채우면 선언 정규식이 긴 공백에서 되짚기를 거듭해 멈춘 듯 느려진다(#378 실측)."""
+    pat = re.compile(r'//[^\n]*|/\*.*?\*/|"""(?:.|\n)*?"""|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'', re.S)
+    return pat.sub(lambda m: re.sub(r"[^\n]", "#", m.group(0)), text)
+
+
+def types(code):
+    """형 선언마다 (종류, 이진 이름 경로, 본문 시작, 본문 끝) — 안쪽 클래스는 Outer$Inner 로 잡는다."""
+    found = []
+    for m in TYPE.finditer(code):
+        open_at = m.end() - 1
+        depth, i = 0, open_at
+        while i < len(code):
+            depth += {"{": 1, "}": -1}.get(code[i], 0)
+            if depth == 0:
+                break
+            i += 1
+        found.append([m.group(1), m.group(2), open_at, i])
+    for t in found:  # 바깥 형 이름을 앞에 붙인다(가장 가까운 것부터)
+        outers = [o for o in found if o is not t and o[2] < t[2] and t[3] <= o[3]]
+        outers.sort(key=lambda o: o[2])
+        t.append("$".join([o[1] for o in outers] + [t[1]]))
+    return found
 
 
 def classes():
@@ -103,23 +139,28 @@ def classes():
         if not (in_layer or in_external or in_extra):
             continue
         text = path.read_text(encoding="utf-8")
-        # 맨 바깥 형(들여쓰기 없는 첫 선언)만 본다 — 안에 둔 record 때문에 클래스를 빼지 않게
-        top = re.search(r"^(?:public\s+|final\s+|abstract\s+|sealed\s+)*(class|interface|record|enum|@interface)\s", text, re.M)
-        if not top or top.group(1) != "class":
-            continue  # 인터페이스는 구현 클래스에서 잡는다. record · enum 은 값이다
-        fqcn = ".".join(path.relative_to(SRC).with_suffix("").parts)
-        simple = path.stem
-        names = []
-        for m in DECL.finditer(text):
+        code = blank_literals(text)
+        pkg = ".".join(path.relative_to(SRC).parent.parts)
+        found = types(code)
+        # 맨 바깥 형이 class 가 아니면(인터페이스 · record · enum) 그 파일은 건너뛴다 — 인터페이스는 구현 클래스에서 잡는다
+        if not found or found[0][0] != "class":
+            continue
+        by_type: dict[str, list[str]] = {}
+        for m in DECL.finditer(code):
             name = m.group(1)
-            if name in KEYWORDS or name == simple or f"{simple}.{name}" in EXCLUDE:
+            if name in KEYWORDS or not is_declaration(code, m):
                 continue
-            if not is_declaration(text, m):
+            # 선언을 품은 가장 안쪽 형 — 메서드는 그 형의 이진 이름(Outer$Inner) 소속이다
+            owner = min((t for t in found if t[2] < m.start(1) < t[3]), key=lambda t: t[3] - t[2], default=None)
+            if owner is None or owner[0] != "class" or name == owner[1]:
+                continue  # record · enum · 인터페이스 안의 것, 생성자는 뺀다
+            if f"{owner[4].replace('$', '.')}.{name}" in EXCLUDE or f"{owner[1]}.{name}" in EXCLUDE:
                 continue
+            names = by_type.setdefault(owner[4], [])
             if name not in names:
                 names.append(name)
-        if names:
-            yield fqcn, names
+        for binary, names in by_type.items():
+            yield f"{pkg}.{binary}", names
 
 
 def render():
