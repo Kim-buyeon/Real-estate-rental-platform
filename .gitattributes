@@ -21,3 +21,5 @@ infra/grafana/** text eol=lf
 infra/tls/** text eol=lf
 # 부하 시험 데이터 반영 SQL — DB 노드에서 psql 로 읽는다(INF-06 #376). 셸과 같은 이유로 LF 로 둔다.
 chaos-harness/load/data/sql/** text eol=lf
+# 부하 시험 측정 — 노드에 올려 실행하는 셸 · 생성기 컨테이너에 마운트하는 수집기 설정(INF-06 #378)
+chaos-harness/measure/node/** text eol=lf

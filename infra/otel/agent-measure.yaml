@@ -1,0 +1,493 @@
+# OpenTelemetry 자바 에이전트 — 측정 모드 설정(INF-06, #378). 부하 시험 동안만 쓴다. 평시 설정은 agent.yaml.
+# 노드 infra/.env 의 OTEL_AGENT_PROFILE=agent-measure 가 이 파일을 슬롯에 붙인다(운영 Compose x-app volumes).
+# 켜고 끄는 절차는 chaos-harness/measure/README.md, 켜는 것 자체가 측정 조건이라 회차 기록에 남긴다.
+#
+# 평시(agent.yaml)와 다른 셋
+#   1. 메서드 구간 — service · calculator · store · external 패키지의 메서드마다 구간을 남긴다. 요청 하나 안에서
+#      "어느 함수가 시간을 먹나"를 본다. store 메서드 구간이 Redis 시간이다 — 추적에 Redis 구간이 없다(#352).
+#      목록은 chaos-harness/measure/tools/gen-methods.py 가 만든다(아래 BEGIN ~ END).
+#   2. 요청 밖 구간을 남긴다 — 배치 · 스케줄 · 외부 API 호출(평시는 버린다, 관측 설계서 6장). /actuator 는 그대로 버린다.
+#   3. 사본을 부하 생성기의 수신기로 보낸다(OTEL_MEASURE_RECEIVER_ENDPOINT). Tempo 보존(14일) · 읽기 토큰과 무관하게
+#      회차의 추적을 파일로 받는다. 파일 내보내기(otlp_file/development)는 2.31.1 에서 file:// 를 무시하고 표준 출력으로
+#      내보낸다(#378 로컬 실측) — 그러면 앱 로그와 섞여 Loki 로 간다.
+#
+# 대가 — 구간 수와 내보내기가 는다. 슬롯 메모리 · 응답 시간에 주는 영향은 #378 로컬 실측(관측 설계서 6장 「측정 모드」).
+# 형식 · 치환 규칙은 agent.yaml 머리 주석과 같다.
+file_format: "1.1"
+
+resource:
+  attributes:
+    - name: service.name
+      value: rental-app
+    - name: service.instance.id
+      value: ${env:OTEL_SERVICE_INSTANCE_ID}
+
+propagator:
+  composite:
+    - tracecontext:
+    - baggage:
+
+tracer_provider:
+  processors:
+    - batch:
+        exporter:
+          otlp_http:
+            endpoint: ${env:OTEL_EXPORTER_OTLP_TRACES_ENDPOINT}
+            headers_list: ${env:OTEL_EXPORTER_OTLP_HEADERS}
+            compression: gzip
+    # 부하 생성기의 수신기(chaos-harness/measure/node/trace-receiver.sh) — 회차의 추적 사본
+    - batch:
+        exporter:
+          otlp_http:
+            endpoint: ${env:OTEL_MEASURE_RECEIVER_ENDPOINT}
+            compression: gzip
+  sampler:
+    composite/development:
+      rule_based:
+        rules:
+          # 수집기의 지표 긁기 · 헬스체크 — 평시와 같이 버린다
+          - attribute_patterns:
+              key: url.path
+              included: ["/actuator/*", "/actuator"]
+            span_kinds: [server]
+            sampler:
+              always_off:
+          # 부모 없는 구간 — 업무 요청 · 배치 · 스케줄 · 외부 호출 모두 남긴다(비율 1.0)
+          - parent: [none]
+            sampler:
+              probability:
+                ratio: 1.0
+          - sampler:
+              parent_threshold:
+                root:
+                  always_off:
+
+# BEGIN methods — chaos-harness/measure/tools/gen-methods.py 가 만든다. 손으로 고치지 않는다
+instrumentation/development:
+  java:
+    methods:
+      include:
+        - class: com.duri.rentalplatform.common.lock.DistributedLockAspect
+          methods:
+            - name: destroy
+            - name: lock
+            - name: acquire
+            - name: startRenewal
+            - name: release
+            - name: keyOf
+            - name: durationOf
+            - name: optionalDurationOf
+        - class: com.duri.rentalplatform.common.lock.DistributedLockAspect$Renewal
+          methods:
+            - name: run
+            - name: stop
+        - class: com.duri.rentalplatform.common.security.StreamTicketStore
+          methods:
+            - name: issue
+            - name: consume
+            - name: parse
+            - name: keyOf
+        - class: com.duri.rentalplatform.domain.admin.service.CriteriaCommandService
+          methods:
+            - name: updateGuarantee
+            - name: updatePremiumRates
+            - name: updateLoanRegulations
+            - name: updateRiskThreshold
+            - name: loadRiskCriteria
+            - name: premiumRateKey
+            - name: loanRegulationKey
+        - class: com.duri.rentalplatform.domain.admin.service.CriteriaCommandService$Changes
+          methods:
+            - name: decimal
+            - name: amount
+            - name: add
+            - name: any
+            - name: save
+        - class: com.duri.rentalplatform.domain.admin.service.CriteriaQueryService
+          methods:
+            - name: getGuaranteeCriteria
+            - name: getPremiumRates
+            - name: getLoanRegulations
+            - name: getRiskThreshold
+            - name: getHistory
+        - class: com.duri.rentalplatform.domain.loan.calculator.JeonseLoanLimitCalculator
+          methods:
+            - name: calculate
+            - name: interestCapacity
+            - name: dtiReference
+        - class: com.duri.rentalplatform.domain.loan.service.LoanCommandService
+          methods:
+            - name: calculateLimit
+            - name: representativeProduct
+            - name: orZero
+        - class: com.duri.rentalplatform.domain.loan.service.LoanProductRefreshService
+          methods:
+            - name: refresh
+            - name: isStale
+        - class: com.duri.rentalplatform.domain.loan.service.LoanProductRefreshWriter
+          methods:
+            - name: write
+            - name: distinctByBank
+        - class: com.duri.rentalplatform.domain.notification.sender.SseNotificationSender
+          methods:
+            - name: send
+        - class: com.duri.rentalplatform.domain.notification.service.NotificationCommandService
+          methods:
+            - name: createForWishlist
+            - name: afterTransaction
+            - name: afterCommit
+            - name: afterCompletion
+        - class: com.duri.rentalplatform.domain.notification.service.NotificationQueryService
+          methods:
+            - name: findByUser
+        - class: com.duri.rentalplatform.domain.notification.service.NotificationReadCommandService
+          methods:
+            - name: markRead
+            - name: markAllRead
+        - class: com.duri.rentalplatform.domain.notification.service.NotificationStreamService
+          methods:
+            - name: issueTicket
+            - name: connect
+            - name: deliver
+            - name: timeoutFor
+        - class: com.duri.rentalplatform.domain.notification.service.NotificationSubscriptionCommandService
+          methods:
+            - name: replace
+            - name: newPropertyRows
+            - name: validateDistricts
+        - class: com.duri.rentalplatform.domain.notification.service.NotificationSubscriptionQueryService
+          methods:
+            - name: get
+            - name: isWishlistMonitoringEnabled
+            - name: newProperty
+            - name: toggle
+        - class: com.duri.rentalplatform.domain.notification.store.NotificationDedupStore
+          methods:
+            - name: claim
+            - name: release
+            - name: keyOf
+        - class: com.duri.rentalplatform.domain.notification.store.SseEmitterStore
+          methods:
+            - name: connect
+            - name: open
+            - name: register
+            - name: send
+            - name: sendHeartbeat
+            - name: connectionCount
+            - name: bindTo
+            - name: remove
+            - name: sendOrRemove
+        - class: com.duri.rentalplatform.domain.property.calculator.GeoDistanceCalculator
+          methods:
+            - name: boundingBox
+        - class: com.duri.rentalplatform.domain.property.calculator.LandlordNameGenerator
+          methods:
+            - name: isIntentionalMismatch
+        - class: com.duri.rentalplatform.domain.property.calculator.MarketPriceCalculator
+          methods:
+            - name: from
+        - class: com.duri.rentalplatform.domain.property.service.LedgerCommandService
+          methods:
+            - name: collectIfAbsent
+            - name: fetchMockReplacement
+            - name: replaceMock
+            - name: findMockLedgerLookup
+            - name: findUncollected
+            - name: lookupOf
+            - name: normalizeAddress
+            - name: save
+        - class: com.duri.rentalplatform.domain.property.service.LedgerQueryService
+          methods:
+            - name: getLedger
+        - class: com.duri.rentalplatform.domain.property.service.PropertyLoadService
+          methods:
+            - name: load
+            - name: refresh
+            - name: loadAll
+            - name: recentMonths
+            - name: loadDistrict
+            - name: priceDiffers
+            - name: fetchTransactions
+            - name: fetchSaleTransactions
+            - name: filterUsable
+            - name: fillLedgerKeyChunk
+            - name: saveChunk
+            - name: updatePriceChunk
+            - name: describe
+        - class: com.duri.rentalplatform.domain.property.service.PropertyLoadWriter
+          methods:
+            - name: findLoadedNaturalKeys
+            - name: findLoadedPrices
+            - name: saveAll
+            - name: updateMarketPrices
+            - name: completeReanalysis
+            - name: fillLedgerKeys
+        - class: com.duri.rentalplatform.domain.property.service.PropertyQueryService
+          methods:
+            - name: getDistrictCounts
+            - name: search
+            - name: getMapClusters
+            - name: validBox
+            - name: getDetail
+            - name: searchMarkersInRadius
+            - name: searchList
+            - name: usesLeaseRatioIndex
+            - name: selectListByLeaseRatio
+            - name: sortValue
+            - name: invalidSort
+        - class: com.duri.rentalplatform.domain.property.service.WishlistCommandService
+          methods:
+            - name: add
+            - name: remove
+        - class: com.duri.rentalplatform.domain.property.service.WishlistQueryService
+          methods:
+            - name: findByUser
+        - class: com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore
+          methods:
+            - name: find
+            - name: save
+            - name: key
+            - name: grades
+            - name: blankToEmpty
+            - name: str
+        - class: com.duri.rentalplatform.domain.risk.calculator.DocumentConsistencyChecker
+          methods:
+            - name: check
+            - name: currentOwner
+            - name: sameName
+            - name: sameAddress
+            - name: collapse
+            - name: sameArea
+        - class: com.duri.rentalplatform.domain.risk.calculator.GuaranteeEligibilityJudge
+          methods:
+            - name: judge
+            - name: judgeProvider
+            - name: guaranteeLimit
+            - name: estimatedPremium
+            - name: inDepositRange
+            - name: inDebtRatioRange
+        - class: com.duri.rentalplatform.domain.risk.calculator.NegativeEquityCalculator
+          methods:
+            - name: calculate
+        - class: com.duri.rentalplatform.domain.risk.calculator.RegistrySummaryCalculator
+          methods:
+            - name: summarize
+            - name: fingerprint
+            - name: line
+            - name: join
+            - name: sha256
+        - class: com.duri.rentalplatform.domain.risk.calculator.RightViolationDetector
+          methods:
+            - name: detect
+        - class: com.duri.rentalplatform.domain.risk.calculator.RiskGradeCalculator
+          methods:
+            - name: calculate
+        - class: com.duri.rentalplatform.domain.risk.service.MockLedgerReplaceExecutor
+          methods:
+            - name: replaceAndAnalyze
+            - name: removeMock
+        - class: com.duri.rentalplatform.domain.risk.service.PropertyRefreshAnalysisExecutor
+          methods:
+            - name: analyze
+        - class: com.duri.rentalplatform.domain.risk.service.RegistryCommandService
+          methods:
+            - name: collectIfAbsent
+            - name: refresh
+            - name: findUncollected
+            - name: findProperty
+            - name: lookupOf
+            - name: replaceIfChanged
+            - name: sameEntries
+            - name: counts
+            - name: toEntry
+            - name: save
+            - name: saveHistories
+        - class: com.duri.rentalplatform.domain.risk.service.RegistryQueryService
+          methods:
+            - name: getRegistry
+        - class: com.duri.rentalplatform.domain.risk.service.RegistryRefreshBatchExecutor
+          methods:
+            - name: refreshAndAnalyzeIfNeeded
+            - name: analysisBehindRegistry
+        - class: com.duri.rentalplatform.domain.risk.service.RiskAnalysisCommandService
+          methods:
+            - name: analyze
+            - name: analyzeWithCollectedLedger
+            - name: judge
+            - name: judgeAndRecord
+            - name: record
+            - name: houseType
+            - name: snapshots
+            - name: eligible
+            - name: firstEligibleGuaranteeId
+        - class: com.duri.rentalplatform.domain.risk.service.RiskReanalysisCommandService
+          methods:
+            - name: reanalyze
+            - name: retryAfter
+        - class: com.duri.rentalplatform.domain.risk.service.RiskReanalysisExecutor
+          methods:
+            - name: refreshAndAnalyze
+        - class: com.duri.rentalplatform.domain.risk.store.BatchSuccessStore
+          methods:
+            - name: markSucceeded
+            - name: hasSucceeded
+            - name: keyOf
+        - class: com.duri.rentalplatform.domain.risk.store.ReanalyzeIntervalStore
+          methods:
+            - name: markAnalyzed
+            - name: remaining
+            - name: keyOf
+        - class: com.duri.rentalplatform.domain.user.service.UserCommandService
+          methods:
+            - name: signUpWithEmail
+            - name: login
+            - name: reissue
+            - name: logout
+            - name: updateProfile
+            - name: requestPasswordReset
+            - name: confirmPasswordReset
+            - name: issueTokens
+        - class: com.duri.rentalplatform.domain.user.service.UserQueryService
+          methods:
+            - name: getProfile
+            - name: missingFields
+        - class: com.duri.rentalplatform.domain.user.store.PasswordResetTokenStore
+          methods:
+            - name: claimSendSlot
+            - name: issue
+            - name: consume
+            - name: hash
+        - class: com.duri.rentalplatform.domain.user.store.RefreshTokenStore
+          methods:
+            - name: save
+            - name: isCurrentToken
+            - name: delete
+            - name: keyOf
+        - class: com.duri.rentalplatform.external.address.FaultAddressNormalizeClient
+          methods:
+            - name: normalize
+            - name: unavailable
+        - class: com.duri.rentalplatform.external.address.FaultGeocodeClient
+          methods:
+            - name: geocode
+            - name: unavailable
+        - class: com.duri.rentalplatform.external.address.RealAddressNormalizeClient
+          methods:
+            - name: normalize
+            - name: unavailable
+        - class: com.duri.rentalplatform.external.address.RealGeocodeClient
+          methods:
+            - name: geocode
+            - name: unavailable
+        - class: com.duri.rentalplatform.external.buildingledger.BuildingLedgerDailyQuota
+          methods:
+            - name: tryAcquire
+            - name: exhaust
+            - name: remaining
+            - name: today
+            - name: keyOf
+        - class: com.duri.rentalplatform.external.buildingledger.BuildingLedgerRateLimiter
+          methods:
+            - name: acquire
+            - name: tryAcquire
+            - name: keyOf
+        - class: com.duri.rentalplatform.external.buildingledger.FaultBuildingLedgerClient
+          methods:
+            - name: fetch
+            - name: unavailable
+        - class: com.duri.rentalplatform.external.buildingledger.MockBuildingLedgerClient
+          methods:
+            - name: fetch
+            - name: ownerName
+            - name: mainPurpose
+            - name: pick
+            - name: mix
+        - class: com.duri.rentalplatform.external.buildingledger.RealBuildingLedgerClient
+          methods:
+            - name: fetch
+            - name: unavailable
+            - name: fetchTitleRows
+            - name: request
+            - name: parseBody
+            - name: providerLimitOf
+            - name: parseXml
+        - class: com.duri.rentalplatform.external.ExternalFallbackLog
+          methods:
+            - name: warn
+            - name: mask
+            - name: masked
+        - class: com.duri.rentalplatform.external.ExternalFallbackLog$MaskedCause
+          methods:
+            - name: toString
+        - class: com.duri.rentalplatform.external.FaultInjection
+          methods:
+            - name: inject
+            - name: min
+            - name: sleep
+        - class: com.duri.rentalplatform.external.loanrate.FaultJeonseLoanRateClient
+          methods:
+            - name: findBankLoanRates
+            - name: unavailable
+        - class: com.duri.rentalplatform.external.loanrate.MockJeonseLoanRateClient
+          methods:
+            - name: findBankLoanRates
+        - class: com.duri.rentalplatform.external.loanrate.RealJeonseLoanRateClient
+          methods:
+            - name: findBankLoanRates
+            - name: unavailable
+            - name: request
+            - name: parse
+            - name: verifyResultCode
+        - class: com.duri.rentalplatform.external.mail.FaultMailClient
+          methods:
+            - name: sendPasswordResetLink
+            - name: unavailable
+        - class: com.duri.rentalplatform.external.mail.MockMailClient
+          methods:
+            - name: sendPasswordResetLink
+        - class: com.duri.rentalplatform.external.mail.RealMailClient
+          methods:
+            - name: sendPasswordResetLink
+            - name: body
+            - name: unavailable
+        - class: com.duri.rentalplatform.external.realestate.FaultRentTransactionClient
+          methods:
+            - name: unavailable
+        - class: com.duri.rentalplatform.external.realestate.FaultSaleTransactionClient
+          methods:
+            - name: unavailable
+        - class: com.duri.rentalplatform.external.realestate.RealRentTransactionClient
+          methods:
+            - name: unavailable
+            - name: request
+        - class: com.duri.rentalplatform.external.realestate.RealSaleTransactionClient
+          methods:
+            - name: unavailable
+            - name: request
+        - class: com.duri.rentalplatform.external.realestate.RtmsXmlSupport
+          methods:
+            - name: verifyEncodedKey
+            - name: parse
+            - name: verifyResultCode
+            - name: totalCount
+            - name: itemCount
+        - class: com.duri.rentalplatform.external.registry.MockRegistryClient
+          methods:
+            - name: fetch
+            - name: currentOwnerName
+            - name: addOwnershipChanges
+            - name: addMortgages
+            - name: addPriorTenant
+            - name: addRightEntries
+            - name: addRightIfDrawn
+            - name: registryAddress
+            - name: exclusiveArea
+            - name: buildingPurpose
+            - name: rankOwnerships
+            - name: rankMortgages
+            - name: portion
+            - name: pickOtherThan
+            - name: percent
+            - name: pick
+            - name: mix
+# END methods

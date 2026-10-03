@@ -1,0 +1,1392 @@
+<!doctype html>
+{# 이 파일은 blank-form.html 에서 만든 Jinja2 양식이다. 칸에 넣는 값은 analyze/report.py 가 만든다 #}
+<html lang="ko"><head><meta charset="utf-8">
+<title>부하 시험 결과 보고서</title>
+<style>
+@page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+* { box-sizing: border-box; }
+body { font-family: "Malgun Gothic", "맑은 고딕", sans-serif; font-size: 9.3pt; line-height: 1.5; color: #1d232b; margin: 0; }
+h1 { font-size: 20pt; margin: 0 0 4px; color: #12304f; }
+h2 { font-size: 13.5pt; color: #fff; background: #1f4e79; padding: 6px 10px; margin: 0 0 10px; border-radius: 3px; break-after: avoid; }
+h3 { font-size: 10.8pt; color: #1f4e79; border-bottom: 1.5px solid #1f4e79; padding-bottom: 2px; margin: 16px 0 6px; break-after: avoid; }
+h4 { font-size: 9.8pt; margin: 10px 0 4px; color: #333; break-after: avoid; }
+p { margin: 3px 0 6px; }
+section.ch { break-before: page; }
+table { width: 100%; border-collapse: collapse; margin: 4px 0 8px; font-size: 8.6pt; break-inside: auto; }
+tr { break-inside: avoid; }
+th { background: #e8eef5; color: #12304f; font-weight: 700; text-align: left; border: 1px solid #b9c6d4; padding: 3px 5px; }
+td { border: 1px solid #c9d2dc; padding: 3px 5px; height: 19px; vertical-align: top; }
+td.b { background: #fffdf3; }            /* 채울 칸 */
+td.k, th.k { width: 1%; white-space: nowrap; }
+.note { background: #f3f6f9; border-left: 3px solid #7a95b3; padding: 5px 9px; margin: 6px 0 8px; font-size: 8.7pt; }
+.warn { background: #fff4ec; border-left: 3px solid #d9822b; padding: 5px 9px; margin: 6px 0 8px; font-size: 8.7pt; }
+.key  { background: #eef7ee; border-left: 3px solid #3c8d40; padding: 5px 9px; margin: 6px 0 8px; font-size: 8.7pt; }
+.formula { font-family: Consolas, monospace; background: #f6f6f6; border: 1px solid #ddd; padding: 4px 8px; display: inline-block; margin: 3px 0; }
+code, pre { font-family: Consolas, monospace; font-size: 8.2pt; }
+pre { background: #f6f6f6; border: 1px solid #ddd; padding: 5px 8px; margin: 4px 0 8px; white-space: pre-wrap; }
+.tag { display: inline-block; font-size: 7.6pt; padding: 0 5px; border-radius: 8px; border: 1px solid #9fb2c6; color: #1f4e79; margin-left: 6px; vertical-align: middle; font-weight: 400; }
+.chk { font-family: "Segoe UI Symbol", sans-serif; }
+ul { margin: 2px 0 6px 18px; padding: 0; } li { margin: 1px 0; }
+.cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; }
+.cover .sub { font-size: 11pt; color: #456; margin-bottom: 26px; }
+.meta td { height: 26px; }
+.toc td { height: auto; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sig td { height: 30px; }
+.lg-g { color:#2e7d32; font-weight:700 } .lg-y { color:#b8860b; font-weight:700 } .lg-r { color:#c62828; font-weight:700 } .lg-n { color:#777; font-weight:700 }
+.small { font-size: 8pt; color: #555; }
+</style></head><body>
+
+<!-- ============ 표지 ============ -->
+<div class="cover">
+  <h1>부하 시험 결과 보고서</h1>
+  <div class="sub">전월세 부동산 금융 플랫폼 · 양식 5판 (계층 분리 · 반복 측정 · 측정 요소 · 판정 기준)</div>
+  <table class="meta">
+    <tr><th class="k">보고서 판</th><td class="b">{{ nar.cover.edition|n }}</td><th class="k">작성일</th><td class="b">{{ today }}</td></tr>
+    <tr><th class="k">작성자</th><td class="b">{{ nar.cover.author|n }}</td><th class="k">측정 기간</th><td class="b">{{ period }}</td></tr>
+    <tr><th class="k">회차 범위</th><td class="b">{% if rids %}{{ rids[0] }} ~ {{ rids[-1] }} (총 {{ rids|length }}회){% else %}R___ ~ R___ (총 ___회){% endif %}</td><th class="k">기준 회차</th><td class="b">{{ B or nar.baseline_round or "R___" }}</td></tr>
+    <tr><th class="k">유의차 하한</th><td class="b">± {{ thr|v(2) }} %</td><th class="k">데이터 규모</th><td class="b">{{ s.meta.data_scale|n }}</td></tr>
+    <tr><th class="k">부하 도구</th><td class="b">{{ s.meta.tool|n }}</td><th class="k">관련 이슈</th><td class="b">{{ nar.cover.issue|n }}</td></tr>
+  </table>
+  <div class="note">
+    <b>목적</b> — 지금까지 한 최적화의 잘된 점과 문제점을 한눈에 파악한다.<br>
+    <b>전제</b> — 고치고 재기를 계속 반복한다. 한 번 재고 끝이 아니다. 이 문서는 완성되지 않고 회차마다 갱신된다.<br>
+    <b>구조</b> — DB · 애플리케이션 · 경계 셋으로 나누고 마지막에 합친다. 회차는 번호로 가리키고, 조건은 [11.1] 한 표에 모은다.
+  </div>
+  <div class="small">노란 바탕 칸이 채울 칸이다. 비워 둘 수밖에 없는 칸은 「미측정」으로 적는다 — 빈 칸을 추측으로 메우지 않는다.</div>
+</div>
+
+<!-- ============ 목차 ============ -->
+<section class="ch">
+<h2>목차와 갱신 주기</h2>
+<table class="toc">
+<tr><th class="k">장</th><th>내용</th><th class="k">갱신 주기</th></tr>
+<tr><td>[0]</td><td>원칙 — 계층 귀속 · 반복 측정 · 측정 요소 · <b>응답 시간 판정 기준</b></td><td>고정</td></tr>
+<tr><td>[1]</td><td>한 장 요약 — 결론 · 대차대조표 · 비교 가능성 · 신호등</td><td>쌓인뒤</td></tr>
+<tr><td>[2]</td><td>데이터 적재</td><td>변경시</td></tr>
+<tr><td>[3]</td><td>시나리오 — 어떤 상황을 만든 것인가</td><td>변경시</td></tr>
+<tr><td>[4]</td><td>DB 계층</td><td>변경시</td></tr>
+<tr><td>[5]</td><td>애플리케이션 계층</td><td>변경시</td></tr>
+<tr><td>[6]</td><td>경계 — DB와 앱 사이 ★ 가장 효과가 큰 항목이 여기</td><td>변경시</td></tr>
+<tr><td>[7]</td><td>통합 — 시간 예산 · 헤드룸 · 포화점 · 구성 요소 × 엔드포인트</td><td>쌓인뒤</td></tr>
+<tr><td>[8]</td><td>엔드포인트별 카드</td><td>쌓인뒤</td></tr>
+<tr><td>[9]</td><td>남은 병목 · 효과 없던 것 · 미측정 · 측정 요소 되먹임</td><td>쌓인뒤</td></tr>
+<tr><td>[10]</td><td>그래프 G1 ~ G7</td><td>매회차</td></tr>
+<tr><td>[11]</td><td>회차 관리 · 재현 정보</td><td>매회차</td></tr>
+<tr><td>[12]</td><td>작성 순서 · 마지막 점검</td><td>고정</td></tr>
+</table>
+<table>
+<tr><th class="k">매회차</th><td>회차를 돌릴 때마다 한 줄 — 1분. 미루면 섞인다</td></tr>
+<tr><th class="k">변경시</th><td>그 계층을 고친 회차 뒤에만</td></tr>
+<tr><th class="k">쌓인뒤</th><td>변경 몇 개가 끝나 흐름이 보일 때</td></tr>
+<tr><th class="k">고정</th><td>측정 전에 한 번 정하고 바꾸지 않는다</td></tr>
+</table>
+<div class="key"><b>처음 시작한다면</b> — [0.3] 측정 요소를 먼저 고정하고 [0.2](3) 흔들림 3회를 돈다. 측정 수단(추적 · 프로파일러 · auto_explain)을 흔들림 뒤에 켜면 그 회차부터 다른 측정이 된다. 유의차 하한을 정하지 않고 넘어가면 그 뒤 회차를 전부 버리게 된다.</div>
+</section>
+
+<!-- ============ [0] ============ -->
+<section class="ch">
+<h2>[0] 양식의 원칙 <span class="tag">고정</span></h2>
+<table>
+<tr><th class="k">#</th><th>원칙</th><th>뜻</th></tr>
+<tr><td>1</td><td>숫자 없이 결론을 쓰지 않는다</td><td>"개선되었다"는 전후 값이 함께 있을 때만. 예) 목록 조회 596 → 0.4 ms (-99.9%)</td></tr>
+<tr><td>2</td><td>측정하지 못한 값은 「미측정」</td><td>그럴듯한 숫자로 메우면 그 뒤 판단이 전부 그 위에 선다</td></tr>
+<tr><td>3</td><td>전후 비교는 조건이 같을 때만</td><td>데이터 규모 · 설정 · 커밋 · 캐시 상태 · 버스트 크레딧 중 하나라도 다르면 [1.3]에 적는다</td></tr>
+<tr><td>4</td><td>효과와 대가를 함께</td><td>대가 칸이 빈 최적화는 검토가 끝나지 않은 것이다</td></tr>
+<tr><td>5</td><td>효과 없던 시도도 적는다</td><td>→ [9.2]</td></tr>
+<tr><td>6</td><td>계층 귀속은 규칙으로</td><td>→ [0.1]</td></tr>
+<tr><td>7</td><td>한 회차는 증거가 아니다</td><td>흔들림보다 작은 변화를 효과로 적지 않는다 → [0.2]</td></tr>
+<tr><td>8</td><td>요소를 고른 이유는 관측 설계서에</td><td>이 문서는 "이 시험의 어떤 질문에 답하나"만 갖는다 → [0.3]</td></tr>
+<tr><td>9</td><td><b>판정 축은 이미 정해져 있다</b></td><td>합격 · 불합격은 p95로 가른다. p50 · p99는 진단용. "안정적"은 헤드룸 배수로만 말한다 → [0.4]</td></tr>
+</table>
+
+<h3>[0.1] 계층 귀속 규칙</h3>
+<table>
+<tr><th>판정 기준</th><th class="k">계층</th></tr>
+<tr><td>EXPLAIN · 인덱스 · 통계 · DB 설정 · 스키마를 고쳐 해결된다. 앱 코드를 건드리지 않는다</td><td>DB</td></tr>
+<tr><td>앱 코드 · 앱 설정 · 구조를 고쳐 해결된다. DB 쪽은 그대로다</td><td>앱</td></tr>
+<tr><td>한쪽만 고치면 다른 쪽이 깨진다 / 둘을 같이 손대야 한다 / "앱이 보내는 것"과 "DB가 받는 것"의 불일치</td><td>경계</td></tr>
+</table>
+<div class="note"><b>경계로 가는 전형</b> — 바인딩 타입 불일치 · N+1 · 트랜잭션 안의 비-DB 작업(해싱 · 외부 호출 · 캐시 왕복) · 풀 크기와 DB 최대 커넥션 · 캐시 무효화 책임 · 페이지네이션 방식 · 지연 로딩 · 응답 열 선택 · 읽기 분산과 복제 지연. 양쪽을 다 봐야 보여서 보통 효과가 가장 크다.</div>
+
+<h3>[0.2] 반복 측정 규칙 — 회차를 번호로 가리킨다</h3>
+<p><b>(1) 모든 숫자에 회차 번호를 붙인다.</b> "전 201 ms → 후 30.9 ms"가 아니라 "R03 201 ms → R07 30.9 ms". 조건은 [11.1]에서 찾는다.</p>
+<p><b>(2) 기준 회차를 하나 고정한다.</b> 조건이 바뀔 때만 교체하고 [1.3]에 적는다.</p>
+<table><tr><th class="k">기준 회차</th><td class="b">{{ B or nar.baseline_round or "R___" }}</td><th class="k">선정 사유</th><td class="b">{{ nar.baseline_reason|n }}</td></tr></table>
+<p><b>(3) 아무것도 고치지 않은 3회로 흔들림을 먼저 잰다 — 이게 첫 측정이다.</b></p>
+<table>
+<tr><th>지표</th>{% for r in (sig.rounds if sig else ["1회", "2회", "3회"]) %}<th>{{ r }}</th>{% endfor %}<th>중위수</th><th>최대-최소</th><th>편차</th></tr>
+{% for k, name in [("p95", "p95 (ms)"), ("tps", "달성 TPS"), ("db_cpu", "DB 노드 CPU"), ("error_rate", "오류율")] %}
+{% set m = sig.metrics[k] if sig else none %}
+<tr><td>{{ name }}</td>{% if m %}{% for v in m["values"] %}<td class="b">{{ v|v(2) }}</td>{% endfor %}<td class="b">{{ m.median|v(2) }}</td><td class="b">{{ m.range|v(2) }}</td><td class="b">{{ m.dev_pct|v(1) }}%</td>{% else %}<td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">%</td>{% endif %}</tr>
+{% endfor %}
+</table>
+<p><span class="formula">편차 = (최대 − 최소) ÷ 중위수</span> &nbsp; <span class="formula">유의차 하한 = 편차 × 2 = {{ thr|v(2) if thr is given else "____" }} %</span></p>
+<div class="note">이보다 작은 변화는 「변화 없음」. 대표값은 평균이 아니라 <b>중위수</b>. 최솟값도 함께 적는다(그 구성의 상한).<br>
+응답 시간(p95 · p99)은 <b>부하 도구 결과(.jtl)</b>에서 뽑는다. 서버 지표는 SLO 구간 다섯 칸(100ms · 300ms · 500ms · 1s · 3s) 사이 보간이라 대조용이다. 둘이 크게 다르면 입구 · 네트워크 · 큐 대기를 의심한다 → [7.1]</div>
+<p><b>(4) 변경 하나당 회차 하나.</b> 같이 고쳤으면 [1.2] 기여도에 「분리 불가」.</p>
+<p><b>(5) 회차 사이를 끊는다.</b> 캐시 · 통계 · 누적 쓰기 · 버스트 크레딧 소모가 남는다 → [11.2]</p>
+<p><b>(6) 회차는 두 종류다.</b> 혼합 회차(시나리오대로 섞어 준다) / 단독 회차 U*(엔드포인트 하나 — 한 건당 자원 단가, 데이터 규모 · 커밋이 바뀔 때만) → [7.11]</p>
+</section>
+
+<section class="ch">
+<h3>[0.3] 측정 요소와 그것이 답하는 질문 <span class="tag">고정</span></h3>
+<p class="small">운영에서 왜 그 요소를 보는지(근거)는 관측 설계서 3장의 같은 # 행이 갖는다. 여기는 이 시험에서 답하는 질문만.</p>
+<table>
+<tr><th class="k">양식 칸</th><th>요소 (관측 설계서 #)</th><th>이 시험에서 답하는 질문</th><th>이 요소여야 하는 이유</th></tr>
+<tr><td>[1.4][0.2]</td><td>부하 도구 결과(.jtl) p95 · p99 · TPS · 오류</td><td>엔드포인트별 응답 시간 · 달성 TPS</td><td>서버 지표는 구간 보간이다</td></tr>
+<tr><td>[5.1][7.4]</td><td>요청 지연 · 5xx · 초당 요청 (W1)</td><td>서버가 받은 만큼 처리했나</td><td>도구 쪽과 대조해 입구 손실을 가른다</td></tr>
+<tr><td>[7.1]</td><td>Nginx uct / urt (W7)</td><td>입구 · 슬롯 연결 · 큐 대기에 시간이 쓰였나</td><td>추적에 큐 구간이 없다</td></tr>
+<tr><td>[5.1]</td><td>슬롯별 분배 (W2)</td><td>네 슬롯에 고르게 갔나 · 죽은 슬롯</td><td>한 슬롯이 죽으면 숫자가 바뀐다</td></tr>
+<tr><td>[6.4]</td><td>커넥션 풀 대기 · 획득 · 타임아웃 (W3)</td><td>풀에서 줄을 섰나</td><td>DB가 빨라도 풀에서 막히면 느리다</td></tr>
+<tr><td>[5.1][7.4]</td><td>Tomcat 바쁜 스레드 (W4)</td><td>요청 스레드가 말랐나</td><td>큐 대기의 대리 지표</td></tr>
+<tr><td>[5.1]</td><td>힙 · 힙 밖 · GC (W5)</td><td>메모리 · GC가 한계를 정했나</td><td>슬롯 메모리 상한 680 MiB</td></tr>
+<tr><td>[3] S6</td><td>비동기 · 스케줄러 큐 (W6)</td><td>배치가 밀렸나</td><td>배치 동시 시나리오의 판정</td></tr>
+<tr><td>[5.4][7.1]</td><td>Redis 서버 지표 · lettuce 명령 지연 (W9)</td><td>캐시 · 토큰에 시간이 쓰였나</td><td>추적에 Redis 구간이 없다</td></tr>
+<tr><td>[7.4]</td><td>CPU user · system · iowait · steal (O1 · O3)</td><td>어느 노드 CPU가 먼저 찼나</td><td>가상 머신은 steal이 따로 포화를 만든다</td></tr>
+<tr><td>[7.4]</td><td>load ÷ vCPU (O2)</td><td>실행 대기가 생겼나</td><td>사용률만으로는 줄이 안 보인다</td></tr>
+<tr><td>[7.4][7.8]</td><td>가용 메모리 · OOM 강제 종료 (O4 · O5)</td><td>메모리로 무너졌나</td><td>네 노드 모두 스왑이 없다</td></tr>
+<tr><td>[7.4]</td><td>디스크 util% · 대기 · IOPS · 처리량 (O8)</td><td>디스크가 한계를 정했나</td><td>t3.small EBS 기준선</td></tr>
+<tr><td>[11.2][7.4]</td><td>EBS · CPU 버스트 크레딧 (O15 스냅샷)</td><td>두 회차가 같은 조건에서 출발했나</td><td>바닥나면 같은 질의가 몇 배 느려진다</td></tr>
+<tr><td>[7.4][7.8]</td><td>TCP 대기열 넘침 · TIME_WAIT (O10)</td><td>연결을 버렸나</td><td>오류가 아니라 타임아웃으로 보인다</td></tr>
+<tr><td>[7.4]</td><td>conntrack (O11, APP-01)</td><td>NAT 표가 찼나</td><td>APP-01이 입구와 NAT을 겸한다</td></tr>
+<tr><td>[4.6]</td><td>DB 연결 상태별 (D2) · 오래 열린 트랜잭션 (D3)</td><td>DB 연결 · 트랜잭션이 막았나</td><td>-</td></tr>
+<tr><td>[4.6][7.1]</td><td>대기 종류별 활성 세션 (D6)</td><td>DB 시간이 CPU · IO · Lock 중 어디서</td><td>질의 통계는 "왜 기다렸나"를 안 준다</td></tr>
+<tr><td>[4.6]</td><td>버퍼 적중 · 임시 파일 (D7)</td><td>메모리 안에서 끝났나</td><td>-</td></tr>
+<tr><td>[4.6]</td><td>블록 읽기 시간 (D8)</td><td>디스크 읽기가 시간을 먹었나</td><td>track_io_timing 필요</td></tr>
+<tr><td>[4.6]</td><td>체크포인트 (D9)</td><td>쓰기가 디스크로 몰렸나</td><td>-</td></tr>
+<tr><td>[6.7]</td><td>복제 지연 · standby 조회 충돌 (D10 · D11)</td><td>읽기 분산의 대가</td><td>조회 취소로도 나타난다</td></tr>
+<tr><td>[11.2]</td><td>가시성 맵 비율 · 죽은 행 (D12)</td><td>VACUUM 상태가 같은가</td><td>빼면 index-only scan이 표를 다시 읽는다</td></tr>
+<tr><td>[4.1]</td><td>질의 통계 상위 (S1 · S2)</td><td>어느 질의가 DB 시간을 먹나</td><td>-</td></tr>
+<tr><td>[4.4]</td><td>통계 신선도 (S3)</td><td>옛 통계로 계획을 짰나</td><td>-</td></tr>
+<tr><td>[7.1][7.11]</td><td>추적 (비율 1.0)</td><td>요청 안 어느 SQL인가 · 엔드포인트별 DB 시간</td><td>엔드포인트별로 나눌 유일한 원천</td></tr>
+<tr><td>[11.1]</td><td>부하 생성기 CPU · 네트워크 (설계서에 없음)</td><td>생성기가 먼저 한계에 닿았나</td><td>닿았으면 회차를 버린다</td></tr>
+<tr><td>[5.2]</td><td>프로파일 (없음)</td><td>앱 CPU를 어느 코드가 쓰나</td><td>추적에 메서드 구간이 없다</td></tr>
+<tr><td>[4.2]</td><td>auto_explain (없음)</td><td>운영에서 실제로 그 계획인가</td><td>EXPLAIN과 운영 계획이 다를 수 있다</td></tr>
+</table>
+
+<h4>회차마다 반영 확인 — 「저장소에 있다」와 「그 회차에 값이 있었다」는 다르다</h4>
+<table>
+<tr><th>요소</th>{% for x in recent %}<th>{{ x.round }}</th>{% endfor %}{% for i in range(6 - recent|length) %}<th>R__</th>{% endfor %}</tr>
+{% for key, label in [("traces", "추적 (수신기 파일에 들어옴)"), ("wait_events", "D6 대기 종류"), ("blk_read_time_nonzero", "D8 블록 읽기 시간 ≠ 0"), ("uct_urt", "W7 uct / urt 로그"), ("credits", "크레딧 스냅샷"), ("loadgen", "부하 생성기 자원"), ("profiler", "프로파일 (켰다면)"), ("auto_explain", "auto_explain (켰다면)")] %}
+<tr><td>{{ label }}</td>{% for x in recent %}<td class="b">{{ x.checks[key]|ox }}</td>{% endfor %}{% for i in range(6 - recent|length) %}<td class="b"></td>{% endfor %}</tr>
+{% endfor %}
+</table>
+<h4>측정 수단 — 켜고 끄는 것도 조건 변화다. 흔들림 3회 전에 정하고 [11.3]에 고정</h4>
+<table>
+<tr><th class="k">추적</th><td class="b">{% if s.meta.tracing_ratio is given %}■ 켬 (비율 {{ s.meta.tracing_ratio }}){% elif s.checks.traces %}■ 켬 (비율 ____){% else %}□ 켬 (비율 ____) &nbsp; □ 끔{% endif %}</td></tr>
+<tr><th class="k">프로파일러</th><td class="b">{% if s.checks.profiler %}■ 켬 (도구 {{ s.meta.profiler or "async-profiler" }}){% else %}□ 켬 (도구 ____) &nbsp; ■ 끔{% endif %}</td></tr>
+<tr><th class="k">auto_explain</th><td class="b">{% if s.checks.auto_explain %}■ 켬 (문턱 {{ s.meta.auto_explain_ms or "____" }} ms){% else %}□ 켬 (문턱 ____ ms) &nbsp; ■ 끔{% endif %}</td></tr>
+</table>
+</section>
+
+<section class="ch">
+<h3>[0.4] 응답 시간 — 무엇으로 판정하고 무엇으로 진단하나 <span class="tag">고정</span></h3>
+<table>
+<tr><th class="k">백분위</th><th>뜻</th></tr>
+<tr><td>p50</td><td>절반이 이보다 빠르다 (중위수) — 보통 사용자가 겪는 시간</td></tr>
+<tr><td>p95</td><td>20명 중 1명이 이보다 느리다</td></tr>
+<tr><td>p99</td><td>100명 중 1명 — 가장 운 없는 사람</td></tr>
+</table>
+<div class="note">평균은 쓰지 않는다. 99건이 10 ms이고 1건이 3초면 평균은 40 ms다. 느려지는 현상은 꼬리에서 먼저 나타나고, 평균은 그걸 마지막까지 숨긴다.</div>
+
+<h4>(1) 판정 축은 p95다 — 새로 정하는 것이 아니다</h4>
+<table>
+<tr><th>근거 문서</th><th>정한 것</th></tr>
+<tr><td>성능 및 확장성 설계서</td><td>측정 지표는 응답 시간 95백분위수</td></tr>
+<tr><td>시험 계획서 2.3</td><td>포화점 판정 조건</td></tr>
+<tr><td>시험 계획서 2.4</td><td>실측 한계 RPS는 p95 500 ms 유지 처리량</td></tr>
+</table>
+
+<h4>(2) 판정은 세 조건 중 먼저 닿는 것이다 — p95 하나가 아니다</h4>
+<table>
+<tr><th>판정 조건 (시험 계획서 2.3)</th><th class="k">먼저 닿으면</th><th>이번 회차 ({{ R }})</th></tr>
+<tr><td>대상 엔드포인트의 p95가 500 ms 초과</td><td>포화점</td><td class="b">{% if s.jtl %}{% if s.jtl.saturation.p95_over_500 %}해당 — {{ s.jtl.saturation.p95_over_labels|join(", ") or "전체" }}{% else %}아님 (전체 p95 {{ s.key.p95|v(1, " ms") }}){% endif %}{% else %}미측정{% endif %}</td></tr>
+<tr><td>5xx 비율이 1% 초과</td><td>포화점</td><td class="b">{% if s.jtl %}{{ "해당" if s.jtl.saturation.rate_5xx_over_1pct else "아님" }} ({{ s.key.rate_5xx|v(3, " %") }}){% else %}미측정{% endif %}</td></tr>
+<tr><td>처리량이 목표 RPS를 못 따라가고 정체</td><td>포화점</td><td class="b">{% if s.jtl.saturation.throughput_plateau is none %}판정 불가(창 부족){% else %}{{ "정체 의심" if s.jtl.saturation.throughput_plateau else "정체 아님" }} — 마지막 세 창 TPS {{ s.jtl.saturation.plateau_detail.tps_growth_pct|v(1, "%") }} · 스레드 {{ s.jtl.saturation.plateau_detail.threads_growth_pct|v(1, "%") }}{% endif %} <span class="small">(보조 판정 — 확정은 G1)</span></td></tr>
+</table>
+<div class="note">p95만 보면 응답은 빠른데 오류로 무너지는 회차를 놓친다. 포화점은 값으로 적는다 — "100 RPS 근처"가 아니라 "88 RPS에서 p95 512 ms".</div>
+
+<h4>(3) 「안정적이다」는 p95 숫자가 아니라 헤드룸에서 나온다 ★</h4>
+<p><span class="formula">헤드룸 배수 = 실측 한계 RPS ÷ 기준 부하 RPS</span></p>
+<ul>
+<li>헤드룸은 부하 모양마다 다르다. 균등 분포 18배 · 쏠림 3배면 이 시스템의 헤드룸은 <b>3배</b>다. 대표값은 <b>가장 작은 것</b> → [7.5](1)</li>
+<li>분모가 둘이다. 어느 쪽인지 반드시 적는다 — 둘은 3배 차이 난다.
+  <table>
+  <tr><th>분모</th><th>나누는 값</th></tr>
+  <tr><td>예상 피크 대비</td><td>트래픽 정의서의 피크 RPS (시험 계획서 2.4가 이쪽으로 적게 되어 있다)</td></tr>
+  <tr><td>설계 목표 대비</td><td>트래픽 정의서의 설계 목표 RPS (설계 목표 자체가 이미 피크의 3배)</td></tr>
+  </table></li>
+<li>p95 480 ms로 간신히 통과한 구성과 30 ms로 통과한 구성은 같은 「합격」이 아니다.</li>
+</ul>
+<table>
+<tr><th>묻는 것</th><th>보는 곳</th></tr>
+<tr><td>합격선을 넘었나</td><td>[1.4] 신호등</td></tr>
+<tr><td>얼마나 여유가 있나</td><td>헤드룸 배수 → [7.4] · [7.5]</td></tr>
+</table>
+<div class="warn">이 문서에서 「안정적」이라는 말은 헤드룸 배수를 적은 자리에서만 쓴다.</div>
+
+<h4>(4) p50 · p99는 판정이 아니라 진단이다 — 벌어진 모양으로 원인을 좁힌다</h4>
+<table>
+<tr><th>벌어진 모양</th><th>무엇을 뜻하나</th><th>어디를 보나</th></tr>
+<tr><td>셋이 같이 올라간다</td><td>전체가 느려졌다 · 자원이 찼다</td><td>[7.4] 자원별 헤드룸</td></tr>
+<tr><td>p50 그대로, p95 · p99 올라감</td><td>일부 요청만 느리다</td><td>큐 대기 · 락 · 캐시 미스</td></tr>
+<tr><td>p99만 튄다</td><td>간헐적이다</td><td>GC · 자동 청소 · 외부 호출</td></tr>
+<tr><td>p50 올라가고 p99 그대로</td><td>전반에 비용이 붙었다</td><td>계측 · 암복호화 · 직렬화</td></tr>
+</table>
+<p class="small">모양은 [10] G1에서 읽고, 읽은 결과를 본문에 한 줄로 다시 적는다.</p>
+
+<h4>(5) p99는 판정에 쓰지 않는다 — 표본이 모자란다</h4>
+<p>요청 200건이면 p99는 상위 2건이 정한다. p95가 안정되려면 수백 건, p99는 1,000건 이상.</p>
+<table><tr><th class="k">회차당 요청 수</th><td class="b">{{ s.jtl.requests|v(0, " 건") }} ({{ R }}, 워밍업 제외)</td><th class="k">판정에 쓸 수 있는 꼬리</th><td class="b">{{ s.jtl.usable_tail|v }}</td></tr></table>
+
+<h4>정리 — 어디서 무엇을 쓰나</h4>
+<table>
+<tr><th>용도</th><th>기준</th><th>자리</th></tr>
+<tr><td><b>판정</b> (합격 · 불합격)</td><td>p95 + 5xx + 처리량 정체</td><td>[1.4] · [9.1]</td></tr>
+<tr><td><b>안정 판단</b></td><td>헤드룸 배수</td><td>[7.4] · [7.5]</td></tr>
+<tr><td>계층 쪼개기 (진단)</td><td>p95</td><td>[7.1] · [5.6]</td></tr>
+<tr><td>모양 읽기 (진단)</td><td>p50 · p95 · p99</td><td>[10] G1</td></tr>
+<tr><td>꼬리 참고 (판정 금지)</td><td>p99</td><td>표본 수 함께</td></tr>
+</table>
+<p class="small">한 표 안에서 기준을 섞지 않는다. 섞었으면 칸 머리에 적는다.</p>
+</section>
+
+<!-- ============ [1] ============ -->
+<section class="ch">
+<h2>[1] 한 장 요약 <span class="tag">쌓인뒤</span></h2>
+<h3>[1.1] 결론 세 줄</h3>
+<table>
+<tr><th class="k">1</th><td class="b">{% if nar.conclusions and nar.conclusions|length >= 1 %}{{ nar.conclusions[0] }}{% else %}현재 한계는 ____ TPS이고, 먼저 닿는 자원은 ____ (계층: ___)다.<br>그 자원을 가장 많이 쓰는 엔드포인트는 ____ (___%)다 → [7.11]{% endif %}</td></tr>
+<tr><th class="k">2</th><td class="b">{% if nar.conclusions and nar.conclusions|length >= 2 %}{{ nar.conclusions[1] }}{% else %}이번 최적화로 한계가 ____ → ____ TPS (___배)로 올라갔다.<br>기여가 큰 순서는 ____(경계) · ____(DB) · ____(앱)이다.{% endif %}</td></tr>
+<tr><th class="k">3</th><td class="b">{% if nar.conclusions and nar.conclusions|length >= 3 %}{{ nar.conclusions[2] }}{% else %}남은 1순위 병목은 ____ (계층: ___)이고, ____를 하면 ____만큼 더 올라갈 것으로 본다.<br>근거: ____{% endif %}</td></tr>
+<tr><th class="k">측정</th><td class="b">회차 {{ rids[0] if rids else "R01" }} ~ {{ rids[-1] if rids else "R___" }} (총 {{ rids|length }}회) · 기준 회차 {{ B or nar.baseline_round or "R___" }} · 유의차 하한 ± {{ thr|v(2) }} % · 대표 헤드룸 {{ nar.headroom or "___" }}배 (분모: {{ nar.headroom_basis or "____" }})</td></tr>
+</table>
+
+<h3>[1.2] 최적화 대차대조표 — 장부는 하나다</h3>
+<p class="small">전 · 후 칸에는 회차 번호를 괄호로 함께 적는다 — 201 ms(R03) → 30.9 ms(R04). 계층별 상세는 [4][5][6]이 갖는다.</p>
+<table>
+<tr><th class="k">#</th><th class="k">계층</th><th>무엇을 고쳤나</th><th>전 (R__)</th><th>후 (R__)</th><th>효과</th><th>대가</th><th>판정</th></tr>
+{% set L = nar.ledger or [] %}
+{% for i in range([L|length, 10]|max) %}{% set r = L[i] if i < L|length else {} %}
+<tr><td>{{ i + 1 }}</td><td class="b">{{ r.layer|n }}</td><td class="b">{{ r.what|n }}</td><td class="b">{{ r.before|n }}</td><td class="b">{{ r.after|n }}</td><td class="b">{{ r.effect|n }}</td><td class="b">{{ r.cost|n }}</td><td class="b">{{ r.verdict|n }}</td></tr>
+{% endfor %}
+</table>
+<table>
+<tr><th>판정</th><th>뜻</th></tr>
+<tr><td>채택</td><td>효과가 측정됐고 대가가 받아들일 만하다</td></tr>
+<tr><td>조건부</td><td>특정 조건에서만 효과가 있다. 조건을 ★로 적는다</td></tr>
+<tr><td>보류</td><td>효과는 있으나 대가가 커서 지금은 안 쓴다. 사유를 적는다</td></tr>
+<tr><td>탈락</td><td>측정해 보니 효과가 없거나 나빠졌다 → [9.2]</td></tr>
+<tr><td>미측정</td><td>적용했으나 아직 재지 않았다</td></tr>
+<tr><td>미착수</td><td>하기로 했으나 아직 안 했다 → [9.1]</td></tr>
+</table>
+<p class="small">효과 칸의 변화가 유의차 하한보다 작으면 「변화없음」. ✗ · 미측정 · 미착수만 세면 남은 과제 수가 나온다.</p>
+<h4>계층별 집계</h4>
+<table>
+<tr><th>계층</th><th>채택</th><th>조건부</th><th>보류</th><th>탈락</th><th>미측정</th><th>미착수</th><th>기여도(추정)</th></tr>
+{% for layer in ["DB", "앱", "경계"] %}
+<tr><td>{{ layer }}</td>{% for v in ["채택", "조건부", "보류", "탈락", "미측정", "미착수"] %}<td class="b">{% if nar.ledger %}{{ nar.ledger|selectattr("layer", "equalto", layer)|selectattr("verdict", "equalto", v)|list|length }}{% endif %}</td>{% endfor %}<td class="b">{{ nar.contribution[layer]|n }}%</td></tr>
+{% endfor %}
+<tr><td>분리 불가</td><td colspan="6"></td><td class="b">{{ nar.contribution["분리 불가"]|n }}%</td></tr>
+</table>
+</section>
+
+<section class="ch">
+<h3>[1.3] 전후 사이에 바뀐 다른 것 — 비교 가능성 선언</h3>
+<p class="small">이 표가 비면 [1.2]를 믿을 수 없다. 설정은 노드에서 직접 확인한 값으로 적는다(저장소에 있다 ≠ 노드에 반영됐다).</p>
+<table>
+<tr><th class="k">계층</th><th>항목</th><th>기준 {{ B or "R__" }}</th><th>비교 {{ R }}</th><th>영향</th></tr>
+{% for r in comparability %}
+<tr><td>{{ r.layer }}</td><td>{{ r.item }}</td><td class="b">{{ r.base|n }}</td><td class="b">{{ r.cur|n }}</td><td class="b">{{ r.impact|n }}</td></tr>
+{% endfor %}
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+</table>
+<table><tr><th class="k">판정</th><td class="b">{% if nar.comparability_verdict %}{{ nar.comparability_verdict }}{% else %}□ 조건이 같다 — 비교가 성립한다 &nbsp;&nbsp; □ 조건이 다르다 — 사유: ______________________{% endif %}</td></tr></table>
+<h4>조건이 다르면 — 되돌려서 같은 환경에서 다시 잰다</h4>
+<table>
+<tr><th>되돌리는 법</th><th>수고</th><th>A/B</th><th>무엇이 나오나</th></tr>
+<tr><td>인덱스 DROP / CREATE</td><td>적다</td><td>가능</td><td>그 인덱스만의 기여분</td></tr>
+<tr><td>매퍼의 바인딩 한 줄</td><td>적다</td><td>가능</td><td>형 변환만의 기여분</td></tr>
+<tr><td>DB 설정 한 줄 (SET)</td><td>적다</td><td>가능</td><td>그 설정만의 기여분</td></tr>
+<tr><td>기능 켜기 / 끄기</td><td>적다</td><td>가능</td><td>그 기능만의 기여분</td></tr>
+<tr><td>코드 구조 변경</td><td>많다</td><td>보류</td><td>브랜치를 따야 한다</td></tr>
+<tr><td>데이터 규모 되돌리기</td><td>많다</td><td>불가</td><td>적재를 다시 해야 한다</td></tr>
+</table>
+<p class="small">되돌릴 수 없는 항목은 예전 숫자를 쓰되 「조건이 다르다」를 적고, 되돌려 잰 항목과 하나의 개선율로 합치지 않는다. 되돌린 회차는 [11.1] 「바꾼 것」 칸에 「되돌림」.</p>
+
+<h3>[1.4] 신호등 — 엔드포인트별 상태</h3>
+<div class="note">판정 축은 p95 — [0.4](1). 시험 계획서 2.3의 단일 기준은 <b>p95 500 ms</b>. 엔드포인트별 목표는 <b>미확정</b>이며, 확정되면 근거와 함께 적는다. 실측 p95는 부하 도구 결과에서 뽑는다.</div>
+<table>
+<tr><th>색</th><th>조건</th></tr>
+<tr><td class="lg-g">초록</td><td>목표 달성 · 헤드룸 3배 이상</td></tr>
+<tr><td class="lg-y">노랑</td><td>목표 달성 · 헤드룸 3배 미만 — 통과했지만 여유가 없다</td></tr>
+<tr><td class="lg-r">빨강</td><td>목표 미달, 또는 5xx 1% 초과</td></tr>
+<tr><td class="lg-n">회색</td><td>미측정</td></tr>
+</table>
+<p class="small">3배 = 트래픽 정의서가 설계 목표를 「피크의 3배 여유」로 잡은 값. 색은 가장 나쁜 시나리오의 헤드룸으로 정한다 → [7.5](1).</p>
+<table>
+<tr><th>엔드포인트</th><th>목표 p95</th><th>실측 p95</th><th>단독 한계</th><th>헤드룸</th><th>상태</th><th>병목 계층</th><th>주로 쓰는 자원</th></tr>
+{% for e in signals %}
+<tr><td>{{ e.label }}<br><span class="small">{{ e.route|n }}</span></td><td class="b">{{ e.target }}</td><td class="b">{{ e.p95|v(1, " ms") }}{{ e.p95_note }}</td><td class="b">{{ e.single_limit|v(1, " TPS") }}</td><td class="b">{{ e.headroom|v(1, "배") }}</td><td class="b {{ e.cls }}">{{ e.color }}</td><td class="b">{{ e.bottleneck_layer|n }}<br><span class="small">{{ e.bottleneck_part|n }}</span></td><td class="b">{{ e.main_resource|n }}</td></tr>
+{% else %}
+<tr><td>미측정</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b lg-n">회색</td><td class="b"></td><td class="b"></td></tr>
+{% endfor %}
+</table>
+<table><tr><th class="k">헤드룸 분모</th><td class="b">{% if nar.headroom_basis %}{{ nar.headroom_basis }} · 값 {{ nar.headroom_denominator_rps|n }} RPS{% else %}□ 예상 피크 &nbsp; □ 설계 목표 &nbsp;&nbsp; 값 ______ RPS{% endif %}</td></tr></table>
+<p class="small">상태 「통과 · 헤드룸 미측정」 — p95 · 5xx 는 통과했으나 헤드룸(한계 회차)이 없어 초록 · 노랑을 가를 수 없다. 단독 한계 · 헤드룸은 results/narrative.json 의 endpoints 에서 온다.</p>
+<div class="warn">처리량 헤드룸과 자원 헤드룸이 어긋나면 작은 쪽이 맞다 → [7.4]. 빨강이 하나라도 있으면 [1.1] 3번에 들어간다. 노랑만 있는 상태를 「안정」이라고 쓰지 않는다.</div>
+</section>
+
+<!-- ============ [2] ============ -->
+<section class="ch">
+<h2>[2] 데이터 적재 방식 <span class="tag">변경시</span></h2>
+<h3>[2.1] 적재량</h3>
+<table>
+<tr><th>표</th><th>적재 전</th><th>적재 후</th><th>배수</th><th>비고</th></tr>
+<tr><td>property</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>risk_analysis (최신)</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>risk_analysis 이력</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>building_ledger</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>building_registry</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>ownership_history</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>mortgage_history</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>users</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>wishlist</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>notification_subscription</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>DB 전체 크기</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+</table>
+<pre>SELECT relname, n_live_tup FROM pg_stat_user_tables ORDER BY n_live_tup DESC;
+SELECT pg_size_pretty(pg_database_size(current_database()));</pre>
+<p class="small">「적재 전」을 적재 직전에 떠서 채운다. 없으면 배수가 추측이다.</p>
+
+<h3>[2.2] 생성 방법과 재현성</h3>
+<table>
+<tr><th>무엇</th><th>방법</th><th>시드 고정</th><th>재현 가능</th></tr>
+<tr><td>실데이터</td><td class="b">스크립트:</td><td>-</td><td class="b"></td></tr>
+<tr><td>가짜 매물</td><td class="b"></td><td class="b">□</td><td class="b">□</td></tr>
+<tr><td>사용자</td><td class="b"></td><td class="b">□</td><td class="b">□</td></tr>
+<tr><td>관심 매물</td><td class="b"></td><td class="b">□</td><td class="b">□</td></tr>
+<tr><td>위험 판정 이력</td><td class="b"></td><td class="b">□</td><td class="b">□</td></tr>
+</table>
+
+<h3>[2.3] 분포 검증</h3>
+<table>
+<tr><th>검증 항목</th><th>기준</th><th>실측</th><th>판정</th></tr>
+<tr><td>자치구별 매물 분포</td><td>25개 구에 분산</td><td class="b">1위 ___ / 25위 ___</td><td class="b">□</td></tr>
+<tr><td>최대 / 최소 비</td><td>10배 이내 권장</td><td class="b">___배</td><td class="b">□</td></tr>
+<tr><td>위험 등급 분포</td><td>세 등급 고르게</td><td class="b">S__ / C__ / D__</td><td class="b">□</td></tr>
+<tr><td>등기 이력 매물당 건수</td><td>평균 8건 이상</td><td class="b">___건</td><td class="b">□</td></tr>
+<tr><td>좌표 유효 범위</td><td>경계 안</td><td class="b">이탈 ___건</td><td class="b">□</td></tr>
+<tr><td>NULL 비율 (주요 열)</td><td>0%</td><td class="b">___%</td><td class="b">□</td></tr>
+<tr><td>중복 (유니크 제약)</td><td>0건</td><td class="b">___건</td><td class="b">□</td></tr>
+</table>
+<table><tr><th class="k">어긋난 채 측정했다면 영향</th><td class="b"></td></tr></table>
+
+<h3>[2.4] 적재 후 정리 작업</h3>
+<table>
+<tr><th>작업</th><th>실행</th><th>소요</th><th>비고</th></tr>
+<tr><td>ANALYZE (전 표)</td><td class="b">□</td><td class="b">분</td><td>필수</td></tr>
+<tr><td>VACUUM</td><td class="b">□</td><td class="b">분</td><td>끝난 뒤 가시성 맵 비율(D12) 기록</td></tr>
+<tr><td>CLUSTER</td><td class="b">□</td><td class="b">분</td><td>커버링 인덱스 효과가 기댄다</td></tr>
+<tr><td>인덱스 재구성</td><td class="b">□</td><td class="b">분</td><td></td></tr>
+<tr><td>캐시 워밍업</td><td class="b">□</td><td class="b">분</td><td>또는 「콜드 상태로 측정」</td></tr>
+<tr><td>크레딧 회복 대기</td><td class="b">□</td><td class="b">분</td><td>정리 작업이 EBS 크레딧을 쓴다</td></tr>
+</table>
+</section>
+
+<!-- ============ [3] ============ -->
+<section class="ch">
+<h2>[3] 시나리오 — 어떤 상황을 만든 것인가 <span class="tag">변경시</span></h2>
+<table>
+<tr><th class="k">ID</th><th>이름</th><th>상황 한 줄</th><th>빈도</th><th>계기</th><th>이번에 돌렸나</th></tr>
+<tr><td>S1</td><td>정상 부하</td><td>평일 저녁 피크 시간대의 평균 트래픽</td><td>상시</td><td>-</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S1") else "□" }}</td></tr>
+<tr><td>S2</td><td>피크</td><td>홍보 직후 평시의 2배가 들어오는 상황</td><td>간헐</td><td>SNS 공유</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S2") else "□" }}</td></tr>
+<tr><td>S3</td><td>쏠림</td><td>한 자치구에 트래픽이 몰려 같은 영역을 수십 명이 동시에 확대</td><td>잦음</td><td>지역 뉴스 · 시세 급변</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S3") else "□" }}</td></tr>
+<tr><td>S4</td><td>로그인 폭주</td><td>배포 · 토큰 저장소 재생성 뒤 전 사용자가 10초 안에 다시 로그인</td><td>배포마다</td><td>배포 · 캐시 재시작 · OOM</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S4") else "□" }}</td></tr>
+<tr><td>S5</td><td>캐시 콜드</td><td>캐시가 비워진 상태로 평시 트래픽이 들어옴</td><td>드묾</td><td>캐시 재시작</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S5") else "□" }}</td></tr>
+<tr><td>S6</td><td>배치 동시</td><td>새벽 배치가 도는 중에 야간 사용자가 조회</td><td>매일</td><td>배치 스케줄</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S6") else "□" }}</td></tr>
+<tr><td>S7</td><td>연결 폭주</td><td>앱을 새로 켠 사용자들이 연결 재사용 없이 한꺼번에</td><td>간헐</td><td>앱 업데이트</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S7") else "□" }}</td></tr>
+<tr><td>S8</td><td>한계 탐색</td><td>무너질 때까지 올려 무너지는 방식을 본다</td><td>-</td><td>시험 전용</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S8") else "□" }}</td></tr>
+<tr><td>S9</td><td>지속</td><td>평시의 절반을 2시간 유지해 시간이 지나야 나오는 결함을 본다</td><td>-</td><td>시험 전용</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S9") else "□" }}</td></tr>
+<tr><td>U*</td><td>단독</td><td>엔드포인트 하나만 준다. 한 건당 자원 단가 → [7.11]</td><td>-</td><td>시험 전용</td><td class="b">{{ "■ " ~ R if (s.meta.scenario and s.meta.scenario[:1] == "U") else "□" }}</td></tr>
+</table>
+<div class="note">「배포마다」 일어나는 S4는 평시 트래픽에 없어도 반드시 본다. 「계기」 칸이 [7.5](1)에서 <b>대표 헤드룸을 고르는 근거</b>다 — 실제로 일어나는 모양의 헤드룸을 시험용이라고 빼지 않는다.<br>
+쓰기 엔드포인트(관심 등록 · 해제 · 프로필 저장)를 넣는다 — 없으면 [4.3] 인덱스 쓰기 대가를 잴 수 없다. 인가 방식은 시험 시나리오 문서가 갖는다.</div>
+</section>
+
+<!-- ============ [4] ============ -->
+<section class="ch">
+<h2>[4] DB 계층 <span class="tag">변경시</span></h2>
+<p class="small">EXPLAIN · 인덱스 · 통계 · DB 설정 · 스키마를 고쳐 해결되는 것만.</p>
+<h3>[4.1] 질의별 총 시간 점유율</h3>
+<p class="small">평균이 아니라 총 시간 점유율로 정렬한다. 평균 5 ms에 10만 번 불리는 질의가 평균 500 ms에 10번 불리는 질의보다 100배 중요하다.</p>
+<table>
+<tr><th class="k">순위</th><th>질의 (앞 60자)</th><th>호출수</th><th>평균</th><th>총시간</th><th>점유율</th><th>엔드포인트</th></tr>
+{% set top = s.db.top_merged or [] %}
+{% for r in top[:5] %}
+<tr><td>{{ loop.index }}</td><td class="b"><code>{{ r.query|short(60) }}</code> <span class="small">{{ r.node }}</span></td><td class="b">{{ r.calls|v(0) }}</td><td class="b">{{ r.mean_ms|v(2, " ms") }}</td><td class="b">{{ r.total_ms|v(0, " ms") }}</td><td class="b">{{ r.share_all_pct|v(1, "%") }}</td><td class="b">{{ (r.routes or [])|join(", ") }}</td></tr>
+{% else %}
+<tr><td>1</td><td class="b">미측정</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+{% endfor %}
+{% set nstmt = (s.db.pgss.values()|map(attribute="statements")|sum) if s.db.pgss else 0 %}
+<tr><td></td><td>나머지 {{ [nstmt - 5, 0]|max if s.db.pgss else "___" }}종 <span class="small">(두 노드 합)</span></td><td></td><td></td><td></td><td class="b">{% if top %}{{ (100 - top[:5]|map(attribute="share_all_pct")|sum)|round(1) }}%{% endif %}</td><td></td></tr>
+</table>
+<pre>SELECT substring(query,1,60) AS q, calls, mean_exec_time, total_exec_time,
+       round(100*total_exec_time/sum(total_exec_time) OVER (),1) AS pct
+FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;</pre>
+<p class="small">「엔드포인트」 칸은 매퍼 소스로 붙인다(질의 통계 문장은 리터럴도 $n). 여러 엔드포인트가 부르면 추적으로 나눈다 → [7.11]</p>
+<table>
+<tr><th>항목</th><th>전 ({{ B or "R__" }})</th><th>후 ({{ R }})</th><th>변화</th></tr>
+{% for label, fn, unit in [("DB 총 실행 시간 (회차, 두 노드)", "total_db_ms", " ms"), ("상위 1종의 점유율", "top1", "%"), ("상위 3종의 점유율", "top3", "%"), ("요청당 DB 시간", "db_ms_per_request", " ms")] %}
+{% set vals = [] %}
+{% for x in [b, s] %}
+{% if fn == "top1" %}{% set v = (x.db.top_merged[0].share_all_pct if x and x.db.top_merged else none) %}{% elif fn == "top3" %}{% set v = ((x.db.top_merged[:3]|map(attribute='share_all_pct')|sum)|round(2) if x and x.db.top_merged else none) %}{% else %}{% set v = (x.db[fn] if x else none) %}{% endif %}
+{% set _ = vals.append(v) %}
+{% endfor %}
+<tr><td>{{ label }}</td><td class="b">{{ vals[0]|v(1, unit) if b else "" }}</td><td class="b">{{ vals[1]|v(1, unit) }}</td><td class="b">{{ delta(vals[0], vals[1]) if b else "" }}</td></tr>
+{% endfor %}
+</table>
+<p class="small">상위 1종이 70%를 넘으면 그 질의 하나가 시스템 한계를 정한다.</p>
+
+<h3>[4.2] 실행 계획 전후 — 질의마다 일곱 줄</h3>
+<table><tr><th class="k">질의</th><td class="b"></td></tr></table>
+<table>
+<tr><th>항목</th><th>전 (R__)</th><th>후 (R__)</th></tr>
+<tr><td>접근 방법</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>조인 방법</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>예상 행 / 실제 행</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>추정 오차</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>읽은 블록 (hit / read)</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>정렬 / 임시 파일</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>실행 시간</td><td class="b"></td><td class="b"></td></tr>
+</table>
+<div class="note"><b>읽는 법</b> — 예상과 실제가 10배 이상 벌어지면 플래너가 속은 것(통계 부족 · 형 변환). 읽은 블록이 시간보다 믿을 만하다. read ≠ 0이면 디스크. 큰 결과에 Nested Loop면 거의 문제. 임시 파일은 work_mem 초과. EXPLAIN은 실제 파라미터 값으로 뜬다(GENERIC_PLAN으로 판정하면 오진).</div>
+<table>
+<tr><th>운영 실제 계획 (auto_explain)</th><th>전</th><th>후</th></tr>
+{% set ae = [] %}{% for x in [b, s] %}{% set _ = ae.append((x.db.auto_explain.values()|map(attribute='plans')|sum if x and x.db.auto_explain else none)) %}{% endfor %}<tr><td>실제 계획 건수 / 그중 의도한 계획</td><td class="b">{{ (ae[0]|v(0)) ~ " 중 ___" if b else "___ 중 ___" }}</td><td class="b">{{ ae[1]|v(0) }} 중 ___{% if s.db.auto_explain %} <span class="small">({% for n, a in s.db.auto_explain.items() %}{{ n }}: {% for k, c in a.node_counts.items() %}{{ k }} {{ c }}{{ " · " if not loop.last }}{% endfor %}{{ "; " if not loop.last }}{% endfor %})</span>{% endif %}</td></tr>
+</table>
+<p class="small">auto_explain은 지금 설정돼 있지 않다. 켜려면 재기동 — 조건 변화다. 안 켰으면 「미측정」.</p>
+</section>
+
+<section class="ch">
+<h3>[4.3] 인덱스 — 추가 · 교체 · 삭제</h3>
+<table>
+<tr><th>인덱스</th><th>작업</th><th>크기</th><th>생성</th><th>효과</th><th>쓰기 대가</th></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+</table>
+<table>
+<tr><th class="k">인덱스 총 크기</th><td class="b">전 ___ MB → 후 ___ MB (+___%)</td></tr>
+<tr><th class="k">쓰기 경로 p95</th><td class="b">전 ___ ms → 후 ___ ms (관심 등록 · 프로필 저장 · 재분석)</td></tr>
+<tr><th class="k">WAL · 체크포인트</th><td class="b">→ [4.6]</td></tr>
+</table>
+<h4>죽은 인덱스 — primary와 standby를 둘 다 본다</h4>
+<pre>SELECT relname, indexrelname, idx_scan, pg_size_pretty(pg_relation_size(indexrelid)) AS size
+FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexrelid) DESC;</pre>
+<table>
+<tr><th class="k">idx_scan = 0</th><td class="b">___개 / 총 ___ MB</td><th class="k">삭제</th><td class="b">□ 예 □ 아니오 (사유: )</td></tr>
+</table>
+<h4>넣지 않은 인덱스와 사유 — 이것도 결과다</h4>
+<table>
+<tr><th>인덱스</th><th>사유</th></tr>
+<tr><td class="b"></td><td class="b"></td></tr><tr><td class="b"></td><td class="b"></td></tr><tr><td class="b"></td><td class="b"></td></tr>
+</table>
+
+<h3>[4.4] 통계</h3>
+<table>
+<tr><th>항목</th><th>전</th><th>후</th><th>비고</th></tr>
+<tr><td>한 번도 분석되지 않은 표</td><td class="b"></td><td class="b"></td><td>시드 표는 자동 분석 문턱에 안 닿는다</td></tr>
+<tr><td>추정 오차 10배 초과 질의</td><td class="b"></td><td class="b"></td><td></td></tr>
+<tr><td>통계 목표를 올린 열</td><td class="b"></td><td class="b"></td><td>ALTER TABLE … SET STATISTICS</td></tr>
+<tr><td>자동 청소 마지막 실행</td><td class="b"></td><td class="b"></td><td></td></tr>
+<tr><td>바뀐 행 비율 (S3)</td><td class="b"></td><td class="b"></td><td>n_mod_since_analyze ÷ n_live_tup</td></tr>
+</table>
+
+<h3>[4.5] DB 설정 전후</h3>
+<table>
+<tr><th>설정</th><th>전</th><th>후</th><th>반영 방법</th><th>근거 / 효과</th></tr>
+<tr><td>shared_buffers</td><td class="b"></td><td class="b"></td><td>재기동</td><td class="b"></td></tr>
+<tr><td>work_mem</td><td class="b"></td><td class="b"></td><td>세션</td><td class="b"></td></tr>
+<tr><td>plan_cache_mode</td><td class="b"></td><td class="b"></td><td>세션</td><td class="b"></td></tr>
+<tr><td>random_page_cost</td><td class="b"></td><td class="b"></td><td>세션</td><td class="b"></td></tr>
+<tr><td>max_parallel_workers_per_gather</td><td class="b"></td><td class="b"></td><td>세션</td><td class="b"></td></tr>
+<tr><td>track_io_timing</td><td class="b"></td><td class="b"></td><td>reload</td><td class="b"></td></tr>
+<tr><td>max_connections</td><td class="b"></td><td class="b"></td><td>재기동</td><td class="b"></td></tr>
+<tr><td>effective_cache_size</td><td class="b"></td><td class="b"></td><td>세션</td><td class="b"></td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+</table>
+<p class="small">재기동이 필요한 설정은 그 자체가 조건 변화다.</p>
+</section>
+
+<section class="ch">
+<h3>[4.6] DB 자원 사용 — DB-01 · DB-02 따로</h3>
+<table>
+<tr><th>지표 ({{ R }})</th><th>DB-01 전 ({{ B or "R__" }})</th><th>DB-01 후</th><th>DB-02 전</th><th>DB-02 후</th><th>변화</th></tr>
+{% for r in db_rows %}
+<tr><td>{{ r.name }}</td>{% for c in r.cells %}<td class="b">{{ c }}</td>{% endfor %}<td class="b">{{ r.change }}</td></tr>
+{% endfor %}
+</table>
+<h4>대기 종류별 활성 세션 (D6) — DB 시간이 어디서 쓰였나</h4>
+<table>
+<tr><th>대기 종류</th><th>전 (평균 세션, DB-01 / DB-02)</th><th>후 (평균 세션, DB-01 / DB-02)</th><th>비중{{ " 변화" if b else "" }}</th></tr>
+{% for r in wait_rows %}
+<tr><td>{{ r.label }}</td><td class="b">{{ r.base }}</td><td class="b">{{ r.cur }}</td><td class="b">{{ r.change }}</td></tr>
+{% endfor %}
+</table>
+<p class="small">CPU면 질의 · 인덱스, IO면 메모리 · 디스크(크레딧 함께), Lock이면 쓰기 경합. 이 표가 [4.7]의 어느 줄부터 볼지 정한다.</p>
+<table><tr><th class="k">나빠진 것과 이유</th><td class="b">{{ nar.db_worse|n }}</td></tr></table>
+
+<h3>[4.7] DB 쪽에서 더 올릴 방법 — 싼 것부터</h3>
+<table>
+<tr><th class="k">순서</th><th>확인 / 방법</th><th>상태</th><th>예상 효과</th></tr>
+<tr><td>1</td><td>ANALYZE를 했는가</td><td class="b">□</td><td class="b"></td></tr>
+<tr><td>2</td><td>추정 행과 실제 행이 벌어지는가</td><td class="b">___개 질의</td><td class="b"></td></tr>
+<tr><td>3</td><td>인덱스를 타는가</td><td class="b">□</td><td class="b"></td></tr>
+<tr><td>4</td><td>읽은 블록이 결과 행에 비해 과한가</td><td class="b">___배</td><td class="b"></td></tr>
+<tr><td>5</td><td>같은 질의가 요청당 여러 번 불리나</td><td>→ [6] N+1</td><td class="b"></td></tr>
+<tr><td>6</td><td>정렬 · 해시가 디스크로 넘어가는가</td><td class="b">___건</td><td class="b"></td></tr>
+<tr><td>7</td><td>커버링 인덱스로 표 방문 제거</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>8</td><td>부분 인덱스 (조건부 행만)</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>9</td><td>필요한 열만 SELECT</td><td>→ [6]</td><td class="b"></td></tr>
+<tr><td>10</td><td>파티셔닝 (자치구 단위)</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>11</td><td>사전 집계 테이블 / MV</td><td class="b"></td><td class="b"></td></tr>
+</table>
+<p class="small">7번 이후는 비용이 큰 순서. 1~6번을 안 하고 10~11번으로 가면 되돌리기 어려운 구조가 남는다.</p>
+</section>
+
+<!-- ============ [5] ============ -->
+<section class="ch">
+<h2>[5] 애플리케이션 계층 <span class="tag">변경시</span></h2>
+<h3>[5.1] 앱 자원 사용</h3>
+<table>
+<tr><th>지표 ({{ R }})</th><th>전 ({{ B or "R__" }})</th><th>후 ({{ R }})</th><th>변화</th></tr>
+{% for r in app_rows %}
+<tr><td>{{ r.name }}</td><td class="b">{{ r.base }}</td><td class="b">{{ r.cur }}</td><td class="b">{{ r.change }}</td></tr>
+{% endfor %}
+</table>
+<h4>슬롯별 (W2) — 네 슬롯이 고르게 받았나</h4>
+<table>
+<tr><th>슬롯</th><th>요청 비중</th><th>p95 (서버)</th><th>힙 최대</th><th>재시작</th></tr>
+{% for r in slot_rows %}
+<tr><td>{{ r.slot }}</td><td class="b">{{ r.share|v(1, "%") }}</td><td class="b">{{ r.p95|v(1, " ms") }}</td><td class="b">{{ r.heap|mb }}</td><td class="b">{{ r.restarts|v(0) }}</td></tr>
+{% else %}
+<tr><td>미측정</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+{% endfor %}
+</table>
+<p class="small">25%에서 크게 벗어나거나 재시작이 0이 아니면 그 회차는 「다른 구성」으로 돈 것이다.</p>
+<table>
+{% set ooms = s.resources.nodes.values()|map(attribute="oom_kills_delta")|select("number")|list %}<tr><th class="k">컨테이너 상한 도달</th><td class="b">{% if s.resources.app_totals.restarts %}■ 예 → 재시작 {{ s.resources.app_totals.restarts }}회{% else %}□ 아니오 □ 예 → 종료 ___회 <span class="small">(슬롯 재시작 {{ s.resources.app_totals.restarts|v(0) }})</span>{% endif %}</td><th class="k">노드 OOM (O5)</th><td class="b">{{ (ooms|sum if ooms else none)|v(0, "회") }}</td></tr>
+</table>
+
+<h3>[5.2] 앱 CPU 분포 — 어느 코드가 쓰는가</h3>
+<p class="small">지금 프로파일러가 없다. 도구(JFR · async-profiler)를 정해 [0.3]에 고정하지 않았으면 이 절은 「미측정」.</p>
+<table>
+<tr><th>구간</th><th>비중</th><th>전 / 후</th><th>비고</th></tr>
+{% for key, label in [("bcrypt", "비밀번호 해싱 (BCrypt)"), ("leak_detection", "커넥션 누수 감지 예외 생성"), ("jit", "JIT 컴파일"), ("code_conversion", "코드값 변환 함수"), ("serialization", "직렬화")] %}
+<tr><td>{{ label }}</td><td class="b">{{ (prof.cats[key] if prof else none)|v(1, "%") }}</td><td class="b">{% if bprof %}{{ bprof.cats[key]|v(1, "%") }} → {{ (prof.cats[key] if prof else none)|v(1, "%") }}{% endif %}</td><td class="b">{{ nar.profile_notes[key]|n }}</td></tr>
+{% endfor %}
+{% for m in (prof.top if prof else []) %}
+<tr><td><code>{{ m.method|short(70) }}</code></td><td class="b">{{ m.pct|v(1, "%") }}</td><td class="b"></td><td class="b">자기 시간 상위 {{ loop.index }}</td></tr>
+{% else %}
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+{% endfor %}
+</table>
+<table><tr><th class="k">신뢰 조건</th><td class="b">표본 {{ (prof.samples if prof else none)|v(0) }}개 / JIT 비중 {{ (prof.jit if prof else none)|v(1) }}% / 기동 후 {{ nar.profile_uptime_min or "___" }}분</td></tr></table>
+<p class="small">JIT가 표본의 40%를 넘으면 앱 코드 분포는 참고값. 스레드 덤프로 대신했으면 적는다(덤프는 비중이 아니라 순간 사진).</p>
+
+<h3>[5.3] 요청당 질의 수 — N+1</h3>
+<p class="small">추적(비율 1.0)에서 엔드포인트별 요청 하나의 SQL 구간 수를 센다. 경계와 겹치면 [6]에 적고 여기서는 번호만 참조.</p>
+<table>
+<tr><th>엔드포인트</th><th>요청당 질의</th><th>같은 행 반복</th><th>원인</th><th>전 / 후</th></tr>
+{% for r, t in tr_routes.items() %}
+{% set bt = btr[r] if btr else none %}
+<tr><td>{{ r }}</td><td class="b">{{ t.sql_per_request.mean|v(1) }} <span class="small">(최대 {{ t.sql_per_request.max|v(0) }})</span></td><td class="b">{% for x in t.repeated_statements %}<code>{{ x.statement|short(40) }}</code> ×{{ x.max_per_request }}{{ "<br>"|safe if not loop.last }}{% endfor %}{% if t.per_row_methods %}<br><span class="small">행마다: {{ t.per_row_methods|join(", ") }}</span>{% endif %}</td><td class="b">{{ nar.n_plus_one[r]|n }}</td><td class="b">{% if bt %}{{ bt.sql_per_request.mean|v(1) }} → {{ t.sql_per_request.mean|v(1) }}{% endif %}</td></tr>
+{% else %}
+<tr><td>미측정 (추적 없음)</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+{% endfor %}
+</table>
+<p class="small">판정 기준(참고) — 1~3회 건강 · 4~10회 주의(기준 표 조회가 섞였나) · 10회+ 개선 필요(거의 항상 N+1 또는 매번 재계산)</p>
+</section>
+
+<section class="ch">
+<h3>[5.4] 캐시</h3>
+<p class="small">Redis는 토큰 · 락 · 캐시 · Pub/Sub이 같이 있다. 아래는 Redis 전체 값이라 캐시만의 값이 아니다.</p>
+<table>
+<tr><th>항목</th><th>전</th><th>후</th><th>비고</th></tr>
+{% set rb = b.resources.redis if b else none %}
+<tr><td>적중률</td><td class="b">{{ rb.hit_ratio_pct|v(2, "%") if b else "" }}</td><td class="b">{{ s.resources.redis.hit_ratio_pct|v(2, "%") }}</td><td class="b">keyspace hits ÷ (hits + misses)</td></tr>
+<tr><td>축출 (초당)</td><td class="b">{{ rb.evicted_per_sec|v(3) if b else "" }}</td><td class="b">{{ s.resources.redis.evicted_per_sec|v(3) }}</td><td class="b"></td></tr>
+<tr><td>캐시 메모리 (최대 / 상한)</td><td class="b">{{ (rb.memory_used_max_bytes|mb ~ " / " ~ rb.memory_max_bytes|mb) if b else "" }}</td><td class="b">{{ s.resources.redis.memory_used_max_bytes|mb }} / {{ s.resources.redis.memory_max_bytes|mb }}</td><td class="b"></td></tr>
+<tr><td>빗나감 1회 비용</td><td class="b"></td><td class="b"></td><td class="b">{{ nar.cache.miss_cost|n }}</td></tr>
+<tr><td>TTL</td><td class="b"></td><td class="b"></td><td class="b">{{ nar.cache.ttl|n }}</td></tr>
+<tr><td>무효화 방식</td><td class="b"></td><td class="b"></td><td>→ [6.5]</td></tr>
+<tr><td>Redis 연결 수</td><td class="b">{{ rb.connected_clients_max|v(0) if b else "" }}</td><td class="b">{{ s.resources.redis.connected_clients_max|v(0) }}</td><td class="b"></td></tr>
+<tr><td>앱 쪽 명령 지연 (lettuce)</td><td class="b">{{ b.resources.app_totals.lettuce_mean_ms|v(3, " ms") if b else "" }}</td><td class="b">{{ s.resources.app_totals.lettuce_mean_ms|v(3, " ms") }}</td><td>평균. store 구간 p95 는 [7.1] 캐시 줄</td></tr>
+<tr><td>Redis 앱 명령 (회차 전후 차이)</td><td class="b">{{ b.redis_commandstats.total_calls|v(0) if b else "" }}</td><td class="b">{{ s.redis_commandstats.total_calls|v(0) }} <span class="small">(요청당 {{ s.redis_commandstats.calls_per_request|v(3) }})</span></td><td class="b">{% for c, v in (s.redis_commandstats.commands or {}).items() %}{% if loop.index <= 5 %}{{ c }} {{ v.calls }}{{ " · " if not loop.last and loop.index < 5 }}{% endif %}{% endfor %}</td></tr>
+<tr><td>측정 수단 몫 (관리 명령 — 앱 명령에서 뺐다)</td><td class="b">{{ b.redis_commandstats.admin_calls|v(0) if b else "" }}</td><td class="b">{{ s.redis_commandstats.admin_calls|v(0) }}</td><td class="b">{% for c, v in (s.redis_commandstats.admin_commands or {}).items() %}{% if loop.index <= 5 %}{{ c }} {{ v.calls }}{{ " · " if not loop.last and loop.index < 5 }}{% endif %}{% endfor %}</td></tr>
+</table>
+<p><span class="formula">캐시가 가린 비용 = 빗나감 비용 ___ ms × 트래픽 비중 ___ % = ___ ms</span></p>
+
+<h3>[5.5] 외부 연동</h3>
+<table>
+<tr><th>연동 대상</th><th>호출 수</th><th>p95</th><th>타임아웃</th><th>실패율</th><th>서킷 동작</th></tr>
+{% for h, e in (s.traces.external or {}).items() %}
+<tr><td>{{ h }}</td><td class="b">{{ e.count|v(0) }}</td><td class="b">{{ e.p95_ms|v(1, " ms") }}</td><td class="b"></td><td class="b">{{ e.error_rate_pct|v(2, "%") }}</td><td class="b">□</td></tr>
+{% else %}
+<tr><td>등기 조회 API</td><td class="b">미측정</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td>대장 조회 API</td><td class="b">미측정</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+{% endfor %}
+{% for k, g in (s.traces.background or {}).items() %}{% if loop.first %}<tr><th colspan="6">요청 밖 구간 (배치 · 스케줄) — 추적 뿌리 이름별</th></tr>{% endif %}
+<tr><td>{{ k }}</td><td class="b">{{ g.count }}</td><td class="b">{{ g.ms.p95|v(0, " ms") }}</td><td class="b" colspan="3">실행당 SQL {{ g.sql_per_run|v(1) }}회 · DB {{ g.db_ms_per_run|v(1, " ms") }}</td></tr>
+{% endfor %}
+</table>
+<p class="small">서킷은 resilience4j 지표로. 외부 대기는 증설로 해결되지 않는다 — 스레드가 마르는데 풀이 여유면 거의 외부 대기다.</p>
+
+<h3>[5.6] 누수 — 회차를 거듭하면 보인다</h3>
+<h4>(가) 회차 간 추이 — 앱을 재시작하지 않고 연달아 돌릴 때만</h4>
+<table>
+<tr><th>지표</th>{% for x in trend %}<th>{{ x.round }}</th>{% endfor %}{% for i in range(4 - trend|length) %}<th>R__</th>{% endfor %}<th>추세</th><th>판정</th></tr>
+{% for label, path in [("회차 시작 힙", "heap"), ("회차 시작 스레드 수", "threads"), ("회차 시작 커넥션 수 (DB-01 backends)", "conn"), ("같은 인가에서의 p95", "p95"), ("회차 시작 EBS 크레딧", "ebs")] %}
+<tr><td>{{ label }}</td>{% for x in trend %}<td class="b">{% if path == "heap" %}{{ x.resources.app_totals.heap_start_bytes|mb }}{% elif path == "threads" %}{{ x.resources.app_totals.threads_live_start|v(0) }}{% elif path == "conn" %}{{ x.resources.postgres["db-01"].numbackends_start|v(0) }}{% elif path == "p95" %}{{ x.key.p95|v(1, " ms") }}{% else %}{{ x.key.ebs_start_min|v(1, "%") }}{% endif %}</td>{% endfor %}{% for i in range(4 - trend|length) %}<td class="b"></td>{% endfor %}<td class="b">평탄 / {{ "하강" if path == "ebs" else "상승" }}</td><td class="b">□</td></tr>
+{% endfor %}
+</table>
+<p class="small">캐시 잔재는 회차가 갈수록 빨라지고, 누수는 느려진다. p95가 오르는데 크레딧이 함께 내려갔다면 누수가 아니라 크레딧이다. 재시작한 회차에는 선을 끊는다.</p>
+<h4>(나) 지속 시험 (S9) — 한 번만</h4>
+<table>
+<tr><th>지표</th><th>시작</th><th>1시간</th><th>2시간</th><th>추세</th><th>판정</th></tr>
+<tr><td>힙 사용 (GC 후)</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td>힙 밖 사용</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td>활성 스레드 수</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td>활성 커넥션</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td>열린 파일 디스크립터</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td>응답 p95</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td>EBS · CPU 크레딧</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+</table>
+<p class="small">평탄하면 합격. 끝없이 오르면 요청이 하나도 실패하지 않았어도 실패로 본다.</p>
+
+<h3>[5.7] 앱 쪽에서 더 올릴 방법</h3>
+<table>
+<tr><th>방법</th><th>상태</th><th>예상 효과</th><th>대가</th></tr>
+<tr><td>기준 표를 캐시한다 (변경 시 무효화)</td><td class="b"></td><td class="b"></td><td>무효화 책임</td></tr>
+<tr><td>같은 행을 한 번 읽어 넘긴다</td><td class="b"></td><td class="b"></td><td>코드 구조</td></tr>
+<tr><td>코드값 변환을 DB 조인으로</td><td class="b"></td><td class="b"></td><td>→ [6]</td></tr>
+<tr><td>응답 열을 필요한 것만</td><td class="b"></td><td class="b"></td><td>→ [6]</td></tr>
+<tr><td>직렬화 방식 변경</td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>비동기 처리 (쓰기 경로)</td><td class="b"></td><td class="b"></td><td>정합성</td></tr>
+<tr><td>스레드 풀 / 커넥션 풀 조정</td><td class="b"></td><td class="b"></td><td>→ [6]</td></tr>
+<tr><td>컨테이너 메모리 재배분</td><td class="b"></td><td class="b"></td><td>노드 메모리</td></tr>
+</table>
+</section>
+
+<!-- ============ [6] ============ -->
+<section class="ch">
+<h2>[6] 경계 — DB와 앱 사이 ★ <span class="tag">변경시</span></h2>
+<p class="small">한쪽만 고치면 다른 쪽이 깨지는 것, 또는 「앱이 보내는 것」과 「DB가 받는 것」의 불일치. [4] · [5]를 다 적은 뒤에 보면 보인다.</p>
+<h3>[6.1] 타입 · 바인딩 불일치</h3>
+<table>
+<tr><th>무엇</th><th>앱 쪽</th><th>DB 쪽</th><th>결과</th></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+</table>
+<table>
+<tr><th class="k">읽은 블록</th><td class="b">→</td><th class="k">실행 시간</th><td class="b">→</td></tr>
+<tr><th class="k">고친 곳</th><td class="b" colspan="3"></td></tr>
+</table>
+<p class="small">찾는 법 — EXPLAIN에 <code>(열)::타입</code>이 찍히면 그것이다. 찾은 ___개 / 고친 ___개</p>
+
+<h3>[6.2] 트랜잭션 경계 안의 비-DB 작업</h3>
+<table>
+<tr><th>무엇</th><th>경계 안의 작업</th><th>결과</th></tr>
+{% set gaps = tr_routes.items()|selectattr("1.txn_gap_ms")|sort(attribute="1.txn_gap_ms.p95", reverse=true)|list %}
+{% for r, t in gaps[:3] %}
+<tr><td class="b">{{ r }}</td><td class="b">트랜잭션 안 비-DB 시간 p95 {{ t.txn_gap_ms.p95|v(1, " ms") }} / 트랜잭션 p95 {{ t.txn_hold_ms.p95|v(1, " ms") }}</td><td class="b">{{ nar.txn_findings[r]|n }}</td></tr>
+{% else %}
+<tr><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+{% endfor %}
+</table>
+<table>
+<tr><th>항목</th><th>전 ({{ B or "R__" }})</th><th>후 ({{ R }})</th></tr>
+<tr><td>커넥션 점유 시간</td><td class="b">{{ ("추적 p95 " ~ b.key.conn_hold_p95_ms|v(1, " ms") ~ " · 풀 평균 " ~ b.resources.app_totals.pools.primary.usage_mean_ms|v(1, " ms")) if b else "" }}</td><td class="b">추적 p95 {{ s.key.conn_hold_p95_ms|v(1, " ms") }} · 풀 평균 {{ s.resources.app_totals.pools.primary.usage_mean_ms|v(1, " ms") }}</td></tr>
+<tr><td>풀 대기 최대</td><td class="b">{{ b.key.pool_pending_max|v(0) if b else "" }}</td><td class="b">{{ s.key.pool_pending_max|v(0) }}</td></tr>
+<tr><td><b>2차 피해</b> — 로그인 몰림 중 조회 화면 p95</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>풀 대기가 0을 넘는 로그인 TPS</td><td class="b"></td><td class="b"></td></tr>
+</table>
+<p class="small">뽑는 법 — 추적의 커밋 구간 안에서 SQL 구간이 없는 빈 시간이 비-DB 작업. 풀 쪽은 hikaricp_connections_usage로 대조. 찾은 ___개 / 고친 ___개 (해싱 · 암복호화 · 외부 API · 캐시 왕복 · 파일 IO · 직렬화)</p>
+
+<h3>[6.3] N+1 · 반복 조회</h3>
+<table>
+<tr><th>엔드포인트</th><th>요청당 질의</th><th>무엇을 반복하나</th><th>고칠 곳</th></tr>
+{% set n1 = [] %}{% for r, t in tr_routes.items() %}{% if (t.sql_per_request.mean or 0) > 3 or t.per_row_methods or t.repeated_statements %}{% set _ = n1.append((r, t)) %}{% endif %}{% endfor %}
+{% for r, t in (n1|sort(attribute="1.sql_per_request.mean", reverse=true))[:4] %}
+<tr><td class="b">{{ r }}</td><td class="b">{{ t.sql_per_request.mean|v(1) }}</td><td class="b">{% for x in t.repeated_statements[:2] %}<code>{{ x.statement|short(40) }}</code> ×{{ x.max_per_request }}{{ "<br>"|safe if not loop.last }}{% endfor %}{% if t.per_row_methods %}<br>행마다 부르는 메서드: {{ t.per_row_methods|join(", ") }}{% endif %}</td><td class="b">{{ nar.n_plus_one[r]|n }}</td></tr>
+{% else %}
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+{% endfor %}
+</table>
+<table>
+<tr><th>항목</th><th>전 ({{ B or "R__" }})</th><th>후 ({{ R }})</th></tr>
+<tr><td>요청당 질의 합계 ({{ s.key.queries_per_request_source or "원천 없음" }})</td><td class="b">{{ b.key.queries_per_request|v(2) if b else "" }}</td><td class="b">{{ s.key.queries_per_request|v(2) }}</td></tr>
+<tr><td>DB 총 실행 시간</td><td class="b">{{ b.key.total_db_ms|v(0, " ms") if b else "" }}</td><td class="b">{{ s.key.total_db_ms|v(0, " ms") }}</td></tr>
+<tr><td>요청 p95</td><td class="b">{{ b.key.p95|v(1, " ms") if b else "" }}</td><td class="b">{{ s.key.p95|v(1, " ms") }}</td></tr>
+</table>
+<table>
+<tr><th>판정 — 고칠 곳이 앱인가 DB인가</th><th>고칠 곳</th></tr>
+<tr><td>같은 데이터를 여러 번 읽는다</td><td>앱 (한 번 읽어 넘긴다)</td></tr>
+<tr><td>거의 안 바뀌는 표를 매번 읽는다</td><td>앱 (캐시)</td></tr>
+<tr><td>한 질의로 묶을 수 있다</td><td>DB (쿼리를 합친다)</td></tr>
+<tr><td>지연 로딩 때문이다</td><td>앱 (fetch 전략)</td></tr>
+</table>
+</section>
+
+<section class="ch">
+<h3>[6.4] 커넥션 풀 ↔ DB 최대 커넥션</h3>
+<table>
+<tr><th>항목</th><th>값</th><th>근거</th></tr>
+{% set pp = s.resources.app_totals.pools.primary or {} %}{% set pr = s.resources.app_totals.pools.replica or {} %}
+<tr><td>기본 풀 (슬롯당 × 슬롯 수)</td><td class="b">{{ pp.max_per_slot|v(0) }} × {{ pp.slots or "_" }}</td><td class="b">hikaricp_connections_max (pool=primary)</td></tr>
+<tr><td>읽기용 풀 (슬롯당 × 슬롯 수)</td><td class="b">{{ pr.max_per_slot|v(0) }} × {{ pr.slots or "_" }}</td><td class="b">hikaricp_connections_max (pool=replica)</td></tr>
+<tr><td>최악 합계</td><td class="b">{% if pp.max_per_slot is given %}{{ (pp.max_per_slot * pp.slots)|int }} (DB-01){% if pr.max_per_slot is given %} · {{ (pr.max_per_slot * pr.slots)|int }} (DB-02){% endif %}{% else %}미측정{% endif %}</td><td class="b">슬롯 수는 지표가 있는 슬롯</td></tr>
+<tr><td>DB max_connections</td><td class="b">{% for n, p in (s.resources.postgres or {}).items() %}{{ n }} {{ p.max_connections|v(0) }}{{ " · " if not loop.last }}{% endfor %}</td><td class="b">{% for n, p in (s.resources.postgres or {}).items() %}{% if loop.first %}{{ p.max_connections_source }}{% endif %}{% endfor %}</td></tr>
+<tr><td>커넥션 획득 타임아웃</td><td class="b">{{ nar.pool.connection_timeout|n }}</td><td class="b">{{ nar.pool.connection_timeout_source|n }}</td></tr>
+</table>
+<table>
+<tr><th>관측 ({{ R }})</th><th>기본</th><th>읽기용</th></tr>
+<tr><td>풀 대기 최대</td><td class="b">{{ s.resources.app_totals.pools.primary.pending_max|v(0) }}</td><td class="b">{{ s.resources.app_totals.pools.replica.pending_max|v(0) }}</td></tr>
+<tr><td>획득 시간 p95</td><td class="b">{% if s.resources.app_totals.pools.primary.acquire_p95_ms is given %}{{ s.resources.app_totals.pools.primary.acquire_p95_ms|v(2, " ms") }}{% else %}평균 {{ s.resources.app_totals.pools.primary.acquire_mean_ms|v(2, " ms") }} · 최대 {{ s.resources.app_totals.pools.primary.acquire_max_ms|v(1, " ms") }}{% endif %}</td><td class="b">{% if s.resources.app_totals.pools.replica.acquire_p95_ms is given %}{{ s.resources.app_totals.pools.replica.acquire_p95_ms|v(2, " ms") }}{% else %}평균 {{ s.resources.app_totals.pools.replica.acquire_mean_ms|v(2, " ms") }} · 최대 {{ s.resources.app_totals.pools.replica.acquire_max_ms|v(1, " ms") }}{% endif %}</td></tr>
+<tr><td>커넥션 획득 실패 (500)</td><td class="b" colspan="2">타임아웃 {{ s.resources.app_totals.pools.primary.timeouts|v(0) }} (기본) · {{ s.resources.app_totals.pools.replica.timeouts|v(0) }} (읽기용)</td></tr>
+<tr><td>DB 커넥션 거절</td><td class="b" colspan="2">{{ nar.pool.db_refused|n }}</td></tr>
+{% set st = s.resources.postgres["db-01"].connections_by_state_max or {} %}
+<tr><td>DB 쪽 연결 상태 (D2)</td><td class="b" colspan="2">DB-01 최대 active {{ st.active|v(0) }} · idle in transaction {{ st["idle in transaction"]|v(0) }}</td></tr>
+</table>
+<table>
+<tr><th>풀을 키워야 하는가 — 판정 규칙</th><th>결론</th></tr>
+<tr><td>풀 대기가 있고 DB CPU가 낮다</td><td>풀을 키운다 (대기가 낭비다)</td></tr>
+<tr><td>풀 대기가 있고 DB CPU가 높다</td><td>키우면 악화된다. 질의를 고친다</td></tr>
+<tr><td>풀 대기가 없는데 응답이 느리다</td><td>풀 문제가 아니다</td></tr>
+<tr><td>풀 대기가 있고 커넥션 점유가 길다</td><td>[6.2] 트랜잭션 경계를 본다</td></tr>
+<tr><td>풀 대기가 있고 DB 대기 종류가 IO</td><td>디스크 · 크레딧을 본다 → [4.6] [7.4]</td></tr>
+</table>
+
+<h3>[6.5] 캐시 무효화 책임</h3>
+<table>
+<tr><th>캐시 대상</th><th>무효화 방식</th><th>책임 위치</th><th>문제</th></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+</table>
+<p class="small">캐시를 넣기 전에 정한다 — 누가 지우나 / 언제 지우나 / 못 지우면 얼마나 오래된 데이터가 보이나 / 그게 허용되나</p>
+
+<h3>[6.6] 페이지네이션 · 응답 크기</h3>
+<p class="small">응답 크기는 Nginx 접근 로그의 경로별 바이트로 뽑는다.</p>
+<table>
+<tr><th>엔드포인트</th><th>방식</th><th>응답 크기</th><th>행 수</th><th>문제</th></tr>
+{% for r, n in (s.nginx.routes or {}).items() %}
+<tr><td>{{ r }}</td><td class="b">{{ nar.pagination[r]|n }}</td><td class="b">평균 {{ (n.bytes_mean / 1024 if n.bytes_mean is given else none)|v(1, " KB") }} · p95 {{ (n.bytes_p95 / 1024 if n.bytes_p95 is given else none)|v(1, " KB") }}</td><td class="b"></td><td class="b"></td></tr>
+{% else %}
+<tr><td>미측정 (Nginx 로그 없음)</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+{% endfor %}
+</table>
+<p class="small">전량 반환은 응답이 데이터에 비례해 커지고 슬롯 메모리 상한에 닿으면 프로세스가 종료된다. 고칠 곳 — DB(필요한 열만) · 앱(상한) · 경계(커서 페이지네이션, API 규약 변경).</p>
+
+<h3>[6.7] 읽기 분산 라우팅</h3>
+<table>
+<tr><th>항목</th><th>값</th><th>비고</th></tr>
+<tr><td>분산 대상 (표시한 메서드)</td><td class="b">{{ nar.read_routing.targets|n }}</td><td class="b"></td></tr>
+<tr><td>분산 대상 트래픽 비중</td><td class="b">{% for n, d in (s.traces.db_split or {}).items() %}{{ n }} {{ d.share_pct|v(1, "%") }}{{ " · " if not loop.last }}{% else %}미측정{% endfor %}</td><td class="b">추적 SQL 구간의 server.address 별 질의 수</td></tr>
+<tr><td>분산하지 않은 것</td><td class="b">{{ nar.read_routing.excluded|n }}</td><td class="b"></td></tr>
+<tr><td>읽기용 풀 (슬롯당)</td><td class="b">{{ s.resources.app_totals.pools.replica.max_per_slot|v(0) }}</td><td class="b"></td></tr>
+</table>
+<table>
+<tr><th>항목</th><th>전 ({{ B or "R__" }})</th><th>후 ({{ R }})</th></tr>
+<tr><td>DB-01 CPU</td><td class="b">{{ b.key.db01_cpu|v(1, " %") if b else "" }}</td><td class="b">{{ s.key.db01_cpu|v(1, " %") }}</td></tr>
+<tr><td>DB-02 CPU (안 오르면 분산이 안 된 것)</td><td class="b">{{ b.key.db02_cpu|v(1, " %") if b else "" }}</td><td class="b">{{ s.key.db02_cpu|v(1, " %") }}</td></tr>
+<tr><td>읽기용 풀 대기</td><td class="b">{{ b.resources.app_totals.pools.replica.pending_max|v(0) if b else "" }}</td><td class="b">{{ s.resources.app_totals.pools.replica.pending_max|v(0) }}</td></tr>
+<tr><td>복제 지연 시간 (D10)</td><td class="b">{{ b.resources.postgres["db-02"].replication_lag_max_sec|v(3, " s") if b else "" }}</td><td class="b">{{ s.resources.postgres["db-02"].replication_lag_max_sec|v(3, " s") }}</td></tr>
+<tr><td>standby 조회 충돌 (D11)</td><td class="b">{{ b.resources.postgres["db-02"].conflicts_delta|v(0) if b else "" }}</td><td class="b">{{ s.resources.postgres["db-02"].conflicts_delta|v(0) }}</td></tr>
+<tr><td>오래된 데이터를 본 사례</td><td class="b"></td><td class="b">{{ nar.read_routing.stale|n }}</td></tr>
+</table>
+<p class="small">추적의 SQL 구간에 대상 DB가 찍힌다. 분산 대상 구간이 DB-02로 갔는지 몇 건 열어 확인한다.</p>
+
+<h3>[6.8] 경계에서 더 볼 것</h3>
+<table>
+<tr><th>항목</th><th>확인</th><th>발견</th><th>고침</th></tr>
+<tr><td>바인딩 타입 불일치</td><td class="b">□</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>트랜잭션 경계 안의 비-DB 작업</td><td class="b">□</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>N+1 · 반복 조회</td><td class="b">□</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>풀 크기와 DB 상한의 관계</td><td class="b">□</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>캐시 무효화 책임</td><td class="b">□</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>응답 열 선택</td><td class="b">□</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>페이지네이션 방식</td><td class="b">□</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>지연 로딩 · fetch 전략</td><td class="b">□</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>읽기 분산 라우팅과 복제 지연</td><td class="b">□</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>배치와 사용자 조회의 자원 경합</td><td class="b">□</td><td class="b"></td><td class="b"></td></tr>
+</table>
+</section>
+
+<!-- ============ [7] ============ -->
+<section class="ch">
+<h2>[7] 통합 — 합쳐서만 보이는 것 <span class="tag">쌓인뒤</span></h2>
+<h3>[7.1] 시간 예산 — 한 요청의 p95를 계층별로 쪼갠다</h3>
+<div class="note">표는 하나다. 여기도 <b>p95로 쪼갠다</b> — 판정 축과 같다 → [0.4]. 다만 구간마다 느린 요청이 달라 구간 합은 전체 p95와 정확히 같지 않다. 그 차이를 「설명되지 않은 시간」에 넣고 5%를 넘는지 본다.</div>
+{% for route in budget_routes %}
+{% set bg = s.budget[route] %}{% set bb = b.budget[route] if b and b.budget else none %}
+<table><tr><th class="k">엔드포인트</th><td class="b">{{ route }}</td><th class="k">회차</th><td class="b">{{ (B ~ " → ") if b else "" }}{{ R }}</td></tr></table>
+<table>
+<tr><th>계층</th><th>구간</th><th>전 (p95 요청)</th><th>후 (p95 요청)</th><th>후 평균</th><th>비중</th><th>판정</th><th>원천</th></tr>
+{% for r in bg.rows %}
+{% set br = (bb.rows|selectattr("key", "equalto", r.key)|first) if bb else none %}
+<tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td class="b">{{ (br.ms if br else none)|v(2, " ms") if bb else "" }}</td><td class="b">{{ r.ms|v(2, " ms") }}</td><td class="b">{{ r.mean_ms|v(2, " ms") }}</td><td class="b">{{ r.share_pct|v(1, "%") }}</td><td class="b">{% if bg.largest and bg.largest.name == r.name %}★★{% elif (r.share_pct or 0) >= 10 %}★{% endif %}</td><td>{{ r.source }}</td></tr>
+{% endfor %}
+<tr><th colspan="2">설명되지 않은 시간</th><td class="b">{{ bb.unexplained_ms|v(2, " ms") if bb else "" }}</td><td class="b">{{ bg.unexplained_ms|v(2, " ms") }}</td><td class="b">{{ bg.unexplained_mean_ms|v(2, " ms") }}</td><td class="b">{{ bg.unexplained_pct|v(1, "%") }}{% if (bg.unexplained_pct or 0) > 5 %} ⚠{% endif %}</td><td></td><td>5% 넘으면 계측 공백</td></tr>
+<tr><th colspan="2">서버 구간 (= 합계)</th><td class="b">{{ bb.server_ms|v(2, " ms") if bb else "" }}</td><td class="b">{{ bg.server_ms|v(2, " ms") }}</td><td class="b">{{ bg.server_mean_ms|v(2, " ms") }}</td><td>100%</td><td></td><td>p95 순위 요청 <code>{{ bg.trace_id|n }}</code></td></tr>
+{% for r in bg.extra %}
+<tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td class="b">{{ ((bb.extra|selectattr("name", "equalto", r.name)|first).ms)|v(2, " ms") if bb else "" }}</td><td class="b">{{ r.ms|v(2, " ms") }}</td><td></td><td></td><td></td><td>{{ r.source }}</td></tr>
+{% endfor %}
+<tr><th colspan="2">요청 전체 p95 (부하 도구)</th><td class="b">{{ bb.tool_p95_ms|v(2, " ms") if bb else "" }}</td><td class="b">{{ bg.tool_p95_ms|v(2, " ms") }}</td><td></td><td></td><td></td><td>판정 기준</td></tr>
+</table>
+{% else %}
+<table><tr><th class="k">엔드포인트</th><td class="b">미측정</td><th class="k">회차</th><td class="b">{{ R }}</td></tr></table>
+{% endfor %}
+<p class="small">구간 p95 를 따로 구해 더하지 않는다. 요청마다 서버 구간을 겹치지 않는 구성 요소로 나누고 — 메서드 자기 시간 · SQL 합집합 · Redis 메서드 자기 시간(분산 락 advice 는 감싼 업무 메서드를 포함하므로 Redis 가 아니라 메서드로 센다) · 외부 호출 · 기타 계측 구간(spring-data 저장소 · tomcat 내부) 자기 시간 — ① 서버 구간이 p95 순위인 실제 요청 하나의 분해(전 · 후)와 ② 구성 요소 평균을 적는다. 설명되지 않은 시간 = 그 요청의 서버 구간 − 구성 요소 합 = 서버 구간 안에서 계측 구간 밖에 있던 시간(Controller · 필터 · 직렬화 · 계측 안 된 코드). 5% 를 넘으면 계측 공백이고, 그 자리는 프로파일러로 본다. 입구 · 큐 · 풀 줄은 분포끼리의 차이 또는 전 경로 지표라 합에 넣지 않는다.{% if s.traces.sse_connections %} SSE 연결 {{ s.traces.sse_connections }}건은 연결 시간이라 이 표 · [7.11] · 가장 느린 요청에서 뺐다.{% endif %}</p>
+<p class="small">★ 비중 10% 이상 · ★★ 가장 큰 구간</p>
+<h4>세 겹으로 빼서 입구 · 큐를 가른다</h4>
+<table>
+<tr><th>뺄셈</th><th>남는 것</th></tr>
+<tr><td>부하 도구 경과 시간 − Nginx urt</td><td>입구 · 네트워크 · 생성기 쪽</td></tr>
+<tr><td>Nginx urt − 서버 요청 구간 (추적)</td><td>슬롯 연결 · 큐 대기 · 홉</td></tr>
+<tr><td>서버 요청 구간 − SQL 구간 합</td><td>앱 안 (Redis · 계산 · 직렬화)</td></tr>
+</table>
+<div class="note"><b>계측이 안 되는 구간</b> — 요청 큐 대기(위 두 번째 뺄셈 + 스레드 사용 수로 대조) · Redis 구간(lettuce 평균 × 요청당 명령 수) · Controller / Service 메서드 구간(메서드 추가 계측 또는 프로파일) · 샘플링 비율(지금 1.0).<br>
+<b>병목 서술 예</b> — "Service의 코드값 변환 함수가 결과 행마다 호출되어 3,126행 응답에서 48 ms(16%)를 쓴다. DB에서 코드 테이블을 조인하면 사라지는 비용이다. → [6.3]"<br>
+가장 느린 요청 3건의 trace_id와 span 트리를 붙인다.</div>
+<table>
+<tr><th>가장 느린 요청</th><th>trace_id</th><th>소요</th><th>가장 큰 구간</th></tr>
+{% for x in (s.traces.slowest or []) %}
+<tr><td>{{ loop.index }} <span class="small">{{ x.route }}</span></td><td class="b"><code>{{ x.trace_id }}</code></td><td class="b">{{ x.ms|v(1, " ms") }}</td><td class="b">{{ x.largest }} ({{ x.largest_ms|v(1, " ms") }})</td></tr>
+{% else %}
+<tr><td>1</td><td class="b">미측정</td><td class="b"></td><td class="b"></td></tr>
+{% endfor %}
+</table>
+</section>
+
+<section class="ch">
+<h3>[7.2] 병목이 어느 계층에서 어디로 옮겨갔는가</h3>
+<table>
+<tr><th>부하 수준</th><th>전 — 먼저 닿는 자원 (계층)</th><th>후 — 먼저 닿는 자원 (계층)</th></tr>
+<tr><td>목표 (___ TPS)</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>목표 × 2</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>한계 지점</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>한계 초과</td><td class="b"></td><td class="b"></td></tr>
+</table>
+<p class="small">같은 계층에 머물렀다 → 더 판다 · 다른 계층으로 옮겼다 → [1.1] 3번을 고친다 · 앱 → DB로 옮겼다 → 요청당 질의 수 확인</p>
+<table><tr><th class="k">해석</th><td class="b"></td></tr></table>
+
+<h3>[7.3] 한 계층의 최적화가 다른 계층에 준 대가</h3>
+<table>
+<tr><th>최적화 (#)</th><th>고친 계층</th><th>대가를 치른 계층</th><th>대가</th><th>측정?</th></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b">□</td></tr>
+<tr><td>추적 켜기 (측정)</td><td>-</td><td>앱</td><td>에이전트 CPU · 메모리 · 슬롯 상한</td><td class="b">□</td></tr>
+</table>
+<p class="small">대가가 「측정 안 됨」인 행이 있으면 그 최적화는 검토가 끝나지 않았다.</p>
+
+<h3>[7.4] 자원별 헤드룸 — 계층을 한 표에</h3>
+<table>
+<tr><th>계층</th><th>자원</th><th>상한</th><th>최대 ({{ R }})</th><th>헤드룸</th></tr>
+{% for r in headroom %}
+<tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td{{ ' class="b"' if not r.limit }}>{{ r.limit }}</td><td class="b">{{ r.peak }}</td><td{{ ' class="b"' if r.headroom != "-" and r.headroom != "비용 항목" }}>{% if r.headroom is number %}{{ r.headroom|v(1, "%") }}{% elif r.headroom %}{{ r.headroom }}{% else %}미측정{% endif %}</td></tr>
+{% endfor %}
+</table>
+<p class="small">EBS 상한은 t3.small 인스턴스 쪽 기준선(볼륨 gp3 3,000 IOPS · 125 MB/s보다 낮다). 크레딧과 함께 읽는다. 부하 생성기 헤드룸이 20% 미만이면 그 회차는 버린다.</p>
+<table><tr><th class="k">헤드룸 20% 미만 자원</th><td class="b">{{ tight|length }}개: {{ tight|join(", ") }}</td></tr></table>
+<p class="small">「최대」는 이 회차 안의 최댓값이다 — 한계 회차(S8)가 아니면 헤드룸은 「이 부하에서의 여유」이지 한계 여유가 아니다.</p>
+<p class="small">둘 이상이면 하나를 늘려도 바로 다음 것에 걸린다.</p>
+</section>
+
+<section class="ch">
+<h3>[7.5] 포화점 · 헤드룸 · 용량 환산</h3>
+<div class="key">헤드룸은 하나의 숫자가 아니다. 부하 모양마다 다르고, 데이터 규모가 바뀌면 또 다르다. 하나만 적으면 가장 큰 숫자를 적게 되고, 그게 「안전하다」로 읽힌다.</div>
+<h4>(1) 시나리오별 한계 ★</h4>
+<table>
+<tr><th>시나리오</th><th>한계 전</th><th>한계 후</th><th>헤드룸</th><th>먼저 닿는 자원</th></tr>
+<tr><td>S1 정상 (균등)</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>S2 피크</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>S3 쏠림</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>S4 로그인 폭주</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>S5 캐시 콜드</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+<tr><td>S6 배치 동시</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+</table>
+<table><tr><th class="k">대표 헤드룸 (가장 작은 값)</th><td class="b">___배 (시나리오 ___) · 분모 □ 예상 피크 □ 설계 목표</td></tr></table>
+<p class="small">쏠림은 시험용 조건이 아니라 실제로 일어나는 모양이다([3]의 계기). 한 시나리오만 쟀으면 나머지는 「미측정」이고 대표 헤드룸은 확정하지 않는다.</p>
+
+<h4>(2) 헤드룸은 데이터 규모에 묶여 있다</h4>
+<table>
+<tr><th class="k">측정 당시 규모</th><td class="b"></td></tr>
+<tr><th class="k">현재 규모</th><td class="b"></td></tr>
+<tr><th class="k">같은가</th><td class="b">□ 같다 — 유효 &nbsp; □ 다르다 — 다시 재기 전까지 용량 판단에 쓰지 않는다</td></tr>
+</table>
+<p class="small">조회 비용이 데이터 양에 비례하는 경로는 규모가 늘면 헤드룸이 그만큼 준다. 어느 엔드포인트인지는 [8] 카드에 적는다.</p>
+
+<h4>(3) 헤드룸 배수가 「그 배수까지 같은 속도」를 뜻하지 않는다</h4>
+<table>
+<tr><th>지점</th><th>p95</th><th>비고</th></tr>
+<tr><td>한계의 50%</td><td class="b"></td><td></td></tr>
+<tr><td>한계의 80%</td><td class="b"></td><td>여기서 이미 꺾이면 정상이다</td></tr>
+<tr><td>한계 지점</td><td class="b"></td><td>기준 500 ms 바로 아래</td></tr>
+</table>
+<table><tr><th class="k">권고 운영 상한</th><td class="b">___ TPS (대표 한계의 50%) — 트래픽 정의서가 배경 부하를 「한계의 절반 이하」로 정한 것과 같은 이유</td></tr></table>
+
+<h4>(4) 자원 헤드룸과 어긋나면 작은 쪽이 맞다</h4>
+<table><tr><th class="k">처리량 헤드룸</th><td class="b">___배</td><th class="k">가장 빡빡한 자원의 여유</th><td class="b">___%</td><th class="k">먼저 닿는 것</th><td class="b"></td></tr></table>
+
+<h4>(5) 용량 환산 — 「그래서 몇 명까지 되는가」 (대표 헤드룸으로)</h4>
+<table>
+<tr><th>항목</th><th>값</th></tr>
+<tr><td>대표 실측 한계</td><td class="b">___ TPS (시나리오 ___)</td></tr>
+<tr><td>피크 집중률 가정</td><td class="b">___ %</td></tr>
+<tr><td>세션당 요청 수 가정</td><td class="b">___ 건</td></tr>
+<tr><td>→ 감당 가능 일 활성 사용자</td><td class="b">약 ___ 명</td></tr>
+<tr><td>→ 증설 불필요 구간</td><td class="b">DAU ___ 명까지</td></tr>
+</table>
+<p class="small">가장 큰 헤드룸으로 환산하면 실제보다 몇 배 낙관적이다. 가정이 바뀌면 숫자가 바뀐다.</p>
+
+<h4>(6) 붕괴 지점은 따로 적는다</h4>
+<table>
+<tr><th>항목</th><th>값</th><th>비고</th></tr>
+<tr><td>실측 한계 (기준 유지)</td><td class="b">___ TPS</td><td></td></tr>
+<tr><td>붕괴 시작 지점</td><td class="b">___ TPS</td><td>오류 · 재시작이 나기 시작</td></tr>
+<tr><td>둘 사이 간격</td><td class="b">___ TPS</td><td>좁으면 기준을 넘는 순간 바로 장애 → [7.8]</td></tr>
+</table>
+</section>
+
+<section class="ch">
+<h3>[7.6] 증설 방향 — 포화 원인에 따라 다르다</h3>
+<table>
+<tr><th>먼저 포화된 자원</th><th>계층</th><th>권고</th></tr>
+<tr><td>CPU</td><td>OS</td><td>vCPU 증설 또는 노드 추가. 둘 다 유효</td></tr>
+<tr><td>CPU (steal이 큼)</td><td>OS</td><td>같은 크기 증설은 무효일 수 있다. 크레딧 · 인스턴스 유형 먼저</td></tr>
+<tr><td>요청 처리 스레드</td><td>앱</td><td>풀이 여유인데 스레드가 마르면 외부 대기. 증설로 안 풀린다</td></tr>
+<tr><td>커넥션 풀 / DB 커넥션</td><td>경계</td><td>노드 추가는 악화. 풀 크기 · 트랜잭션 경계 · DB 사양 먼저</td></tr>
+<tr><td>메모리 / GC</td><td>앱</td><td>힙 설정 조정 후 재측정. 그래도 부족하면 증설</td></tr>
+<tr><td>외부 API 대기</td><td>앱</td><td>사양과 무관. 캐시 · 타임아웃 · 병렬 호출 조정</td></tr>
+<tr><td>디스크 I/O</td><td>OS</td><td>스토리지 유형 변경. t3는 인스턴스 쪽 EBS 기준선이 먼저 닿는다</td></tr>
+<tr><td>앞단 요청 상한</td><td>입구</td><td>노드를 보호하는 값이면 올리면 죽는다</td></tr>
+</table>
+<table>
+<tr><th class="k">1순위</th><td class="b"></td><th class="k">계층</th><td class="b"></td><th class="k">근거</th><td class="b"></td></tr>
+<tr><th class="k">2순위</th><td class="b"></td><th class="k">계층</th><td class="b"></td><th class="k">근거</th><td class="b"></td></tr>
+<tr><th class="k">하지 말 것</th><td class="b" colspan="3"></td><th class="k">사유</th><td class="b"></td></tr>
+</table>
+
+<h3>[7.7] 장애 전파 경로 — 실제로 본 것만</h3>
+<table>
+<tr><th>시작 (계층)</th><th>전파</th><th>관측</th></tr>
+<tr><td rowspan="5">DB 질의가 느려진다 (DB)</td><td>→ 커넥션 점유 시간 증가 (경계)</td><td class="b"></td></tr>
+<tr><td>→ 풀 대기 발생 (경계)</td><td class="b"></td></tr>
+<tr><td>→ 요청 스레드 점유 (앱)</td><td class="b"></td></tr>
+<tr><td>→ 같은 슬롯의 다른 화면도 느려짐</td><td class="b">관측 / 미관측</td></tr>
+<tr><td>→ 앞단 타임아웃 (입구)</td><td class="b">관측 / 미관측</td></tr>
+<tr><td>디스크 크레딧 소진 (OS)</td><td>→ IO 대기 증가 (D6) → 위로 이어짐</td><td class="b">관측 / 미관측</td></tr>
+<tr><td rowspan="3">로그인이 몰린다 (앱)</td><td>→ 앱 CPU 포화</td><td class="b"></td></tr>
+<tr><td>→ 커넥션 점유 (경계)</td><td class="b"></td></tr>
+<tr><td>→ 조회 화면도 느려짐</td><td class="b">관측 / 미관측</td></tr>
+<tr><td rowspan="3">응답이 커진다 (경계)</td><td>→ 슬롯 메모리 증가 (앱)</td><td class="b"></td></tr>
+<tr><td>→ 컨테이너 상한 종료 (앱)</td><td class="b"></td></tr>
+<tr><td>→ 남은 슬롯에 부하 집중 (W2)</td><td class="b">관측 / 미관측</td></tr>
+<tr><td rowspan="2">캐시가 비워진다 (앱)</td><td>→ 같은 질의 동시 실행 (경계)</td><td class="b">관측 / 미관측</td></tr>
+<tr><td>→ DB CPU 포화 (DB)</td><td class="b">관측 / 미관측</td></tr>
+<tr><td rowspan="2">연결이 몰린다 (입구)</td><td>→ 대기열 넘침 · conntrack (OS)</td><td class="b">관측 / 미관측</td></tr>
+<tr><td>→ 연결 거절 · 타임아웃</td><td class="b">관측 / 미관측</td></tr>
+</table>
+<p class="small">[7.11]의 간섭(혼합 실측 − 예상)이 큰 자원은 여기 전파 경로 하나로 설명돼야 한다. 「미관측」이 많으면 다음 시험 과제다 → [9.3]</p>
+
+<h3>[7.8] 무너지는 방식 — 숫자보다 중요하다</h3>
+<table>
+<tr><th class="lg-g">합격하는 무너짐</th><td>빠른 거절(429/503)로 degrade · 일부 기능만 중단 · 부하가 빠지면 자동 회복</td></tr>
+<tr><th class="lg-r">불합격하는 무너짐</th><td>타임아웃 폭주 · 프로세스 종료 · OS 정지 · 부하가 빠져도 회복 안 됨 · 수동 개입 필요</td></tr>
+</table>
+<table>
+<tr><th class="k">한계 초과 시 동작</th><td class="b"></td></tr>
+<tr><th class="k">무너진 계층</th><td class="b">□ 입구 □ 앱 □ 경계 □ DB □ OS</td></tr>
+<tr><th class="k">프로세스 종료</th><td class="b">□ 없음 □ 앱 ___회 □ DB □ OS (원천: 슬롯 재시작 W2 · OOM O5 · systemd 실패 O14)</td></tr>
+<tr><th class="k">자동 회복</th><td class="b">□ 자동 □ 수동 개입 필요 · 소요 ___</td></tr>
+<tr><th class="k">데이터 유실</th><td class="b">□ 없음 □ 있음 → ___건</td></tr>
+<tr><th class="k">알림이 울렸나</th><td class="b">□ 예 (규칙 ___ · ___분 뒤) □ 아니오</td></tr>
+<tr><th class="k">판정</th><td class="b">□ 합격 □ 불합격</td></tr>
+</table>
+</section>
+
+<section class="ch">
+<h3>[7.9] 알림 임계값 갱신 — 제안만</h3>
+<p class="small">알림 기준값은 관측 설계서 5.3이 정한다(1주 관찰 뒤 · 미확정). 여기서는 시험의 한계값을 근거로 넘기기만 한다.</p>
+<table>
+<tr><th>계층</th><th>지표</th><th>기존</th><th>실측 한계</th><th>제안 (한계의 70%)</th></tr>
+<tr><td>OS</td><td>DB 노드 CPU</td><td>미확정</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>OS</td><td>앱노드 가용 메모리</td><td>미확정</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>앱</td><td>요청 스레드 사용률</td><td>미확정</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>앱</td><td>힙 사용률</td><td>미확정</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>경계</td><td>커넥션 풀 대기</td><td>미확정</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>DB</td><td>복제 지연 시간</td><td>미확정</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>DB</td><td>오래 열린 트랜잭션</td><td>미확정</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>OS</td><td>conntrack</td><td>미확정</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>-</td><td>응답 p95</td><td>미확정</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>-</td><td>5xx 비율</td><td>미확정</td><td class="b"></td><td class="b"></td></tr>
+</table>
+
+<h3>[7.10] 전체 전후 비교 한 표</h3>
+<table>
+<tr><th>계층</th><th>항목</th><th>전 ({{ B or "R__" }})</th><th>후 ({{ R }})</th><th>변화</th></tr>
+{% for r in overall %}
+<tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td class="b">{{ r.base }}</td><td class="b">{{ r.cur }}</td><td class="b">{{ r.change }}</td></tr>
+{% endfor %}
+</table>
+</section>
+
+<section class="ch">
+<h3>[7.11] 구성 요소 × 엔드포인트 점유율 — 누가 무엇을 쓰나</h3>
+<p class="small">[8] 카드는 엔드포인트별, [7.4]는 자원별. 둘을 교차해야 「병목 자원을 줄이려면 어느 엔드포인트를 고치나」가 나온다.</p>
+<h4>(1) 혼합 회차 {{ R }}의 점유율 — 행 합이 100%</h4>
+{% if s.matrix %}
+<table>
+<tr><th>구성 요소</th>{% for c in s.matrix.columns %}<th>{{ c }}</th>{% endfor %}<th>원천</th></tr>
+{% for k, row in s.matrix.rows.items() %}
+<tr><td>{{ row.label }}</td>{% for c in s.matrix.columns %}<td class="b">{{ row.shares[c]|v(1, "%") }}</td>{% endfor %}<td>{{ row.source }}</td></tr>
+{% endfor %}
+</table>
+<p class="small">Redis 명령 줄은 store 메서드 구간 수(명령 수 아님 — 공통 명령은 (3)). 앱 CPU 는 엔드포인트별 원천이 없어 미측정(단독 회차 단가로 추정).</p>
+{% else %}
+<table><tr><th>구성 요소</th><th>미측정 — 추적 · Nginx 로그 없음</th></tr></table>
+{% endif %}
+<p class="small">Tomcat 스레드 칸은 리틀의 법칙(초당 요청 × 평균 응답 시간). 행마다 가장 큰 칸이 그 자원을 줄이려면 고칠 엔드포인트다 — [1.4] 「주로 쓰는 자원」과 [1.1] 1번이 여기서 나온다.</p>
+<h4>(2) 단독 회차의 단가 — 요청 한 건당</h4>
+<table>
+<tr><th>구성 요소</th>{% for u in units %}<th>{{ u.route }} ({{ u.round }})</th>{% else %}<th>단독 회차 (U*) 없음</th>{% endfor %}</tr>
+{% for key, label, d in [("redis", "Redis 명령 (회/건, store 구간)", 2), ("cpu", "앱 CPU (ms/건)", 1), ("db_ms", "DB 시간 (ms/건)", 2), ("queries", "DB 질의 수 (회/건)", 1), ("kb", "응답 바이트 (KB/건)", 1), ("alloc_mb", "힙 할당 (MB/건, 회차 전체 ÷ 요청)", 2)] %}
+<tr><td>{{ label }}</td>{% for u in units %}<td class="b">{{ u[key]|v(d) }}</td>{% else %}<td class="b">미측정</td>{% endfor %}</tr>
+{% endfor %}
+</table>
+<p><span class="formula">단가 = (부하 중 자원 사용 − 무부하 자원 사용) ÷ 처리한 요청 수</span></p>
+<h4>(3) 공통 비용을 따로 뗀다</h4>
+<table><tr><th class="k">요청당 공통 Redis 명령</th><td class="b">{{ nar.redis_common_per_request or "___" }}회 (근거: {{ nar.redis_common_basis|n }}) <span class="small">— 참고: {{ R }} 요청당 Redis 명령 전체 {{ s.redis_commandstats.calls_per_request|v(3) }}회(commandstats 차이 ÷ 도구 요청)</span></td></tr></table>
+<h4>(4) 간섭 — 혼합 실측과 예상의 차이</h4>
+<p class="small">예상 = 단독 단가 × 혼합 회차의 엔드포인트별 요청 수 (합산)</p>
+<table>
+<tr><th>구성 요소</th><th>예상</th><th>혼합 실측</th><th>차이</th><th>해석</th></tr>
+{% for r in (interf or [{"name": "DB 시간"}, {"name": "Redis 명령"}, {"name": "앱 CPU"}]) %}
+<tr><td>{{ r.name }}</td><td class="b">{{ r.exp|v(0) if interf else "" }}</td><td class="b">{{ r.act|v(0) if interf else "" }}</td><td class="b">{{ r.diff if interf else "" }}</td><td class="b">{{ nar.interference[r.name]|n }}</td></tr>
+{% endfor %}
+</table>
+<p class="small">차이가 유의차 하한보다 크면 섞여서 생긴 비용(락 경합 · 캐시 밀어내기 · 풀 대기) → [7.7]로 설명. 단독 회차는 데이터 규모 · 커밋이 바뀔 때만 다시 돈다.</p>
+</section>
+
+<!-- ============ [8] ============ -->
+<section class="ch">
+<h2>[8] 엔드포인트별 카드 <span class="tag">쌓인뒤</span></h2>
+<p class="small">[4][5][6][7]을 그 엔드포인트 관점으로 모은 요약. 빨강 · 노랑은 카드로, 초록은 표 한 줄로.</p>
+
+{% for c in (nar.cards or []) %}
+{% set e = (signals|selectattr("label", "equalto", c.endpoint)|first) or {} %}{% set t = tr_routes[e.route] if e.route else none %}{% set bg = s.budget[e.route] if e.route else none %}
+<h3>카드 {{ loop.index }} {{ c.endpoint }} &nbsp; 상태: {{ "■ 빨강 □ 노랑" if c.status == "빨강" else ("□ 빨강 ■ 노랑" if c.status == "노랑" else "□ 빨강 □ 노랑") }}</h3>
+<table>
+<tr><th class="k">상황 (시나리오)</th><td class="b">{{ c.situation|n }}</td></tr>
+<tr><th class="k">목표 / 실측</th><td class="b">p95 {{ e.target|n }} / {{ e.p95|v(1) }} ms ({{ R }}) · 단독 한계 {{ e.single_limit|v(1) }} TPS · 헤드룸 {{ e.headroom|v(1) }}배</td></tr>
+<tr><th class="k">병목 계층</th><td class="b">{{ c.bottleneck or e.bottleneck_layer|n }}</td></tr>
+<tr><th class="k">자원 점유</th><td class="b">{% if s.matrix and e.route in s.matrix.columns %}DB 시간 {{ s.matrix.rows.db_ms.shares[e.route]|v(1) }}% · 스레드 {{ s.matrix.rows.threads.shares[e.route]|v(1) }}% · Redis {{ s.matrix.rows.redis.shares[e.route]|v(1) }}%{% else %}미측정{% endif %} → [7.11]</td></tr>
+<tr><th class="k">단가</th><td class="b">DB {{ (t.db_ms_per_request.mean if t else none)|v(2) }} ms/건 · 질의 {{ (t.sql_per_request.mean if t else none)|v(1) }}회/건 · CPU 미측정 ms/건 <span class="small">(혼합 회차 값)</span></td></tr>
+<tr><th class="k">계층별 요약 — DB</th><td class="b">{{ c.db|n }}</td></tr>
+<tr><th class="k">계층별 요약 — 앱</th><td class="b">{{ c.app|n }}</td></tr>
+<tr><th class="k">계층별 요약 — 경계</th><td class="b">{{ c.boundary|n }}</td></tr>
+<tr><th class="k">시간 예산</th><td class="b">[7.1] 참조.{% if bg %}{% for lay in ["DB", "앱", "캐시", "외부"] %} {{ lay }} {{ (bg.rows|selectattr("layer", "equalto", lay)|map(attribute="share_pct")|select("number")|sum)|round(1) }}%{{ " ·" if not loop.last }}{% endfor %} (p95 순위 요청, 서버 구간 기준) · 경계(풀 대기)는 요청별로 나눌 원천이 없어 [7.1] 참고 행(합 밖){% endif %}</td></tr>
+<tr><th class="k">전 / 후</th><td class="b">{{ c.before_after|n }}</td></tr>
+<tr><th class="k">데이터 규모 민감</th><td class="b">{{ "■" if c.scale_sensitive else "□" }} 조회 비용이 데이터 양에 비례 (규모가 늘면 헤드룸이 준다)</td></tr>
+<tr><th class="k">남은 것</th><td class="b">{{ c.remaining|n }}</td></tr>
+<tr><th class="k">판정</th><td class="b">{% for v in ["해결", "완화", "남음", "미측정"] %}{{ "■" if c.verdict == v else "□" }} {{ v }} {% endfor %}</td></tr>
+</table>
+{% else %}
+<h3>카드 ① ________________________ &nbsp; 상태: □ 빨강 □ 노랑</h3>
+<p class="small">카드는 results/narrative.json 의 cards 에서 온다 — 빨강 · 노랑 엔드포인트를 사람이 고른다.</p>
+{% endfor %}
+
+<h3>목표를 달성한 엔드포인트 — 초록</h3>
+<table>
+<tr><th>엔드포인트</th><th>실측 p95</th><th>단독 한계</th><th>헤드룸 (분모)</th><th>주 자원</th><th>비고</th></tr>
+{% for e in signals if e.color in ("초록", "통과 · 헤드룸 미측정") %}
+<tr><td class="b">{{ e.label }}</td><td class="b">{{ e.p95|v(1, " ms") }}</td><td class="b">{{ e.single_limit|v(1, " TPS") }}</td><td class="b">{{ e.headroom|v(1, "배") }}{% if nar.headroom_basis %} ({{ nar.headroom_basis }}){% endif %}</td><td class="b">{{ e.main_resource|n }}</td><td class="b">{{ "" if e.color == "초록" else "헤드룸 미측정 — 초록 확정 전" }}</td></tr>
+{% else %}
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+{% endfor %}
+</table>
+</section>
+
+<!-- ============ [9] ============ -->
+<section class="ch">
+<h2>[9] 남은 병목 · 효과 없던 것 · 미측정 <span class="tag">쌓인뒤</span></h2>
+<h3>[9.1] 아직 병목인 것 — 영향 순</h3>
+<table>
+<tr><th class="k">순위</th><th class="k">계층</th><th>병목</th><th>영향</th><th>왜 안 고쳤나</th><th>다음에 할 것</th></tr>
+{% set L = nar.bottlenecks or [] %}
+{% for i in range([L|length, 6]|max) %}{% set r = L[i] if i < L|length else {} %}
+<tr><td>{{ i + 1 }}</td><td class="b">{{ r.layer|n }}</td><td class="b">{{ r.what|n }}</td><td class="b">{{ r.impact|n }}</td><td class="b">{{ r.why|n }}</td><td class="b">{{ r.next|n }}</td></tr>
+{% endfor %}
+</table>
+<p class="small">「다음에 할 것」이 안 붙으면 병목이 아니라 미조사 항목이다 → [9.3]</p>
+
+<h3>[9.2] 해봤는데 효과가 없던 것</h3>
+<table>
+<tr><th class="k">계층</th><th>시도</th><th>기대</th><th>실측 (R__ → R__)</th><th>결론</th></tr>
+{% set L = nar.no_effect or [] %}
+{% for i in range([L|length, 5]|max) %}{% set r = L[i] if i < L|length else {} %}
+<tr><td class="b">{{ r.layer|n }}</td><td class="b">{{ r.what|n }}</td><td class="b">{{ r.expected|n }}</td><td class="b">{{ r.measured|n }}</td><td class="b">{{ r.conclusion|n }}</td></tr>
+{% endfor %}
+</table>
+<p class="small">「효과 없음」도 측정값이다. 추측으로 「안 될 것 같다」고 적지 않는다.</p>
+
+<h3>[9.3] 미측정 · 미확인</h3>
+<table>
+<tr><th class="k">계층</th><th>항목</th><th>왜 못 했나</th><th>확인하려면</th></tr>
+{% for i in range([unmeasured|length, 7]|max) %}{% set r = unmeasured[i] if i < unmeasured|length else {} %}
+<tr><td class="b">{{ r.layer|n }}</td><td class="b">{{ r.item|n }}</td><td class="b">{{ r.why|n }}</td><td class="b">{{ r.how|n }}</td></tr>
+{% endfor %}
+</table>
+<p class="small">이 표의 행 수가 줄어드는 것이 다음 시험의 목표다.</p>
+
+<h3>[9.4] 측정 요소 되먹임 — 시험이 모니터링을 검증한다</h3>
+<p class="small">관측 설계서를 고칠 후보를 넘긴다. 이 문서가 관측 설계서를 고치지 않는다.</p>
+<h4>(가) 한 번도 판단에 쓰이지 않은 요소</h4>
+<table><tr><th>요소 (#)</th><th>수집 비용 (시계열)</th><th>안 쓰인 이유</th><th>제안</th></tr>
+{% set L = nar.feedback.unused or [] %}{% for i in range([L|length, 2]|max) %}{% set r = L[i] if i < L|length else {} %}<tr><td class="b">{{ r.element|n }}</td><td class="b">{{ r.cost|n }}</td><td class="b">{{ r.why|n }}</td><td class="b">{{ r.proposal|n }}</td></tr>{% endfor %}</table>
+<h4>(나) 「있었으면」 했던 요소</h4>
+<table><tr><th>막힌 판단</th><th>필요했던 것</th><th>비용 · 수단</th></tr>
+{% set L = nar.feedback.wanted or [] %}{% for i in range([L|length, 2]|max) %}{% set r = L[i] if i < L|length else {} %}<tr><td class="b">{{ r.blocked|n }}</td><td class="b">{{ r.needed|n }}</td><td class="b">{{ r.cost|n }}</td></tr>{% endfor %}</table>
+<h4>(다) 값이 이상했던 요소</h4>
+<table><tr><th>요소 (#)</th><th>본 값</th><th>기대</th><th>원인</th></tr>
+{% set L = nar.feedback.odd or [] %}{% for i in range([L|length, 2]|max) %}{% set r = L[i] if i < L|length else {} %}<tr><td class="b">{{ r.element|n }}</td><td class="b">{{ r.seen|n }}</td><td class="b">{{ r.expected|n }}</td><td class="b">{{ r.cause|n }}</td></tr>{% endfor %}</table>
+<h4>(라) 알림 규칙과의 대조</h4>
+<table><tr><th>시험에서 본 상태</th><th>울린 규칙</th><th>울렸어야 했나</th></tr>
+{% set L = nar.feedback.alerts or [] %}{% for i in range([L|length, 2]|max) %}{% set r = L[i] if i < L|length else {} %}<tr><td class="b">{{ r.state|n }}</td><td class="b">{{ r.rule|n }}</td><td class="b">{{ r.should|n }}</td></tr>{% endfor %}</table>
+</section>
+
+<!-- ============ [10] ============ -->
+<section class="ch">
+<h2>[10] 그래프 — 질문 하나에 그래프 하나 <span class="tag">매회차</span></h2>
+<table>
+<tr><th class="k">그래프</th><th>질문</th><th>축 · 선</th><th>읽는 법</th></tr>
+<tr><td>G1</td><td>언제 무너졌나</td><td>x 경과 시간 · 좌 p50/p95/p99 · 우 TPS/오류율 · 인가 TPS · 달성 TPS · 활성 스레드. 단계 경계 점선, 워밍업 음영</td><td>달성 TPS가 인가를 못 따라가는 지점 = 포화. 세 줄의 벌어진 모양으로 원인을 좁힌다 → [0.4](4). <b>판정하지 않는다</b> — 판정은 [1.4]</td></tr>
+<tr><td>G2</td><td>어느 자원이 먼저 찼나</td><td>G1과 같은 x · y 0~100% · OS(CPU · 메모리 · EBS 크레딧) · 앱(스레드 · 힙) · 경계(풀 대기) · DB(대기 종류 누적) · 시험(생성기 CPU)</td><td>가장 먼저 100%에 닿는 선이 병목. 생성기 선이 먼저 닿으면 회차를 버린다</td></tr>
+<tr><td>G3</td><td>최적화가 효과가 있었나</td><td>엔드포인트별 p95 전/후 막대 · 목표선</td><td>목표선 위에 남은 막대가 남은 과제</td></tr>
+<tr><td>G4</td><td>시간이 어디서 쓰였나</td><td>엔드포인트별 p95 누적 — 입구 · 앱 · 경계 · DB · 캐시 · 외부 · 설명되지 않은 시간</td><td>가장 두꺼운 구간이 고칠 곳</td></tr>
+<tr><td>G5</td><td>계층별로 얼마나 기여했나</td><td>수평 누적 막대 — DB · 앱 · 경계 · 분리 불가</td><td>「분리 불가」가 크면 [1.3] 때문</td></tr>
+<tr><td>G6</td><td>계속 재면서 어디까지 왔나 ★</td><td>x 회차(등간격) · 좌 p95 중위수 · 우 달성 TPS · 흔들림 띠 · 변경 회차 수직선 · 크레딧 점선</td><td>수직선 뒤 띠를 벗어나 꺾였으면 효과. 띠 안이면 효과 없음. 크레딧과 같이 움직이면 효과가 아니다</td></tr>
+<tr><td>G7</td><td>누가 무엇을 쓰나</td><td>엔드포인트 × 구성 요소 히트맵 ([7.11](1)), 추정 칸은 빗금</td><td>행마다 가장 진한 칸이 고칠 엔드포인트</td></tr>
+</table>
+<div class="note"><b>그래프 규칙</b> — y축은 0에서 · 전후는 같은 축 범위 · 계층 색 통일(OS / 앱 / 경계 / DB / 캐시) · 워밍업 음영 · 캡션에 회차 번호만(조건은 [11.1]) · 본 추세를 본문에 숫자로 다시 적는다 · 노드 지표는 15초 수집이라 그보다 짧은 현상은 안 나온다.</div>
+<h3>그래프 붙일 자리</h3>
+<div class="grid2">
+<table><tr><th>G1 ({{ R }})</th></tr><tr><td style="height:150px">{% if graphs.G1 %}<img src="{{ graphs.G1 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — {{ "기준 회차(--baseline) 없음" if "G1" == "G3" else ("results/contrib.json 없음" if "G1" == "G5" else "원자료 없음") }}</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G1|n }}</td></tr></table>
+<table><tr><th>G2 ({{ R }})</th></tr><tr><td style="height:150px">{% if graphs.G2 %}<img src="{{ graphs.G2 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — {{ "기준 회차(--baseline) 없음" if "G2" == "G3" else ("results/contrib.json 없음" if "G2" == "G5" else "원자료 없음") }}</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G2|n }}</td></tr></table>
+<table><tr><th>G3</th></tr><tr><td style="height:150px">{% if graphs.G3 %}<img src="{{ graphs.G3 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — {{ "기준 회차(--baseline) 없음" if "G3" == "G3" else ("results/contrib.json 없음" if "G3" == "G5" else "원자료 없음") }}</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G3|n }}</td></tr></table>
+<table><tr><th>G4</th></tr><tr><td style="height:150px">{% if graphs.G4 %}<img src="{{ graphs.G4 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — {{ "기준 회차(--baseline) 없음" if "G4" == "G3" else ("results/contrib.json 없음" if "G4" == "G5" else "원자료 없음") }}</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G4|n }}</td></tr></table>
+<table><tr><th>G5</th></tr><tr><td style="height:150px">{% if graphs.G5 %}<img src="{{ graphs.G5 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — {{ "기준 회차(--baseline) 없음" if "G5" == "G3" else ("results/contrib.json 없음" if "G5" == "G5" else "원자료 없음") }}</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G5|n }}</td></tr></table>
+<table><tr><th>G6</th></tr><tr><td style="height:150px">{% if graphs.G6 %}<img src="{{ graphs.G6 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — {{ "기준 회차(--baseline) 없음" if "G6" == "G3" else ("results/contrib.json 없음" if "G6" == "G5" else "원자료 없음") }}</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G6|n }}</td></tr></table>
+</div>
+<table><tr><th>G7 ({{ R }})</th></tr><tr><td style="height:150px">{% if graphs.G7 %}<img src="{{ graphs.G7 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — 원자료 없음</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G7|n }}</td></tr></table>
+</section>
+
+<!-- ============ [11] ============ -->
+<section class="ch">
+<h2>[11] 회차 관리와 재현 정보 <span class="tag">매회차</span></h2>
+<h3>[11.1] 회차 기록표 — 한 회차가 한 줄</h3>
+<p class="small">이 표가 문서의 색인이다. 안 적힌 회차는 없는 회차다. 판정은 유의차 하한으로 — 효과 / 변화없음 / 나빠짐. 단독 회차(U*)는 「단가」.</p>
+<table>
+<tr><th>회차</th><th>시각</th><th>시나리오</th><th>커밋</th><th>마이그레이션</th><th>바꾼 것 (한 가지만)</th><th>p95</th><th>TPS</th><th>EBS 크레딧</th><th>판정</th></tr>
+{% for r in rounds %}
+<tr><td>{{ r.round }}</td><td class="b">{{ r.time|n }}</td><td class="b">{{ r.scenario|n }}</td><td class="b">{{ r.commit|n }}</td><td class="b">{{ r.migration|n }}</td><td class="b">{{ r.changed|n }}</td><td class="b">{{ r.p95|v(1) }}</td><td class="b">{{ r.tps|v(2) }}</td><td class="b">{{ r.ebs|v(1, "%") }}</td><td class="b">{{ r.verdict|n }}</td></tr>
+{% endfor %}
+<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+</table>
+<h4>회차를 버려야 하는 경우 — 버리고 다시 돈다</h4>
+<table>
+<tr><td class="k">□</td><td>부하 생성기가 먼저 한계에 닿았다 (생성기 CPU를 안 쟀으면 판정 불가 → [9.3])</td></tr>
+<tr><td class="k">□</td><td>초기화를 건너뛰었다 → [11.2]</td></tr>
+<tr><td class="k">□</td><td>측정 중 다른 작업이 노드에 돌았다 (배포 · 배치 · 자동 청소)</td></tr>
+<tr><td class="k">□</td><td>워밍업 구간이 결과에 섞였다</td></tr>
+<tr><td class="k">□</td><td>오류율이 평소 회차와 다르다 — 환경 문제와 성능 문제가 섞였다</td></tr>
+<tr><td class="k">□</td><td>회차 중 EBS 크레딧이 바닥났다</td></tr>
+<tr><td class="k">□</td><td>슬롯이 재시작했다 / 한 슬롯이 빠졌다 (W2)</td></tr>
+<tr><td class="k">※</td><td>[0.3] 반영 확인에서 요소가 비었으면 버리지 않고 그 칸만 「미측정」</td></tr>
+</table>
+<table><tr><th class="k">회차 간 간격 (고정)</th><td class="b">{{ nar.round_interval_min or "____" }} 분</td></tr></table>
+<p class="small">시각은 KST, p95 는 ms(도구 · 워밍업 제외), EBS 크레딧은 회차 전 DB 노드 최솟값. 판정은 직전 혼합 회차의 p95 대비 유의차 하한으로.</p>
+</section>
+
+<section class="ch">
+<h3>[11.2] 회차 전 초기화 — 매 회차 같은 자리에서 출발한다</h3>
+<table>
+<tr><th>무엇이 남는가</th><th>어떻게 끊는가</th><th>끊었나</th></tr>
+<tr><td>DB 버퍼 · OS 캐시</td><td>① 매 회차 비운다(콜드 고정) / ② 매 회차 같은 워밍업 — 하나로 고정</td><td class="b">□</td></tr>
+<tr><td>질의 통계 누적</td><td>회차 시작에 통계를 비운다</td><td class="b">□</td></tr>
+<tr><td>실행 계획 캐시</td><td>커넥션을 새로 맺는다</td><td class="b">□</td></tr>
+<tr><td>커넥션 풀 · JIT 상태</td><td>워밍업 구간을 두고 결과에서 뺀다 (길이 고정)</td><td class="b">□</td></tr>
+<tr><td>테이블 통계 변화</td><td>쓰기가 있던 회차 뒤에는 통계를 다시 받는다</td><td class="b">□</td></tr>
+<tr><td>누적된 쓰기</td><td>회차 전 행수를 적는다. 늘어나면 조건이 달라진 것</td><td class="b">□</td></tr>
+<tr><td>자동 청소가 도는 중</td><td>끝난 뒤에 시작한다</td><td class="b">□</td></tr>
+<tr><td>가시성 맵 · 죽은 행</td><td>쓰기가 있던 회차 뒤에는 VACUUM. 비율 기록 (D12)</td><td class="b">□</td></tr>
+<tr><td>EBS · CPU 크레딧 소모</td><td>회복을 기다리거나 잔량을 적는다. 문턱 ___% 이상에서 출발</td><td class="b">□</td></tr>
+<tr><td>배치 스케줄</td><td>일일 배치가 회차와 겹치지 않게</td><td class="b">□</td></tr>
+</table>
+<table>
+<tr><th class="k">이 문서의 선택</th><td class="b">{{ "■" if nar.cache_mode == "cold" else "□" }} ① 콜드 고정 (질의 자체를 본다) &nbsp; {{ "■" if nar.cache_mode == "warm" else "□" }} ② 워밍업 고정 (운영 상태를 본다)</td></tr>
+<tr><th class="k">워밍업 길이</th><td class="b">{{ s.window.warmup_sec if s.window.warmup_sec else "____" }} 초 (결과에서 제외, {{ R }})</td></tr>
+</table>
+<h4>회차 전 확인 — 직전 회차와 같으면 출발점이 같다</h4>
+<table>
+<tr><th>항목</th>{% for c in pre_cols %}<th>{{ c.round }}</th>{% endfor %}{% for i in range(4 - pre_cols|length) %}<th>R__</th>{% endfor %}</tr>
+{% for key, label in [("rows", "대상 테이블 행수 (DB-01)"), ("index", "인덱스 크기 합계 (DB-01)"), ("hit", "DB 버퍼 적중률 (DB-01, 누적)"), ("vis", "가시성 맵 비율 (주요 표)"), ("ebs", "EBS 크레딧 (DB-01 / DB-02)"), ("cpu", "CPU 크레딧 (네 노드)"), ("slots", "슬롯 넷이 살아 있다")] %}
+<tr><td>{{ label }}</td>{% for c in pre_cols %}<td class="b">{{ c[key]|n if c[key] is given else "미측정" }}</td>{% endfor %}{% for i in range(4 - pre_cols|length) %}<td class="b"></td>{% endfor %}</tr>
+{% endfor %}
+{% for c in pre_cols if c.warnings %}<tr><td>경고 ({{ c.round }})</td><td class="b" colspan="4">{{ c.warnings|join(" · ") }}</td></tr>{% endfor %}
+</table>
+
+<h3>[11.3] 회차 간 고정값 — 바뀌면 비교가 끊긴다</h3>
+<table>
+<tr><th class="k">계층</th><th>항목</th><th>값 · 바뀐 회차</th></tr>
+<tr><td>앱</td><td>커밋</td><td class="b">{{ s.meta.commit|n }} ({{ R }})</td></tr>
+<tr><td>DB</td><td>마이그레이션 버전</td><td class="b">{{ s.meta.migration or "V__" }} ({{ R }})</td></tr>
+<tr><td>DB</td><td>설정</td><td class="b">pg_settings 전문 첨부 (R__)</td></tr>
+<tr><td>앱</td><td>설정</td><td class="b">application.yml · 환경 변수 (R__)</td></tr>
+<tr><td>OS</td><td>노드 사양</td><td class="b"></td></tr>
+<tr><td>앱</td><td>컨테이너 메모리 상한</td><td class="b"></td></tr>
+<tr><td>DB</td><td>데이터 규모</td><td class="b">{{ s.meta.data_scale|n }} (바뀐 회차 R__)</td></tr>
+<tr><td>-</td><td>부하 도구 · 버전</td><td class="b">{{ s.meta.tool|n }}</td></tr>
+<tr><td>-</td><td>테스트 플랜 파일</td><td class="b">{{ s.meta.plan|n }}</td></tr>
+<tr><td>-</td><td>실행 명령</td><td class="b">{{ s.meta.command|n }}</td></tr>
+<tr><td>-</td><td>부하 생성기 사양</td><td class="b">{{ s.meta.generator|n }}</td></tr>
+<tr><td>-</td><td>측정자</td><td class="b">{{ s.meta.operator or nar.cover.author|n }}</td></tr>
+<tr><td>-</td><td>응답 시간의 정본</td><td>부하 도구 결과 (.jtl) — 서버 지표는 대조용</td></tr>
+<tr><td>-</td><td>지표 수집 간격</td><td>15초 (Prometheus) · 회차 원자료는 노드에서 직접 {{ s.meta.interval_s or "5" }}초</td></tr>
+<tr><td>-</td><td>회차 길이 하한</td><td class="b">____ 분 (미확정 — 흔들림 3회 전에 정한다)</td></tr>
+<tr><td>-</td><td>측정 수단</td><td class="b">추적 □ 비율 ___ · 프로파일러 □ ___ · auto_explain □ 문턱 ___ ms (R__)</td></tr>
+<tr><td>-</td><td>단독 회차를 다시 도는 조건</td><td>데이터 규모 · 커밋이 바뀔 때</td></tr>
+<tr><td>OS</td><td>EBS 크레딧 출발 문턱</td><td class="b">___ % 이상</td></tr>
+</table>
+<p class="small">설정은 노드에서 직접 읽은 값으로. 회차를 돌리는 중에 반영되면 그 회차부터 다른 측정이다.</p>
+</section>
+
+<section class="ch">
+<h3>[11.4] 원자료 — 회차마다 따로 보관한다</h3>
+<p>폴더 이름에 회차 번호를 넣는다 — <code>results/R07_2026-10-03_1547_S1/</code></p>
+<div class="warn">Grafana Cloud의 지표 · 로그 · 추적은 보존 기간이 지나면 사라진다(기간 확인 필요). 회차 구간을 내려받아 폴더에 넣는다. 화면 링크만 남기면 나중에 열리지 않는다.</div>
+<table>
+<tr><th colspan="2">매 회차 (가볍게 — 자동으로)</th></tr>
+<tr><td class="k">□</td><td>결과 파일 (.jtl 또는 csv) · 부하 도구 로그</td></tr>
+<tr><td class="k">□</td><td>pg_stat_statements 상위 20 (DB-01 · DB-02 둘 다)</td></tr>
+<tr><td class="k">□</td><td>노드 지표 구간 데이터 (CPU · 메모리 · GC · 커넥션)</td></tr>
+<tr><td class="k">□</td><td>회차 전 확인 — [11.2]</td></tr>
+<tr><td class="k">□</td><td>크레딧 스냅샷 (회차 전 · 후)</td></tr>
+<tr><td class="k">□</td><td>대기 종류별 활성 세션 구간 데이터 (D6)</td></tr>
+<tr><td class="k">□</td><td>Nginx 접근 로그 구간 (uct · urt · 경로별 바이트)</td></tr>
+<tr><td class="k">□</td><td>부하 생성기 자원 구간 데이터</td></tr>
+<tr><td class="k">□</td><td>[0.3] 반영 확인 한 줄</td></tr>
+<tr><th colspan="2">변경이 있던 회차만 (무거운 것)</th></tr>
+<tr><td class="k">□</td><td>EXPLAIN (ANALYZE, BUFFERS) 전문 · pg_settings 전문</td></tr>
+<tr><td class="k">□</td><td>pg_stat_user_indexes (두 노드) · 테이블 통계</td></tr>
+<tr><td class="k">□</td><td>가장 느린 요청 3건의 trace_id와 span 트리</td></tr>
+<tr><td class="k">□</td><td>프로파일 또는 스레드 덤프</td></tr>
+<tr><td class="k">□</td><td>엔드포인트별 추적 집계 (요청당 SQL 수 · DB 시간) — [7.11](1)</td></tr>
+<tr><th colspan="2">단독 회차만</th></tr>
+<tr><td class="k">□</td><td>무부하 기준 자원값 (단가 계산의 빼는 값)</td></tr>
+<tr><td class="k">□</td><td>단가 표 한 열 — [7.11](2)</td></tr>
+</table>
+</section>
+
+<!-- ============ [12] ============ -->
+<section class="ch">
+<h2>[12] 작성 순서 · 마지막 점검 <span class="tag">고정</span></h2>
+<table>
+<tr><th colspan="3">■ 1단계 — 측정 시작 전에 한 번 (여기부터다)</th></tr>
+<tr><td class="k">1</td><td>[0.3] 측정 요소</td><td>무엇으로 무엇을 재나 · 측정 수단 켜고 끄기</td></tr>
+<tr><td class="k">2</td><td>[11.3] 회차 간 고정값</td><td>바뀌면 비교가 끊기는 것들</td></tr>
+<tr><td class="k">3</td><td>[11.2] 초기화 절차</td><td>① 콜드 / ② 워밍업 중 하나를 고정</td></tr>
+<tr><td class="k">4</td><td>[2] 데이터 적재</td><td></td></tr>
+<tr><td class="k">5</td><td>[3] 시나리오</td><td>상황 서술</td></tr>
+<tr><td class="k">6</td><td>[0.2](3) 흔들림 3회 ★</td><td>첫 측정. 유의차 하한을 정하지 않고 넘어가지 않는다</td></tr>
+<tr><td class="k">7</td><td>단독 회차 (U*)</td><td>엔드포인트마다 한 번 → [7.11](2)</td></tr>
+<tr><th colspan="3">■ 2단계 — 매 회차 직후 (1분. 미루면 섞인다)</th></tr>
+<tr><td class="k">8</td><td>[11.1] 회차 기록표에 한 줄</td><td></td></tr>
+<tr><td class="k">9</td><td>[11.4] 원자료를 회차 폴더에</td><td></td></tr>
+<tr><td class="k">10</td><td>[10] G6에 점 하나</td><td></td></tr>
+<tr><td class="k">11</td><td>[5.6](가) 회차 시작값 한 줄</td><td></td></tr>
+<tr><td class="k">12</td><td>[1.2] 장부에 판정</td><td>효과 / 변화없음 / 나빠짐</td></tr>
+<tr><th colspan="3">■ 3단계 — 회차가 쌓인 뒤</th></tr>
+<tr><td class="k">13</td><td>[1.3] 바뀐 다른 것</td><td>안 적히면 나머지가 무의미해진다</td></tr>
+<tr><td class="k">14</td><td>[7.1] 시간 예산</td><td>각 계층의 몫이 갈린다</td></tr>
+<tr><td class="k">15</td><td>[7.11] 구성 요소 × 엔드포인트</td><td>병목 자원을 누가 쓰나</td></tr>
+<tr><td class="k">16</td><td>[4] DB 계층</td><td></td></tr>
+<tr><td class="k">17</td><td>[5] 앱 계층</td><td></td></tr>
+<tr><td class="k">18</td><td>[6] 경계 ★</td><td>16~17을 다 적은 뒤에 보면 보인다</td></tr>
+<tr><td class="k">19</td><td>[7] 통합 (7.2 이후) — 헤드룸 · 포화점</td><td></td></tr>
+<tr><td class="k">20</td><td>[10] 그래프 G1~G5 · G7</td><td></td></tr>
+<tr><td class="k">21</td><td>[8] 엔드포인트 카드</td><td></td></tr>
+<tr><td class="k">22</td><td>[9] 남은 것 · 효과 없던 것 · 미측정 · 되먹임</td><td></td></tr>
+<tr><td class="k">23</td><td>[1] 한 장 요약</td><td>마지막에 쓴다</td></tr>
+</table>
+
+<h3>읽는 사람이 묻는 것 — 답이 문서 안에 있는가</h3>
+<table>
+<tr><th>질문</th><th>답이 나오는 곳</th></tr>
+<tr><td>몇 번 쟀나 / 흔들림은 얼마인가</td><td>[0.2](3) · [11.1]</td></tr>
+<tr><td>통과했나 / 안정적인가</td><td>[1.4] 신호등 · [7.5] 대표 헤드룸</td></tr>
+<tr><td>조건이 다른 숫자를 섞지 않았나</td><td>[1.3]</td></tr>
+<tr><td>캐시가 더워진 덕이 아닌가</td><td>[11.2] ① / ② 선택</td></tr>
+<tr><td>크레딧 덕(탓)이 아닌가</td><td>[11.2] · [11.1] 크레딧 칸</td></tr>
+<tr><td>왜 이 지표들로 쟀나</td><td>[0.3] · 관측 설계서 3장</td></tr>
+<tr><td>이 자원을 누가 제일 많이 쓰나</td><td>[7.11] · G7</td></tr>
+<tr><td>인덱스 때문에 쓰기가 느려지지 않나</td><td>[4.3] 쓰기 대가</td></tr>
+<tr><td>지금 몇 명까지 받을 수 있나</td><td>[7.5] 포화점 · 헤드룸 · 용량</td></tr>
+<tr><td>이 중 제일 효과가 큰 것은</td><td>[1.2] 기여도 · G5</td></tr>
+<tr><td>안 해 본 것은 무엇인가</td><td>[9.3] 미측정</td></tr>
+<tr><td>왜 그 방법을 안 골랐나</td><td>[9.2] 효과 없던 것</td></tr>
+<tr><td>모니터링에 무엇을 더하고 뺄까</td><td>[9.4] 측정 요소 되먹임</td></tr>
+</table>
+</section>
+
+<section class="ch">
+<h3>마지막 점검</h3>
+<table>
+<tr><th class="k">✓</th><th>항목</th></tr>
+<tr><td class="b">□</td><td>「개선되었다」고 쓴 모든 문장에 전후 값이 붙어 있다</td></tr>
+<tr><td class="b">□</td><td>그 전후 값에 회차 번호가 붙어 있다 — 201 ms(R03) → 31 ms(R04)</td></tr>
+<tr><td class="b">□</td><td>효과로 적은 변화가 전부 유의차 하한보다 크다 — [0.2](3)</td></tr>
+<tr><td class="b">□</td><td>합격 · 불합격을 p95 + 5xx + 처리량 정체로만 판정했다 (p50 · p99로 판정하지 않았다) — [0.4]</td></tr>
+<tr><td class="b">□</td><td>「안정적」이라는 말이 헤드룸 배수를 적은 자리에서만 쓰였다</td></tr>
+<tr><td class="b">□</td><td>헤드룸을 적은 모든 자리에 분모와 시나리오가 함께 있다</td></tr>
+<tr><td class="b">□</td><td>대표 헤드룸이 시나리오별 값 중 가장 작은 것이다</td></tr>
+<tr><td class="b">□</td><td>헤드룸이 성립하는 데이터 규모가 현재 규모와 같다 (다르면 용량 판단에 쓰지 않았다)</td></tr>
+<tr><td class="b">□</td><td>[11.1]의 모든 회차가 본문에서 쓰였거나 버려졌다고 표시돼 있다</td></tr>
+<tr><td class="b">□</td><td>빈 칸이 추측으로 메워져 있지 않다 (「미측정」으로 남겼다)</td></tr>
+<tr><td class="b">□</td><td>[1.2] 장부의 ✗ · 미측정 · 미착수가 [9]에 전부 들어 있다</td></tr>
+<tr><td class="b">□</td><td>[1.2]의 각 행이 [4][5][6] 중 한 곳에 상세가 있다</td></tr>
+<tr><td class="b">□</td><td>[7.3] 대가 표에 「측정 안 됨」이 남아 있지 않다</td></tr>
+<tr><td class="b">□</td><td>[7.1] 시간 예산의 「설명되지 않은 시간」이 5% 미만이다</td></tr>
+<tr><td class="b">□</td><td>모든 방안에 근거 · 전제 · 대가가 붙어 있다</td></tr>
+<tr><td class="b">□</td><td>계층 색이 그래프와 본문에서 같다</td></tr>
+<tr><td class="b">□</td><td>[1.1] 결론 세 줄이 [1.2] 장부와 모순되지 않는다</td></tr>
+<tr><td class="b">□</td><td>[0.3]의 모든 요소가 본문에서 쓰였거나 [9.4](가)에 「안 쓰임」으로 적혀 있다</td></tr>
+<tr><td class="b">□</td><td>응답 시간이 전부 부하 도구 결과에서 나왔다 (서버 지표 아님)</td></tr>
+<tr><td class="b">□</td><td>비교한 회차끼리 크레딧 출발값이 문턱 이상이었다</td></tr>
+<tr><td class="b">□</td><td>[7.11]에서 추정(단독 단가) 칸과 실측 칸이 구분돼 있다</td></tr>
+</table>
+<table class="sig" style="margin-top:20px">
+<tr><th class="k">작성</th><td class="b"></td><th class="k">검토</th><td class="b"></td><th class="k">일자</th><td class="b"></td></tr>
+</table>
+</section>
+
+</body></html>

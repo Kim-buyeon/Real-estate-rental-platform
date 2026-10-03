@@ -286,6 +286,22 @@ Grafana 밖에서 AWS CloudWatch가 거는 경보다. **무엇을 거는지만 �
 | 하루 추적 양 | 월 50GB(2.3) 안에 드는지 — 샘플링 비율의 근거. 추적 하나의 크기는 위 실측 |
 | Tempo에 실제로 들어오는가 | 로컬 확인은 자체 수신기였다 |
 
+### 6.1 측정 모드 — 부하 시험 동안만
+
+**부하 시험 결과 보고서의 칸(함수별 시간 · Redis 시간 · 배치 구간)을 채우려고 시험 동안만 추적을 넓힌다**(INF-06, #378). 평시 설정은 위 그대로다. 노드 `infra/.env`의 `OTEL_AGENT_PROFILE=agent-measure`가 운영 Compose에서 `infra/otel/agent-measure.yaml`을 붙이고, 켜고 끄는 절차는 `chaos-harness/measure/README.md`가 갖는다. **켜는 것 자체가 측정 조건이다** — 회차 기록에 남긴다.
+
+| 항목 | 평시(`agent.yaml`) | 측정 모드(`agent-measure.yaml`) | 근거 |
+|---|---|---|---|
+| 메서드 구간 | 없다 | service · calculator · store · external 패키지와 Redis를 직접 쓰는 클래스의 메서드. 목록은 `chaos-harness/measure/tools/gen-methods.py`가 소스에서 만든다 | 위 「잡히지 않는 구간」 — 컨트롤러 · 서비스 구간이 없어 「어느 함수가」를 못 본다. 에이전트 2.31.1의 구조형 설정(`instrumentation/development.java.methods.include` — `class` · `methods[].name`, 소스 `MethodConfiguration`)을 로컬에서 확인했다 |
+| Redis 시간 | 없다(W9가 대신) | **Redis를 쓰는 클래스의 메서드 구간이 Redis 왕복을 감싼다** — store 패키지 + 그 밖의 다섯(분산 락 · 스트림 티켓 · SSE 발송 · 건축HUB 일일 한도 · 초당 한도). 집계는 이 구간을 Redis 시간으로 센다 | Redis 구간이 잡히지 않는다(위). Redis를 쓰는 클래스(`RedisTemplate` · 락)를 저장소 전체에서 찾아 목록에 넣었다. 안쪽 클래스(락 갱신 `Renewal`)는 `Outer$Inner` 이름으로 적어야 잡힌다(#378 일회용 JVM 실측) |
+| 행마다 불리는 함수 | — | **목록에서 뺀다** — 추적 하나에 100번 넘게 불린 것. 그 비용은 프로파일러로 본다 | #378 로컬 실측 — 기동 따라잡기 배치 한 번이 구간 약 26만 개, 지도 마커의 거리 계산이 요청 하나에 498 ~ 1,003번. 실데이터 클라이언트의 항목 해석 함수는 로컬에서 돌지 않아 소스를 보고 뺐다(정적 판단) |
+| 요청 밖 구간 | 버린다 | 남긴다(배치 · 스케줄 · 외부 호출). `/actuator`는 그대로 버린다 | 배치 동시 시나리오의 시간을 본다. 시험 중 배치는 대개 꺼 둔다 |
+| 사본 | 없다 | 부하 생성기의 수신기(OTel Collector, `chaos-harness/measure/node/trace-receiver.sh`)로 두 번째 내보내기(`OTEL_MEASURE_RECEIVER_ENDPOINT`) | Tempo는 보존 14일(2.3)이고 읽으려면 토큰이 든다. 파일 내보내기(`otlp_file/development`)는 2.31.1에서 `file://`을 무시하고 표준 출력으로 내보낸다(#378 로컬 실측) — 앱 로그와 섞여 Loki로 간다 |
+
+**대가** — 구간 수와 내보내기 하나가 는다. 같은 요청 · 같은 시간으로 평시와 비교한 로컬 실측은 #378 「로컬 실측」 코멘트에 있다 — 슬롯 메모리 최대 627 → 644 MiB(상한 680), 응답 시간은 회차가 1번씩이라 흔들림과 구분되지 않았다. 노드 값은 시험 직전 반영 때 잰다.
+
+**Grafana Cloud 예산(2.3)** — 측정 모드도 첫 내보내기(Grafana)를 그대로 두므로 늘어난 구간이 추적 예산(월 50GB)에 들어간다. 로컬에서 수신기 파일이 요청 하나에 약 17 KB(압축 전 JSON)였다 — 평시 추적 하나 1.7 KB(압축 전, 위 로컬 실측)의 약 10배다. 압축 비율이 평시(약 8 : 1)와 같다고 보면 요청 하나에 약 2 KB, 100 RPS · 10분 회차가 약 120 MB다. **추정이다** — 반영 뒤 Grafana Cloud 사용량 화면으로 확인한다. 배치가 켜진 채 측정 모드를 켜면 이 계산이 무너진다(기동 배치 한 번 약 26만 구간) — `measure-mode.sh`가 배치 넷이 꺼져 있을 때만 켠다.
+
 ---
 
 ## 7. 스냅샷 점검
@@ -306,4 +322,4 @@ Grafana 밖에서 AWS CloudWatch가 거는 경보다. **무엇을 거는지만 �
 |---|---|
 | 자원 압박(PSI) | 네 노드 커널에서 꺼져 있다(`/proc/pressure` 없음). 켜려면 부팅 옵션 `psi=1`과 재부팅이 든다. O2 · O8로 대신한다 |
 | 질의별 계획 수립 시간(`pg_stat_statements.track_planning`) | PG 문서: 「같은 구조의 문장을 많은 동시 연결이 실행해 적은 수의 항목을 다투면 눈에 띄는 성능 저하가 있을 수 있다」([PG 17](https://www.postgresql.org/docs/17/pgstatstatements.html)) — 지도 조회가 그 모양이다. 계획 시간은 따로 보지 않는다(추적의 JDBC 구간은 계획 + 실행을 합친 시간이다) |
-| `auto_explain` · 느린 질의 로그 | **DB 노드에는 로그 전송기(Vector)가 없어** 기록이 노드 밖으로 나가지 않는다. 느린 SQL은 S1과 추적(6장)이 찾는다. (`auto_explain`은 `session_preload_libraries`로 넣으면 DB 재시작 없이 새 세션부터 적용된다 — [PG 17](https://www.postgresql.org/docs/17/auto-explain.html). 재시작이 이유가 아니다) |
+| `auto_explain` · 느린 질의 로그 — **상시로는** | **DB 노드에는 로그 전송기(Vector)가 없어** 기록이 노드 밖으로 나가지 않는다. 느린 SQL은 S1과 추적(6장)이 찾는다. (`auto_explain`은 `session_preload_libraries`로 넣으면 DB 재시작 없이 새 세션부터 적용된다 — [PG 17](https://www.postgresql.org/docs/17/auto-explain.html). 재시작이 이유가 아니다.) **부하 시험 동안에는 켠다** — DB 단위 설정으로 켜고, 회차 구간의 기록을 컨테이너 로그에서 가져온다(`chaos-harness/measure/node/auto-explain.sh` · `collect.sh`, #378). 운영에서 실제로 그 계획으로 도는지가 결과 보고서의 칸이다 |

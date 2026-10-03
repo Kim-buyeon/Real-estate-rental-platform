@@ -1,0 +1,36 @@
+# 추적 수신기 설정 — 부하 생성기에서 도는 OpenTelemetry Collector(INF-06 #378). trace-receiver.sh 가 컨테이너에 붙인다.
+#
+# 측정 모드의 슬롯 에이전트가 평시 내보내기(Grafana Cloud)와 별도로 사본을 여기로 보낸다(OTLP/HTTP). 받은 구간을
+# 파일 하나에 줄 단위 JSON(OTLP JSON — 한 줄이 한 번의 내보내기 묶음)으로 쓴다. 회차 구간 자르기는 집계(Python)가 한다.
+# Tempo 를 거치지 않는 이유 — 읽기 토큰이 없고 보존이 14일이다(#378 계획 「정한 것」).
+receivers:
+  otlp:
+    protocols:
+      http:
+        # 컨테이너 안 주소다. 밖으로 어디에 여는지는 trace-receiver.sh 의 게시 주소(BIND_ADDR)가 정한다
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # 컨테이너 상한 256m 안에서 먼저 거절한다 — 넘치면 에이전트 쪽이 다시 보내거나 버린다(버린 수는 에이전트 로그)
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 200
+    spike_limit_mib: 50
+  batch: {}
+
+exporters:
+  file:
+    path: /data/spans.jsonl
+    format: json
+    # append — 파일을 O_APPEND 로 연다. collect.sh 가 복사한 뒤 비우면 다음 쓰기가 파일 앞부터 다시 쌓인다.
+    # false(기본)면 기동 때 비우고 쓰던 자리 뒤에 계속 써서, 비운 파일 앞이 빈 바이트로 채워진다.
+    # 로컬 확인(0.136.0, Docker 볼륨 · Windows 바인드 둘 다) — 두 묶음 → 복사 · 비우기 → 한 묶음이면 true 는 셋째 한 줄 · NUL 0 B,
+    # false 는 앞 666 B 가 NUL 인 999 B 였다. 이미지 판을 올리면 다시 확인한다
+    append: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [file]

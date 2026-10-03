@@ -237,8 +237,10 @@ x-app: &app
   # 같은 자리를 슬롯에 붙이면 앱 컨테이너가 Redis 서버 키를 읽는다. 슬롯에는 CA 하나만 든 디렉터리를 붙인다.
   volumes:
     - ${REDIS_TLS_CA_DIR:-/etc/rental/redis-tls-ca}:/etc/rental/redis-tls:ro
-    # 추적 에이전트 설정(위 JAVA_TOOL_OPTIONS 의 -Dotel.config.file). 스위치가 꺼져 있으면 읽지 않는다
-    - ./otel/agent.yaml:/etc/rental/otel/agent.yaml:ro
+    # 추적 에이전트 설정(위 JAVA_TOOL_OPTIONS 의 -Dotel.config.file). 스위치가 꺼져 있으면 읽지 않는다.
+    # OTEL_AGENT_PROFILE 이 붙일 파일을 고른다 — 비우면 평시(agent), 부하 시험 동안만 agent-measure(메서드 구간 · 배치 구간 ·
+    # 생성기 수신기로 사본, INF-06 #378). agent-measure 는 OTEL_MEASURE_RECEIVER_ENDPOINT(env_file)가 있어야 한다
+    - ./otel/${OTEL_AGENT_PROFILE:-agent}.yaml:/etc/rental/otel/agent.yaml:ro
 
 # PostgreSQL 서버 설정 — primary(postgres) · standby(postgres-standby)가 **같은 목록**을 쓴다(INF-03).
 # hot standby 는 max_connections · max_worker_processes · max_locks_per_transaction · max_prepared_transactions 가
