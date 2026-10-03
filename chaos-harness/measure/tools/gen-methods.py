@@ -150,6 +150,9 @@ def classes():
             name = m.group(1)
             if name in KEYWORDS or not is_declaration(code, m):
                 continue
+            # 안쪽 record 의 머리(record X(...) {)는 선언 정규식에 메서드처럼 걸린다 — 형 이름이면 뺀다
+            if any(t[1] == name and t[0] != "class" for t in found):
+                continue
             # 선언을 품은 가장 안쪽 형 — 메서드는 그 형의 이진 이름(Outer$Inner) 소속이다
             owner = min((t for t in found if t[2] < m.start(1) < t[3]), key=lambda t: t[3] - t[2], default=None)
             if owner is None or owner[0] != "class" or name == owner[1]:

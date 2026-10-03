@@ -86,7 +86,6 @@ instrumentation/development:
             - name: issue
             - name: consume
             - name: parse
-            - name: TicketClaims
             - name: keyOf
         - class: com.duri.rentalplatform.domain.admin.service.CriteriaCommandService
           methods:
@@ -187,16 +186,12 @@ instrumentation/development:
         - class: com.duri.rentalplatform.domain.property.calculator.MarketPriceCalculator
           methods:
             - name: from
-            - name: MarketPrice
-            - name: DongAreaKey
-            - name: DistrictAreaKey
         - class: com.duri.rentalplatform.domain.property.service.LedgerCommandService
           methods:
             - name: collectIfAbsent
             - name: fetchMockReplacement
             - name: replaceMock
             - name: findMockLedgerLookup
-            - name: MockLedgerState
             - name: findUncollected
             - name: lookupOf
             - name: normalizeAddress
@@ -227,7 +222,6 @@ instrumentation/development:
             - name: updateMarketPrices
             - name: completeReanalysis
             - name: fillLedgerKeys
-            - name: CodeKey
         - class: com.duri.rentalplatform.domain.property.service.PropertyQueryService
           methods:
             - name: getDistrictCounts
@@ -236,7 +230,6 @@ instrumentation/development:
             - name: validBox
             - name: getDetail
             - name: searchMarkersInRadius
-            - name: Ranked
             - name: searchList
             - name: usesLeaseRatioIndex
             - name: selectListByLeaseRatio
@@ -354,7 +347,6 @@ instrumentation/development:
             - name: requestPasswordReset
             - name: confirmPasswordReset
             - name: issueTokens
-            - name: LoginCredential
         - class: com.duri.rentalplatform.domain.user.service.UserQueryService
           methods:
             - name: getProfile
@@ -383,12 +375,10 @@ instrumentation/development:
           methods:
             - name: normalize
             - name: unavailable
-            - name: JusoResponse
         - class: com.duri.rentalplatform.external.address.RealGeocodeClient
           methods:
             - name: geocode
             - name: unavailable
-            - name: KakaoAddressResponse
         - class: com.duri.rentalplatform.external.buildingledger.BuildingLedgerDailyQuota
           methods:
             - name: tryAcquire
