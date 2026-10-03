@@ -10,6 +10,7 @@
 #   ./run.sh verify
 #   ./run.sh guarantee-check [new] [LO HI]      # 보증 3사 · 등급 SQL 재현을 저장값과 대조(읽기 전용). 기준선은 불일치 0 이어야 한다
 #   ./run.sh guarantee-recalc LO HI [STEP]     # 새 매물의 최신 판정을 앱 산식으로 고친다 — property_id 구간마다 커밋
+#   ./run.sh guarantee-check-all LO HI [STEP]  # 새 매물 대조를 구간마다(기본 50만) — 보정 뒤 전체 확인
 #
 # 멈춤 조건: 복제 슬롯이 붙잡은 WAL 이 SLOT_PAUSE_BYTES(상한 2GB 의 절반)를 넘으면 줄 때까지 기다린다.
 set -euo pipefail
@@ -98,7 +99,18 @@ case "${1:-}" in
                   ANALYZE notification; ANALYZE wishlist_notification; ANALYZE notification_subscription;" | psql_ ;;
   guarantee-check)   # guarantee-check [new] [LO HI] — 51_guarantee_check.sql. new 를 주면 새 매물(52 앞뒤 확인)
     scope=false; if [[ "${2:-}" == new ]]; then scope=true; shift; fi
+    # 새 매물 전체를 한 번에 돌리면 계산 결과(468만 행)가 임시 표로 수 GB 쓰인다 — 구간을 반드시 준다(guarantee-check-all)
+    if [[ $scope == true && -z "${3:-}" ]]; then echo "새 매물은 구간(LO HI, 50만 이하)을 준다 — 전체는 guarantee-check-all" >&2; exit 2; fi
     cat sql/51_guarantee_calc.inc.sql sql/51_guarantee_check.sql       | psql_ -v new_rows="$scope" -v lo="${2:-0}" -v hi="${3:-9223372036854775807}" ;;
+  guarantee-check-all)  # guarantee-check-all <LO> <HI> [STEP] — 새 매물을 구간(기본 50만)마다 대조. 구간마다 any_field 가 0 이어야 한다
+    from=$2; to=$3; step=${4:-500000}
+    for ((a = from; a <= to; a += step)); do
+      b=$(( a + step - 1 )); (( b > to )) && b=$to
+      t0=$SECONDS
+      cat sql/51_guarantee_calc.inc.sql sql/51_guarantee_check.sql | psql_ -v new_rows=true -v lo="$a" -v hi="$b"
+      log "guarantee-check-all $a ~ $b ($((SECONDS - t0))s)"
+      disk_guard
+    done ;;
   guarantee-recalc)  # guarantee-recalc <LO> <HI> [STEP] — 52_guarantee_recalc.sql 를 property_id 구간마다(기본 20만) 한 트랜잭션으로
     from=$2; to=$3; step=${4:-200000}
     for ((a = from; a <= to; a += step)); do

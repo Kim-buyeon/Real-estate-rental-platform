@@ -9,7 +9,7 @@
 -- 단계마다 \echo 와 \timing 으로 어디까지 왔는지 보인다.
 \set ON_ERROR_STOP 1
 \timing on
-SET work_mem = '32MB';   -- 건물 키 묶기(해시 집계)가 디스크로 넘치지 않게 — 컨테이너 상한 256m 안
+SET work_mem = '32MB';   -- 건물 키 묶기(해시 집계)가 디스크로 넘치지 않게 — DB 노드 컨테이너 상한(PG_MEM_LIMIT) 안
 
 \echo '① 제약 — 매물당 대장 · 등기 1건 이하, 최신 판정 1건 이하, 관심 중복 없음 (데이터를 읽지 않는다)'
 SELECT i.indexrelid::regclass AS constraint_index,
@@ -17,12 +17,14 @@ SELECT i.indexrelid::regclass AS constraint_index,
   FROM pg_index i
  WHERE i.indexrelid IN ('uq_building_ledger_property_id'::regclass, 'uq_building_registry_property_id'::regclass,
                         'uq_risk_analysis_latest'::regclass, 'uq_wishlist_user_property'::regclass);
-SELECT conrelid::regclass AS "table", conname AS foreign_key, CASE WHEN convalidated THEN 0 ELSE 1 END AS violations
-  FROM pg_constraint
- WHERE contype = 'f'
-   AND conrelid IN ('risk_analysis'::regclass, 'building_ledger'::regclass, 'building_registry'::regclass,
-                    'wishlist'::regclass)
- ORDER BY 1, 2;
+-- 있어야 할 외래키 이름과 맞댄다 — 지워졌으면 행이 사라지지 않고 위반 1 로 나온다(유일 인덱스는 위 ::regclass 가 없으면 오류로 멈춘다)
+SELECT e.name AS foreign_key, CASE WHEN c.convalidated THEN 0 ELSE 1 END AS violations
+  FROM (VALUES ('building_ledger_property_id_fkey'), ('building_registry_property_id_fkey'),
+               ('risk_analysis_eligible_guarantee_id_fkey'), ('risk_analysis_ledger_id_fkey'),
+               ('risk_analysis_property_id_fkey'), ('risk_analysis_registry_id_fkey'),
+               ('wishlist_property_id_fkey'), ('wishlist_user_id_fkey')) AS e(name)
+  LEFT JOIN pg_constraint c ON c.conname = e.name AND c.contype = 'f'
+ ORDER BY 1;
 
 \echo '② 판정 표 한 번 — 등급 · 사유 짝, 보증 3사 합, 새 매물의 최신 판정 수'
 SELECT count(*) FILTER (WHERE NOT ((risk_grade = 'SAFE' AND risk_reason = 'INSURANCE_ELIGIBLE')
@@ -37,8 +39,11 @@ SELECT count(*) FILTER (WHERE NOT ((risk_grade = 'SAFE' AND risk_reason = 'INSUR
            AS new_history_rows
   FROM risk_analysis;
 
-\echo '③ 출처 표 한 번 — 묶음을 만든 새 매물 수(②의 new_latest_rows 와 같아야 한다 — 최신 판정은 제약상 1건 이하)'
-SELECT count(*) FILTER (WHERE bundled) AS bundled, count(*) FILTER (WHERE NOT bundled) AS not_bundled,
+\echo '③ 출처 표 한 번 — 묶음을 만든 새 매물 수가 새 매물의 최신 판정 수와 다르면 위반(최신 판정은 제약상 1건 이하)'
+SELECT count(*) FILTER (WHERE bundled)
+         - (SELECT count(*) FROM risk_analysis WHERE is_latest
+             AND property_id > (SELECT max_property_id FROM loadtest.baseline)) AS bundled_without_latest,
+       count(*) FILTER (WHERE bundled) AS bundled, count(*) FILTER (WHERE NOT bundled) AS not_bundled,
        count(*) FILTER (WHERE kind = 'REAL') AS real_new, count(*) FILTER (WHERE kind = 'FAKE') AS fake_new
   FROM loadtest.property_origin;
 
@@ -89,7 +94,9 @@ SELECT (SELECT count(*) FROM wishlist_notification wn LEFT JOIN notification n O
        (SELECT count(*) FROM wishlist_notification wn LEFT JOIN wishlist w ON w.wish_id = wn.wish_id
          WHERE wn.wish_id IS NOT NULL AND w.wish_id IS NULL) AS fk_wish_missing,  -- 해제한 관심은 NULL(ON DELETE SET NULL),
        (SELECT count(*) FROM notification n LEFT JOIN users u ON u.user_id = n.user_id
-         WHERE u.user_id IS NULL) AS fk_user_missing;
+         WHERE u.user_id IS NULL) AS fk_user_missing,
+       (SELECT count(*) FROM wishlist_notification wn LEFT JOIN property p ON p.property_id = wn.property_id
+         WHERE p.property_id IS NULL) AS fk_property_missing;
 WITH wn AS (
     SELECT wn.property_id, wn.before_value, wn.after_value
       FROM wishlist_notification wn JOIN notification n ON n.notif_id = wn.notif_id

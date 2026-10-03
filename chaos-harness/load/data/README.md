@@ -57,9 +57,9 @@
 
 ```
 ./run.sh guarantee-check                       # 1. 기준선(앱이 판정한 31만) — 불일치 전부 0 이어야 다음으로
-./run.sh guarantee-check new 312662 512661     # 2. 새 매물 한 구간 미리 보기(고칠 건수)
-./run.sh guarantee-recalc 312662 4993947       # 3. 구간(기본 20만)마다 커밋 · 디스크 확인 · standby 대기
-./run.sh guarantee-check new                   # 4. 새 매물 전체 — 0 이어야 한다(구간을 주면 나눠 본다)
+./run.sh guarantee-check new 312667 812666     # 2. 새 매물 한 구간 미리 보기(고칠 건수)
+./run.sh guarantee-recalc 312667 4993952       # 3. 구간(기본 20만)마다 커밋 · 디스크 확인 · standby 대기
+./run.sh guarantee-check-all 312667 4993952      # 4. 새 매물 전체를 50만씩 — 구간마다 0 이어야 한다(한 번에 돌리면 임시 표가 수 GB)
 ./run.sh notify                                # 5. 알림은 그 뒤(최신 행의 previous_grade → risk_grade 를 읽는다)
 ```
 

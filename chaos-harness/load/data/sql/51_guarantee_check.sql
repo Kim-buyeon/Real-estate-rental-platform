@@ -3,7 +3,8 @@
 --   새 매물(new_rows=true)에 돌리면 52 가 고칠 건수를 미리 보고, 52 뒤에 돌리면 0 이어야 한다.
 -- 실행 (공용 계산부를 앞에 붙인다 — run.sh guarantee-check):
 --   cat 51_guarantee_calc.inc.sql 51_guarantee_check.sql | psql -X -v ON_ERROR_STOP=1 [-v new_rows=true] [-v lo=1 -v hi=400000]
--- 쓰는 것은 세션 임시 함수 · 뷰뿐이다. 운영 표는 READ ONLY 트랜잭션 안에서 읽기만 한다.
+-- 쓰는 것은 세션 임시 함수 · 뷰 · 임시 표다. 운영 표는 읽기만 한다 — 큰 읽기(임시 표 만들기)는 READ ONLY 트랜잭션
+-- 밖에서 돈다(CREATE TABLE AS 가 그 안에서 막힌다). 새 매물은 반드시 구간으로 나눈다(아래, run.sh guarantee-check-all).
 \set ON_ERROR_STOP 1
 \if :{?gc_calc_loaded}
 \else
