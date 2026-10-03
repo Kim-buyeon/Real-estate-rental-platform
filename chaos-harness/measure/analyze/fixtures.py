@@ -30,7 +30,8 @@ def _hex(rng, n):
     return "".join(rng.choice("0123456789abcdef") for _ in range(n))
 
 
-def make_round(name, start, speed=1.0, changed="", seed=1):
+def make_round(name, start, speed=1.0, changed="", seed=1, lead=0, trail=0):
+    """lead · trail — 기록(record start/stop)보다 JMeter 가 늦게 시작하고 일찍 끝나는 초. 통계 구간은 JMeter 가 정한다."""
     rng = random.Random(seed)
     d = RESULTS_DIR / name
     if d.exists():
@@ -40,7 +41,8 @@ def make_round(name, start, speed=1.0, changed="", seed=1):
     end = start + timedelta(seconds=DURATION)
     iso = lambda dt: dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
     meta = {"round": name, "start_utc": iso(start), "end_utc": iso(end), "interval_s": 5, "generator": "LOAD-01 (가짜)",
-            "nodes": ["app01", "app02", "db01", "db02"], "node_clock_utc": {}}
+            "nodes": ["app01", "app02", "db01", "db02"],
+            "node_clock_utc": {"app01": iso(start), "app02": None, "db01": iso(start), "db02": None}}
     (d / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     rnd_ = {"scenario": "S1", "changed": changed, "commit": "abc1234" if not changed else "def5678", "migration": "V42",
             "warmup_sec": WARMUP, "notes": "가짜 회차(fixtures.py)", "kind": "mix"}
@@ -53,9 +55,10 @@ def make_round(name, start, speed=1.0, changed="", seed=1):
     ngx = []
     spans_lines = []
     reqs = []
-    t = t0 + 0.05
-    while t < t0 + DURATION - 1:
-        el = (t - t0)
+    j0 = t0 + lead
+    t = j0 + 0.05
+    while t < t0 + DURATION - trail - 1:
+        el = (t - j0)
         threads = 2 + int(el / 60) * 2
         rate = threads * 1.0  # 초당 요청
         t += rng.expovariate(rate)
@@ -144,6 +147,30 @@ def make_round(name, start, speed=1.0, changed="", seed=1):
                                                           {"traceId": btid, "spanId": "b1", "parentSpanId": "", "name": "RefreshScheduler.run", "kind": 1,
                                                            "startTimeUnixNano": str(bt), "endTimeUnixNano": str(bt + 2_000_000_000),
                                                            "attributes": [{"key": "code.namespace", "value": {"stringValue": "com.duri.rentalplatform.batch.RefreshScheduler"}}]}]}]}]}))
+    # SSE 연결 — 연결 시간이 응답 시간이라 통계에서 빠져야 한다
+    for k in range(3):
+        st = int((t0 + lead + 60 + k) * 1e9)
+        spans_lines.append(json.dumps({"resourceSpans": [{"resource": {"attributes": [{"key": "service.instance.id", "value": {"stringValue": "app-01-1"}}]},
+                                                          "scopeSpans": [{"scope": {"name": "io.opentelemetry.tomcat-10.0"}, "spans": [
+                                                              {"traceId": _hex(rng, 32), "spanId": "sse1", "parentSpanId": "", "name": "GET /api/notifications/stream",
+                                                               "kind": 2, "startTimeUnixNano": str(st), "endTimeUnixNano": str(st + 90_000_000_000),
+                                                               "attributes": [{"key": "http.route", "value": {"stringValue": "/api/notifications/stream"}}]}]}]}]}))
+    # Redis 를 쓰는 store 밖 클래스(중첩) · 한 추적에서 120번 불리는 메서드 — POST /api/wishlist 한 건
+    wt = int((t0 + lead + 100) * 1e9)
+    wtid = _hex(rng, 32)
+    ws = [{"traceId": wtid, "spanId": "w0", "parentSpanId": "", "name": "POST /api/me/wishlist", "kind": 2,
+           "startTimeUnixNano": str(wt), "endTimeUnixNano": str(wt + 50_000_000),
+           "attributes": [{"key": "http.route", "value": {"stringValue": "/api/me/wishlist"}}]},
+          {"traceId": wtid, "spanId": "w1", "parentSpanId": "w0", "name": "DistributedLockAspect$Around.lock", "kind": 1,
+           "startTimeUnixNano": str(wt + 1_000_000), "endTimeUnixNano": str(wt + 4_000_000),
+           "attributes": [{"key": "code.namespace", "value": {"stringValue": "com.duri.rentalplatform.common.lock.DistributedLockAspect$Around"}}]}]
+    for k in range(120):
+        a0 = wt + 5_000_000 + k * 300_000
+        ws.append({"traceId": wtid, "spanId": f"r{k}", "parentSpanId": "w0", "name": "CodeConverter.toName", "kind": 1,
+                   "startTimeUnixNano": str(a0), "endTimeUnixNano": str(a0 + 100_000),
+                   "attributes": [{"key": "code.namespace", "value": {"stringValue": "com.duri.rentalplatform.domain.x.service.CodeConverter"}}]})
+    spans_lines.append(json.dumps({"resourceSpans": [{"resource": {"attributes": [{"key": "service.instance.id", "value": {"stringValue": "app-01-1"}}]},
+                                                      "scopeSpans": [{"scope": {"name": "io.opentelemetry.methods"}, "spans": ws}]}]}))
     (d / "jmeter" / "result.jtl").write_text("\n".join(jtl) + "\n", encoding="utf-8")
     (d / "nginx" / "access.log").write_text("\n".join(ngx) + "\n", encoding="utf-8")
     # 마지막 줄은 쓰다 만 줄 — 수집 중에 끊긴 모양
@@ -284,7 +311,11 @@ def make_round(name, start, speed=1.0, changed="", seed=1):
                 cur = []
             cur.append(line)
         chunks.append("\n".join(cur) + "\n")
-        chunks.insert(3, f"# SCRAPE_ERROR {targets[-1]}\n")
+        # 실패한 긁기 — 머리 · 잘린 본문 · 오류 표시가 한 멤버(수집기와 같다). 본문의 값이 받아들여지면 안 된다
+        bad_ts = float(chunks[3].split()[2]) + 1.0
+        chunks.insert(3, f"# SCRAPE {bad_ts:.3f} {targets[-1]}\nnginx_connections_active 99999\nnode_load1 99\n# SCRAPE_ERROR {targets[-1]}\n")
+        # 지금 수집기의 실패 — 본문 없는 한 줄. 앞 본문은 온전하다
+        chunks.insert(6, f"# SCRAPE_ERROR {targets[0]}\n")
         return chunks
 
     for node, targets in (("app-01", ["node", "app-1", "app-2", "redis", "nginx"]), ("app-02", ["node", "app-1", "app-2"]),
@@ -317,6 +348,16 @@ def make_round(name, start, speed=1.0, changed="", seed=1):
             m *= speed
             rows.append(f'{1000 + i},{calls},{calls * m:.2f},{m:.3f},{calls},{calls * 8},{calls // 50},0,{calls * 0.01:.2f},"{q}"')
         (d / "db" / f"{node.replace('-', '')}-pgss.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
+        # 전체 — collect.sh 와 같은 모양(datname + pg_stat_statements 전 열, gzip). 상위 20 밖의 앱 질의 · postgres DB 질의가 섞인다
+        allrows = ["datname,userid,dbid,toplevel,queryid,query,plans,total_plan_time,calls,total_exec_time,mean_exec_time,rows,"
+                   "shared_blks_hit,shared_blks_read,temp_blks_written,shared_blk_read_time"]
+        for i, (q, calls, m) in enumerate(qs):
+            calls = int(calls * (0.6 if node == "db-01" else 1.0))
+            m *= speed
+            allrows.append(f'rental,10,16384,t,{1000 + i},"{q}",0,0,{calls},{calls * m:.3f},{m:.3f},{calls},{calls * 8},{calls // 50},0,{calls * 0.01:.3f}')
+        allrows.append('rental,10,16384,t,2001,"SELECT 1",0,0,5000,1000.000,0.200,5000,0,0,0,0')
+        allrows.append('postgres,10,5,t,3001,"SELECT * FROM pg_stat_activity",0,0,20000,99999.000,5.000,20000,0,0,0,0')
+        (d / "db" / f"{node.replace('-', '')}-pgss-all.csv.gz").write_bytes(gzip.compress(("\n".join(allrows) + "\n").encode("utf-8")))
         (d / "db" / f"{node.replace('-', '')}-dbstats.csv").write_text(
             "captured_utc,datname,numbackends,xact_commit,xact_rollback,blks_read,blks_hit,temp_bytes,deadlocks,stats_reset\n"
             f"{iso(end)},rental,20,50000,3,14000,3000000,0,0,2026-09-01 00:00:00+00\n"
@@ -357,14 +398,18 @@ def make_round(name, start, speed=1.0, changed="", seed=1):
     (d / "post" / "redis-commandstats.txt").write_text(
         f"# captured_utc {post_ts}\n# Commandstats\r\ncmdstat_get:calls=1100,usec=2200,usec_per_call=2.00,rejected_calls=0,failed_calls=0\r\n"
         "cmdstat_set:calls=250,usec=750,usec_per_call=3.00,rejected_calls=0,failed_calls=1\r\n"
-        "cmdstat_publish:calls=10,usec=40,usec_per_call=4.00,rejected_calls=0,failed_calls=0\r\n", encoding="utf-8")
+        "cmdstat_publish:calls=10,usec=40,usec_per_call=4.00,rejected_calls=0,failed_calls=0\r\n"
+        "cmdstat_info:calls=600,usec=6000,usec_per_call=10.00,rejected_calls=0,failed_calls=0\r\n"
+        "cmdstat_config|get:calls=60,usec=300,usec_per_call=5.00,rejected_calls=0,failed_calls=0\r\n", encoding="utf-8")
     (d / "profiler" / "app01-app-1-cpu.collapsed").write_text(
         "java/lang/Thread.run;com/duri/rentalplatform/domain/risk/service/RiskQueryService.find;com/duri/rentalplatform/domain/risk/calculator/RiskCalculator.calc 400\n"
         "java/lang/Thread.run;com/duri/rentalplatform/domain/auth/service/AuthService.login;org/springframework/security/crypto/bcrypt/BCrypt.crypt_raw 300\n"
         "java/lang/Thread.run;tools/jackson/databind/ObjectMapper.writeValue 100\n"
         "[C2 CompilerThread0];C2Compiler::compile_method 200\n", encoding="utf-8")
     vm = ["procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu----- -----timestamp-----",
-          " r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st                 UTC"]
+          " r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st                 UTC",
+          # 첫 줄은 부팅 뒤 평균 — 버려야 한다(99% 는 걸리면 드러난다)
+          f" 1  0      0 500000  10000 200000    0    0     0     5  900 1500 98  1  1  0  0 {datetime.fromtimestamp(t0 + lead + 1, timezone.utc):%Y-%m-%d %H:%M:%S}"]
     for k in range(0, DURATION, 5):
         ts = datetime.fromtimestamp(t0 + k, timezone.utc)
         idle = 80 - int(30 * k / DURATION)
@@ -377,7 +422,9 @@ def main():
     base = datetime(2026, 10, 3, 6, 0, 0, tzinfo=timezone.utc)
     make_round("_fixture_R01", base, speed=1.0, changed="", seed=1)
     make_round("_fixture_R02", base + timedelta(hours=1), speed=0.8, changed="risk 판정 기준 표 캐시", seed=2)
-    print("가짜 회차를 만들었다:", RESULTS_DIR / "_fixture_R01", RESULTS_DIR / "_fixture_R02")
+    # 기록이 JMeter 보다 60초 먼저 시작해 30초 늦게 끝난 회차 — 통계 구간이 JMeter 기준인지 본다
+    make_round("_fixture_W01", base + timedelta(hours=2), speed=1.0, changed="", seed=3, lead=60, trail=30)
+    print("가짜 회차를 만들었다:", RESULTS_DIR / "_fixture_R01", RESULTS_DIR / "_fixture_R02", RESULTS_DIR / "_fixture_W01")
 
 
 if __name__ == "__main__":

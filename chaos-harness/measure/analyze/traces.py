@@ -9,7 +9,17 @@ from pathlib import Path
 from .util import percentile, mean, rnd, route_key, open_text
 
 METHOD_SCOPE = "io.opentelemetry.methods"
-PER_ROW_LIMIT = 50          # 요청당 구간이 이보다 많으면 행마다 불리는 메서드로 본다
+PER_ROW_LIMIT = 100         # 한 추적 안에서 이보다 많이 불리면 행마다 불리는 메서드(메서드 목록 생성기와 같은 규칙)
+SSE_ROUTE = "notifications/stream"   # 연결 시간이 응답 시간인 경로 — 통계에서 빼고 연결 수만 센다
+# store 패키지 밖에서 Redis 를 쓰는 클래스 — 이 메서드 구간도 Redis 시간이다
+REDIS_CLASSES = (
+    "com.duri.rentalplatform.common.lock.DistributedLockAspect",
+    "com.duri.rentalplatform.common.security.StreamTicketStore",
+    "com.duri.rentalplatform.domain.notification.sender.SseNotificationSender",
+    "com.duri.rentalplatform.external.buildingledger.BuildingLedgerDailyQuota",
+    "com.duri.rentalplatform.external.buildingledger.BuildingLedgerRateLimiter",
+)
+TOP_METHODS = 3             # 시간 예산에 이름으로 세우는 메서드 수
 KEEP_ATTRS = ("http.route", "url.path", "http.target", "http.request.method", "http.method", "url.full", "http.url",
               "http.response.status_code", "db.system", "db.system.name", "db.query.text", "db.statement",
               "db.namespace", "db.name", "db.operation", "db.operation.name", "server.address", "net.peer.name",
@@ -118,7 +128,11 @@ def namespace(s):
 
 
 def is_store(s):
-    return is_method(s) and ".store." in namespace(s)
+    """Redis 를 쓰는 메서드 구간 — store 패키지 또는 REDIS_CLASSES(중첩 클래스 Outer$Inner 는 Outer 로 본다)."""
+    if not is_method(s):
+        return False
+    ns = namespace(s)
+    return ".store." in ns or ns.split("$", 1)[0] in REDIS_CLASSES
 
 
 def is_external(s):
@@ -211,6 +225,9 @@ def request_profile(root, kids):
         "stmt_n": defaultdict(int),
         "txns": [],
         "store_names": {d.name for d in store},
+        # 요청 하나 안의 메서드 · 기타 구간 자기 시간 — 시간 예산 분해에 쓴다
+        "other_self_ms": sum(self_time(d, kids.get(d.sid, [])) for d in desc
+                             if not is_db(d) and not is_store(d) and not is_external(d) and not is_method(d)),
     }
     for d in sql_q:
         n = p["db_nodes"][db_node(d)]
@@ -218,7 +235,10 @@ def request_profile(root, kids):
         n[1] += d.dur
         p["stmt_n"][stmt_key(stmt_of(d))] += 1
     for m in methods:
+        if is_store(m):
+            continue
         p["method_self"][m.name] += self_time(m, kids.get(m.sid, []))
+    for m in methods:
         p["method_n"][m.name] += 1
     # 트랜잭션 — 커밋(롤백) 하나가 하나를 닫는다. 시작은 직전 끝 뒤의 첫 SQL
     sql_sorted = sorted(sql, key=lambda x: x.s)
@@ -257,6 +277,7 @@ def analyze(path: Path, win):
     bg = defaultdict(list)
     db_split = defaultdict(lambda: [0, 0.0])
     slow = []
+    sse = 0
     for tid, ss in by_trace.items():
         ids = {s.sid for s in ss}
         kids = defaultdict(list)
@@ -267,6 +288,9 @@ def analyze(path: Path, win):
             parent_in = s.pid and s.pid in ids
             if s.kind == 2 and (lo is None or s.s >= lo) and (win.hi is None or s.s <= win.hi * 1000):
                 r = route_key(s.a.get("http.route") or s.a.get("url.path") or s.a.get("http.target") or s.name.split(" ")[-1])
+                if r == SSE_ROUTE:
+                    sse += 1
+                    continue
                 p = request_profile(s, kids)
                 p["tid"] = tid
                 routes[r].append(p)
@@ -297,16 +321,9 @@ def analyze(path: Path, win):
         rep = sorted(stmt_max.items(), key=lambda x: -x[1])[:3]
         holds = [h for p in ps for h, _ in p["txns"]]
         gaps = [g for p in ps for _, g in p["txns"]]
-        comp = {
-            "server": [p["dur"] for p in ps], "sql": [p["sql_ms"] for p in ps],
-            "sql_main": [p["sql_max_ms"] for p in ps], "sql_extra": [max(p["sql_ms"] - p["sql_max_ms"], 0) for p in ps],
-            "redis": [p["store_ms"] for p in ps], "external": [p["ext_ms"] for p in ps],
-            "server_self": [p["server_self_ms"] for p in ps],
-        }
-        # 시간 예산의 Service 줄 — store(Redis) 메서드는 캐시 줄이 따로 갖는다
-        store_names = set().union(*[p["store_names"] for p in ps])
-        for name, _ in [m for m in top_methods if m[0] not in store_names][:3]:
-            comp["method:" + name] = [p["method_self"].get(name, 0.0) for p in ps]
+        comp = {"server": [p["dur"] for p in ps], "sql": [p["sql_ms"] for p in ps],
+                "redis": [p["store_ms"] for p in ps], "external": [p["ext_ms"] for p in ps]}
+        named = [k for k, _ in top_methods[:TOP_METHODS]]
         route_out[r] = {
             "requests": n,
             "server_ms": _dist(comp["server"]),
@@ -324,9 +341,9 @@ def analyze(path: Path, win):
             "txn_hold_ms_sum": rnd(sum(holds), 1),
             "top_methods": [{"method": k, "self_ms_sum": rnd(v, 1), "share_pct": rnd(100.0 * v / server_total, 1) if server_total else None,
                              "spans_per_request": rnd(mcnt[k] / n, 2)} for k, v in top_methods],
-            "per_row_methods": sorted([k for k, v in mcnt.items() if v / n > PER_ROW_LIMIT]),
+            "per_row_methods": sorted({k for p in ps for k, v in p["method_n"].items() if v > PER_ROW_LIMIT}),
             "repeated_statements": [{"statement": k, "max_per_request": v} for k, v in rep if v > 1],
-            "budget_p95": {k: rnd(percentile(v, 95), 3) for k, v in comp.items()},
+            "decomp": decompose(ps, named),
         }
     slow.sort(key=lambda x: -x[0])
     slow_out = []
@@ -355,7 +372,45 @@ def analyze(path: Path, win):
         "external": {h: {"count": len(v), "p95_ms": rnd(percentile([d for d, _ in v], 95), 1),
                          "error_rate_pct": rnd(100.0 * sum(1 for _, e in v if e) / len(v), 2)} for h, v in ext_hosts.items()},
         "slowest": slow_out,
+        "sse_connections": sse,
         "statement_routes": _stmt_routes(routes),
+    }
+
+
+DECOMP_PARTS = [  # (키, 계층, 이름, 원천)
+    ("db", "DB", "질의 실행 (SQL 구간 합집합)", "추적 SQL"),
+    ("redis", "캐시", "Redis 왕복 (Redis 메서드 구간)", "store · Redis 클래스 메서드 구간"),
+    ("external", "외부", "외부 호출", "추적 CLIENT"),
+    ("methods_other", "앱", "그 밖의 메서드 자기 시간", "메서드 구간"),
+    ("server_self", "앱", "요청 구간 자기 시간 (Controller · 직렬화 · 응답 전송)", "서버 구간 자기 시간"),
+]
+
+
+def _parts(p, named):
+    """요청 하나 → 구성 요소별 시간. 서로 겹치지 않게 나눈 값이라 합이 요청 시간을 넘지 않는다
+    (넘으면 자식 구간이 동시에 돈 것 — overlap 으로 남긴다)."""
+    d = {"db": p["sql_ms"], "redis": p["store_ms"], "external": p["ext_ms"], "server_self": p["server_self_ms"]}
+    for k in named:
+        d["method:" + k] = p["method_self"].get(k, 0.0)
+    d["methods_other"] = sum(v for k, v in p["method_self"].items() if k not in named)
+    tot = sum(d.values())
+    d["unexplained"] = max(p["dur"] - tot, 0.0)
+    d["overlap"] = max(tot - p["dur"], 0.0)
+    return d
+
+
+def decompose(ps, named):
+    """[7.1] — 구간 p95 를 따로 구해 더하지 않는다. 요청마다 분해한 뒤 (가) 구성 요소 평균 (나) 서버 구간이
+    p95 순위인 실제 요청 하나의 분해를 낸다."""
+    parts = [_parts(p, named) for p in ps]
+    keys = list(parts[0].keys()) if parts else []
+    order = sorted(range(len(ps)), key=lambda i: ps[i]["dur"])
+    idx = order[min(len(order) - 1, max(0, int(round(0.95 * (len(order) - 1)))))] if order else None
+    return {
+        "named_methods": named,
+        "mean": {k: rnd(sum(x[k] for x in parts) / len(parts), 3) for k in keys} | {"server": rnd(mean([p["dur"] for p in ps]), 3)},
+        "p95_request": ({k: rnd(v, 3) for k, v in parts[idx].items()} | {"server": rnd(ps[idx]["dur"], 3), "trace_id": ps[idx].get("tid")})
+        if idx is not None else None,
     }
 
 

@@ -41,13 +41,50 @@ class Units(unittest.TestCase):
             p = Path(d) / "app01.prom.gz"
             with open(p, "wb") as f:
                 f.write(gzip.compress(b"# SCRAPE 100.0 app-1\n# TYPE c counter\nhikaricp_connections_timeout_total{pool=\"primary\"} 5\n"))
-                f.write(gzip.compress(b"# SCRAPE_ERROR app-1\nhikaricp_connections_timeout_total{pool=\"primary\"} 999\n"))
+                # 수집기 모양 — 머리 · 잘린 본문 · 오류 표시가 한 멤버. 통째로 버려야 한다(F11)
+                f.write(gzip.compress(b"# SCRAPE 102.0 app-1\nhikaricp_connections_timeout_total{pool=\"primary\"} 999\n\n# SCRAPE_ERROR app-1\n"))
                 f.write(gzip.compress(b"# SCRAPE 105.0 app-1\nhikaricp_connections_timeout_total{pool=\"primary\"} 8\n"))
+                # 지금 수집기 — 본문 없는 실패 한 줄(멤버 하나). 앞의 온전한 본문(105)은 남는다
+                f.write(gzip.compress(b"# SCRAPE_ERROR app-1\n"))
                 f.write(gzip.compress(b"# SCRAPE 110.0 app-1\nhikaricp_connections_timeout_total{pool=\"primary\"} 2\n"))
             m = prom.NodeMetrics.load(p, "app-01")
             pts = sorted(m.agg("app-1", "hikaricp_connections_timeout_total").get(None).items())
             self.assertEqual(pts, [(100.0, 5.0), (105.0, 8.0), (110.0, 2.0)])   # 실패한 긁기의 줄은 버린다
             self.assertEqual(prom.increase(pts), 3 + 2)                          # 재시작이면 새 값부터
+            # 멤버 경계가 없는 평문 — 같은 대상의 본문 바로 뒤 실패면 잘린 본문으로 보고 버린다, 다른 대상 뒤면 앞 본문을 남긴다
+            q = Path(d) / "app01.prom"
+            q.write_text("# SCRAPE 1.0 app-1\nnode_load1 1\n# SCRAPE 2.0 node\nnode_load1 2\n# SCRAPE_ERROR app-1\n"
+                         "# SCRAPE 3.0 app-1\nnode_load1 3\n# SCRAPE_ERROR app-1\n")
+            m2 = prom.NodeMetrics.load(q, "app-01")
+            self.assertEqual(sorted(m2.agg("app-1", "node_load1").get(None).items()), [(1.0, 1.0)])
+            self.assertEqual(sorted(m2.agg("node", "node_load1").get(None).items()), [(2.0, 2.0)])
+
+    def test_timeseries_partial_window(self):
+        from analyze import jtl
+        rows = [{"ts": 100.0 + i * 0.5, "elapsed": 10.0, "success": True, "threads": 2.0} for i in range(26)]  # 100 ~ 112.5
+        ts = jtl._timeseries(rows, 100.0, 113.0)
+        self.assertEqual(ts[0]["tps"], 2.0)                 # 20건 ÷ 10초
+        self.assertTrue(ts[1]["partial"])                   # 3초만 덮은 마지막 창
+        self.assertAlmostEqual(ts[1]["tps"], 6 / 3.0, 3)    # 덮은 길이로 나눈다(F8)
+
+    def test_per_row_rule(self):
+        self.assertEqual(traces.PER_ROW_LIMIT, 100)
+
+    def test_redis_classes(self):
+        sp = traces.Span()
+        sp.kind, sp.scope, sp.a = 1, traces.METHOD_SCOPE, {"code.namespace": "com.duri.rentalplatform.common.lock.DistributedLockAspect$Inner"}
+        self.assertTrue(traces.is_store(sp))
+        sp.a = {"code.namespace": "com.duri.rentalplatform.domain.auth.store.TokenStore"}
+        self.assertTrue(traces.is_store(sp))
+        sp.a = {"code.namespace": "com.duri.rentalplatform.domain.x.service.Foo"}
+        self.assertFalse(traces.is_store(sp))
+
+    def test_vmstat_first_line_dropped(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "vmstat.txt"
+            p.write_text("procs ---\n r  b swpd free buff cache si so bi bo in cs us sy id wa st\n"
+                         " 1 0 0 1 1 1 0 0 0 0 1 1 97 2 1 0 0\n 1 0 0 1 1 1 0 0 0 0 1 1 10 5 85 0 0\n")
+            self.assertEqual(misc.loadgen_vmstat(p, None)["cpu_max_pct"], 15.0)   # F12
 
     def test_self_time(self):
         def sp(sid, pid, s, e):
@@ -74,6 +111,16 @@ class Units(unittest.TestCase):
             self.assertEqual(r["commands"]["hset"]["calls"], 40)
             self.assertEqual(r["total_calls"], 1040)
             self.assertAlmostEqual(r["calls_per_request"], 2.08)
+
+    def test_commandstats_admin_excluded(self):
+        with tempfile.TemporaryDirectory() as d:
+            a, b = Path(d) / "a.txt", Path(d) / "b.txt"
+            a.write_text("cmdstat_get:calls=0,usec=0\ncmdstat_info:calls=10,usec=10\n")
+            b.write_text("cmdstat_get:calls=50,usec=50\ncmdstat_info:calls=110,usec=500\ncmdstat_config|get:calls=5,usec=5\n")
+            r = misc.commandstats_delta(a, b, requests=10)
+            self.assertEqual(r["total_calls"], 50)          # 앱 명령만(F9)
+            self.assertEqual(r["admin_calls"], 105)
+            self.assertNotIn("info", r["commands"])
 
     def test_wait_none(self):
         with tempfile.TemporaryDirectory() as d:
@@ -113,6 +160,7 @@ class FixtureRounds(unittest.TestCase):
         cls.r1 = pipeline.analyze_round("_fixture_R01")
         cls.r2 = pipeline.analyze_round("_fixture_R02", write=False)
         cls.r2["comparison"] = compare.compare(cls.r2, cls.r1)
+        cls.w1 = pipeline.analyze_round("_fixture_W01", write=False)
 
     def test_p95_from_jtl(self):
         # 도구 결과에서 워밍업을 빼고 직접 센 값과 같아야 한다
@@ -124,6 +172,46 @@ class FixtureRounds(unittest.TestCase):
         self.assertEqual(self.r1["jtl"]["requests"], len(el))
         self.assertAlmostEqual(self.r1["key"]["p95"], round(percentile(el, 95), 2))
         self.assertEqual(self.r1["jtl"]["usable_tail"], "p99")
+
+    def test_window_is_jmeter_based(self):
+        # B2 — 기록은 JMeter 보다 60초 먼저 시작해 30초 늦게 끝났다. 통계 구간 = JMeter 첫 표본 ~ 마지막 끝, 워밍업은 그 시작부터
+        with open(RESULTS_DIR / "_fixture_W01" / "jmeter" / "result.jtl", encoding="utf-8") as f:
+            rows = [(int(r["timeStamp"]) / 1000, float(r["elapsed"])) for r in csv.DictReader(f)]
+        j0 = min(t for t, _ in rows)
+        j1 = max(t + e / 1000 for t, e in rows)
+        w = self.w1["window"]
+        self.assertAlmostEqual(w["start_utc"], j0, 3)
+        self.assertAlmostEqual(w["end_utc"], j1, 3)
+        self.assertGreater(j0 - w["record_start_utc"], 59)
+        self.assertGreater(w["record_end_utc"] - j1, 29)
+        inwin = [e for t, e in rows if j0 + 30 <= t <= j1]
+        self.assertEqual(self.w1["key"]["requests"], len(inwin))
+        self.assertAlmostEqual(self.w1["key"]["tps"], round(len(inwin) / (j1 - j0 - 30), 3), 3)
+        self.assertAlmostEqual(self.w1["key"]["p95"], round(percentile(inwin, 95), 2))
+        # 다른 원자료도 같은 구간 — 대기 표본 수는 JMeter 구간(워밍업 제외)의 초 수와 같다
+        self.assertLessEqual(self.w1["db"]["wait"]["db-01"]["samples"], int(j1 - j0 - 30) + 1)
+        self.assertEqual(self.w1["window"]["basis"], "jmeter")
+
+    def test_pgss_all_gz_app_db(self):
+        # B1 — 전체 파일(gzip)의 앱 DB 행만 합에 쓴다. postgres DB 질의(99,999 ms)는 빠진다
+        p = self.r1["db"]["pgss"]["db-01"]
+        self.assertEqual(p["total_basis"], "pgss-all")
+        self.assertEqual(p["app_db"], "rental")
+        with gzip.open(RESULTS_DIR / "_fixture_R01" / "db" / "db01-pgss-all.csv.gz", "rt", encoding="utf-8") as f:
+            rows = [r for r in csv.DictReader(f) if r["datname"] == "rental"]
+        self.assertAlmostEqual(p["total_exec_ms"], round(sum(float(r["total_exec_time"]) for r in rows), 1), 1)
+        self.assertEqual(p["total_calls"], sum(float(r["calls"]) for r in rows))
+        self.assertEqual(p["statements"], 5)
+        self.assertLess(self.r1["db"]["total_db_ms"], 99999)
+
+    def test_pgss_app_db_without_top20(self):
+        # 상위 20 이 없으면 postgres · template 를 뺀 DB 중 총 시간이 가장 큰 것
+        with tempfile.TemporaryDirectory() as d:
+            src = RESULTS_DIR / "_fixture_R01" / "db" / "db01-pgss-all.csv.gz"
+            (Path(d) / "db01-pgss-all.csv.gz").write_bytes(src.read_bytes())
+            p = db.pgss(Path(d), "db-01", requests=100)
+            self.assertEqual(p["app_db"], "rental")
+            self.assertEqual(p["total_basis"], "pgss-all")
 
     def test_meta_merge(self):
         m = self.r1["meta"]
@@ -156,8 +244,37 @@ class FixtureRounds(unittest.TestCase):
         names = [r["name"] for r in self.r1["budget"]["properties/{id}/risk"]["rows"]]
         self.assertFalse(any("TokenStore" in n for n in names))
 
+    def test_sse_redis_classes_per_row(self):
+        tr = self.r1["traces"]
+        self.assertEqual(tr["sse_connections"], 3)                               # F6
+        self.assertNotIn("notifications/stream", tr["routes"])
+        self.assertNotIn("notifications/stream", self.r1["budget"])
+        self.assertNotIn("notifications/stream", self.r1["matrix"]["columns"])
+        self.assertNotIn("notifications/stream", [x["route"] for x in tr["slowest"]])
+        w = tr["routes"]["me/wishlist"]
+        self.assertEqual(w["redis_calls_per_request"], 1)                         # F1 — DistributedLockAspect$Around
+        self.assertEqual(w["per_row_methods"], ["CodeConverter.toName"])          # F10 — 120번 > 100
+
+    def test_budget_decomposition(self):
+        # F7 — p95 순위 요청 하나를 나눈 값: 구성 요소 + 설명되지 않은 시간 = 서버 구간, 설명되지 않은 시간 ≥ 0
+        n = 0
+        for r, b in self.r1["budget"].items():
+            if b["server_ms"] is None:
+                continue
+            n += 1
+            tot = sum(x["ms"] for x in b["rows"]) + b["unexplained_ms"]
+            self.assertAlmostEqual(tot, b["server_ms"] + (b["overlap_ms"] or 0), delta=0.05)
+            self.assertGreaterEqual(b["unexplained_ms"], 0)
+            self.assertTrue(all("합에 넣지 않음" in x["source"] for x in b["extra"]))
+        self.assertGreater(n, 0)
+
+    def test_failed_scrape_and_vmstat(self):
+        self.assertLess(self.r1["resources"]["nginx"]["connections_active_max"], 99999)   # F11
+        self.assertLess(self.r1["loadgen"]["cpu_max_pct"], 98)                           # F12
+
     def test_commandstats_and_checks(self):
         self.assertEqual(self.r1["redis_commandstats"]["total_calls"], 1210)
+        self.assertEqual(self.r1["redis_commandstats"]["admin_calls"], 660)
         self.assertTrue(all(v for v in self.r1["checks"].values()))
 
     def test_matrix_rows_sum_100(self):

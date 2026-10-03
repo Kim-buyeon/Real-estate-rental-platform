@@ -76,11 +76,13 @@ def _stats(rows, duration):
     return st
 
 
-def _timeseries(rows, start):
-    """10초 창 시계열 — 워밍업 포함, 그래프에서 음영 처리한다."""
+def _timeseries(rows, start, end):
+    """10초 창 시계열 — 워밍업 포함, 그래프에서 음영 처리한다.
+    창의 TPS 는 그 창이 실제로 덮은 길이로 나눈다(마지막 창은 짧다). covered 가 창의 절반 미만이면 partial."""
     if not rows:
         return []
     t0 = start if start is not None else rows[0]["ts"]
+    t1 = end if end is not None else rows[-1]["ts"]
     buckets = defaultdict(list)
     for r in rows:
         buckets[int((r["ts"] - t0) // TS_BUCKET)].append(r)
@@ -90,10 +92,13 @@ def _timeseries(rows, start):
         el = [r["elapsed"] for r in rs]
         th = [r["threads"] for r in rs if r["threads"] is not None]
         errs = sum(1 for r in rs if not r["success"])
+        covered = max(min(TS_BUCKET, t1 - (t0 + b * TS_BUCKET)), 1e-3)
         out.append({
             "t": b * TS_BUCKET,
+            "covered_sec": rnd(covered, 2),
+            "partial": covered < TS_BUCKET * 0.5,
             "threads": max(th) if th else None,
-            "tps": rnd(len(rs) / TS_BUCKET, 3),
+            "tps": rnd(len(rs) / covered, 3),
             "p50": rnd(percentile(el, 50)),
             "p95": rnd(percentile(el, 95)),
             "p99": rnd(percentile(el, 99)),
@@ -105,7 +110,8 @@ def _timeseries(rows, start):
 def saturation(overall, labels, ts, warmup):
     """포화 판정 보조 — 시험 계획서 2.3 의 세 조건. 판정은 사람이 [1.4] 에서 한다."""
     p95_over = [k for k, v in labels.items() if v["p95"] is not None and v["p95"] > TARGET_P95_MS]
-    win = [w for w in ts if w["t"] >= (warmup or 0)]
+    # 워밍업 창과 절반도 안 덮은 마지막 창은 정체 판정에서 뺀다
+    win = [w for w in ts if w["t"] >= (warmup or 0) and not w.get("partial")]
     plateau = None
     detail = None
     if len(win) >= 3:
@@ -125,13 +131,16 @@ def saturation(overall, labels, ts, warmup):
 
 
 def analyze(path: Path, window):
+    """통계 구간은 JMeter 가 정한다 — 시작 = 첫 표본 시작(timeStamp, 5.6.3 기본 jmeter.properties 의
+    sampleresult.timestamp.start=true), 끝 = 마지막 (timeStamp + elapsed). 워밍업은 이 시작부터 센다.
+    window 를 그 값으로 고친다 — 다른 원자료가 모두 같은 구간을 쓴다. 기록(meta) 구간은 파일 범위만 정한다."""
     rows_all = read_rows(path)
+    rec_lo, rec_hi = window.start, window.end
+    rows_all = [r for r in rows_all if (rec_lo is None or r["ts"] >= rec_lo) and (rec_hi is None or r["ts"] <= rec_hi)]
     if not rows_all:
         return None, []
-    if window.start is None:
-        window.start = rows_all[0]["ts"]
-    if window.end is None:
-        window.end = rows_all[-1]["ts"] + rows_all[-1]["elapsed"] / 1000.0
+    window.start = rows_all[0]["ts"]
+    window.end = max(r["ts"] + r["elapsed"] / 1000.0 for r in rows_all)
     rows = [r for r in rows_all if window.contains(r["ts"])]
     dur = window.duration
     overall = _stats(rows, dur)
@@ -149,7 +158,7 @@ def analyze(path: Path, window):
                 keys[k] += 1
         st["route"] = max(keys, key=keys.get) if keys else None
         labels[lab] = st
-    ts = _timeseries([r for r in rows_all if window.in_round(r["ts"])], window.start)
+    ts = _timeseries(rows_all, window.start, window.end)
     usable = "p99" if overall["count"] >= P99_MIN else ("p95" if overall["count"] >= P95_MIN else "참고(표본 부족)")
     res = {
         "requests": overall["count"],

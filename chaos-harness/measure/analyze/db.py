@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -115,16 +116,73 @@ def dbstats(db_dir: Path, node: str, pre: dict | None):
     return out
 
 
-def pgss(db_dir: Path, node: str, requests=None):
-    """상위 20 · 점유율. 전체 합은 <node>-pgss-all.csv 가 있으면 그것으로(없으면 상위 20 합 — 점유율이 부풀어 보인다)."""
+def read_pgss_all(path: Path):
+    """collect.sh 의 `<node>-pgss-all.csv.gz` — datname 열 + pg_stat_statements 전 열(원문 질의).
+    PG 17 열 이름(total_exec_time · shared_blk_read_time)과 상위 20 파일의 열 이름을 둘 다 받는다."""
+    rows = []
+    opener = gzip.open if str(path).endswith(".gz") else open
+    with opener(path, "rt", encoding="utf-8", errors="replace", newline="") as f:
+        for r in csv.DictReader(f):
+            g = lambda *ks: next((r[k] for k in ks if r.get(k) not in (None, "")), None)
+            rows.append({
+                "datname": r.get("datname") or "",
+                "queryid": r.get("queryid"),
+                "calls": _f(g("calls")) or 0,
+                "total_ms": _f(g("total_exec_time", "total_exec_time_ms")) or 0.0,
+                "mean_ms": _f(g("mean_exec_time", "mean_exec_time_ms")),
+                "rows": _f(g("rows")),
+                "blks_hit": _f(g("shared_blks_hit")),
+                "blks_read": _f(g("shared_blks_read")),
+                "temp_written": _f(g("temp_blks_written")),
+                "blk_read_time_ms": _f(g("shared_blk_read_time", "blk_read_time", "blk_read_time_ms")),
+                "query": re.sub(r"\s+", " ", (r.get("query") or "")).strip(),
+            })
+    rows.sort(key=lambda x: -x["total_ms"])
+    return rows
+
+
+def _app_db(allrows, top, dbstats_name=None):
+    """앱 DB 고르기 — ① 상위 20 의 queryid 가 가장 많이 걸리는 datname ② dbstats 의 datname
+    ③ postgres · template* 를 뺀 DB 중 총 실행 시간이 가장 큰 것. (DB 이름, 근거)."""
+    ids = {r["queryid"] for r in top or [] if r.get("queryid")}
+    if ids:
+        hits = defaultdict(int)
+        for r in allrows:
+            if r["queryid"] in ids:
+                hits[r["datname"]] += 1
+        if hits:
+            return max(hits, key=hits.get), "상위 20 의 queryid"
+    names = {r["datname"] for r in allrows}
+    if dbstats_name and dbstats_name in names:
+        return dbstats_name, "dbstats 의 datname"
+    tot = defaultdict(float)
+    for r in allrows:
+        if r["datname"] != "postgres" and not r["datname"].startswith("template"):
+            tot[r["datname"]] += r["total_ms"]
+    if tot:
+        return max(tot, key=tot.get), "총 실행 시간 최대(postgres · template 제외)"
+    return None, "고를 DB 없음"
+
+
+def pgss(db_dir: Path, node: str, requests=None, dbstats_name=None):
+    """상위 20 · 점유율. 합(총 시간 · 호출 수)은 전체 파일(<node>-pgss-all.csv.gz)의 앱 DB 행으로 —
+    없으면 상위 20 합(점유율이 부풀어 보인다, total_basis 에 적힌다)."""
     top_path = _pick(db_dir, node, "-pgss.csv")
-    all_path = _pick(db_dir, node, "-pgss-all.csv")
-    if not top_path.exists() and not all_path.exists():
+    all_path = next((p for p in (_pick(db_dir, node, "-pgss-all.csv.gz"), _pick(db_dir, node, "-pgss-all.csv")) if p.exists()), None)
+    if not top_path.exists() and all_path is None:
         return None
-    top = read_pgss(top_path) if top_path.exists() else read_pgss(all_path)[:20]
-    allrows = read_pgss(all_path) if all_path.exists() else None
-    total = sum(r["total_ms"] for r in (allrows or top))
-    total_calls = sum(r["calls"] for r in (allrows or top))
+    top = read_pgss(top_path) if top_path.exists() else None
+    app_db, why = None, None
+    allrows = None
+    if all_path is not None:
+        raw = read_pgss_all(all_path)
+        app_db, why = _app_db(raw, top, dbstats_name)
+        allrows = [r for r in raw if r["datname"] == app_db] if app_db else None
+    if top is None:
+        top = (allrows or [])[:20]
+    basis = allrows if allrows else top
+    total = sum(r["total_ms"] for r in basis)
+    total_calls = sum(r["calls"] for r in basis)
     out = []
     for i, r in enumerate(top[:20], 1):
         d = dict(r)
@@ -136,9 +194,11 @@ def pgss(db_dir: Path, node: str, requests=None):
     shares = [d["share_pct"] or 0 for d in out]
     return {
         "total_basis": "pgss-all" if allrows else "top20",
+        "app_db": app_db,
+        "app_db_basis": why,
         "total_exec_ms": rnd(total, 1),
         "total_calls": total_calls,
-        "statements": len(allrows) if allrows else len(top),
+        "statements": len(basis),
         "top1_share_pct": rnd(sum(shares[:1]), 2),
         "top3_share_pct": rnd(sum(shares[:3]), 2),
         "db_ms_per_request": rnd(total / requests, 3) if requests else None,
@@ -194,20 +254,22 @@ def analyze(db_dir: Path, win, requests=None, pre=None):
                 if win.start is not None:
                     res["wait_ts"][node] = [[rnd(t - win.start, 1), rnd(v, 2)] for t, v in ts]
                 res["wait"][node] = we
-        p = pgss(db_dir, node, requests)
+        ds = dbstats(db_dir, node, pre)
+        if ds:
+            res["dbstats"][node] = ds
+        p = pgss(db_dir, node, requests, (ds or {}).get("datname"))
         if p:
             res["pgss"][node] = p
         a = _pick(db_dir, node, "-auto-explain.log")
         if a.exists():
             res["auto_explain"][node] = auto_explain(a)
-        ds = dbstats(db_dir, node, pre)
-        if ds:
-            res["dbstats"][node] = ds
     tot = [p["total_exec_ms"] for p in res["pgss"].values() if p.get("total_exec_ms") is not None]
     calls = [p["total_calls"] for p in res["pgss"].values()]
     res["total_db_ms"] = rnd(sum(tot), 1) if tot else None
     res["db_ms_per_request"] = rnd(sum(tot) / requests, 3) if tot and requests else None
     res["queries_per_request"] = rnd(sum(calls) / requests, 3) if calls and requests else None
+    res["pgss_basis"] = {n: {"total_basis": p["total_basis"], "app_db": p["app_db"], "app_db_basis": p["app_db_basis"]}
+                         for n, p in res["pgss"].items()}
     # 두 노드 합친 상위 — 점유율은 두 노드 합 기준
     merged = []
     for node, p in res["pgss"].items():

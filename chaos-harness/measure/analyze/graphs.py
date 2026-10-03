@@ -166,21 +166,22 @@ BUDGET_GROUP = {"입구": "입구", "앱": "앱", "경계": "경계", "DB": "DB"
 
 
 def g4(s, path, top=8):
+    """엔드포인트마다 서버 구간이 p95 순위인 요청 하나를 구성 요소로 나눈 막대 — 합이 그 요청의 시간이다."""
     b = s.get("budget") or {}
-    routes = [r for r, v in b.items() if v.get("tool_p95_ms")][:top]
+    routes = [r for r, v in b.items() if v.get("server_ms")][:top]
     if not routes:
         return None
     fig, ax = plt.subplots(figsize=(8.2, 0.5 * len(routes) + 1.5))
-    layers = ["입구", "앱", "경계", "DB", "캐시", "외부", "설명 안 됨"]
+    layers = ["앱", "경계", "DB", "캐시", "외부", "설명 안 됨"]
     left = [0.0] * len(routes)
     for lay in layers:
         vals = []
         for r in routes:
             v = b[r]
             if lay == "설명 안 됨":
-                vals.append(max(v.get("unexplained_ms") or 0, 0))
+                vals.append(v.get("unexplained_ms") or 0)
             else:
-                vals.append(sum(max(x["ms"] or 0, 0) for x in v["rows"] if x["layer"] == lay))
+                vals.append(sum(x["ms"] or 0 for x in v["rows"] if x["layer"] == lay))
         if not any(vals):
             continue
         ax.barh(range(len(routes)), vals, left=left, color=LAYER[lay], edgecolor="white", linewidth=1, label=lay,
@@ -190,7 +191,7 @@ def g4(s, path, top=8):
     ax.set_yticklabels(routes)
     ax.invert_yaxis()
     ax.set_xlim(left=0)
-    ax.set_xlabel("p95 구간별 (ms) — 구간 p95 의 합이라 요청 p95 와 정확히 같지 않다")
+    ax.set_xlabel("p95 순위 요청 하나의 구성 (ms) — 서버 구간 기준, 입구 · 큐는 [7.1] 표")
     ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1))
     _caption(fig, f"G4 ({s['round']})")
     fig.savefig(path)

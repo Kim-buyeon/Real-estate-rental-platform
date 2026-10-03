@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import re
+import zlib
 from collections import defaultdict
 from pathlib import Path
 
@@ -89,6 +90,38 @@ def _keep(name):
     return name.startswith(KEEP_PREFIXES)
 
 
+def _chunks(path: Path):
+    """(덩어리 번호, 글). gzip 이면 멤버마다 번호 0, 1, …, 아니면 파일 전체 하나(번호 −1 — 멤버 경계 없음).
+    멤버 수천 개 · 수백 MB 를 위해 64 KiB 씩 흘려 넣는다(남은 바이트를 매번 잘라 복사하지 않는다)."""
+    if not str(path).endswith(".gz"):
+        with open_text(path) as f:
+            yield -1, f.read()
+        return
+    no = 0
+    d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    buf = []
+    with open(path, "rb") as f:
+        pending = b""
+        while True:
+            block = pending or f.read(65536)
+            pending = b""
+            if not block:
+                break
+            try:
+                buf.append(d.decompress(block))
+            except zlib.error:
+                return                  # 깨진 꼬리 — 여기까지만
+            if d.eof:
+                yield no, b"".join(buf).decode("utf-8", errors="replace")
+                no += 1
+                buf = []
+                pending = d.unused_data
+                d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+    if buf and any(buf):
+        # 반쯤 쓰인 마지막 멤버 — 받은 만큼만(본문은 다음 표시 줄이 없어 그대로 확정되지 않게 버린다)
+        return
+
+
 class NodeMetrics:
     """노드 하나의 긁기 기록. data[target][name][labels] = [(ts, v), ...]."""
 
@@ -99,34 +132,50 @@ class NodeMetrics:
 
     @classmethod
     def load(cls, path: Path, node: str, keep_all=False):
+        """긁기 본문은 다음 표시 줄(또는 파일 끝)에서 확정한다. 실패 표시 두 모양을 다 받는다.
+        ① 지금 수집기 — 본문 없는 `# SCRAPE_ERROR <대상>` 한 줄(멤버 하나): 앞 본문은 온전하니 그대로 둔다
+        ② 예전 수집기 — 머리 · 잘린 본문 · `# SCRAPE_ERROR` 가 한 gzip 멤버: 그 본문을 통째로 버린다
+        gzip 이 아니면 멤버 경계가 없어 「같은 대상의 본문 바로 뒤」면 ② 로 본다."""
         m = cls(node)
-        ts = None
-        target = None
-        with open_text(path) as f:
-            for line in f:
+        cur = None   # [ts, target, rows, 시작한 덩어리 번호]
+
+        def commit():
+            if cur is None or cur[0] is None:
+                return
+            ts, target, rows, _ = cur
+            m.scrapes[target].append(ts)
+            for name, labels, v in rows:
+                m.data[target][name][tuple(sorted(labels.items()))].append((ts, v))
+
+        for chunk_no, text in _chunks(path):
+            for line in text.splitlines():
                 if line.startswith("# SCRAPE_ERROR"):
-                    # 실패한 긁기 — 다음 표시 줄까지 버린다
-                    ts = None
+                    parts = line.split()
+                    target = parts[2] if len(parts) > 2 else None
+                    same_member = chunk_no >= 0 and cur is not None and cur[3] == chunk_no
+                    plain_same = chunk_no < 0 and cur is not None and cur[1] == target
+                    if same_member or plain_same:
+                        cur = None          # 잘린 본문 — 버린다
+                    else:
+                        commit()            # 앞 본문은 온전하다
+                        cur = None
                     continue
                 if line.startswith("# SCRAPE "):
+                    commit()
                     parts = line.split()
                     try:
                         ts = float(parts[2])
                     except (IndexError, ValueError):
                         ts = None
-                    target = parts[3] if len(parts) > 3 else "unknown"
-                    if ts is not None:
-                        m.scrapes[target].append(ts)
+                    cur = [ts, parts[3] if len(parts) > 3 else "unknown", [], chunk_no]
                     continue
-                if ts is None or line.startswith("#"):
+                if cur is None or line.startswith("#"):
                     continue
-                s = parse_sample(line)
-                if not s:
+                smp = parse_sample(line)
+                if not smp or (not keep_all and not _keep(smp[0])):
                     continue
-                name, labels, v = s
-                if not keep_all and not _keep(name):
-                    continue
-                m.data[target][name][tuple(sorted(labels.items()))].append((ts, v))
+                cur[2].append(smp)
+        commit()
         return m
 
     def targets(self):
@@ -161,6 +210,16 @@ def increase(pts):
     for (t0, v0), (t1, v1) in zip(pts, pts[1:]):
         inc += v1 - v0 if v1 >= v0 else v1
     return inc
+
+
+def win_increase(pts, win):
+    """구간 안 표본들의 증가량을 통계 구간 길이로 늘린다(Prometheus increase() 의 외삽과 같다).
+    5초 긁기라 구간 양 끝의 몫이 빠지는 것을 메운다 — 증가량 ÷ 구간 길이가 그 구간의 초당 값이 된다."""
+    inc = increase(pts)
+    if len(pts) < 2 or not win.duration:
+        return inc
+    span = pts[-1][0] - pts[0][0]
+    return inc * (win.duration / span) if span > 0 else inc
 
 
 def rates(pts):
@@ -327,7 +386,7 @@ def app_slot(m: NodeMetrics, target, win, missing):
 
     def delta(name, filt=None):
         pts = gauge(name, filt)
-        return increase(pts) if pts else None
+        return win_increase(pts, win) if pts else None
 
     busy = gauge("tomcat_threads_busy_threads")
     tmax = gauge("tomcat_threads_config_max_threads")
@@ -409,7 +468,7 @@ def app_slot(m: NodeMetrics, target, win, missing):
     for uri, d in reqs.items():
         pts = _in(_series(d), win)
         if pts:
-            by_uri[uri] = increase(pts)
+            by_uri[uri] = win_increase(pts, win)
     res["server_requests"] = rnd(sum(by_uri.values()), 0) if by_uri else None
     res["server_requests_by_uri"] = {k: rnd(v, 0) for k, v in sorted(by_uri.items(), key=lambda x: -x[1])}
     if not reqs:
@@ -457,7 +516,7 @@ def postgres(m: NodeMetrics, win, missing):
         if not m.has(t, name):
             return None
         pts = _in(_series(m.agg(t, name, filt=filt).get(None, {})), win)
-        return increase(pts) if pts else None
+        return win_increase(pts, win) if pts else None
 
     def gmax(name, filt=None):
         pts = _in(_series(m.agg(t, name, filt=filt).get(None, {})), win)
@@ -527,7 +586,7 @@ def redis(m: NodeMetrics, win, missing):
 
     def d(name):
         pts = _in(_series(m.agg(t, name).get(None, {})), win)
-        return increase(pts) if pts else None
+        return win_increase(pts, win) if pts else None
 
     def g(name):
         pts = _in(_series(m.agg(t, name).get(None, {})), win)
@@ -556,7 +615,7 @@ def nginx(m: NodeMetrics, win, missing):
     if not act:
         missing.append(f"{m.node}:nginx_connections_active")
     return {"node": m.node, "connections_active_max": max((v for _, v in act), default=None),
-            "requests_delta": increase(req) if req else None}
+            "requests_delta": win_increase(req, win) if req else None}
 
 
 # ---------------------------------------------------------------- 묶음

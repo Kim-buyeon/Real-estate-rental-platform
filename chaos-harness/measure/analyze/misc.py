@@ -29,6 +29,16 @@ def parse_commandstats(text):
     return out
 
 
+# 측정 수단(redis_exporter 긁기 · 관리 명령)의 몫 — 앱 명령에서 뺀다
+ADMIN_COMMANDS = {"info", "config", "client", "slowlog", "latency", "memory", "dbsize", "ping", "command", "select",
+                  "cluster", "auth", "hello"}
+
+
+def _base_cmd(c):
+    """`config|get` · `client|list` 처럼 하위 명령이 붙은 이름은 앞부분으로."""
+    return c.split("|", 1)[0].lower()
+
+
 def commandstats_delta(pre_path: Path, post_path: Path, requests=None):
     if not pre_path.exists() or not post_path.exists():
         return None
@@ -46,14 +56,18 @@ def commandstats_delta(pre_path: Path, post_path: Path, requests=None):
         cmds[c] = {"calls": int(calls), "usec": int(usec), "usec_per_call": rnd(usec / calls, 3),
                    "failed": int(d.get("failed_calls", 0) - p.get("failed_calls", 0)),
                    "rejected": int(d.get("rejected_calls", 0) - p.get("rejected_calls", 0))}
-    total = sum(v["calls"] for v in cmds.values())
+    admin = {c: v for c, v in cmds.items() if _base_cmd(c) in ADMIN_COMMANDS}
+    app = {c: v for c, v in cmds.items() if c not in admin}
+    total = sum(v["calls"] for v in app.values())
     for v in cmds.values():
         v["calls_per_request"] = rnd(v["calls"] / requests, 4) if requests else None
     return {
-        "total_calls": total,
-        "total_usec": sum(v["usec"] for v in cmds.values()),
+        "total_calls": total,                     # 앱 명령만
+        "total_usec": sum(v["usec"] for v in app.values()),
         "calls_per_request": rnd(total / requests, 4) if requests else None,
-        "commands": dict(sorted(cmds.items(), key=lambda x: -x[1]["calls"])),
+        "commands": dict(sorted(app.items(), key=lambda x: -x[1]["calls"])),
+        "admin_calls": sum(v["calls"] for v in admin.values()),   # 측정 수단 몫
+        "admin_commands": dict(sorted(admin.items(), key=lambda x: -x[1]["calls"])),
         "note": "회차 전후 차이(워밍업 포함). 요청 수는 워밍업을 뺀 도구 요청 수라 요청당 값이 약간 부풀 수 있다",
     }
 
@@ -157,6 +171,7 @@ def loadgen_vmstat(path: Path, win):
     if not path.exists():
         return None
     head = None
+    seen_first = False
     vals = []
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         parts = line.split()
@@ -166,6 +181,10 @@ def loadgen_vmstat(path: Path, win):
             head = parts
             continue
         if head is None or not parts[0].isdigit():
+            continue
+        if not seen_first:
+            # 첫 데이터 줄은 부팅 뒤 평균이다 — 늘 버린다
+            seen_first = True
             continue
         try:
             idle = float(parts[head.index("id")])

@@ -628,7 +628,8 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <tr><td>무효화 방식</td><td class="b"></td><td class="b"></td><td>→ [6.5]</td></tr>
 <tr><td>Redis 연결 수</td><td class="b">{{ rb.connected_clients_max|v(0) if b else "" }}</td><td class="b">{{ s.resources.redis.connected_clients_max|v(0) }}</td><td class="b"></td></tr>
 <tr><td>앱 쪽 명령 지연 (lettuce)</td><td class="b">{{ b.resources.app_totals.lettuce_mean_ms|v(3, " ms") if b else "" }}</td><td class="b">{{ s.resources.app_totals.lettuce_mean_ms|v(3, " ms") }}</td><td>평균. store 구간 p95 는 [7.1] 캐시 줄</td></tr>
-<tr><td>Redis 명령 (회차 전후 차이)</td><td class="b">{{ b.redis_commandstats.total_calls|v(0) if b else "" }}</td><td class="b">{{ s.redis_commandstats.total_calls|v(0) }} <span class="small">(요청당 {{ s.redis_commandstats.calls_per_request|v(3) }})</span></td><td class="b">{% for c, v in (s.redis_commandstats.commands or {}).items() %}{% if loop.index <= 5 %}{{ c }} {{ v.calls }}{{ " · " if not loop.last and loop.index < 5 }}{% endif %}{% endfor %}</td></tr>
+<tr><td>Redis 앱 명령 (회차 전후 차이)</td><td class="b">{{ b.redis_commandstats.total_calls|v(0) if b else "" }}</td><td class="b">{{ s.redis_commandstats.total_calls|v(0) }} <span class="small">(요청당 {{ s.redis_commandstats.calls_per_request|v(3) }})</span></td><td class="b">{% for c, v in (s.redis_commandstats.commands or {}).items() %}{% if loop.index <= 5 %}{{ c }} {{ v.calls }}{{ " · " if not loop.last and loop.index < 5 }}{% endif %}{% endfor %}</td></tr>
+<tr><td>측정 수단 몫 (관리 명령 — 앱 명령에서 뺐다)</td><td class="b">{{ b.redis_commandstats.admin_calls|v(0) if b else "" }}</td><td class="b">{{ s.redis_commandstats.admin_calls|v(0) }}</td><td class="b">{% for c, v in (s.redis_commandstats.admin_commands or {}).items() %}{% if loop.index <= 5 %}{{ c }} {{ v.calls }}{{ " · " if not loop.last and loop.index < 5 }}{% endif %}{% endfor %}</td></tr>
 </table>
 <p><span class="formula">캐시가 가린 비용 = 빗나감 비용 ___ ms × 트래픽 비중 ___ % = ___ ms</span></p>
 
@@ -836,19 +837,22 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 {% set bg = s.budget[route] %}{% set bb = b.budget[route] if b and b.budget else none %}
 <table><tr><th class="k">엔드포인트</th><td class="b">{{ route }}</td><th class="k">회차</th><td class="b">{{ (B ~ " → ") if b else "" }}{{ R }}</td></tr></table>
 <table>
-<tr><th>계층</th><th>구간</th><th>전</th><th>후</th><th>비중</th><th>판정</th><th>원천</th></tr>
+<tr><th>계층</th><th>구간</th><th>전 (p95 요청)</th><th>후 (p95 요청)</th><th>후 평균</th><th>비중</th><th>판정</th><th>원천</th></tr>
 {% for r in bg.rows %}
-{% set br = (bb.rows|selectattr("name", "equalto", r.name)|first) if bb else none %}
-<tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td class="b">{{ br.ms|v(2, " ms") if bb else "" }}</td><td class="b">{{ r.ms|v(2, " ms") }}</td><td class="b">{{ r.share_pct|v(1, "%") }}</td><td class="b">{% if bg.largest and bg.largest.name == r.name %}★★{% elif (r.share_pct or 0) >= 10 %}★{% endif %}</td><td>{{ r.source }}</td></tr>
+{% set br = (bb.rows|selectattr("key", "equalto", r.key)|first) if bb else none %}
+<tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td class="b">{{ (br.ms if br else none)|v(2, " ms") if bb else "" }}</td><td class="b">{{ r.ms|v(2, " ms") }}</td><td class="b">{{ r.mean_ms|v(2, " ms") }}</td><td class="b">{{ r.share_pct|v(1, "%") }}</td><td class="b">{% if bg.largest and bg.largest.name == r.name %}★★{% elif (r.share_pct or 0) >= 10 %}★{% endif %}</td><td>{{ r.source }}</td></tr>
 {% endfor %}
-<tr><th colspan="2">합계</th><td class="b">{{ bb.sum_ms|v(2, " ms") if bb else "" }}</td><td class="b">{{ bg.sum_ms|v(2, " ms") }}</td><td>100%</td><td></td><td></td></tr>
-<tr><th colspan="2">요청 전체 p95 (부하 도구)</th><td class="b">{{ bb.tool_p95_ms|v(2, " ms") if bb else "" }}</td><td class="b">{{ bg.tool_p95_ms|v(2, " ms") }}</td><td></td><td></td><td></td></tr>
-<tr><th colspan="2">설명되지 않은 시간</th><td class="b">{{ bb.unexplained_ms|v(2, " ms") if bb else "" }}</td><td class="b">{{ bg.unexplained_ms|v(2, " ms") }}</td><td class="b">{{ bg.unexplained_pct|v(1, "%") }}{% if (bg.unexplained_pct or 0)|abs > 5 %} ⚠{% endif %}</td><td></td><td>5% 넘으면 계측 공백</td></tr>
+<tr><th colspan="2">설명되지 않은 시간</th><td class="b">{{ bb.unexplained_ms|v(2, " ms") if bb else "" }}</td><td class="b">{{ bg.unexplained_ms|v(2, " ms") }}</td><td class="b">{{ bg.unexplained_mean_ms|v(2, " ms") }}</td><td class="b">{{ bg.unexplained_pct|v(1, "%") }}{% if (bg.unexplained_pct or 0) > 5 %} ⚠{% endif %}</td><td></td><td>5% 넘으면 계측 공백</td></tr>
+<tr><th colspan="2">서버 구간 (= 합계)</th><td class="b">{{ bb.server_ms|v(2, " ms") if bb else "" }}</td><td class="b">{{ bg.server_ms|v(2, " ms") }}</td><td class="b">{{ bg.server_mean_ms|v(2, " ms") }}</td><td>100%</td><td></td><td>p95 순위 요청 <code>{{ bg.trace_id|n }}</code></td></tr>
+{% for r in bg.extra %}
+<tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td class="b">{{ ((bb.extra|selectattr("name", "equalto", r.name)|first).ms)|v(2, " ms") if bb else "" }}</td><td class="b">{{ r.ms|v(2, " ms") }}</td><td></td><td></td><td></td><td>{{ r.source }}</td></tr>
+{% endfor %}
+<tr><th colspan="2">요청 전체 p95 (부하 도구)</th><td class="b">{{ bb.tool_p95_ms|v(2, " ms") if bb else "" }}</td><td class="b">{{ bg.tool_p95_ms|v(2, " ms") }}</td><td></td><td></td><td></td><td>판정 기준</td></tr>
 </table>
 {% else %}
 <table><tr><th class="k">엔드포인트</th><td class="b">미측정</td><th class="k">회차</th><td class="b">{{ R }}</td></tr></table>
 {% endfor %}
-<p class="small">비중 = 구간 p95 ÷ 도구 p95. 구간 p95 의 합이라 「합계」가 요청 p95 와 정확히 같지 않다 — 음수면 구간 p95 가 서로 다른 요청에서 왔다는 뜻이다. 커넥션 획득 대기는 엔드포인트 구분이 없는 풀 지표(평균 또는 p95).</p>
+<p class="small">구간 p95 를 따로 구해 더하지 않는다. 요청마다 서버 구간을 겹치지 않는 구성 요소로 나누고 — 메서드 자기 시간 · SQL 합집합 · Redis 메서드 구간 · 외부 호출 · 요청 구간 자기 시간 — ① 서버 구간이 p95 순위인 실제 요청 하나의 분해(전 · 후)와 ② 구성 요소 평균을 적는다. 설명되지 않은 시간 = 그 요청의 서버 구간 − 구성 요소 합(메서드가 아닌 구간의 자기 시간). 입구 · 큐 · 풀 줄은 분포끼리의 차이 또는 전 경로 지표라 합에 넣지 않는다.{% if s.traces.sse_connections %} SSE 연결 {{ s.traces.sse_connections }}건은 연결 시간이라 이 표 · [7.11] · 가장 느린 요청에서 뺐다.{% endif %}</p>
 <p class="small">★ 비중 10% 이상 · ★★ 가장 큰 구간</p>
 <h4>세 겹으로 빼서 입구 · 큐를 가른다</h4>
 <table>

@@ -613,7 +613,7 @@ def build_context(s, b, out_dir: Path):
     hrows, tight = headroom_rows(s)
     tr_routes = _get(s, "traces", "routes") or {}
     btr = _get(b, "traces", "routes") or {}
-    budget_routes = [r for r in (s.get("budget") or {}) if (s["budget"][r].get("tool_p95_ms") is not None)][:5]
+    budget_routes = [r for r in (s.get("budget") or {}) if (s["budget"][r].get("server_ms") is not None)][:5]
     return {
         "s": s, "b": b, "R": s["round"], "B": (b or {}).get("round"), "nar": nar, "sig": sig, "thr": thr,
         "today": datetime.now(KST).strftime("%Y-%m-%d"),

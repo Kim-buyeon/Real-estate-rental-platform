@@ -15,7 +15,7 @@
 | `python -m analyze <회차> --baseline <기준 회차>` | 위 + 기준 대비 변화(`summary.json` 의 `comparison`) · G3 |
 | `python -m analyze <회차> [--baseline <회차>] --report` | 위 + 보고서 `results/report/report-<날짜>.html` · `.pdf` |
 | `python -m analyze jitter R01 R02 R03` | 흔들림 회차들로 유의차 하한 → `results/significance.json`, 표 출력 |
-| `python -m analyze fixtures` | 가짜 회차 `results/_fixture_R01` · `_fixture_R02` 생성(시험용) |
+| `python -m analyze fixtures` | 가짜 회차 `results/_fixture_R01` · `_fixture_R02` · `_fixture_W01`(기록이 JMeter 보다 60초 먼저 시작 · 30초 늦게 끝남) 생성(시험용) |
 | `python -m unittest discover -s analyze/tests -t .` | 시험 |
 
 가짜 회차(`_fixture*`)는 실제 회차와 섞이지 않는다 — 회차 추세(G6 · [11.1])와 흔들림 파일(`results/_fixture_significance.json`)을 따로 쓴다.
@@ -28,15 +28,16 @@
 | --- | --- |
 | `meta.json` | 구간(`start_utc` · `end_utc`), 생성기 |
 | `round.json` (측정자가 쓴다) | `scenario` · `changed` · `commit` · `migration` · `warmup_sec` · `notes` · `kind`(mix · solo · jitter). meta 위에 덮는다. 선택 키: `data_scale` · `tool` · `plan` · `command` · `operator` · `tracing_ratio` · `profiler` · `auto_explain_ms` |
-| `jmeter/result.jtl` | 응답 시간의 정본. 워밍업(`warmup_sec`)을 뺀 구간만 통계에 쓴다 |
+| `jmeter/result.jtl` | 응답 시간의 정본이자 **통계 구간의 정본** — 아래 「통계 구간」 |
 | `metrics/<노드>.prom.gz` | 노드 · 슬롯 · Redis · Nginx · PostgreSQL 지표(긁기마다 `# SCRAPE <epoch> <target>`, 실패는 `# SCRAPE_ERROR`) |
-| `db/<노드>-wait.csv` · `-pgss.csv` · `-pgss-all.csv` · `-dbstats.csv` · `-auto-explain.log` | 대기 종류 · 질의 통계 · 회차 전후 적중률 · 실제 계획 |
+| `db/<노드>-wait.csv` · `-pgss.csv` · `-dbstats.csv` · `-auto-explain.log` | 대기 종류(`NONE` 은 표본으로만 센다) · 질의 통계 상위 20 · 회차 전후 적중률 · 실제 계획 |
+| `db/<노드>-pgss-all.csv.gz` | 질의 통계 전체(gzip, `datname` + pg_stat_statements 전 열). 앱 DB 행만 합(총 DB 시간 · 점유율 · 요청당 질의)에 쓴다. 앱 DB = ① 상위 20 의 queryid 가 걸리는 DB ② dbstats 의 datname ③ postgres · template 를 뺀 DB 중 총 시간 최대 — 고른 DB 와 근거는 `db.pgss_basis` |
 | `nginx/access.log` | 경로별 rt · urt · uct · 바이트, 슬롯 분배(SSE `/api/notifications/stream` 은 지연 통계에서 뺀다) |
 | `traces/spans.jsonl` | 요청당 SQL · DB 시간 · 메서드 자기 시간 · store(=Redis) 시간 · 트랜잭션 빈 시간. 깨진 줄은 건너뛴다 |
 | `pre/pre.json` · `pre/credits.json` · `post/credits.json` | 회차 전 확인 · 크레딧 |
-| `pre|post/redis-commandstats.txt` | Redis 명령 수 전후 차이 |
+| `pre|post/redis-commandstats.txt` | Redis 명령 수 전후 차이. 관리 명령(info · config · client · slowlog · latency · memory · dbsize · ping · command · select · cluster · auth · hello — redis_exporter 긁기)은 앱 명령에서 빼고 「측정 수단 몫」으로 따로 |
 | `profiler/<노드>-<슬롯>-<모드>.collapsed` | 앱 CPU 분포 · JIT 비중 |
-| `gen/vmstat.txt` | 부하 생성기 CPU |
+| `gen/vmstat.txt` | 부하 생성기 CPU(첫 데이터 줄 = 부팅 뒤 평균은 버린다) |
 
 ## 출력 — `out/summary.json`
 
@@ -47,15 +48,25 @@
 | `db` | 대기 종류별 평균 활성 세션 · 질의 통계 상위 · 점유율 · auto_explain 집계 · dbstats | [4.1] [4.2] [4.6] |
 | `traces` | 경로별 요청당 SQL · DB 시간 · Redis · 트랜잭션 점유 · 메서드 자기 시간 상위 · 행마다 불리는 메서드 · 반복 문장, 요청 밖 구간, DB 노드별 비중, 가장 느린 3건 | [5.3] [5.5] [6.2] [6.3] [6.7] [7.1] |
 | `nginx` | 경로별 rt/urt/uct p95 · 바이트, 슬롯별 비중 | [5.1] [6.6] [7.1] |
-| `budget` | 경로별 시간 예산(p95) — 입구 · 큐 · Service · 풀 · DB · Redis · 외부 · 나머지 · 설명되지 않은 시간 | [7.1] G4 |
+| `budget` | 경로별 시간 예산 — p95 순위 요청 하나의 분해 · 구성 요소 평균 · 합에 넣지 않는 입구 · 큐 · 풀 줄 | [7.1] G4 |
 | `matrix` | 구성 요소 × 경로 점유율 | [7.11] G7 |
 | `endpoints` · `key` · `checks` · `comparison` | 신호등 행 · 핵심 지표 · 반영 확인 · 기준 대비 변화 | [1.4] [0.3] [7.10] |
+
+### 통계 구간
+
+JMeter 가 정한다 — 시작 = 첫 표본의 `timeStamp`(5.6.3 기본 `jmeter.properties` 의 `sampleresult.timestamp.start=true` 라 표본 시작 시각), 끝 = 가장 늦은 `timeStamp + elapsed`. 워밍업(`warmup_sec`)은 이 시작부터 세어 뺀다. 지표 · 추적 · Nginx · 대기 종류 · 초당 값(GC s/s · xact/s · 서버 TPS · 축출/s)이 모두 이 구간을 쓴다. 지표 카운터의 증가량은 구간 안 표본의 증가를 구간 길이로 늘린다(Prometheus `increase()` 외삽과 같다 — 대기열 넘침 · OOM 같은 사건 수는 늘리지 않는다). `meta.json` 의 `start_utc` · `end_utc`(record start/stop)는 파일 범위만 정한다. JMeter 결과가 없으면 기록 구간을 쓴다(`window.basis`).
 
 계산 규칙
 
 - 백분위는 선형 보간(numpy 기본 · Excel PERCENTILE.INC 와 같다). p95 는 표본 100 이상, p99 는 1,000 이상일 때만 판정용이고 그 밖은 「참고(표본 부족)」.
 - 엔드포인트 키 = 경로에서 `/api/` 를 떼고 숫자 · 경로 변수를 `{id}` 로 바꾼 것. JMeter URL · Nginx 경로 · 추적 `http.route` 가 이 키로 이어진다.
-- 메서드 자기 시간 = 구간 길이 − 자식 구간 합집합. Redis 시간 = `.store.` 패키지 메서드 구간. 트랜잭션 = 커밋(롤백) 구간 하나가 닫는 SQL 묶음, 빈 시간 = 그 안에서 SQL 이 없던 시간.
+- 메서드 자기 시간 = 구간 길이 − 자식 구간 합집합. Redis 시간 = `.store.` 패키지와 store 밖에서 Redis 를 쓰는 클래스(`DistributedLockAspect` · `StreamTicketStore` · `SseNotificationSender` · `BuildingLedgerDailyQuota` · `BuildingLedgerRateLimiter`, 중첩 클래스 `Outer$Inner` 포함)의 메서드 구간(`code.namespace`). 트랜잭션 = 커밋(롤백) 구간 하나가 닫는 SQL 묶음, 빈 시간 = 그 안에서 SQL 이 없던 시간.
+- 행마다 불리는 메서드 = 한 추적(요청) 안에서 100번 넘게 불린 메서드 — 메서드 목록 생성기와 같은 규칙.
+- SSE(`/api/notifications/stream`)는 응답 시간이 연결 시간이라 경로 통계 · 시간 예산 · 가장 느린 요청 · [7.11] 에서 빼고 연결 수(`traces.sse_connections`)만 센다.
+- 시간 예산([7.1] · G4)은 구간별 p95 를 따로 구해 더하지 않는다. 요청마다 서버 구간을 겹치지 않는 구성 요소(이름 붙은 상위 메서드 자기 시간 · SQL 합집합 · Redis 메서드 구간 · 외부 호출 · 그 밖의 메서드 자기 시간 · 서버 구간 자기 시간)로 나눈 뒤, 구성 요소 평균과 서버 구간이 p95 순위인 실제 요청 하나의 분해를 낸다. 설명되지 않은 시간 = 그 요청의 서버 구간 − 구성 요소 합(음수가 되지 않는다). 입구(도구 − urt) · 슬롯 연결(uct) · 큐(urt − 서버) · 풀 획득 대기(전 경로 지표)는 따로 적고 합에 넣지 않는다.
+- 10초 창 시계열의 TPS 는 창이 실제로 덮은 길이로 나누고, 절반도 안 덮은 마지막 창은 정체 판정에서 뺀다.
+- 실패한 긁기 — 지금 수집기의 본문 없는 `# SCRAPE_ERROR <대상>` 한 줄은 그 긁기만 빠진 것이라 앞 본문을 그대로 둔다. 예전 모양(머리 · 잘린 본문 · `# SCRAPE_ERROR` 가 한 gzip 멤버)은 그 본문을 통째로 버린다. gzip 은 멤버 단위로 읽는다(반쯤 쓰인 마지막 멤버는 버린다).
+- `meta.json` 의 `node_clock_utc` 는 읽지 않는다(값이 null 이어도 된다).
 - 질의 통계 점유율은 `-pgss-all.csv` 가 있으면 전체 합 기준, 없으면 상위 20 합 기준(점유율이 부풀어 보인다 — `total_basis` 에 적힌다).
 - 흔들림: 편차 = (최대 − 최소) ÷ 중위수, 하한 = 2 × 네 지표(p95 · TPS · DB CPU · 오류율) 중 최대 편차. 중위수가 0 인 지표는 뺀다.
 - 판정(`comparison`): |변화| < 하한이면 「변화없음」, 하한 파일이 없으면 「하한 미정」.

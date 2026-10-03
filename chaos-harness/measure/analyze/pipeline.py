@@ -35,17 +35,21 @@ def analyze_round(name: str, write=True):
         raise SystemExit(f"회차 폴더가 없다: {rdir}")
     meta = load_meta(rdir)
     win = Window(parse_time(meta.get("start_utc")), parse_time(meta.get("end_utc")), meta.get("warmup_sec") or 0)
+    rec = (win.start, win.end)
     s = {"round": meta.get("round", name), "folder": name, "meta": meta}
 
-    # 1. 부하 도구 — 구간이 비어 있으면 여기서 정해진다
+    # 1. 부하 도구 — 통계 구간이 여기서 정해진다(JMeter 첫 표본 ~ 마지막 끝)
     j, jrows = (None, [])
     jp = rdir / "jmeter" / "result.jtl"
     if jp.exists():
         j, jrows = jtl.analyze(jp, win)
     s["jtl"] = j
     requests = j["requests"] if j else None
-    s["window"] = {"start_utc": win.start, "end_utc": win.end, "warmup_sec": win.warmup, "duration_sec": rnd(win.duration, 1),
-                   "start_kst": fmt_kst(win.start), "end_kst": fmt_kst(win.end)}
+    # 이 뒤 모든 원자료가 같은 구간(JMeter 기준)을 쓴다. JMeter 결과가 없으면 기록 구간 그대로
+    s["window"] = {"basis": "jmeter" if j else "record", "start_utc": win.start, "end_utc": win.end, "warmup_sec": win.warmup,
+                   "stats_start_utc": win.lo, "duration_sec": rnd(win.duration, 1),
+                   "start_kst": fmt_kst(win.start), "end_kst": fmt_kst(win.end),
+                   "record_start_utc": rec[0], "record_end_utc": rec[1]}
 
     # 2. 지표 · DB · 입구 · 추적 · 그 밖
     s["resources"] = prom.analyze(rdir / "metrics", win, requests)
@@ -108,48 +112,62 @@ def _pool_acquire(s):
 
 
 def budget_for(s, route):
+    """[7.1] — 요청마다 나눈 값(traces.decompose)으로. 구간별 p95 를 따로 구해 더하지 않는다.
+    rows: 서로 겹치지 않는 구성 요소(summed=True) — 평균과 「p95 순위 요청 하나」의 분해.
+    extra: 분포끼리의 차이(입구 · 큐)와 전 경로 풀 지표 — 합에 넣지 않는다."""
     tr = ((s.get("traces") or {}).get("routes") or {}).get(route)
     ng = ((s.get("nginx") or {}).get("routes") or {}).get(route)
     tool = (s.get("route_tool") or {}).get(route)
     tool_p95 = tool["p95"] if tool else None
-    b = tr["budget_p95"] if tr else {}
+    dc = (tr or {}).get("decomp") or {}
+    mean_, req = dc.get("mean") or {}, dc.get("p95_request") or {}
     rows = []
 
-    def add(layer, name, v, src):
-        rows.append({"layer": layer, "name": name, "ms": rnd(v, 3) if v is not None else None, "source": src})
+    def add(key, layer, name, src):
+        rows.append({"key": key, "layer": layer, "name": name, "source": src, "summed": True,
+                     "mean_ms": mean_.get(key), "ms": req.get(key)})
 
-    urt = ng["urt_p95"] if ng else None
-    srv = b.get("server")
-    add("입구", "Nginx · 네트워크", tool_p95 - urt if tool_p95 is not None and urt is not None else None, "도구 − urt")
-    add("입구", "슬롯 연결 (uct)", ng["uct_p95"] if ng else None, "Nginx 로그")
-    add("앱", "요청 큐 대기 (추정)", urt - srv if urt is not None and srv is not None else None, "urt − 서버 요청 구간")
-    for k in [k for k in b if k.startswith("method:")][:2]:
-        add("앱", "Service — " + k[len("method:"):], b[k], "메서드 구간(자기 시간)")
-    add("경계", "커넥션 획득 대기", _pool_acquire(s), "풀 지표(전체)")
-    add("DB", "질의 실행", b.get("sql_main"), "추적 SQL(가장 긴 1건)")
-    add("DB", "추가 질의", b.get("sql_extra"), "추적 SQL(나머지)")
-    add("캐시", "Redis 왕복", b.get("redis"), "store 메서드 구간")
-    add("외부", "외부 호출", b.get("external"), "추적 CLIENT")
-    add("앱", "직렬화 · 응답 전송 (나머지)", b.get("server_self"), "서버 구간 자기 시간")
-    total = sum(r["ms"] for r in rows if r["ms"] is not None and r["ms"] > 0)
+    for m in dc.get("named_methods") or []:
+        add("method:" + m, "앱", "Service — " + m, "메서드 구간(자기 시간)")
+    for key, layer, name, src in traces.DECOMP_PARTS:
+        add(key, layer, name, src)
+    srv = req.get("server")
     for r in rows:
-        r["share_pct"] = rnd(100.0 * r["ms"] / tool_p95, 1) if r["ms"] is not None and tool_p95 else None
+        r["share_pct"] = rnd(100.0 * r["ms"] / srv, 1) if r["ms"] is not None and srv else None
+    total = sum(r["ms"] for r in rows if r["ms"] is not None) if req else None
+    srv_p95 = ((tr or {}).get("server_ms") or {}).get("p95")
+    urt = ng["urt_p95"] if ng else None
+    extra = [
+        {"layer": "입구", "name": "Nginx · 네트워크 (도구 p95 − urt p95)", "ms": rnd(tool_p95 - urt, 3) if tool_p95 is not None and urt is not None else None,
+         "source": "분포 차이 — 합에 넣지 않음"},
+        {"layer": "입구", "name": "슬롯 연결 (uct p95)", "ms": ng["uct_p95"] if ng else None, "source": "Nginx 로그 — 합에 넣지 않음"},
+        {"layer": "앱", "name": "요청 큐 대기 추정 (urt p95 − 서버 구간 p95)", "ms": rnd(urt - srv_p95, 3) if urt is not None and srv_p95 is not None else None,
+         "source": "분포 차이 — 합에 넣지 않음"},
+        {"layer": "경계", "name": "커넥션 획득 대기 (전 경로 풀 지표 — 함수 자기 시간과 겹칠 수 있음)", "ms": _pool_acquire(s),
+         "source": "hikaricp acquire — 합에 넣지 않음"},
+    ]
     big = max((r for r in rows if r["ms"] is not None), key=lambda r: r["ms"], default=None)
-    unexplained = tool_p95 - total if tool_p95 is not None else None
     return {
         "route": route,
         "rows": rows,
-        "sum_ms": rnd(total, 3) if rows else None,
+        "extra": extra,
+        "trace_id": req.get("trace_id"),
+        "server_ms": srv,                       # p95 순위 요청의 서버 구간
+        "server_mean_ms": mean_.get("server"),
+        "sum_ms": rnd(total, 3) if total is not None else None,
+        "unexplained_ms": req.get("unexplained"),
+        "unexplained_pct": rnd(100.0 * req["unexplained"] / srv, 1) if req.get("unexplained") is not None and srv else None,
+        "unexplained_mean_ms": mean_.get("unexplained"),
+        "overlap_ms": req.get("overlap"),
         "tool_p95_ms": tool_p95,
-        "server_p95_ms": srv,
-        "unexplained_ms": rnd(unexplained, 3) if unexplained is not None else None,
-        "unexplained_pct": rnd(100.0 * unexplained / tool_p95, 1) if unexplained is not None and tool_p95 else None,
+        "server_p95_ms": srv_p95,
         "largest": {"layer": big["layer"], "name": big["name"]} if big else None,
     }
 
 
 def budgets(s):
     routes = set(((s.get("traces") or {}).get("routes") or {}).keys()) | set((s.get("route_tool") or {}).keys())
+    routes.discard(traces.SSE_ROUTE)   # 연결 시간이라 시간 예산이 없다
     order = sorted(routes, key=lambda r: -((s.get("route_tool") or {}).get(r, {}).get("count") or 0))
     return {r: budget_for(s, r) for r in order}
 
