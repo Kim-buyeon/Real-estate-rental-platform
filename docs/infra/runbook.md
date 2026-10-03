@@ -308,6 +308,8 @@ RISK_ANALYSIS와 같이 재계산 가능한 데이터는 PITR 대신 **재분석
 
 **로컬 단계에서는 암호화하지 않는다.** 데이터 볼륨과 같은 디스크 · 같은 노출이다. 노드 밖으로 내보낼 때 암호화한다 — 인프라 기술 스택 3장의 기준이 「전송 전 암호화」다(서버 운영 기반 설계서 7.2 「NAS → S3」 행도 같다). 논리 백업이 암호화하는 것은 노드 밖(3노드는 S3, 설계상 NAS)으로 나가기 때문이다.
 
+**로컬 아카이브에는 최근 몇 시간치만 있다**(S3로 보낸 뒤 6시간 — 서버 운영 기반 설계서 5.4, #381). 그보다 앞선 시각으로 되살리거나 물리 백업의 시작 WAL이 로컬에 없으면 아래 「S3에서 되살리기」로 WAL을 받는다.
+
 **PITR 리허설** — 위 순서(1 ~ 4)를 운영 DB가 아닌 일회용 컨테이너에서 밟는다. 표식 행 A를 넣고 시각 T를 적은 뒤 표식 행 B를 넣고, 물리 백업을 새 데이터 디렉터리에 풀어 `restore_command = 'cp /archive/wal/%f %p'` · `recovery_target_time = T` · `recovery.signal`로 기동한다. A가 있고 B가 없으면 성공이다. **아카이브는 읽기 전용(`:ro`)으로 붙이고 `archive_mode`는 기본값(`off`)으로 띄운다** — 운영 인자 그대로 띄워 승격하면 새 타임라인의 `.history` · 세그먼트가 운영 아카이브에 섞이고, 나중에 운영 standby가 같은 타임라인 번호를 고르면 아카이빙이 영구 실패한다.
 
 **리허설 실측**(APP-01 · t3.small · 2026-09-24 23:08 ~ 23:10, 트래픽 없는 시간, 표본 1회 · DB 36 MB) — 물리 백업 **3초 · 9,040 KiB**. 표식 A(23:09:15) → T(23:09:17.78) → 표식 B(23:09:19) 뒤 `pg_switch_wal()`로 B가 든 세그먼트를 아카이브에 넘기고, 같은 이미지의 일회용 컨테이너(`--memory 150m`)에 백업을 풀어 `recovery_target_action=pause`로 띄웠다. **풀기 + 재생 2.55초**, 로그 `recovery stopping before commit … 14:09:19.96+00` · `pausing at the end of recovery`. 판정 **리허설 `A` / 운영 `A,B`**, `property` 67,183건 양쪽 같음. 리허설 뒤 아카이브에 새 파일 없음. `pause`로 두면 승격하지 않아 새 타임라인이 생기지 않는다 — 확인만 하는 리허설은 이것으로 충분하다. **점검 구간**(`archive_mode`를 켜려고 primary 재생성) **7.03초**(#214).
@@ -736,7 +738,7 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 | 1 | 역할 정책 · 수명 주기를 `infra/backup/aws/`의 것으로 다시 넣는다(`put-role-policy` 같은 이름 — 덮어쓴다) | 접두어 셋 · 규칙 셋 |
 | 2 | 아카이브 스크립트(0640) 반영 — **`archive-wal.sh`는 파일 하나를 바인드 마운트한다.** 체크아웃이 바뀌면(파일이 새 inode가 되면) 도는 컨테이너는 옛 내용을 본다 → **DB 컨테이너를 재시작해야 반영된다**(primary는 점검 모드 안에서 — 16.3초 실측). 재시작 전 · 재시작 중에 아카이브된 세그먼트는 0600이다 → `sudo find /var/backups/rental/wal -maxdepth 1 -type f -perm 0600 -exec chmod 0640 {} +`를 **재시작 뒤에 한 번 더** | 새 세그먼트 `-rw-r----- 70 backup` |
 | 3 | `sudo install -d -o backup -g backup -m 700 /var/lib/rental-backup`(전송 상태 · GNUPGHOME의 부모 — root로 만들어져 있으면 고친다) → 스크립트 `wal-ship.sh` 설치 · 유닛 `rental-wal-ship.{service,timer}` | — |
-| 4 | `/etc/rental/wal-ship.env`(`backup` 600) — `WAL_S3_URI=s3://rental-backup-890742606734/wal` · `BACKUP_KEY_FILE` · `GNUPGHOME` · `AWS` · `AWS_DEFAULT_REGION`. `basebackup.env`에 `BASEBACKUP_S3_URI=…/physical` · 같은 넷 | — |
+| 4 | `/etc/rental/wal-ship.env`(`backup` 600) — `WAL_S3_URI=s3://rental-backup-890742606734/wal`(**목적지를 바꾸면 보낸 표시 `/var/lib/rental-backup/wal-shipped`를 비운다** — 표시가 목적지를 가리지 않아 옛 목적지로 보낸 것을 6시간 뒤 로컬에서 지운다, #381) · `BACKUP_KEY_FILE` · `GNUPGHOME` · `AWS` · `AWS_DEFAULT_REGION`. `basebackup.env`에 `BASEBACKUP_S3_URI=…/physical` · 같은 넷 | — |
 | 5 | 두 노드 수동 전송 → `enable --now rental-wal-ship.timer` | `WAL 전송 — 보냄 N · 이미 있음 M …`. 보내지 못한 파일이 있으면 **그 파일에서 멈추고 매분 실패를 남긴다**(0600 세그먼트에서 실측) |
 | 6 | 물리 백업 수동 1회 | S3 `physical/<시각>/` 세 파일 |
 

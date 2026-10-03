@@ -3,7 +3,7 @@
 #
 #   bash wal-ship.sh           로컬 WAL 아카이브에서 아직 보내지 않은 것을 암호화해 S3 로 한 번 보낸다
 #
-# 순서: 보낸 표시 정리 → 대상 고르기 → 한 건씩 암호화 → 조건부 쓰기(있으면 덮지 않는다) → 보낸 표시.
+# 순서: 보낸 표시 정리 → 대상 고르기 → 한 건씩 암호화 → 조건부 쓰기(있으면 덮지 않는다) → 보낸 표시. 보내기 전에 이미 보낸 로컬 사본을 정리한다(3).
 # 실패하면 0 이 아닌 코드로 끝난다 — journalctl -u rental-wal-ship 으로 본다(설계서 7.1). 다음 분에 남은 것부터 다시 한다.
 # 결과는 지표로도 남긴다 — 성공으로 끝나면 마지막 성공 시각, 어떻게 끝나든 아직 보내지 않은 수(아래 「지표」).
 #
@@ -134,8 +134,8 @@ install -d -m 700 "$WAL_SHIP_STATE_DIR"
 
 # ── 2. 보낸 표시 정리 ──
 # 아카이브에서 사라진 이름(물리 백업의 pg_archivecleanup 이 지운 것)의 표시를 지운다 — 표시가 끝없이 쌓이지 않게 한다.
-# 보내기보다 먼저 한다 — 전송이 계속 실패해도 정리는 돈다. 이름 형식이 맞는 것만 지운다(같은 경로의 다른 것을 건드리지 않는다).
-# 사라진 이름이 다시 생기면 표시가 없어 다시 보내지만, S3 조건부 쓰기가 덮어쓰기를 막는다(아래 3).
+# 보내기보다 먼저 한다 — 전송이 계속 실패해도 정리는 돈다(3 도 같다). 이름 형식이 맞는 것만 지운다(같은 경로의 다른 것을 건드리지 않는다).
+# 사라진 이름이 다시 생기면 표시가 없어 다시 보내지만, S3 조건부 쓰기가 덮어쓰기를 막는다(아래 4).
 REMOVED=0
 while IFS= read -r -d '' mark; do
   name=${mark##*/}
@@ -145,7 +145,47 @@ while IFS= read -r -d '' mark; do
   REMOVED=$((REMOVED + 1))
 done < <(find "$WAL_SHIP_STATE_DIR" -mindepth 1 -maxdepth 1 -type f -print0)
 
-# ── 3. 보내기 ──
+# ── 3. 보낸 로컬 사본 정리(#381) — 보내기보다 먼저: 전송이 실패해 멈춰도 이미 보낸 사본은 지운다 ──
+# 로컬 아카이브는 S3 로 보내기 전의 대기열이다. 보낸 뒤에도 물리 백업 주기(주 1회 · 4주 보존)까지 남기면 19 GB 루트 디스크가
+# 찬다 — archive_timeout 240초라 한가해도 4분마다 16 MB 세그먼트가 하나씩 생기고(하루 약 5.8 GB), 2026-10-03 대량 쓰기에서
+# 15.2 GB 가 쌓여 DB-01 디스크가 100% 가 됐다(아카이브 실패 · docker exec 불가). 시점 복구는 S3 사본만으로 된다(운영 절차서 5장 ·
+# #241 실측) — 로컬 사본은 최근 몇 시간의 빠른 복구 몫만 남긴다.
+#   (가) 보낸 표시가 있고 WAL_LOCAL_KEEP_HOURS 보다 오래된 세그먼트를 지운다
+#   (나) 그래도 아카이브 파일시스템 사용률이 WAL_LOCAL_DISK_MAX_PCT 이상이면 보낸 세그먼트를 오래된 것부터 더 지운다
+# 보내지 않은 것은 어떤 경우에도 지우지 않는다 — S3 가 막혀 쌓이는 것은 「WAL 전송 밀림」 알림(관측 설계서 5.1)이 잡는다.
+# 세그먼트만 지운다 — 타임라인 기록(.history) · 백업 기록(.backup)은 작고 복구가 찾는다. 표시는 다음 실행의 2단계가 지운다.
+# 보낸 표시는 목적지(WAL_S3_URI)를 가리지 않는다 — 목적지를 바꾸면 표시 디렉터리를 비운 뒤 다시 보낸다.
+# 비우지 않으면 옛 목적지로 보낸 세그먼트가 새 목적지에 없는 채로 여기서 지워진다.
+WAL_LOCAL_KEEP_HOURS=${WAL_LOCAL_KEEP_HOURS:-6}
+WAL_LOCAL_DISK_MAX_PCT=${WAL_LOCAL_DISK_MAX_PCT:-60}
+# 0 으로 시작하는 값(08)은 산술에서 8진수 오류가 나 정리 전체가 조용히 빠지므로 받지 않는다. 문턱은 1 ~ 99
+[[ "$WAL_LOCAL_KEEP_HOURS" =~ ^(0|[1-9][0-9]*)$ && "$WAL_LOCAL_DISK_MAX_PCT" =~ ^[1-9][0-9]?$ ]] \
+  || { log "!!! WAL_LOCAL_KEEP_HOURS 는 0 이상 정수, WAL_LOCAL_DISK_MAX_PCT 는 1 ~ 99 여야 한다"; exit 1; }
+# 지우기가 실패해도(권한 등) 멈추지 않는다 — 여기서 끝나면 4단계 전송까지 멈춰 잃는 범위가 는다. 실패는 로그로 남긴다
+prune() { rm -f -- "$WAL_ARCHIVE_DIR/$1" || { log "!!! 로컬 사본을 지우지 못함: $1"; return 1; }; }
+disk_pct() { df --output=pcent "$WAL_ARCHIVE_DIR" | tail -1 | tr -dc '0-9'; }
+PRUNED_AGE=0
+PRUNED_DISK=0
+# (가) 나이 — find 의 -mmin 은 분 단위다. 이름 형식과 보낸 표시를 다시 확인한 뒤 지운다
+while IFS= read -r name; do
+  [[ "$name" =~ ^[0-9A-F]{24}$ ]] || continue
+  [ -e "$WAL_SHIP_STATE_DIR/$name" ] || continue
+  prune "$name" && PRUNED_AGE=$((PRUNED_AGE + 1))
+done < <(find "$WAL_ARCHIVE_DIR" -mindepth 1 -maxdepth 1 -type f -mmin +$((WAL_LOCAL_KEEP_HOURS * 60)) -printf '%f\n')
+# (나) 디스크 — 이름순(= 시간순)으로 오래된 것부터, 사용률이 문턱 아래로 내려갈 때까지
+if [ "$(disk_pct)" -ge "$WAL_LOCAL_DISK_MAX_PCT" ]; then
+  while IFS= read -r name; do
+    [ "$(disk_pct)" -ge "$WAL_LOCAL_DISK_MAX_PCT" ] || break
+    [[ "$name" =~ ^[0-9A-F]{24}$ ]] || continue
+    [ -e "$WAL_SHIP_STATE_DIR/$name" ] || continue
+    prune "$name" || break
+    PRUNED_DISK=$((PRUNED_DISK + 1))
+  done < <(find "$WAL_ARCHIVE_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
+  [ "$(disk_pct)" -lt "$WAL_LOCAL_DISK_MAX_PCT" ] \
+    || log "!!! 보낸 사본을 다 지워도 디스크 $(disk_pct)% — 문턱 ${WAL_LOCAL_DISK_MAX_PCT}%. 남은 것은 보내지 않은 것이거나 아카이브 밖이다"
+fi
+
+# ── 4. 보내기 ──
 # 이름순이 시간순이다(고정 폭 16진). 타임라인 기록(00000002.history)은 '.' 이 숫자보다 앞서 그 타임라인의 세그먼트보다 먼저 간다.
 # 한 건이라도 실패하면 그 자리에서 멈춘다 — 뒤의 것을 먼저 보내 사이에 구멍을 만들지 않는다.
 #
@@ -187,6 +227,6 @@ while IFS= read -r name; do
   : > "$WAL_SHIP_STATE_DIR/$name"
 done < <(find "$WAL_ARCHIVE_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
 
-log "WAL 전송 — 보냄 $SENT · 이미 있음 $EXISTED · 건너뜀(보낸 표시) $SKIPPED · 표시 정리 $REMOVED"
+log "WAL 전송 — 보냄 $SENT · 이미 있음 $EXISTED · 건너뜀(보낸 표시) $SKIPPED · 표시 정리 $REMOVED · 로컬 정리 나이 $PRUNED_AGE · 디스크 $PRUNED_DISK"
 # standby 노드에서도 쓴다 — 이 작업은 primary 확인 없이 그 노드의 로컬 아카이브를 따라가므로 어느 쪽에서든 성공이 뜻을 갖는다
 last_success wal_ship
