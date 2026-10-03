@@ -852,7 +852,7 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 {% else %}
 <table><tr><th class="k">엔드포인트</th><td class="b">미측정</td><th class="k">회차</th><td class="b">{{ R }}</td></tr></table>
 {% endfor %}
-<p class="small">구간 p95 를 따로 구해 더하지 않는다. 요청마다 서버 구간을 겹치지 않는 구성 요소로 나누고 — 메서드 자기 시간 · SQL 합집합 · Redis 메서드 구간 · 외부 호출 · 요청 구간 자기 시간 — ① 서버 구간이 p95 순위인 실제 요청 하나의 분해(전 · 후)와 ② 구성 요소 평균을 적는다. 설명되지 않은 시간 = 그 요청의 서버 구간 − 구성 요소 합(메서드가 아닌 구간의 자기 시간). 입구 · 큐 · 풀 줄은 분포끼리의 차이 또는 전 경로 지표라 합에 넣지 않는다.{% if s.traces.sse_connections %} SSE 연결 {{ s.traces.sse_connections }}건은 연결 시간이라 이 표 · [7.11] · 가장 느린 요청에서 뺐다.{% endif %}</p>
+<p class="small">구간 p95 를 따로 구해 더하지 않는다. 요청마다 서버 구간을 겹치지 않는 구성 요소로 나누고 — 메서드 자기 시간 · SQL 합집합 · Redis 메서드 자기 시간(분산 락 advice 는 감싼 업무 메서드를 포함하므로 Redis 가 아니라 메서드로 센다) · 외부 호출 · 기타 계측 구간(spring-data 저장소 · tomcat 내부) 자기 시간 — ① 서버 구간이 p95 순위인 실제 요청 하나의 분해(전 · 후)와 ② 구성 요소 평균을 적는다. 설명되지 않은 시간 = 그 요청의 서버 구간 − 구성 요소 합 = 서버 구간 안에서 계측 구간 밖에 있던 시간(Controller · 필터 · 직렬화 · 계측 안 된 코드). 5% 를 넘으면 계측 공백이고, 그 자리는 프로파일러로 본다. 입구 · 큐 · 풀 줄은 분포끼리의 차이 또는 전 경로 지표라 합에 넣지 않는다.{% if s.traces.sse_connections %} SSE 연결 {{ s.traces.sse_connections }}건은 연결 시간이라 이 표 · [7.11] · 가장 느린 요청에서 뺐다.{% endif %}</p>
 <p class="small">★ 비중 10% 이상 · ★★ 가장 큰 구간</p>
 <h4>세 겹으로 빼서 입구 · 큐를 가른다</h4>
 <table>
@@ -1104,7 +1104,7 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <tr><th class="k">계층별 요약 — DB</th><td class="b">{{ c.db|n }}</td></tr>
 <tr><th class="k">계층별 요약 — 앱</th><td class="b">{{ c.app|n }}</td></tr>
 <tr><th class="k">계층별 요약 — 경계</th><td class="b">{{ c.boundary|n }}</td></tr>
-<tr><th class="k">시간 예산</th><td class="b">[7.1] 참조.{% if bg %}{% for lay in ["DB", "앱", "경계"] %} {{ lay }} {{ (bg.rows|selectattr("layer", "equalto", lay)|map(attribute="share_pct")|select("number")|sum)|round(1) }}%{{ " ·" if not loop.last }}{% endfor %}{% endif %}</td></tr>
+<tr><th class="k">시간 예산</th><td class="b">[7.1] 참조.{% if bg %}{% for lay in ["DB", "앱", "캐시", "외부"] %} {{ lay }} {{ (bg.rows|selectattr("layer", "equalto", lay)|map(attribute="share_pct")|select("number")|sum)|round(1) }}%{{ " ·" if not loop.last }}{% endfor %} (p95 순위 요청, 서버 구간 기준) · 경계(풀 대기)는 요청별로 나눌 원천이 없어 [7.1] 참고 행(합 밖){% endif %}</td></tr>
 <tr><th class="k">전 / 후</th><td class="b">{{ c.before_after|n }}</td></tr>
 <tr><th class="k">데이터 규모 민감</th><td class="b">{{ "■" if c.scale_sensitive else "□" }} 조회 비용이 데이터 양에 비례 (규모가 늘면 헤드룸이 준다)</td></tr>
 <tr><th class="k">남은 것</th><td class="b">{{ c.remaining|n }}</td></tr>

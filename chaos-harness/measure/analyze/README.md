@@ -60,14 +60,14 @@ JMeter 가 정한다 — 시작 = 첫 표본의 `timeStamp`(5.6.3 기본 `jmeter
 
 - 백분위는 선형 보간(numpy 기본 · Excel PERCENTILE.INC 와 같다). p95 는 표본 100 이상, p99 는 1,000 이상일 때만 판정용이고 그 밖은 「참고(표본 부족)」.
 - 엔드포인트 키 = 경로에서 `/api/` 를 떼고 숫자 · 경로 변수를 `{id}` 로 바꾼 것. JMeter URL · Nginx 경로 · 추적 `http.route` 가 이 키로 이어진다.
-- 메서드 자기 시간 = 구간 길이 − 자식 구간 합집합. Redis 시간 = `.store.` 패키지와 store 밖에서 Redis 를 쓰는 클래스(`DistributedLockAspect` · `StreamTicketStore` · `SseNotificationSender` · `BuildingLedgerDailyQuota` · `BuildingLedgerRateLimiter`, 중첩 클래스 `Outer$Inner` 포함)의 메서드 구간(`code.namespace`). 트랜잭션 = 커밋(롤백) 구간 하나가 닫는 SQL 묶음, 빈 시간 = 그 안에서 SQL 이 없던 시간.
+- 메서드 자기 시간 = 구간 길이 − 자식 구간 합집합. Redis 시간 = `.store.` 패키지와 store 밖에서 Redis 를 쓰는 클래스(`DistributedLockAspect` · `StreamTicketStore` · `SseNotificationSender` · `BuildingLedgerDailyQuota` · `BuildingLedgerRateLimiter`, 중첩 클래스 `Outer$Inner` 포함, `code.namespace`)의 메서드 구간 **자기 시간** 합 — RedisTemplate 호출은 계측되지 않아 자기 시간 ≈ Redis 왕복이다. `DistributedLockAspect.lock`(@Around)은 잠긴 업무 메서드 전체를 감싸므로 Redis 가 아니라 보통 메서드로 세고, Redis 호출 수에도 넣지 않는다(acquire · release · Renewal.run 이 Redis 몫). 트랜잭션 = 커밋(롤백) 구간 하나가 닫는 SQL 묶음, 빈 시간 = 그 안에서 SQL 이 없던 시간.
 - 행마다 불리는 메서드 = 한 추적(요청) 안에서 100번 넘게 불린 메서드 — 메서드 목록 생성기와 같은 규칙.
 - SSE(`/api/notifications/stream`)는 응답 시간이 연결 시간이라 경로 통계 · 시간 예산 · 가장 느린 요청 · [7.11] 에서 빼고 연결 수(`traces.sse_connections`)만 센다.
-- 시간 예산([7.1] · G4)은 구간별 p95 를 따로 구해 더하지 않는다. 요청마다 서버 구간을 겹치지 않는 구성 요소(이름 붙은 상위 메서드 자기 시간 · SQL 합집합 · Redis 메서드 구간 · 외부 호출 · 그 밖의 메서드 자기 시간 · 서버 구간 자기 시간)로 나눈 뒤, 구성 요소 평균과 서버 구간이 p95 순위인 실제 요청 하나의 분해를 낸다. 설명되지 않은 시간 = 그 요청의 서버 구간 − 구성 요소 합(음수가 되지 않는다). 입구(도구 − urt) · 슬롯 연결(uct) · 큐(urt − 서버) · 풀 획득 대기(전 경로 지표)는 따로 적고 합에 넣지 않는다.
+- 시간 예산([7.1] · G4)은 구간별 p95 를 따로 구해 더하지 않는다. 요청마다 서버 구간을 겹치지 않는 구성 요소(이름 붙은 상위 메서드 자기 시간 · SQL 합집합 · Redis 메서드 자기 시간 · 외부 호출 · 그 밖의 메서드 자기 시간 · 기타 계측 구간 자기 시간 · 서버 구간 자기 시간)로 나눈 뒤, 구성 요소 평균과 서버 구간이 p95 순위인 실제 요청 하나의 분해를 낸다. 설명되지 않은 시간 = 그 요청의 서버 구간 − 구성 요소 합(음수가 되지 않는다). 입구(도구 − urt) · 슬롯 연결(uct) · 큐(urt − 서버) · 풀 획득 대기(전 경로 지표)는 따로 적고 합에 넣지 않는다.
 - 10초 창 시계열의 TPS 는 창이 실제로 덮은 길이로 나누고, 절반도 안 덮은 마지막 창은 정체 판정에서 뺀다.
 - 실패한 긁기 — 지금 수집기의 본문 없는 `# SCRAPE_ERROR <대상>` 한 줄은 그 긁기만 빠진 것이라 앞 본문을 그대로 둔다. 예전 모양(머리 · 잘린 본문 · `# SCRAPE_ERROR` 가 한 gzip 멤버)은 그 본문을 통째로 버린다. gzip 은 멤버 단위로 읽는다(반쯤 쓰인 마지막 멤버는 버린다).
 - `meta.json` 의 `node_clock_utc` 는 읽지 않는다(값이 null 이어도 된다).
-- 질의 통계 점유율은 `-pgss-all.csv` 가 있으면 전체 합 기준, 없으면 상위 20 합 기준(점유율이 부풀어 보인다 — `total_basis` 에 적힌다).
+- 질의 통계 점유율 · 총 DB 시간 · 요청당 DB 시간 · 요청당 질의는 `<노드>-pgss-all.csv.gz`(gzip) 의 **앱 DB 행** 합 기준이다. 앱 DB = ① 상위 20 의 queryid 가 가장 많이 걸리는 datname ② dbstats 의 datname ③ postgres · template 를 뺀 DB 중 총 실행 시간 최대 — 고른 DB 와 근거는 `db.pgss_basis`. 전체 파일이 없으면 상위 20 합 기준(점유율이 부풀어 보인다 — `total_basis: top20`).
 - 흔들림: 편차 = (최대 − 최소) ÷ 중위수, 하한 = 2 × 네 지표(p95 · TPS · DB CPU · 오류율) 중 최대 편차. 중위수가 0 인 지표는 뺀다.
 - 판정(`comparison`): |변화| < 하한이면 「변화없음」, 하한 파일이 없으면 「하한 미정」.
 

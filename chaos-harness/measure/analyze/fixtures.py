@@ -155,20 +155,30 @@ def make_round(name, start, speed=1.0, changed="", seed=1, lead=0, trail=0):
                                                               {"traceId": _hex(rng, 32), "spanId": "sse1", "parentSpanId": "", "name": "GET /api/notifications/stream",
                                                                "kind": 2, "startTimeUnixNano": str(st), "endTimeUnixNano": str(st + 90_000_000_000),
                                                                "attributes": [{"key": "http.route", "value": {"stringValue": "/api/notifications/stream"}}]}]}]}]}))
-    # Redis 를 쓰는 store 밖 클래스(중첩) · 한 추적에서 120번 불리는 메서드 — POST /api/wishlist 한 건
+    # 분산 락 · 한 추적에서 120번 불리는 메서드 — POST /api/me/wishlist 한 건(ms 단위, 서버 구간 0 ~ 90)
+    #   lock(1 ~ 40, @Around — 업무 메서드를 감싼다)
+    #     ├ acquire(1 ~ 3, Redis 2) ├ WishlistService.add(4 ~ 36) ─ SQL 5 ~ 10 · 12 ~ 20 · Renewal.run(22 ~ 22.5, Redis)
+    #     └ release(37 ~ 38, Redis 1)
+    #   CodeConverter.toName × 120(41 ~ 77)
     wt = int((t0 + lead + 100) * 1e9)
     wtid = _hex(rng, 32)
-    ws = [{"traceId": wtid, "spanId": "w0", "parentSpanId": "", "name": "POST /api/me/wishlist", "kind": 2,
-           "startTimeUnixNano": str(wt), "endTimeUnixNano": str(wt + 50_000_000),
-           "attributes": [{"key": "http.route", "value": {"stringValue": "/api/me/wishlist"}}]},
-          {"traceId": wtid, "spanId": "w1", "parentSpanId": "w0", "name": "DistributedLockAspect$Around.lock", "kind": 1,
-           "startTimeUnixNano": str(wt + 1_000_000), "endTimeUnixNano": str(wt + 4_000_000),
-           "attributes": [{"key": "code.namespace", "value": {"stringValue": "com.duri.rentalplatform.common.lock.DistributedLockAspect$Around"}}]}]
+    LOCK = "com.duri.rentalplatform.common.lock.DistributedLockAspect"
+
+    def wspan(sid, parent, name, s_ms, e_ms, kind=1, attrs=None):
+        return {"traceId": wtid, "spanId": sid, "parentSpanId": parent, "name": name, "kind": kind,
+                "startTimeUnixNano": str(wt + int(s_ms * 1e6)), "endTimeUnixNano": str(wt + int(e_ms * 1e6)),
+                "attributes": [{"key": k, "value": {"stringValue": v}} for k, v in (attrs or {}).items()]}
+    ws = [wspan("w0", "", "POST /api/me/wishlist", 0, 90, 2, {"http.route": "/api/me/wishlist"}),
+          wspan("w1", "w0", "DistributedLockAspect.lock", 1, 40, attrs={"code.namespace": LOCK}),
+          wspan("w2", "w1", "DistributedLockAspect.acquire", 1, 3, attrs={"code.namespace": LOCK}),
+          wspan("w3", "w1", "WishlistService.add", 4, 36, attrs={"code.namespace": "com.duri.rentalplatform.domain.wishlist.service.WishlistService"}),
+          wspan("w4", "w3", "INSERT rental.wishlist", 5, 10, 3, {"db.system.name": "postgresql", "db.query.text": "INSERT INTO wishlist VALUES (?)", "server.address": "db-01"}),
+          wspan("w5", "w3", "SELECT rental.wishlist", 12, 20, 3, {"db.system.name": "postgresql", "db.query.text": "SELECT * FROM wishlist WHERE user_id = ?", "server.address": "db-01"}),
+          wspan("w6", "w3", "DistributedLockAspect$Renewal.run", 22, 22.5, attrs={"code.namespace": LOCK + "$Renewal"}),
+          wspan("w7", "w1", "DistributedLockAspect.release", 37, 38, attrs={"code.namespace": LOCK})]
     for k in range(120):
-        a0 = wt + 5_000_000 + k * 300_000
-        ws.append({"traceId": wtid, "spanId": f"r{k}", "parentSpanId": "w0", "name": "CodeConverter.toName", "kind": 1,
-                   "startTimeUnixNano": str(a0), "endTimeUnixNano": str(a0 + 100_000),
-                   "attributes": [{"key": "code.namespace", "value": {"stringValue": "com.duri.rentalplatform.domain.x.service.CodeConverter"}}]})
+        ws.append(wspan(f"r{k}", "w0", "CodeConverter.toName", 41 + k * 0.3, 41.1 + k * 0.3,
+                        attrs={"code.namespace": "com.duri.rentalplatform.domain.x.service.CodeConverter"}))
     spans_lines.append(json.dumps({"resourceSpans": [{"resource": {"attributes": [{"key": "service.instance.id", "value": {"stringValue": "app-01-1"}}]},
                                                       "scopeSpans": [{"scope": {"name": "io.opentelemetry.methods"}, "spans": ws}]}]}))
     (d / "jmeter" / "result.jtl").write_text("\n".join(jtl) + "\n", encoding="utf-8")

@@ -116,6 +116,9 @@ def is_txn_end(s):
 
 
 def is_method(s):
+    # SQL · 외부 호출 구간은 범위 이름과 상관없이 메서드로 세지 않는다(겹쳐 세지 않게)
+    if is_db(s) or is_external(s):
+        return False
     return s.scope == METHOD_SCOPE or (s.kind == 1 and ("code.function" in s.a or "code.function.name" in s.a))
 
 
@@ -127,9 +130,19 @@ def namespace(s):
     return fn.rsplit(".", 1)[0] if fn and "." in fn else ""
 
 
+LOCK_ASPECT = "com.duri.rentalplatform.common.lock.DistributedLockAspect"
+
+
+def is_lock_advice(s):
+    """DistributedLockAspect.lock — @Around 라 잠긴 업무 메서드 전체(SQL 포함)를 감싼다. Redis 구간이 아니라
+    보통 메서드로 센다(Redis 몫은 그 안의 acquire · release · Renewal.run 이 갖는다)."""
+    return namespace(s).split("$", 1)[0] == LOCK_ASPECT and s.name.rsplit(".", 1)[-1] == "lock"
+
+
 def is_store(s):
-    """Redis 를 쓰는 메서드 구간 — store 패키지 또는 REDIS_CLASSES(중첩 클래스 Outer$Inner 는 Outer 로 본다)."""
-    if not is_method(s):
+    """Redis 를 쓰는 메서드 구간 — store 패키지 또는 REDIS_CLASSES(중첩 클래스 Outer$Inner 는 Outer 로 본다).
+    Redis 시간은 이 구간들의 자기 시간 합이다 — RedisTemplate 호출은 계측되지 않아 자기 시간 ≈ Redis 왕복."""
+    if not is_method(s) or is_lock_advice(s):
         return False
     ns = namespace(s)
     return ".store." in ns or ns.split("$", 1)[0] in REDIS_CLASSES
@@ -215,7 +228,8 @@ def request_profile(root, kids):
         "sql_max_ms": max((d.dur for d in sql_q), default=0.0),
         "commit_n": len(ends),
         "store_n": len(store),
-        "store_ms": union_ms([(d.s, d.e) for d in store]),
+        # 자기 시간 합 — 구간 길이(합집합)로 재면 감싼 업무 메서드 · SQL 까지 Redis 로 센다
+        "store_ms": sum(self_time(d, kids.get(d.sid, [])) for d in store),
         "ext_ms": union_ms([(d.s, d.e) for d in ext]),
         "ext": [(str(d.a.get("server.address") or route_key(d.a.get("url.full")) or d.name), d.dur, d.err) for d in ext],
         "server_self_ms": self_time(root, kids.get(root.sid, [])),
@@ -379,17 +393,19 @@ def analyze(path: Path, win):
 
 DECOMP_PARTS = [  # (키, 계층, 이름, 원천)
     ("db", "DB", "질의 실행 (SQL 구간 합집합)", "추적 SQL"),
-    ("redis", "캐시", "Redis 왕복 (Redis 메서드 구간)", "store · Redis 클래스 메서드 구간"),
+    ("redis", "캐시", "Redis 왕복 (Redis 메서드 자기 시간)", "store · Redis 클래스 메서드 구간의 자기 시간"),
     ("external", "외부", "외부 호출", "추적 CLIENT"),
     ("methods_other", "앱", "그 밖의 메서드 자기 시간", "메서드 구간"),
-    ("server_self", "앱", "요청 구간 자기 시간 (Controller · 직렬화 · 응답 전송)", "서버 구간 자기 시간"),
+    ("other_spans", "앱", "기타 계측 구간 자기 시간 (spring-data 저장소 · tomcat 내부 등)", "메서드 · SQL · 외부가 아닌 구간"),
+    # 서버 구간 안 · 계측 구간 밖의 시간(Controller · 필터 · 직렬화 · 계측 안 된 코드)은 구성 요소로 세지 않는다 —
+    # 양식 [7.1] 의 「설명되지 않은 시간」이 바로 이것이고, 5% 를 넘으면 계측 공백으로 본다(#378 재검토)
 ]
 
 
 def _parts(p, named):
     """요청 하나 → 구성 요소별 시간. 서로 겹치지 않게 나눈 값이라 합이 요청 시간을 넘지 않는다
     (넘으면 자식 구간이 동시에 돈 것 — overlap 으로 남긴다)."""
-    d = {"db": p["sql_ms"], "redis": p["store_ms"], "external": p["ext_ms"], "server_self": p["server_self_ms"]}
+    d = {"db": p["sql_ms"], "redis": p["store_ms"], "external": p["ext_ms"], "other_spans": p["other_self_ms"]}
     for k in named:
         d["method:" + k] = p["method_self"].get(k, 0.0)
     d["methods_other"] = sum(v for k, v in p["method_self"].items() if k not in named)

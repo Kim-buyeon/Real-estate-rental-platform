@@ -72,9 +72,14 @@ class Units(unittest.TestCase):
 
     def test_redis_classes(self):
         sp = traces.Span()
-        sp.kind, sp.scope, sp.a = 1, traces.METHOD_SCOPE, {"code.namespace": "com.duri.rentalplatform.common.lock.DistributedLockAspect$Inner"}
+        sp.kind, sp.scope, sp.a = 1, traces.METHOD_SCOPE, {"code.namespace": "com.duri.rentalplatform.common.lock.DistributedLockAspect$Renewal"}
+        sp.name = "DistributedLockAspect$Renewal.run"
         self.assertTrue(traces.is_store(sp))
-        sp.a = {"code.namespace": "com.duri.rentalplatform.domain.auth.store.TokenStore"}
+        sp.a, sp.name = {"code.namespace": "com.duri.rentalplatform.common.lock.DistributedLockAspect"}, "DistributedLockAspect.lock"
+        self.assertFalse(traces.is_store(sp))                                     # @Around advice — 보통 메서드
+        sp.name = "DistributedLockAspect.acquire"
+        self.assertTrue(traces.is_store(sp))
+        sp.a, sp.name = {"code.namespace": "com.duri.rentalplatform.domain.auth.store.TokenStore"}, "TokenStore.get"
         self.assertTrue(traces.is_store(sp))
         sp.a = {"code.namespace": "com.duri.rentalplatform.domain.x.service.Foo"}
         self.assertFalse(traces.is_store(sp))
@@ -252,7 +257,16 @@ class FixtureRounds(unittest.TestCase):
         self.assertNotIn("notifications/stream", self.r1["matrix"]["columns"])
         self.assertNotIn("notifications/stream", [x["route"] for x in tr["slowest"]])
         w = tr["routes"]["me/wishlist"]
-        self.assertEqual(w["redis_calls_per_request"], 1)                         # F1 — DistributedLockAspect$Around
+        # N1 — 락 advice(lock)는 Redis 구간이 아니다: acquire · Renewal.run · release 셋만 세고,
+        # Redis 시간은 그 자기 시간 합(2 + 0.5 + 1 = 3.5 ms)이지 lock 구간 길이(39 ms)가 아니다
+        self.assertEqual(w["redis_calls_per_request"], 3)
+        self.assertAlmostEqual(w["redis_ms_per_request"]["mean"], 3.5, delta=0.01)
+        req = w["decomp"]["p95_request"]
+        self.assertAlmostEqual(req["redis"], 3.5, delta=0.01)
+        self.assertAlmostEqual(req["db"], 13.0, delta=0.01)
+        self.assertEqual(req["overlap"], 0)                                      # 겹쳐 세지 않는다
+        self.assertAlmostEqual(sum(v for k, v in req.items() if k not in ("server", "trace_id", "overlap")), 90.0, delta=0.01)
+        self.assertNotEqual((self.r1["budget"]["me/wishlist"]["largest"] or {}).get("layer"), "캐시")
         self.assertEqual(w["per_row_methods"], ["CodeConverter.toName"])          # F10 — 120번 > 100
 
     def test_budget_decomposition(self):
