@@ -77,6 +77,19 @@ case "${1:-}" in
     zcat "$2" | psql_ -c "\copy loadtest.stage_users FROM STDIN (FORMAT csv, NULL '')"
     zcat "$3" | psql_ -c "\copy loadtest.stage_user_auth FROM STDIN (FORMAT csv, NULL '')" ;;
   users)    psql_ < sql/40_users.sql; wait_standby ;;
+  pick)     psql_ < sql/41_pick.sql ;;
+  notify)   psql_ < sql/42_notification.sql; wait_standby ;;
+  owner-fix) psql_ < sql/50_owner_mismatch.sql; wait_standby ;;
+  wishlist)   # wishlist <첫 user_id> <끝 user_id> [구간 크기] — 구간마다 커밋, 매물 식별자 순서로 넣는다(41_wishlist.sql)
+    from=$2; to=$3; step=${4:-50000}
+    for ((a = from; a <= to; a += step)); do
+      b=$(( a + step - 1 )); (( b > to )) && b=$to
+      t0=$SECONDS
+      psql_ -v from_user="$a" -v to_user="$b" < sql/41_wishlist.sql
+      log "wishlist $a ~ $b ($((SECONDS - t0))s)"
+      disk_guard
+    done
+    wait_standby ;;
   verify)   psql_ < sql/90_verify.sql ;;
   analyze)  echo "ANALYZE property; ANALYZE risk_analysis; ANALYZE building_registry; ANALYZE building_ledger;
                   ANALYZE ownership_history; ANALYZE mortgage_history; ANALYZE users; ANALYZE user_auth; ANALYZE wishlist;

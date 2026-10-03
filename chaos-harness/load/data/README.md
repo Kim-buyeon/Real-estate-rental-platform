@@ -35,6 +35,11 @@
 ./fake_follow.sh <fake_limit> <실매물 로그>      # 가짜를 실매물이 끝난 구에만 뒤따라 붙인다(같은 구 동시 처리 금지)
 ./run.sh copy-users in/users.csv.gz in/user_auth.csv.gz
 ./after_property.sh                             # 반복이 끝나면 users → analyze → verify
+# 2026-10-03 재개분 — 40_users.sql 의 관심 매물 · 알림을 한 문장으로 돌리면 끝의 외래키 확인이 1시간 넘게 걸린다(함정).
+./run.sh pick                                   # 관심 매물 고르기 표
+./run.sh wishlist 100000001 101000000 100000    # 사용자 10만 명 구간마다 커밋, 매물 식별자 순서
+./run.sh owner-fix                              # 보증 판정 보정 ① 소유자 불일치(50_owner_mismatch.sql)
+./run.sh notify                                 # 알림(42_notification.sql) — 크레딧이 찬 뒤
 ```
 
 `fake_limit` = 500만 − (기준선 매물 + 새 실매물). 모든 단계는 구 단위 트랜잭션이라 끊기면 같은 명령을 다시 돌린다(이미 넣은 것은 건너뛴다).
