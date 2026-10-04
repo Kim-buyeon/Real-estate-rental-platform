@@ -81,12 +81,37 @@ instrumentation/development:
           methods:
             - name: run
             - name: stop
+        - class: com.duri.rentalplatform.common.security.JwtAuthenticationFilter
+          methods:
+            - name: doFilterInternal
+            - name: resolveToken
+            - name: resolveTicket
+            - name: bearerToken
+            - name: isStreamRequest
+            - name: authenticateWithTicket
+            - name: authenticate
+            - name: toAuthentication
         - class: com.duri.rentalplatform.common.security.StreamTicketStore
           methods:
             - name: issue
             - name: consume
             - name: parse
             - name: keyOf
+        - class: com.duri.rentalplatform.common.web.RequestIdFilter
+          methods:
+            - name: doFilterInternal
+            - name: resolveTraceId
+        - class: com.duri.rentalplatform.domain.admin.controller.CriteriaController
+          methods:
+            - name: getGuarantee
+            - name: updateGuarantee
+            - name: getPremiumRates
+            - name: updatePremiumRates
+            - name: getLoanRegulations
+            - name: updateLoanRegulations
+            - name: getRiskThreshold
+            - name: updateRiskThreshold
+            - name: getHistory
         - class: com.duri.rentalplatform.domain.admin.service.CriteriaCommandService
           methods:
             - name: updateGuarantee
@@ -115,6 +140,9 @@ instrumentation/development:
             - name: calculate
             - name: interestCapacity
             - name: dtiReference
+        - class: com.duri.rentalplatform.domain.loan.controller.LoanController
+          methods:
+            - name: limit
         - class: com.duri.rentalplatform.domain.loan.service.LoanCommandService
           methods:
             - name: calculateLimit
@@ -128,6 +156,19 @@ instrumentation/development:
           methods:
             - name: write
             - name: distinctByBank
+        - class: com.duri.rentalplatform.domain.notification.controller.NotificationController
+          methods:
+            - name: list
+            - name: markRead
+            - name: markAllRead
+        - class: com.duri.rentalplatform.domain.notification.controller.NotificationStreamController
+          methods:
+            - name: issueTicket
+            - name: stream
+        - class: com.duri.rentalplatform.domain.notification.controller.NotificationSubscriptionController
+          methods:
+            - name: get
+            - name: replace
         - class: com.duri.rentalplatform.domain.notification.sender.SseNotificationSender
           methods:
             - name: send
@@ -186,6 +227,20 @@ instrumentation/development:
         - class: com.duri.rentalplatform.domain.property.calculator.MarketPriceCalculator
           methods:
             - name: from
+        - class: com.duri.rentalplatform.domain.property.controller.LedgerController
+          methods:
+            - name: ledger
+        - class: com.duri.rentalplatform.domain.property.controller.PropertyController
+          methods:
+            - name: districtCounts
+            - name: mapClusters
+            - name: search
+            - name: detail
+        - class: com.duri.rentalplatform.domain.property.controller.WishlistController
+          methods:
+            - name: list
+            - name: add
+            - name: remove
         - class: com.duri.rentalplatform.domain.property.service.LedgerCommandService
           methods:
             - name: collectIfAbsent
@@ -282,6 +337,13 @@ instrumentation/development:
         - class: com.duri.rentalplatform.domain.risk.calculator.RiskGradeCalculator
           methods:
             - name: calculate
+        - class: com.duri.rentalplatform.domain.risk.controller.RegistryController
+          methods:
+            - name: registry
+        - class: com.duri.rentalplatform.domain.risk.controller.RiskController
+          methods:
+            - name: risk
+            - name: reanalyze
         - class: com.duri.rentalplatform.domain.risk.service.MockLedgerReplaceExecutor
           methods:
             - name: replaceAndAnalyze
@@ -337,6 +399,18 @@ instrumentation/development:
             - name: markAnalyzed
             - name: remaining
             - name: keyOf
+        - class: com.duri.rentalplatform.domain.user.controller.AuthController
+          methods:
+            - name: signUp
+            - name: login
+            - name: reissue
+            - name: logout
+            - name: requestPasswordReset
+            - name: confirmPasswordReset
+        - class: com.duri.rentalplatform.domain.user.controller.ProfileController
+          methods:
+            - name: get
+            - name: update
         - class: com.duri.rentalplatform.domain.user.service.UserCommandService
           methods:
             - name: signUpWithEmail
@@ -490,4 +564,8 @@ instrumentation/development:
             - name: percent
             - name: pick
             - name: mix
+        - class: org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
+          methods:
+            - name: matchesNonNull
+            - name: encodeNonNullPassword
 # END methods
