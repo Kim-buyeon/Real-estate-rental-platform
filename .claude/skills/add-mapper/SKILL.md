@@ -56,7 +56,15 @@ DTO는 `record`다. setter가 없으므로 MyBatis는 **생성자로** 값을 �
 | **중첩 객체** | `<resultMap>`에 **`<constructor>`를 명시**하고 중첩 객체는 `<arg name=… resultMap=…>` | `<association>`은 프로퍼티(setter)에 매핑하므로 record에 쓸 수 없다. `<constructor>`를 선언하면 자동 생성자 매핑은 그 조회에 관여하지 않는다 |
 | **중첩 배열** (`providers[]` · `districts[].gradeCounts` · `products[]`) | `<constructor>`로는 채울 수 없다 — `<collection>`도 setter 매핑이다 | 조회를 나누어 서비스에서 묶거나, 평면으로 받아 서비스에서 그룹핑한다. **어느 쪽인지는 조회마다 계획에서 정한다** |
 
-설정 키는 기반 작업(설정 — MyBatis 설정)에서 한 번 넣는다 — `slice-start` 1장. **평면 DTO는 `<constructor>`를 손으로 쓰지 않는다** — 인자 순서가 바뀌면 조용히 틀린다. 중첩 객체가 필요한 조회만 `<constructor>`를 쓴다.
+설정 키는 기반 작업(설정 — MyBatis 설정)에서 한 번 넣는다 — `slice-start` 1장.
+
+**`<constructor>`를 쓸 때는 모든 `<arg>`에 `name`을 준다** — 순서로 맞추면 인자 순서가 바뀔 때 조용히 틀린다. `name`이 있으면 MyBatis가 기동 때 이름 · `javaType`으로 생성자를 맞추고(`ResultMap.Builder.argNamesOfMatchingConstructor`), 못 찾으면 `BuilderException`으로 기동이 실패한다. record는 setter가 없어 `javaType`도 필요하며 생성자 인자 타입과 정확히 같아야 한다.
+
+| 조회 | 매핑 | 이유 |
+| --- | --- | --- |
+| 응답 행이 많다 (수백 행 이상 — 지도 마커 · 목록 · 묶음 칸) | `<resultMap>` + 이름 지정 `<constructor>` | 인자 이름 자동 매핑은 **행마다** 리플렉션을 한다 — `DefaultResultSetHandler.applyArgNameBasedConstructorAutoMapping`이 `getDeclaredConstructors` · `getParameters` · 인자마다 `getAnnotation` · 인자 × 컬럼 이름 비교. #390 P01에서 반경 요청 CPU 샘플 183 중 156이 이 매핑이었다 |
+| 응답 행이 적다 (단건 · 수십 행) | 자동 매핑 그대로 둬도 된다 | 행 수만큼만 비용이 든다. 같은 매퍼 파일이 이미 `<constructor>`를 쓰면 맞춰도 된다 |
+| 중첩 객체 | 이름 지정 `<constructor>` + `<arg name=… resultMap=…>` | 위 표 「중첩 객체」 |
 
 ## 4. 커서 페이지네이션
 
@@ -121,5 +129,5 @@ OFFSET을 쓰지 않는 이유는 `performance.md` 1.1. 좌표 조건 조회는 
 
 - **INSERT · UPDATE · DELETE를 매퍼에 쓰지 않는다.** 엔티티를 반환하지 않는다.
 - **같은 트랜잭션에서 JPA로 바꾼 값을 매퍼로 읽지 않는다.** 반영 전 값을 읽는다 — `backend/CLAUDE.md` Service.
-- **평면 DTO에 `<constructor>`를 손으로 쓰지 않는다.** 중첩만 예외다.
+- **`name` 없는 `<arg>`를 쓰지 않는다.** 순서로 맞춘 `<constructor>`는 인자 순서가 바뀌면 조용히 틀린다. 행이 많은 조회는 자동 매핑이 아니라 이름 지정 `<constructor>`로 받는다 — 3장.
 - **커밋하지 않는다.** 커밋은 별도 단계이며 `git-check`를 거친다.
