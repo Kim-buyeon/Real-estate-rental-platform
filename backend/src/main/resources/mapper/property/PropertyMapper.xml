@@ -215,7 +215,6 @@
         </choose>
     </sql>
 
-    <!-- 미분석은 최신 분석이 없는 매물이다. risk_grade 는 NOT NULL 이라 NULL 이면 LEFT JOIN 에서 빠진 것이다. -->
     <!-- 이름 지정 <constructor> 인 이유는 districtCountRow 위 주석 -->
     <resultMap id="mapClusterCellRow" type="com.duri.rentalplatform.domain.property.vo.MapClusterCellRow">
         <constructor>
@@ -232,6 +231,7 @@
         </constructor>
     </resultMap>
 
+    <!-- 미분석은 최신 분석이 없는 매물이다. risk_grade 는 NOT NULL 이라 NULL 이면 LEFT JOIN 에서 빠진 것이다. -->
     <select id="selectClusterCells" resultMap="mapClusterCellRow">
         SELECT g.row_index,
                g.col_index,
