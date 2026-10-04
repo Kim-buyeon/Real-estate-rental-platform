@@ -14,6 +14,7 @@
 #                            긁을 때마다 gzip 한 덩어리(멤버)로 덧붙인다 — 노드 /tmp 에 원문을 쌓지 않는다(한 시간에 수백 MB).
 #                            여러 멤버를 이은 gzip 은 그대로 하나의 gzip 파일로 읽힌다(gzip · Python gzip 모듈)
 #   wait-<노드>.csv          DB 노드. 1초마다 활성 클라이언트 세션 수를 대기 종류별로(대기 없음 = CPU). 활성이 0 이면 NONE,0 한 줄
+#   containers-<노드>.jsonl.gz  모든 노드. 간격마다 컨테이너별 메모리(cgroup memory.current · memory.max · oom_kill) 한 줄 — cloop 주석(#390)
 #   nginx-access.log         APP-01. 앞단 nginx 의 접근 로그(컨테이너 표준 출력)를 시작 시점부터 따라 적는다 — json-file 이 10m 에서
 #                            회전하므로 끝난 뒤 잘라 오면 앞부분이 없다
 #
@@ -59,6 +60,53 @@ loop() {
   rm -f "$tmp"
 }
 
+# ── 컨테이너 메모리 본체(#390) — containers-<노드>.jsonl.gz ────────────────────────────────────────────────
+# 간격마다 한 줄(JSON): {"ts": <유닉스 초>, "c": [{"svc": <Compose 서비스>, "id": <앞 12자>, "cur": <바이트>, "max": <바이트|null>,
+#                                               "oom": <memory.events 의 oom_kill 누적|null>}, …]}
+# cgroup 파일을 직접 읽는다 — `docker stats --no-stream` 은 부를 때마다 데몬이 모든 컨테이너의 CPU 를 약 1초 재어 돌려주므로
+# 5초 간격에 비해 무겁다. 컨테이너 목록(docker ps)은 매번 다시 읽는다 — 슬롯이 재시작하면 id 가 바뀐다(재시작 = id 변화).
+# cgroup v2(Rocky 9 기본): systemd 드라이버 /sys/fs/cgroup/system.slice/docker-<id>.scope, cgroupfs 드라이버 /sys/fs/cgroup/docker/<id>.
+# v1 이면 memory/docker/<id>/memory.usage_in_bytes · limit_in_bytes. 상한이 없으면(max) null
+cloop() {
+  local out=$1 interval=$2
+  local stop=0 next now d ts line id svc p cur max oom first
+  trap 'stop=1' TERM INT
+  next=$(date +%s%N)
+  while [ "$stop" -eq 0 ]; do
+    ts=$(date +%s.%3N)
+    line="{\"ts\": $ts, \"c\": ["
+    first=1
+    while read -r id svc; do
+      [ -n "$id" ] || continue
+      cur= max= oom=null
+      for p in "/sys/fs/cgroup/system.slice/docker-$id.scope" "/sys/fs/cgroup/docker/$id"; do
+        if [ -r "$p/memory.current" ]; then
+          cur=$(cat "$p/memory.current" 2>/dev/null); max=$(cat "$p/memory.max" 2>/dev/null)
+          oom=$(awk '$1 == "oom_kill" {print $2}' "$p/memory.events" 2>/dev/null); break
+        fi
+      done
+      if [ -z "$cur" ] && [ -r "/sys/fs/cgroup/memory/docker/$id/memory.usage_in_bytes" ]; then
+        p=/sys/fs/cgroup/memory/docker/$id
+        cur=$(cat "$p/memory.usage_in_bytes"); max=$(cat "$p/memory.limit_in_bytes")
+      fi
+      [ -n "$cur" ] || continue
+      [[ $max =~ ^[0-9]+$ ]] && [ "${#max}" -lt 19 ] || max=null     # 「max」 · v1 의 무한대(9223…)는 상한 없음
+      [[ $oom =~ ^[0-9]+$ ]] || oom=null
+      [ "$first" -eq 1 ] || line+=", "
+      first=0
+      line+="{\"svc\": \"${svc:-?}\", \"id\": \"${id:0:12}\", \"cur\": $cur, \"max\": $max, \"oom\": $oom}"
+    done < <(docker ps --no-trunc --format '{{.ID}} {{.Label "com.docker.compose.service"}}' 2>/dev/null)
+    printf '%s]}\n' "$line" | gzip -1 >> "$out"
+    next=$((next + interval * 1000000000)); now=$(date +%s%N); d=$((next - now))
+    if [ "$d" -gt 0 ]; then
+      sleep "$(printf '%d.%09d' $((d / 1000000000)) $((d % 1000000000)))" &
+      wait $! 2>/dev/null || true
+    else
+      next=$now
+    fi
+  done
+}
+
 start() {
   local round=$1 node=$2 interval=$3 cdir=$4 d addr svc since
   d=$BASE/$round
@@ -91,6 +139,15 @@ start() {
       > "$d/metrics.log" 2>&1 < /dev/null &
     echo $! > "$d/metrics.pid"
     echo "지표 긁기 시작 — ${interval}초, 대상 ${#targets[@]}개(${targets[*]%%=*})"
+  fi
+
+  if alive "$d/containers.pid"; then
+    echo "컨테이너 메모리 — 이미 돈다(pid $(cat "$d/containers.pid"))"
+  else
+    setsid nohup bash "$BASE/node-sampler.sh" cloop "$d/containers-$node.jsonl.gz" "$interval" \
+      > "$d/containers.log" 2>&1 < /dev/null &
+    echo $! > "$d/containers.pid"
+    echo "컨테이너 메모리 시작 — ${interval}초(cgroup memory.current · memory.max · oom_kill)"
   fi
 
   case $node in
@@ -201,6 +258,7 @@ stop() {
   d=$BASE/$round
   [ -d "$d" ] || { echo "표본 자리가 없다: $d"; return 0; }
   stop_one "$d/metrics.pid" "지표 긁기" 0
+  stop_one "$d/containers.pid" "컨테이너 메모리" 0
   case $node in
     db01|db02)
       svc=postgres; [ "$node" = db02 ] && svc=postgres-standby
@@ -216,6 +274,7 @@ stop() {
 cmd=${1:-}; shift || true
 case $cmd in
   loop)  loop "$@" ;;
+  cloop) cloop "$@" ;;
   start) start "$@" ;;
   stop)  stop "$@" ;;
   *) echo "사용법: bash node-sampler.sh start|stop|loop …" >&2; exit 2 ;;

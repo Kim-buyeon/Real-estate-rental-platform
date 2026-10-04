@@ -7,6 +7,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+from .traces import stmt_key
 from .util import parse_time, rnd, file_node
 
 WAIT_GROUPS = ("CPU", "IO", "Lock", "LWLock", "Client")
@@ -130,6 +131,7 @@ def read_pgss_all(path: Path):
                 "calls": _f(g("calls")) or 0,
                 "total_ms": _f(g("total_exec_time", "total_exec_time_ms")) or 0.0,
                 "mean_ms": _f(g("mean_exec_time", "mean_exec_time_ms")),
+                "stddev_ms": _f(g("stddev_exec_time", "stddev_exec_time_ms")),
                 "rows": _f(g("rows")),
                 "blks_hit": _f(g("shared_blks_hit")),
                 "blks_read": _f(g("shared_blks_read")),
@@ -192,7 +194,32 @@ def pgss(db_dir: Path, node: str, requests=None, dbstats_name=None):
         d["mean_ms"] = rnd(r["mean_ms"], 3)
         out.append(d)
     shares = [d["share_pct"] or 0 for d in out]
+    # 문장 키(추적과 같은 정규화 — $n · 리터럴 → ?)별 합 — 추적 SQL 구간의 문장별 속도와 잇는다(pipeline 이 쓰고 지운다).
+    # 같은 키에 queryid 가 여럿이면 호출 · 시간 · 행 · 블록은 더하고, 표준편차는 호출이 가장 많은 행의 값이다(합칠 원천이 없다)
+    by_key = {}
+    for r in basis:
+        k = stmt_key(r["query"])
+        if not k:
+            continue
+        x = by_key.get(k)
+        if x is None:
+            by_key[k] = x = {"calls": 0.0, "total_ms": 0.0, "rows": 0.0, "blks_hit": 0.0, "blks_read": 0.0,
+                             "stddev_ms": r.get("stddev_ms"), "_top_calls": r["calls"], "queryids": []}
+        elif r["calls"] > x["_top_calls"]:
+            x["stddev_ms"], x["_top_calls"] = r.get("stddev_ms"), r["calls"]
+        x["calls"] += r["calls"]
+        x["total_ms"] += r["total_ms"]
+        for f in ("rows", "blks_hit", "blks_read"):
+            x[f] += r.get(f) or 0
+        x["queryids"].append(r.get("queryid"))
+    for x in by_key.values():
+        x.pop("_top_calls")
+        x["mean_ms"] = rnd(x["total_ms"] / x["calls"], 3) if x["calls"] else None
+        x["rows_per_call"] = rnd(x["rows"] / x["calls"], 2) if x["calls"] else None
+        x["stddev_ms"] = rnd(x["stddev_ms"], 3)
+        x["total_ms"] = rnd(x["total_ms"], 2)
     return {
+        "_by_key": by_key,
         "total_basis": "pgss-all" if allrows else "top20",
         "app_db": app_db,
         "app_db_basis": why,
@@ -210,13 +237,32 @@ def pgss(db_dir: Path, node: str, requests=None, dbstats_name=None):
 _PLAN_START = re.compile(r"duration:\s*([\d.]+)\s*ms\s+plan:", re.I)
 
 
-def auto_explain(path: Path):
-    """계획 블록 수 · 노드 종류별 등장 수 · 블록별 접근 방법."""
+def auto_explain_blocks(path: Path):
+    """auto_explain 로그 → [(duration_ms, 계획 본문)]. 본문은 「Query Text:」 줄부터 다음 블록 앞까지."""
     text = path.read_text(encoding="utf-8", errors="replace")
     starts = [m for m in _PLAN_START.finditer(text)]
+    return [(float(m.group(1)), text[m.end(): starts[i + 1].start() if i + 1 < len(starts) else len(text)])
+            for i, m in enumerate(starts)]
+
+
+def query_text(body):
+    """auto_explain 블록의 Query Text — 여러 줄이면 다음 계획 줄(들여쓴 노드 줄) 앞까지 잇는다."""
+    m = re.search(r"Query Text:\s*(.*)", body)
+    if not m:
+        return None
+    lines = [m.group(1)]
+    for ln in body[m.end():].splitlines()[1:]:
+        s = ln.strip()
+        if not s or re.match(r"^(->\s*)?[A-Z][A-Za-z ]+.*\(cost=", s) or s.startswith(("Query Parameters:", "Settings:")):
+            break
+        lines.append(s)
+    return " ".join(lines).strip()
+
+
+def auto_explain(path: Path):
+    """계획 블록 수 · 노드 종류별 등장 수 · 블록별 접근 방법."""
     blocks = []
-    for i, m in enumerate(starts):
-        body = text[m.end(): starts[i + 1].start() if i + 1 < len(starts) else len(text)]
+    for dur, body in auto_explain_blocks(path):
         counts = {}
         for node in PLAN_NODES:
             # "Bitmap Index Scan" 은 Index Scan 으로 세지 않는다
@@ -224,7 +270,7 @@ def auto_explain(path: Path):
             if c:
                 counts[node] = c
         qm = re.search(r"Query Text:\s*(.+)", body)
-        blocks.append({"duration_ms": float(m.group(1)), "nodes": counts, "query": (qm.group(1).strip()[:120] if qm else None)})
+        blocks.append({"duration_ms": dur, "nodes": counts, "query": (qm.group(1).strip()[:120] if qm else None)})
     totals = defaultdict(int)
     with_node = defaultdict(int)
     for b in blocks:

@@ -20,6 +20,17 @@ REDIS_CLASSES = (
     "com.duri.rentalplatform.external.buildingledger.BuildingLedgerRateLimiter",
 )
 TOP_METHODS = 3             # 시간 예산에 이름으로 세우는 메서드 수
+# 비밀번호 대조(BCrypt) — 측정 모드 목록 생성기(tools/gen-methods.py THIRD_PARTY)가 이 클래스의 메서드를 구간으로 넣는다(#390).
+# 구간 이름 · 속성 모양은 다른 메서드 구간과 같다(code.namespace = 선언한 클래스). 자식 구간이 없어 자기 시간 = 구간 길이.
+# 실제 계측 메서드는 BCryptPasswordEncoder 의 protected matchesNonNull · encodeNonNullPassword 다 — matches · encode 는 상위
+# AbstractValidatingPasswordEncoder 의 final 메서드라 구간이 붙지 않는다. 분류는 메서드 이름이 아니라 클래스(code.namespace)로
+# 한다 — 상위 이름으로 잡히는 판이 와도 같은 BCrypt 로 센다
+BCRYPT_NS = ("org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder",
+             "org.springframework.security.crypto.password.AbstractValidatingPasswordEncoder")
+STATEMENT_TOP = 30          # 문장별 실행 속도 표에 남기는 수(총 시간 순)
+SQL_TEXT_MAX = 2000         # 추적 SQL 문장을 이 길이까지 남긴다 — JPA 문장은 열 목록이 길어 앞 수백 자가 같다(WHERE 가 뒤에 있다)
+STMT_KEY_MAX = 1000         # 문장 키 길이 상한
+STMT_PREFIX_MIN = 80        # 한쪽이 잘린 문장(질의 통계 상위 20 은 300자)을 앞부분으로 이을 때 겹쳐야 하는 최소 길이
 KEEP_ATTRS = ("http.route", "url.path", "http.target", "http.request.method", "http.method", "url.full", "http.url",
               "http.response.status_code", "db.system", "db.system.name", "db.query.text", "db.statement",
               "db.namespace", "db.name", "db.operation", "db.operation.name", "server.address", "net.peer.name",
@@ -64,6 +75,8 @@ def _attrs(lst, keep=KEEP_ATTRS):
 def load(path: Path, t_lo_ms=None, t_hi_ms=None):
     """회차 구간(ms) 안에서 시작한 구간만 남긴다."""
     spans = []
+    texts = {}
+    seen = set()     # (traceId, spanId) — 로컬 구성은 내보내기 둘이 같은 수신기로 가서 구간이 두 번 온다. 운영에는 없지만 해가 없다
     with open_text(path) as f:
         for line in f:
             line = line.strip()
@@ -88,14 +101,19 @@ def load(path: Path, t_lo_ms=None, t_hi_ms=None):
                             continue
                         s.tid = sp.get("traceId")
                         s.sid = sp.get("spanId")
+                        if (s.tid, s.sid) in seen:
+                            continue
+                        seen.add((s.tid, s.sid))
                         s.pid = sp.get("parentSpanId") or None
                         s.name = sp.get("name", "")
                         k = sp.get("kind", 1)
                         s.kind = _KIND.get(k, k) if isinstance(k, str) else int(k)
                         s.a = _attrs(sp.get("attributes"))
                         for qk in ("db.query.text", "db.statement"):
-                            if isinstance(s.a.get(qk), str) and len(s.a[qk]) > 300:
-                                s.a[qk] = s.a[qk][:300]
+                            if isinstance(s.a.get(qk), str):
+                                # 같은 문장이 수십만 번 온다 — 한 객체로 묶어 메모리를 문장 종류 수만큼만 쓴다
+                                t = s.a[qk][:SQL_TEXT_MAX]
+                                s.a[qk] = texts.setdefault(t, t)
                         s.scope = scope
                         s.inst = inst
                         s.err = (sp.get("status") or {}).get("code") in (2, "STATUS_CODE_ERROR")
@@ -148,6 +166,10 @@ def is_store(s):
     return ".store." in ns or ns.split("$", 1)[0] in REDIS_CLASSES
 
 
+def is_bcrypt(s):
+    return is_method(s) and namespace(s).split("$", 1)[0] in BCRYPT_NS
+
+
 def is_external(s):
     return s.kind == 3 and not is_db(s) and any(k in s.a for k in ("http.request.method", "http.method", "url.full", "http.url"))
 
@@ -156,15 +178,37 @@ def db_node(s):
     return str(s.a.get("server.address") or s.a.get("net.peer.name") or "?")
 
 
+_KEY_CACHE = {}
+
+
 def stmt_key(text):
-    """SQL 문장 정규화 — 질의 통계($n)와 추적(?)을 같은 키로."""
+    """SQL 문장 정규화 — 질의 통계($n)와 추적(?)을 같은 키로. 리터럴 · 숫자도 ? 로(질의 통계는 리터럴도 $n 이다).
+    길이는 STMT_KEY_MAX 까지 — 앞 100자로 자르면 열 목록이 같은 JPA 문장들(WHERE 만 다르다)이 한 키로 섞인다."""
     if not text:
         return None
-    t = re.sub(r"\$\d+", "?", str(text))
-    t = re.sub(r"'(?:[^']|'')*'", "?", t)
-    t = re.sub(r"\b\d+(\.\d+)?\b", "?", t)
-    t = re.sub(r"\s+", " ", t).strip().lower()
-    return t[:100]
+    k = _KEY_CACHE.get(text)
+    if k is None:
+        t = re.sub(r"\$\d+", "?", str(text))
+        t = re.sub(r"'(?:[^']|'')*'", "?", t)
+        t = re.sub(r"\b\d+(\.\d+)?\b", "?", t)
+        t = re.sub(r"\s+", " ", t).strip().lower()
+        # 기호 앞뒤 공백을 지운다 — 사람이 쓴 질의 파일(「a = ?, b」)과 ORM 이 만든 문장(「a=?,b」)이 같은 키가 되게
+        t = re.sub(r" ?([^\w\s]) ?", r"\1", t)
+        k = t[:STMT_KEY_MAX]
+        if len(_KEY_CACHE) < 100_000:
+            _KEY_CACHE[text] = k
+    return k
+
+
+def match_key(key, keys):
+    """문장 키 하나를 다른 원천의 키 집합에서 찾는다 — 같으면 그것, 아니면 한쪽이 다른 쪽의 앞부분(잘린 문장)이고
+    겹친 길이가 STMT_PREFIX_MIN 이상인 후보가 **하나뿐일 때만** 그것. 둘 이상이면 고르지 않는다(다른 문장을 잇지 않게)."""
+    if not key:
+        return None
+    if key in keys:
+        return key
+    cand = [k for k in keys if k and min(len(k), len(key)) >= STMT_PREFIX_MIN and (k.startswith(key) or key.startswith(k))]
+    return cand[0] if len(cand) == 1 else None
 
 
 def stmt_of(s):
@@ -242,12 +286,20 @@ def request_profile(root, kids):
         # 요청 하나 안의 메서드 · 기타 구간 자기 시간 — 시간 예산 분해에 쓴다
         "other_self_ms": sum(self_time(d, kids.get(d.sid, [])) for d in desc
                              if not is_db(d) and not is_store(d) and not is_external(d) and not is_method(d)),
+        # BCrypt 메서드 구간의 자기 시간 — method_self 안에도 들어 있다(단계별 분해가 따로 뗀다)
+        "bcrypt_ms": sum(self_time(d, kids.get(d.sid, [])) for d in methods if is_bcrypt(d)),
+        "t": root.s / 1000.0,                   # 요청 시작(유닉스 초) — 단계 나누기
+        "sql_list": [],                         # (문장 키, 길이 ms, DB 노드) — 문장별 실행 속도
+        "stmt_text": {},
     }
     for d in sql_q:
         n = p["db_nodes"][db_node(d)]
         n[0] += 1
         n[1] += d.dur
-        p["stmt_n"][stmt_key(stmt_of(d))] += 1
+        k = stmt_key(stmt_of(d))
+        p["stmt_n"][k] += 1
+        p["sql_list"].append((k, d.dur, db_node(d)))
+        p["stmt_text"].setdefault(k, stmt_of(d))
     for m in methods:
         if is_store(m):
             continue
@@ -275,7 +327,40 @@ def _dist(vals):
             "max": rnd(max(vals), 3) if vals else None}
 
 
-def analyze(path: Path, win):
+def statements(profiles, top=STATEMENT_TOP):
+    """문장 키별 실행 속도 — 호출 수 · p50 · p95 · 평균 · 요청당 횟수 · DB 노드별 호출 · 부르는 경로. 총 시간 순.
+    요청당 횟수 = 호출 수 ÷ 그 문장을 한 번이라도 부른 요청 수."""
+    d = defaultdict(lambda: {"durs": [], "nodes": defaultdict(int), "reqs": 0, "routes": defaultdict(int), "text": None})
+    for p in profiles:
+        seen = set()
+        for k, dur, node in p["sql_list"]:
+            if not k:
+                continue
+            x = d[k]
+            x["durs"].append(dur)
+            x["nodes"][node] += 1
+            x["routes"][p.get("route")] += 1
+            if x["text"] is None:
+                x["text"] = p["stmt_text"].get(k)
+            seen.add(k)
+        for k in seen:
+            d[k]["reqs"] += 1
+    rows = []
+    for k, x in d.items():
+        v = x["durs"]
+        rows.append({"key": k, "text": (x["text"] or "")[:160], "calls": len(v), "requests": x["reqs"],
+                     "per_request": rnd(len(v) / x["reqs"], 3) if x["reqs"] else None,
+                     "total_ms": rnd(sum(v), 1), "mean_ms": rnd(mean(v), 3),
+                     "p50_ms": rnd(percentile(v, 50), 3), "p95_ms": rnd(percentile(v, 95), 3),
+                     "p95_usable": len(v) >= 100,
+                     "db_nodes": dict(x["nodes"]),
+                     "routes": [r for r, _ in sorted(x["routes"].items(), key=lambda kv: -kv[1]) if r][:3]})
+    rows.sort(key=lambda r: -r["total_ms"])
+    return rows[:top]
+
+
+def analyze(path: Path, win, collect=None):
+    """collect — 리스트를 주면 요청마다의 분해(request_profile + route)를 담아 돌려준다(단계별 분해 · steps.py)."""
     if not path.exists():
         return None
     lo = win.lo * 1000 if win.lo is not None else None
@@ -307,6 +392,7 @@ def analyze(path: Path, win):
                     continue
                 p = request_profile(s, kids)
                 p["tid"] = tid
+                p["route"] = r
                 routes[r].append(p)
                 slots[s.inst].append(s.dur)
                 for node, (n, ms) in p["db_nodes"].items():
@@ -372,7 +458,11 @@ def analyze(path: Path, win):
             for host, d, err in p["ext"]:
                 ext_hosts[host].append((d, err))
     total_sql = sum(n for n, _ in db_split.values())
+    allp = [p for ps in routes.values() for p in ps]
+    if collect is not None:
+        collect.extend(allp)
     return {
+        "statements": statements(allp),
         "spans": len(spans),
         "traces": len(by_trace),
         "server_requests": sum(len(v) for v in routes.values()),

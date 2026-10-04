@@ -1,6 +1,6 @@
 # 부하 시험 측정(INF-06 #378)
 
-한 회차를 같은 방법으로 재고 남기는 도구다. 시나리오 · JMeter 플랜은 여기 없다 — 사용자가 쓴다. 판정 기준(목표 p95 · 헤드룸 분모 · 회차 길이 · 크레딧 문턱)도 여기서 정하지 않는다 — 스크립트는 인자로 받는다.
+한 회차를 같은 방법으로 재고 남기는 도구다. JMeter 플랜과 실행 스크립트는 여기 없다 — `chaos-harness/jmeter/`(#390). 판정 기준(목표 p95 · 헤드룸 분모 · 회차 길이 · 크레딧 문턱)도 여기서 정하지 않는다 — 스크립트는 인자로 받는다.
 
 ```
 measure/
@@ -38,10 +38,12 @@ measure/
 | --- | --- | --- | --- |
 | 1 | `bash node/pre-round.sh <회차>` | 행수 · 가시성 맵 · 적중률 · 자동 청소 · 복제 · 슬롯 넷 · 배치 스위치 · 크레딧 · Redis 명령 통계 기록 → **질의 통계 초기화**(`--no-reset`이면 건너뜀). 경고가 나오면 시작할지 정한다 | 질의 통계 초기화만(통계 누적값 — 서비스와 무관) |
 | 2 | `bash node/record.sh start <회차>` | 노드 표본기(지표 5초 · DB 대기 종류 1초 · nginx 접근 로그) · 생성기 vmstat · sar | — |
-| 3 | JMeter 실행 | 결과를 `results/<회차>/jmeter/result.jtl`에 | — |
+| 3 | `bash ../jmeter/run.sh <회차> <mode> <load_profile> [bg_rps] [-- <JMeter 인자>]` | JMeter — `results/<회차>/jmeter/result.jtl` · `jmeter/html/` · `steps.json` · `round.json`(인자 · 플랜은 `chaos-harness/jmeter/README.md`) | — |
 | 4 | `bash node/record.sh stop <회차>` | 표본기 멈춤 · 가져오기 · Redis 명령 통계 · 크레딧 | — |
 | 5 | (10초 이상 뒤) `bash node/collect.sh <회차>` — 조건을 바꾼 회차면 `--heavy` | 질의 통계 상위 20 · 전체(`db/<노드>-pgss-all.csv.gz`, 첫 열 `datname`) · auto_explain 구간 · 추적 파일 · (`--heavy`) 설정 · 인덱스 · 테이블 통계 | — |
-| 6 | `python -m analyze <회차>` | 집계 · 그래프 · 보고서 — 집계 쪽 문서를 따른다 | — |
+| 6 | `bash node/alerts.sh <회차>` | 회차 구간의 Grafana 알림 상태 이력 — 회차가 끝난 뒤 | — |
+| 7 | `python -m analyze <회차>` | 집계 · 그래프 · 보고서 — 집계 쪽 문서를 따른다 | — |
+| 실행 계획 | `bash node/explain.sh <회차> <질의 파일> [--allow-write]` | 질의 정의(`chaos-harness/jmeter/queries/`)의 실제 값 EXPLAIN — E01. 부하 회차와 섞지 않는다 | `--allow-write`(쓰기 질의 포함)면 **예** |
 | 선택 | `bash node/profiler.sh <app01\|app02> <app-1\|app-2> <cpu\|alloc> <초> <회차>` | 회차 도중 슬롯 하나에 async-profiler. APP-01 여유 메모리 300 MiB 미만이면 거부 | **예**(도는 JVM에 붙는다) |
 | 정리 | `bash node/record.sh clean <회차>` | 노드 `/tmp/rental-measure/<회차>` 지움 — 4가 다 가져온 것을 본 뒤 | — |
 
@@ -64,12 +66,14 @@ results/<회차>/
 ├── post/  credits.json · redis-commandstats.txt
 ├── metrics/<노드>.prom.gz          「# SCRAPE <유닉스 초> <대상>」 줄 + 그 대상의 노출 형식 본문(다 받은 것만), 실패면 「# SCRAPE_ERROR <대상>」 한 줄, 반복
 ├── db/    <노드>-wait.csv · <노드>-pgss.csv · <노드>-pgss-all.csv.gz(gzip CSV, 첫 열 datname) · <노드>-dbstats.csv · <노드>-auto-explain.log
+├── containers/<노드>.jsonl.gz      컨테이너별 cgroup 메모리(사용 · 상한 · 상한 OOM) 5초 표본 — 컨테이너 id 가 바뀌면 재시작
 ├── nginx/access.log
 ├── gen/   vmstat.txt · sar-dev.txt
 ├── traces/spans.jsonl
 ├── heavy/ <노드>-settings.csv · -indexes.csv · -tables.csv     (--heavy)
 ├── profiler/<노드>-<슬롯>-<모드>.collapsed · .html             (선택)
-└── jmeter/result.jtl                                          (JMeter)
+├── steps.json · round.json                                    (run.sh)
+└── jmeter/result.jtl · html/ · jmeter.log                    (run.sh)
 ```
 
 노드 이름은 `app01` · `app02` · `db01` · `db02`다. 각 파일의 열 · 형식은 해당 스크립트 머리 주석이 정본이다.

@@ -64,7 +64,8 @@ def _num(v):
         return None
 
 
-def analyze(path: Path, win):
+def analyze(path: Path, win, collect=None):
+    """collect — 리스트를 주면 구간 안 줄(시작 시각 start 를 붙여)을 담아 돌려준다(단계별 큐 대기 · steps.py)."""
     if not path.exists():
         return None
     rows = []
@@ -78,7 +79,10 @@ def analyze(path: Path, win):
             # 로그 시각은 응답을 끝낸 시각 — 시작 시각으로 되돌려 구간에 넣는다
             start = r["ts"] - (r["rt"] or 0)
             if win.contains(start):
+                r["start"] = start
                 rows.append(r)
+    if collect is not None:
+        collect.extend(r for r in rows if r["path"].split("?")[0] != SSE_PATH)
     routes = defaultdict(list)
     sse = 0
     for r in rows:

@@ -130,10 +130,13 @@ def comparability(s, b, nar):
         "EBS 크레딧 (출발)": lambda x: cred(x, "ebs_burst_balance"),
         "CPU 크레딧 (출발)": lambda x: cred(x, "cpu_credit_balance"),
         "측정 수단": means,
+        # 회차 길이(통계 구간, 워밍업 제외) — 시간 제약으로 줄였으면 narrative.comparability["회차 길이"].impact 에 사유를 적는다
+        "회차 길이": lambda x: (f"{_get(x, 'window', 'duration_sec'):.0f}초 (워밍업 {_get(x, 'window', 'warmup_sec') or 0}초 제외)"
+                             if _get(x, "window", "duration_sec") is not None else None),
     }
     items = [("-", "데이터 규모"), ("DB", "plan_cache_mode"), ("DB", "random_page_cost"), ("DB", "병렬 워커 상한"),
              ("DB", "인덱스 (마이그레이션)"), ("앱", "커밋"), ("앱", "슬롯 메모리 상한"), ("앱", "누수 감지"), ("경계", "읽기 분산"),
-             ("-", "부하 생성기"), ("OS", "EBS 크레딧 (출발)"), ("OS", "CPU 크레딧 (출발)"), ("-", "측정 수단")]
+             ("-", "부하 생성기"), ("OS", "EBS 크레딧 (출발)"), ("OS", "CPU 크레딧 (출발)"), ("-", "측정 수단"), ("-", "회차 길이")]
     rows = []
     for layer, item in items:
         n = nc.get(item) or {}
@@ -147,11 +150,32 @@ def comparability(s, b, nar):
     return rows
 
 
-def signal_rows(s, nar):
+def solo_limits(summaries):
+    """단독 계단 회차(U*, steps.json) → 엔드포인트 키별 단독 한계 — 그 회차에서 가장 많이 부른 경로의 한계 단계 실제 RPS.
+    포화에 닿지 않았으면 마지막 단계 값에 「이상」을 붙인다(reached False)."""
+    out = {}
+    for name, x in summaries:
+        if not x or not str(x.get("round", name)).upper().startswith("U"):
+            continue
+        st = x.get("steps") or {}
+        labels = (x.get("jtl") or {}).get("labels") or {}
+        if st.get("basis") != "steps.json" or not labels or not st.get("limit"):
+            continue
+        route = max(labels.values(), key=lambda v: v["count"]).get("route")
+        if route:
+            out[route] = {"round": x["round"], "limit_rps": st["limit"]["actual_rps"], "reached": st["limit"]["reached"]}
+    return out
+
+
+def signal_rows(s, nar, solo=None):
     ne = nar.get("endpoints") or {}
+    solo = solo or {}
     rows = []
     for e in s.get("endpoints") or []:
         n = ne.get(e["label"]) or {}
+        if n.get("single_limit_tps") is None and e.get("route") in solo:
+            u = solo[e["route"]]
+            n = dict(n, single_limit_tps=u["limit_rps"], single_limit_note=f"{u['round']}{'' if u['reached'] else ' · 포화 미도달(이상)'}")
         target = n.get("target_p95_ms")
         hr = n.get("headroom")
         p95 = e["p95"]
@@ -167,6 +191,7 @@ def signal_rows(s, nar):
         else:
             color, cls = "노랑", "lg-y"
         rows.append(dict(e, target=target if target is not None else "500 (단일 기준)", single_limit=n.get("single_limit_tps"),
+                         single_limit_note=n.get("single_limit_note"),
                          headroom=hr, color=color, cls=cls,
                          p95_note=("" if e["count"] >= 100 else " (표본 부족)")))
     return rows
@@ -268,9 +293,13 @@ def app_rows(s, b, thr):
         return f"{f_v(at(x, 'tomcat_busy_max'), 0)} / {f_v(_get(x, 'resources', 'slots', next(iter(_get(x, 'resources', 'slots') or {'-': 0})), 'tomcat_max'), 0)} (슬롯당)"
 
     def container(x):
-        vals = [v.get("container_memory_max_bytes") for v in (_get(x, "resources", "slots") or {}).values()]
-        vals = [v for v in vals if v]
-        return f_mb(max(vals)) if vals else MISSING
+        """슬롯 컨테이너 메모리 최대 / 상한 — 슬롯 중 상한 대비 비율이 가장 큰 것(cgroup, containers.py)."""
+        vals = [v for v in (_get(x, "resources", "slots") or {}).values() if v.get("container_memory_max_bytes")]
+        if not vals:
+            return MISSING
+        v = max(vals, key=lambda d: d.get("container_memory_max_pct") or 0)
+        lim = v.get("container_memory_limit_bytes")
+        return f"{f_mb(v['container_memory_max_bytes'])} / {f_mb(lim) if lim else '상한 없음'}" + (f" ({v['container_memory_max_pct']}%)" if v.get("container_memory_max_pct") is not None else "")
 
     def execq(x):
         vals = [v.get("executor_queued_max") for v in (_get(x, "resources", "slots") or {}).values() if v.get("executor_queued_max")]
@@ -313,7 +342,9 @@ def slot_rows(s):
     for key, v in sorted((_get(s, "resources", "slots") or {}).items()):
         t = tmap.get(_slot_key(key)) or {}
         rows.append({"slot": key, "share": v.get("request_share_pct"), "p95": t.get("p95_ms"),
-                     "heap": _get(v, "heap_used", "max"), "restarts": v.get("restarts")})
+                     "heap": _get(v, "heap_used", "max"), "restarts": v.get("restarts"),
+                     "cmem": v.get("container_memory_max_bytes"), "cmem_pct": v.get("container_memory_max_pct"),
+                     "coom": v.get("container_oom_kills")})
     if not rows and tr:
         tot = sum(v["requests"] for v in tr.values())
         rows = [{"slot": k, "share": rnd(100.0 * v["requests"] / tot, 1), "p95": v["p95_ms"], "heap": None, "restarts": None} for k, v in tr.items()]
@@ -362,21 +393,30 @@ def headroom_rows(s):
     def add(layer, name, limit, peak_txt, h=None):
         rows.append({"layer": layer, "name": name, "limit": limit, "peak": peak_txt, "headroom": h})
 
+    def procs(keys):
+        """O2 — 실행 대기 · IO 에 막힌 프로세스 수(최대). 둘 다 없으면 빈 글."""
+        r, b_ = mx(keys, "procs_running", "max"), mx(keys, "procs_blocked", "max")
+        return "" if r is None and b_ is None else f" · 실행 대기 {f_v(r, 0)} · IO 막힘 {f_v(b_, 0)}"
+
     a_cpu = mx(apps, "cpu_pct", "max")
     add("OS", "앱노드 CPU", "2 vCPU × 2", f_v(a_cpu, 1, " %"), hr(100, a_cpu))
-    add("OS", "앱노드 steal · load÷vCPU", "-", f"steal {f_v(mx(apps, 'cpu_modes_pct', 'steal', 'max'), 1)}% · load {f_v(mx(apps, 'load_per_vcpu', 'max'), 2)}", "-")
+    add("OS", "앱노드 steal · load÷vCPU", "-", f"steal {f_v(mx(apps, 'cpu_modes_pct', 'steal', 'max'), 1)}% · load {f_v(mx(apps, 'load_per_vcpu', 'max'), 2)}" + procs(apps), "-")
     avail = [(_get(nodes, k, "mem_available_min_bytes"), _get(nodes, k, "mem_total_bytes")) for k in apps]
     avail = [(a, t) for a, t in avail if a is not None and t]
+    pf = mx(apps, "pgmajfault_per_sec", "max")
+    pf_txt = f" · 주요 페이지 폴트 최대 {f_v(pf, 1)}/s" if pf is not None else ""
     if avail:
         a, t = min(avail, key=lambda x: x[0] / x[1])
-        add("OS", "앱노드 가용 메모리", "2 GB × 2", f"최소 가용 {f_mb(a)}", rnd(100.0 * a / t, 1))
+        add("OS", "앱노드 가용 메모리", "2 GB × 2", f"최소 가용 {f_mb(a)}{pf_txt}", rnd(100.0 * a / t, 1))
     else:
-        add("OS", "앱노드 가용 메모리", "2 GB × 2", MISSING, None)
+        add("OS", "앱노드 가용 메모리", "2 GB × 2", MISSING + pf_txt, None)
     d_cpu = mx(dbs, "cpu_pct", "max")
     add("OS", "DB노드 CPU", "2 vCPU", f_v(d_cpu, 1, " %"), hr(100, d_cpu))
-    add("OS", "DB노드 steal · iowait", "-", f"steal {f_v(mx(dbs, 'cpu_modes_pct', 'steal', 'max'), 1)}% · iowait {f_v(mx(dbs, 'cpu_modes_pct', 'iowait', 'max'), 1)}%", "-")
+    add("OS", "DB노드 steal · iowait", "-", f"steal {f_v(mx(dbs, 'cpu_modes_pct', 'steal', 'max'), 1)}% · iowait {f_v(mx(dbs, 'cpu_modes_pct', 'iowait', 'max'), 1)}%" + procs(dbs), "-")
     iops = mx(dbs, "disk_iops", "max")
-    add("OS", "디스크 IOPS (EBS 기준선)", "1,000", f_v(iops, 0), hr(1000, iops))
+    aw = mx(dbs, "disk_await_ms", "all")
+    aw_txt = f" · 요청당 대기 {f_v(aw, 2, ' ms')} (구간 최대 {f_v(mx(dbs, 'disk_await_ms', 'max_interval'), 2, ' ms')})" if aw is not None else ""
+    add("OS", "디스크 IOPS (EBS 기준선)", "1,000", f_v(iops, 0) + aw_txt, hr(1000, iops))
     bps = mx(dbs, "disk_bps", "max")
     add("OS", "디스크 처리량 (EBS 기준선)", "21.75 MB/s", f_v(bps / 1e6 if bps is not None else None, 2, " MB/s"), hr(21.75e6, bps))
     cr = s.get("credits") or {}
@@ -385,18 +425,31 @@ def headroom_rows(s):
     add("OS", "CPU 크레딧", "", f"회차 뒤 최소 {f_v(min(cpuc) if cpuc else None, 1)}", "비용 항목")
     rx = mx(list(nodes), "net_bps_max", "rx")
     tx = mx(list(nodes), "net_bps_max", "tx")
-    add("OS", "네트워크", "", f"수신 {f_v(rx / 1e6 if rx is not None else None, 2)} · 송신 {f_v(tx / 1e6 if tx is not None else None, 2)} MB/s", None)
+    # O9 — 물리 장치 오류 · 버림(회차 증가 합)과 TCP 재전송(노드 중 최대 비율)
+    errs = [v for k in nodes for v in (_get(nodes, k, "net_errors") or {}).values() if v is not None]
+    rtx = mx(list(nodes), "tcp_retrans", "ratio_pct")
+    o9 = (f" · 오류 · 버림 {f_v(sum(errs), 0)} · 재전송 {f_v(rtx, 3, '%')}" if errs or rtx is not None else "")
+    add("OS", "네트워크", "", f"수신 {f_v(rx / 1e6 if rx is not None else None, 2)} · 송신 {f_v(tx / 1e6 if tx is not None else None, 2)} MB/s" + o9, None)
     lo = [_get(nodes, k, "listen_overflows_delta") for k in nodes]
     lo = [v for v in lo if v is not None]
-    add("OS", "TCP 대기열 넘침 · TIME_WAIT", "0", f"넘침 {f_v(sum(lo) if lo else None, 0)} · TIME_WAIT 최대 {f_v(mx(list(nodes), 'time_wait_max'), 0)}", "-")
+    est = mx(list(nodes), "tcp_estab", "max")
+    add("OS", "TCP 대기열 넘침 · TIME_WAIT", "0", f"넘침 {f_v(sum(lo) if lo else None, 0)} · TIME_WAIT 최대 {f_v(mx(list(nodes), 'time_wait_max'), 0)}"
+        + (f" · ESTAB 최대 {f_v(est, 0)}" if est is not None else ""), "-")
     ct = _get(nodes, "app-01", "conntrack")
     add("OS", "conntrack (APP-01)", f_v((ct or {}).get("limit"), 0) if ct else "65,536", f_v((ct or {}).get("max"), 0),
         hr((ct or {}).get("limit"), (ct or {}).get("max")) if ct else None)
     oom = [_get(nodes, k, "oom_kills_delta") for k in nodes]
     oom = [v for v in oom if v is not None]
     add("OS", "OOM 강제 종료", "0", f_v(sum(oom) if oom else None, 0), "-")
-    cm = [v.get("container_memory_max_bytes") for v in (R("slots") or {}).values() if v.get("container_memory_max_bytes")]
-    add("앱", "슬롯 컨테이너 메모리", "680 MiB × 4", f_mb(max(cm)) if cm else MISSING, hr(680 * 1048576, max(cm)) if cm else None)
+    # 컨테이너 메모리 — cgroup 직접(containers.py). 상한은 그 컨테이너의 memory.max(운영 Compose mem_limit), 헤드룸은 비율이 가장 큰 것
+    cm = [v for v in (R("slots") or {}).values() if v.get("container_memory_max_bytes")]
+    if cm:
+        v = max(cm, key=lambda d: d.get("container_memory_max_pct") or 0)
+        lim = v.get("container_memory_limit_bytes")
+        add("앱", "슬롯 컨테이너 메모리", f"{f_mb(lim)} × {len(cm)}" if lim else "680 MiB × 4", f_mb(v["container_memory_max_bytes"]),
+            hr(lim, v["container_memory_max_bytes"]) if lim else None)
+    else:
+        add("앱", "슬롯 컨테이너 메모리", "680 MiB × 4", MISSING, None)
     add("앱", "요청 처리 스레드", f_v(at.get("tomcat_max_total"), 0) + " (합)" if at.get("tomcat_max_total") else "200 (합)",
         f"동시 최대 합 {f_v(at.get('tomcat_busy_sum_max'), 0)}", hr(at.get("tomcat_max_total"), at.get("tomcat_busy_sum_max")))
     hmax = [v.get("heap_max_bytes") for v in (R("slots") or {}).values() if v.get("heap_max_bytes")]
@@ -413,10 +466,17 @@ def headroom_rows(s):
         add("DB", "최대 커넥션", f_v(lim, 0), f_v(peak, 0), hr(lim, peak))
     else:
         add("DB", "최대 커넥션", "", MISSING, None)
-    dcm = [v.get("container_memory_max_bytes") for v in pgs.values() if v.get("container_memory_max_bytes")]
-    add("DB", "컨테이너 메모리", "", f_mb(max(dcm)) if dcm else MISSING, None)
+    dcm = [v for v in pgs.values() if v.get("container_memory_max_bytes")]
+    if dcm:
+        v = max(dcm, key=lambda d: (d["container_memory_max_bytes"] / d["container_memory_limit_bytes"]) if d.get("container_memory_limit_bytes") else 0)
+        lim = v.get("container_memory_limit_bytes")
+        add("DB", "컨테이너 메모리", f_mb(lim) if lim else "", f_mb(v["container_memory_max_bytes"]), hr(lim, v["container_memory_max_bytes"]) if lim else None)
+    else:
+        add("DB", "컨테이너 메모리", "", MISSING, None)
     add("입구", "앞단 요청 상한", "", MISSING, None)
-    add("입구", "앞단 컨테이너 메모리", "", MISSING, None)
+    ig = R("ingress_container") or {}
+    add("입구", "앞단 컨테이너 메모리", f_mb(ig["limit_bytes"]) if ig.get("limit_bytes") else "", f_mb(ig["max_bytes"]) if ig.get("max_bytes") else MISSING,
+        hr(ig.get("limit_bytes"), ig.get("max_bytes")) if ig.get("limit_bytes") else None)
     r = R("redis") or {}
     add("캐시", "캐시 메모리", f_mb(r.get("memory_max_bytes")) if r.get("memory_max_bytes") else "", f_mb(r.get("memory_used_max_bytes")) if r else MISSING,
         hr(r.get("memory_max_bytes"), r.get("memory_used_max_bytes")) if r else None)
@@ -586,6 +646,54 @@ def unmeasured_rows(s, nar):
     return rows
 
 
+def collapse_view(s):
+    """[7.8] 프로세스 종료 · 알림 — 원천: 슬롯 재시작(W2) · OOM(O5) · 부팅 시각(O13) · systemd 실패(O14) · DB 재시작 · 알림 이력."""
+    nodes = _get(s, "resources", "nodes") or {}
+    app = _get(s, "resources", "app_totals", "restarts")
+    oom = [v.get("oom_kills_delta") for v in nodes.values() if v.get("oom_kills_delta") is not None]
+    reboot = sorted(n for n, v in nodes.items() if (v.get("boot") or {}).get("rebooted"))
+    failed = sorted({f"{n} {u}" for n, v in nodes.items() for u in (v.get("systemd_failed") or [])})
+    sysd_known = any(v.get("systemd_failed") is not None for v in nodes.values())
+    boot_known = any(v.get("boot") is not None for v in nodes.values())
+    db = [v.get("restarts") for v in (_get(s, "resources", "postgres") or {}).values() if v.get("restarts") is not None]
+    coom = _get(s, "resources", "app_totals", "container_oom_kills")
+    ro = sorted(n for n, v in nodes.items() if v.get("fs_readonly"))
+    al = s.get("alerts")
+    fired = (al or {}).get("fired") or []
+    return {
+        "app_restarts": app, "oom": sum(oom) if oom else None, "container_oom": coom, "rebooted": reboot, "boot_known": boot_known,
+        "systemd_failed": failed, "systemd_known": sysd_known, "db_restarts": sum(db) if db else None, "fs_readonly": ro,
+        "any_exit": bool(app) or bool(coom) or bool(sum(oom) if oom else 0) or bool(reboot) or bool(sum(db) if db else 0),
+        "alerts": al, "fired": fired,
+    }
+
+
+def explain_pairs(s, b):
+    """[4.2] — 질의 id 마다 (전, 후). 후는 이 회차, 전은 기준 회차의 같은 id."""
+    cur = (s.get("explain") or {}).get("queries") or []
+    base = {q["id"]: q for q in ((b or {}).get("explain") or {}).get("queries") or []}
+    return [{"q": q, "b": base.get(q["id"])} for q in cur]
+
+
+def alert_rows(s, nar):
+    """[9.4](라) — 시험에서 본 상태 · 울린 규칙은 이력에서, 「울렸어야 했나」는 사람(narrative.feedback.alerts)."""
+    rows = list(_get(nar, "feedback", "alerts") or [])
+    al = s.get("alerts")
+    if not al:
+        return rows
+    have = {r.get("rule") for r in rows}
+    for t in al.get("transitions") or []:
+        rule = t.get("rule_title") or t.get("rule_uid")
+        if rule in have:
+            continue
+        when = f" · 시작 {t['minutes_after_start']}분 뒤" if t.get("minutes_after_start") is not None else ""
+        rows.append({"state": f"{t.get('from')} → {t.get('to')}{when}{' (회차 끝난 뒤)' if t.get('after_end') else ''}",
+                     "rule": rule, "should": ""})
+    if not al.get("transitions") and al.get("available"):
+        rows.append({"state": f"{s['round']} 구간 상태 전환 없음 (이력 {al.get('source')})", "rule": "없음", "should": ""})
+    return rows
+
+
 # ---------------------------------------------------------------- 묶음 · 렌더
 
 def build_context(s, b, out_dir: Path):
@@ -608,7 +716,7 @@ def build_context(s, b, out_dir: Path):
         p = RESULTS_DIR / x["folder"] / "out" / "graphs" / name
         return os.path.relpath(p, out_dir).replace("\\", "/")
 
-    graphs = {g: gpath(s, g) for g in ("G1", "G2", "G3", "G4", "G5", "G6", "G7")}
+    graphs = {g: gpath(s, g) for g in ("G1", "G1s", "G2", "G3", "G4", "G5", "G6", "G7")}
     units = unit_costs(summaries)
     hrows, tight = headroom_rows(s)
     tr_routes = _get(s, "traces", "routes") or {}
@@ -621,7 +729,7 @@ def build_context(s, b, out_dir: Path):
         "rids": rids, "recent": [x for _, x in summaries if x][-6:],
         "graphs": graphs,
         "comparability": comparability(s, b, nar),
-        "signals": signal_rows(s, nar),
+        "signals": signal_rows(s, nar, solo_limits(summaries)),
         "db_rows": db_rows(s, b, thr), "wait_rows": wait_rows(s, b),
         "app_rows": app_rows(s, b, thr), "slot_rows": slot_rows(s),
         "prof": profiler_view(s), "bprof": profiler_view(b),
@@ -631,6 +739,9 @@ def build_context(s, b, out_dir: Path):
         "units": units, "interf": interference(s, units),
         "pre_cols": pre_rows(summaries),
         "unmeasured": unmeasured_rows(s, nar),
+        "collapse": collapse_view(s),
+        "explain_pairs": explain_pairs(s, b),
+        "alert_rows": alert_rows(s, nar),
         "budget_routes": budget_routes,
         "tr_routes": tr_routes, "btr": btr,
         "trend": [x for _, x in summaries if x and not str(x["round"]).upper().startswith("U")][-4:],

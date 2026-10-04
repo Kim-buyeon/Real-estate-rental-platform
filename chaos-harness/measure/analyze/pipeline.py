@@ -4,11 +4,11 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 
-from . import jtl, prom, db, nginx, traces, misc
+from . import jtl, prom, db, nginx, traces, misc, steps, explain, alerts, containers
 from .util import Window, parse_time, read_json, write_json, rnd, percentile, route_key, fmt_kst, RESULTS_DIR
 
 TARGET_P95_MS = 500
-MATRIX_COLS = 6     # [7.11] 에 따로 세우는 엔드포인트 수 — 나머지는 「그 외」
+MATRIX_COLS = 20    # [7.11] 에 따로 세우는 엔드포인트 수 — #390 범위 스무 개(계획 변경 3). 나머지는 「그 외」
 
 
 def round_dir(name: str) -> Path:
@@ -51,13 +51,27 @@ def analyze_round(name: str, write=True):
                    "start_kst": fmt_kst(win.start), "end_kst": fmt_kst(win.end),
                    "record_start_utc": rec[0], "record_end_utc": rec[1]}
 
-    # 2. 지표 · DB · 입구 · 추적 · 그 밖
-    s["resources"] = prom.analyze(rdir / "metrics", win, requests)
+    # 2. 단계 경계(steps.json, 없으면 jtl 10초 창) — 지표 집계가 단계마다의 자원을 함께 내도록 먼저 구한다
+    bounds, binfo = steps.boundaries(rdir, win, jrows)
+
+    # 3. 지표 · DB · 입구 · 추적 · 그 밖
+    s["resources"] = prom.analyze(rdir / "metrics", win, requests, steps=bounds)
+    prom_steps = s["resources"].pop("steps", None)
+    # 컨테이너 메모리(cgroup 직접 — node-sampler.sh cloop) → resources 의 container_memory_* 칸
+    s["containers"] = containers.analyze(rdir / "containers", win)
+    containers.attach(s)
     s["pre"] = read_json(rdir / "pre" / "pre.json")
     s["db"] = db.analyze(rdir / "db", win, requests, s["pre"])
     _dbstats_fallback(s)
-    s["nginx"] = nginx.analyze(rdir / "nginx" / "access.log", win)
-    s["traces"] = traces.analyze(rdir / "traces" / "spans.jsonl", win)
+    ngx_rows, profiles = [], []
+    s["nginx"] = nginx.analyze(rdir / "nginx" / "access.log", win, collect=ngx_rows)
+    s["traces"] = traces.analyze(rdir / "traces" / "spans.jsonl", win, collect=profiles)
+    s["steps"] = steps.analyze(rdir, win, jrows, profiles, ngx_rows, prom_steps, meta, bounds=bounds, info=binfo)
+    del ngx_rows, profiles
+    _statement_speeds(s)
+    s["explain"] = explain.analyze(rdir)
+    _attach_explain(s)
+    s["alerts"] = alerts.analyze(rdir, win)
     s["redis_commandstats"] = misc.commandstats_delta(rdir / "pre" / "redis-commandstats.txt", rdir / "post" / "redis-commandstats.txt", requests)
     s["credits"] = misc.credits(rdir / "pre" / "credits.json", rdir / "post" / "credits.json")
     s["profiler"] = misc.profiler(rdir / "profiler")
@@ -68,7 +82,7 @@ def analyze_round(name: str, write=True):
             break
     s["heavy_files"] = sorted(p.name for p in (rdir / "heavy").glob("*")) if (rdir / "heavy").exists() else []
 
-    # 3. 엔드포인트로 잇기
+    # 4. 엔드포인트로 잇기
     s["route_tool"] = _route_tool(jrows, win)
     s["budget"] = budgets(s)
     s["matrix"] = matrix(s)
@@ -93,6 +107,46 @@ def _dbstats_fallback(s):
             p["blks_read_delta"] = ds["blks_read_delta"]
 
 
+PGSS_JOIN_FIELDS = ("calls", "mean_ms", "stddev_ms", "rows_per_call", "blks_hit", "blks_read", "total_ms")
+
+
+def _statement_speeds(s):
+    """질의 실행 속도 — 추적의 문장별 p50/p95(traces.statements) 옆에 질의 통계의 평균 · 표준편차 · 행 · 블록을 노드별로 붙인다.
+    잇는 열쇠는 문장 키(traces.stmt_key — $n · ? · 리터럴을 같게). 질의 통계 쪽 문장별 합(db.pgss 의 _by_key)은 여기서 쓰고 지운다.
+    [4.1] 상위 질의 행에도 추적 쪽 p50/p95 를 붙인다."""
+    by_node = {}
+    for node, p in ((s.get("db") or {}).get("pgss") or {}).items():
+        by_node[node] = p.pop("_by_key", None) or {}
+    rows = (s.get("traces") or {}).get("statements") or []
+    for r in rows:
+        r["pgss"] = {}
+        for node, bk in by_node.items():
+            k = traces.match_key(r["key"], bk.keys())
+            if k:
+                r["pgss"][node] = {f: bk[k].get(f) for f in PGSS_JOIN_FIELDS}
+        r["pgss"] = r["pgss"] or None
+    tkeys = {r["key"]: r for r in rows}
+    for r in (s.get("db") or {}).get("top_merged") or []:
+        k = traces.match_key(traces.stmt_key(r.get("query")), tkeys.keys())
+        t = tkeys.get(k) if k else None
+        r["trace"] = {"calls": t["calls"], "p50_ms": t["p50_ms"], "p95_ms": t["p95_ms"], "per_request": t["per_request"]} if t else None
+
+
+def _attach_explain(s):
+    """[4.2] 질의마다 — 같은 문장의 추적 쪽 실행 속도(회차 · 단계별)를 붙인다."""
+    ex = s.get("explain")
+    if not ex:
+        return
+    rows = {r["key"]: r for r in ((s.get("traces") or {}).get("statements") or [])}
+    st = s.get("steps") or {}
+    for q in ex.get("queries") or []:
+        k = traces.match_key(q.get("key"), rows.keys())
+        t = rows.get(k) if k else None
+        q["trace"] = {f: t.get(f) for f in ("calls", "p50_ms", "p95_ms", "per_request", "db_nodes", "pgss")} if t else None
+        q["trace_by_step"] = [{"index": x["index"], **x["statements"][k]} for x in (st.get("steps") or [])
+                              if k and k in (x.get("statements") or {})] or None
+
+
 def _route_tool(rows, win):
     """엔드포인트 키별 도구 쪽 p95 — 레이블이 여럿이 한 경로를 부르면 합친다."""
     by = defaultdict(list)
@@ -109,6 +163,21 @@ def _pool_acquire(s):
     vals = [p.get("acquire_p95_ms") or p.get("acquire_mean_ms") for p in pools.values()]
     vals = [v for v in vals if v is not None]
     return max(vals) if vals else None
+
+
+# 요청 전체를 감싸는 필터의 자기 시간은 필터 자신의 일이 아니다 — 안쪽 구간(Controller 등) 밖에서 쓰인 시간이 모두 여기에
+# 남는다. 응답 JSON 변환(spring-web 의 Jackson 변환기)은 에이전트가 org.springframework 를 계측하지 않아 구간이 없으므로
+# 이 자리에 들어간다(#390 로컬: writeInternal 을 목록에 넣어도 구간 0). 이름을 그 뜻으로 바꿔 [7.1] 에 적는다
+WRAPPER_ROW_NAMES = {
+    "JwtAuthenticationFilter.doFilterInternal": "필터 · MVC · 응답 JSON 변환 — Controller 밖 (JwtAuthenticationFilter 자기 시간)",
+    "RequestIdFilter.doFilterInternal": "보안 필터 체인 · 응답 쓰기 (RequestIdFilter 자기 시간)",
+}
+
+
+def _method_row_name(m):
+    if m in WRAPPER_ROW_NAMES:
+        return WRAPPER_ROW_NAMES[m]
+    return ("Controller — " if "Controller." in m else "Service — ") + m
 
 
 def budget_for(s, route):
@@ -128,7 +197,7 @@ def budget_for(s, route):
                      "mean_ms": mean_.get(key), "ms": req.get(key)})
 
     for m in dc.get("named_methods") or []:
-        add("method:" + m, "앱", "Service — " + m, "메서드 구간(자기 시간)")
+        add("method:" + m, "앱", _method_row_name(m), "메서드 구간(자기 시간)")
     for key, layer, name, src in traces.DECOMP_PARTS:
         add(key, layer, name, src)
     srv = req.get("server")
@@ -258,20 +327,28 @@ def endpoints(s):
 
 def _attach_pgss_routes(s):
     sr = (s.get("traces") or {}).get("statement_routes") or {}
-    if not sr:
+    if not sr and not s.get("explain"):
         return
     keys = list(sr.keys())
     for node, p in (s.get("db") or {}).get("pgss", {}).items():
         for r in p["top"]:
-            k = traces.stmt_key(r["query"])
-            hit = sr.get(k)
-            if hit is None and k:
-                # 앞부분만 같은 경우(잘린 문장)
-                hit = next((sr[x] for x in keys if x[:60] == k[:60]), None)
-            r["routes"] = hit[:3] if hit else None
+            # 같은 키, 아니면 잘린 문장(상위 20 은 300자)을 앞부분으로 — 후보가 하나뿐일 때만
+            k = traces.match_key(traces.stmt_key(r["query"]), keys)
+            r["routes"] = sr[k][:3] if k else None
+    # 추적에 없는 문장은 질의 파일(queries/endpoints.yaml)의 endpoint 키로 — 매퍼 소스를 보고 사람이 붙인 엔드포인트([4.1] 안내)
+    ep = defaultdict(list)
+    for q in ((s.get("explain") or {}).get("queries") or []):
+        if q.get("key") and q.get("endpoint") and q["endpoint"] not in ep[q["key"]]:
+            ep[q["key"]].append(q["endpoint"])
     for r in (s.get("db") or {}).get("top_merged", []):
-        k = traces.stmt_key(r["query"])
-        r["routes"] = (sr.get(k) or [None])[:3] if sr.get(k) else None
+        qk = traces.stmt_key(r["query"])
+        k = traces.match_key(qk, keys)
+        r["routes"] = sr[k][:3] if k else None
+        r["routes_source"] = "추적" if k else None
+        if not k and ep:
+            e = traces.match_key(qk, ep.keys())
+            if e:
+                r["routes"], r["routes_source"] = ep[e][:3], "질의 파일"
 
 
 # ---------------------------------------------------------------- 핵심 지표 · 반영 확인
