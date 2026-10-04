@@ -208,6 +208,8 @@ mybatis:
     # 조회 DTO 는 record 다. setter 가 없으므로 MyBatis 가 생성자로 값을 넣어야 하는데,
     # 기본 동작은 생성자 인자를 "순서"로 맞춘다 — 필드를 하나 끼워 넣으면 조용히 틀린다.
     # true 로 두면 인자 "이름"으로 맞추므로 평면 DTO 는 <constructor> XML 없이 받는다.
+    # 단 이 자동 매핑은 행마다 생성자 · 인자 이름을 리플렉션으로 다시 찾아, 행이 많은 조회는 매퍼 XML 에 이름 지정 <constructor>
+    # 를 둔다(기동 때 한 번 맞추고 틀리면 기동 실패). 반경 요청 CPU 의 85 % 가 이 매핑이었다(#390 P01, #397).
     # 인자 이름을 런타임에 읽는 조건인 -parameters 는 Spring Boot Gradle 플러그인이 이미 붙인다.
     arg-name-based-constructor-auto-mapping: true
 
