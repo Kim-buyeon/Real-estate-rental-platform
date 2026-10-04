@@ -251,14 +251,17 @@ def saturation(steps):
         if not s["count"] or s["partial"]:
             continue
         cond = []
-        if s["p95"] is not None and s["p95"] > TARGET_P95_MS:
+        # 표본이 모자란 단계의 p95 는 판정에 쓰지 않는다([0.4](5) — 수백 건 미만이면 꼬리가 몇 건에 좌우된다)
+        if s["p95"] is not None and s["p95"] > TARGET_P95_MS and s.get("p95_usable"):
             cond.append("p95 500 ms 초과")
         if (s["rate_5xx"] or 0) > 1.0:
             cond.append("5xx 1% 초과")
         if s["target_rps"]:
             lag = s["actual_rps"] < LAG_RATIO * (s.get("target_mean_rps") or s["target_rps"])
             g = _growth(prev["actual_rps"], s["actual_rps"]) if prev else None
-            if lag and (g is None or g < PLATEAU_GROWTH_PCT):
+            # 정체는 앞 단계와 견줘야 성립한다 — 첫 단계 하나만으로는 「못 따라감」이 워밍업 · 계단 시작 어긋남과 구분되지
+            # 않는다(#390 U02: 1단계 5 RPS 목표에 3.55, p95 33 ms 를 포화로 오판)
+            if lag and g is not None and g < PLATEAU_GROWTH_PCT:
                 cond.append("처리량이 목표를 못 따라가고 정체")
         elif prev and prev.get("threads_max") and s.get("threads_max") is not None:
             g, tg = _growth(prev["actual_rps"], s["actual_rps"]), _growth(prev["threads_max"], s["threads_max"])

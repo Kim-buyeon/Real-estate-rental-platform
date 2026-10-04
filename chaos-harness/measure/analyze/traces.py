@@ -362,7 +362,11 @@ def statements(profiles, top=STATEMENT_TOP):
 def analyze(path: Path, win, collect=None):
     """collect — 리스트를 주면 요청마다의 분해(request_profile + route)를 담아 돌려준다(단계별 분해 · steps.py)."""
     if not path.exists():
-        return None
+        # 집계 뒤 회차 스크립트가 spans.jsonl 을 gzip 한다 — 다시 집계할 때는 압축본을 읽는다
+        gz = path.with_name(path.name + ".gz")
+        if not gz.exists():
+            return None
+        path = gz
     lo = win.lo * 1000 if win.lo is not None else None
     hi = (win.hi + 60) * 1000 if win.hi is not None else None
     spans = load(path, (win.start * 1000) if win.start is not None else None, hi)
