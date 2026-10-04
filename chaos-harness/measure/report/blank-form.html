@@ -945,7 +945,7 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <tr><td>캐시</td><td>캐시 메모리</td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 <tr><td>시험</td><td>부하 생성기 CPU</td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 </table>
-<p class="small">EBS 상한은 인스턴스 쪽 기준선 — DB 노드 t3.small 1,000 IOPS · 21.75 MB/s, 앱 노드 t3.medium 2,000 IOPS · 43.375 MB/s(둘 다 볼륨 gp3 3,000 IOPS · 125 MB/s보다 낮다). 앱 노드 기준선은 t3.medium 전환(#394) 뒤 회차 기준이다 — 그 전 회차(#390)의 앱 노드는 t3.small 이었다. 크레딧과 함께 읽는다. 부하 생성기 헤드룸이 20% 미만이면 그 회차는 버린다.</p>
+<p class="small">EBS 상한은 인스턴스 쪽 기준선 — DB 노드 t3.small 1,000 IOPS · 21.75 MB/s, 앱 노드 t3.medium 2,000 IOPS · 43.375 MB/s(둘 다 볼륨 gp3 3,000 IOPS · 125 MB/s보다 낮다). 앱 노드 기준선은 회차 MemTotal 로 유형을 골라 적는다. 크레딧과 함께 읽는다. 부하 생성기 헤드룸이 20% 미만이면 그 회차는 버린다.</p>
 <table><tr><th class="k">헤드룸 20% 미만 자원</th><td class="b">___개: </td></tr></table>
 <p class="small">둘 이상이면 하나를 늘려도 바로 다음 것에 걸린다.</p>
 </section>

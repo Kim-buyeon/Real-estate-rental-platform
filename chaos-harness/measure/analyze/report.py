@@ -18,7 +18,7 @@ from pathlib import Path
 from jinja2 import ChainableUndefined, Environment, FileSystemLoader, Undefined
 
 from . import compare
-from .prom import EBS_BASELINE
+from .prom import EBS_BASELINE, ebs_type
 from .util import RESULTS_DIR, REPORT_SRC_DIR, KST, read_json, rnd, fmt_kst
 
 MISSING = "미측정"
@@ -417,9 +417,13 @@ def headroom_rows(s):
     d_cpu = mx(dbs, "cpu_pct", "max")
     add("OS", "DB노드 CPU", "2 vCPU", f_v(d_cpu, 1, " %"), hr(100, d_cpu))
     add("OS", "DB노드 steal · iowait", "-", f"steal {f_v(mx(dbs, 'cpu_modes_pct', 'steal', 'max'), 1)}% · iowait {f_v(mx(dbs, 'cpu_modes_pct', 'iowait', 'max'), 1)}%" + procs(dbs), "-")
-    # EBS 기준선은 인스턴스 유형마다 다르다 — DB 노드(t3.small)와 앱 노드(t3.medium)를 따로 잰다
-    for keys, kind, who in ((dbs, "db", "DB노드"), (apps, "app", "앱노드")):
-        e_iops, e_bps, e_type = EBS_BASELINE[kind]
+    # EBS 기준선은 인스턴스 유형마다 다르다 — DB 노드(t3.small)와 앱 노드를 따로 잰다. 앱 노드 유형은 회차 MemTotal 로 고른다
+    # (prom.ebs_type — 두 앱 노드 중 작은 쪽. #394 전 회차는 t3.small)
+    for keys, is_db, who in ((dbs, True, "DB노드"), (apps, False, "앱노드")):
+        mts = [m for m in (_get(nodes, k, "mem_total_bytes") for k in keys) if m]
+        e_type, guess = ebs_type(is_db, min(mts) if mts else None)
+        e_iops, e_bps = EBS_BASELINE[e_type]
+        e_type += " (추정)" if guess else ""
         iops = mx(keys, "disk_iops", "max")
         aw = mx(keys, "disk_await_ms", "all")
         aw_txt = f" · 요청당 대기 {f_v(aw, 2, ' ms')} (구간 최대 {f_v(mx(keys, 'disk_await_ms', 'max_interval'), 2, ' ms')})" if aw is not None else ""

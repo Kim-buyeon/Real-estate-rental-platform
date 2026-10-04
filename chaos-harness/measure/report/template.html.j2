@@ -944,10 +944,10 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <table>
 <tr><th>계층</th><th>자원</th><th>상한</th><th>최대 ({{ R }})</th><th>헤드룸</th></tr>
 {% for r in headroom %}
-<tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td{{ ' class="b"' if not r.limit }}>{{ r.limit }}</td><td class="b">{{ r.peak }}</td><td{{ ' class="b"' if r.headroom != "-" and r.headroom != "비용 항목" }}>{% if r.headroom is number %}{{ r.headroom|v(1, "%") }}{% elif r.headroom %}{{ r.headroom }}{% else %}미측정{% endif %}</td></tr>
+<tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td{% if not r.limit %} class="b"{% endif %}>{{ r.limit }}</td><td class="b">{{ r.peak }}</td><td{% if r.headroom != "-" and r.headroom != "비용 항목" %} class="b"{% endif %}>{% if r.headroom is number %}{{ r.headroom|v(1, "%") }}{% elif r.headroom %}{{ r.headroom }}{% else %}미측정{% endif %}</td></tr>
 {% endfor %}
 </table>
-<p class="small">EBS 상한은 인스턴스 쪽 기준선 — DB 노드 t3.small 1,000 IOPS · 21.75 MB/s, 앱 노드 t3.medium 2,000 IOPS · 43.375 MB/s(둘 다 볼륨 gp3 3,000 IOPS · 125 MB/s보다 낮다). 앱 노드 기준선은 t3.medium 전환(#394) 뒤 회차 기준이다 — 그 전 회차(#390)의 앱 노드는 t3.small 이었다. 크레딧과 함께 읽는다. 부하 생성기 헤드룸이 20% 미만이면 그 회차는 버린다.</p>
+<p class="small">EBS 상한은 인스턴스 쪽 기준선 — DB 노드 t3.small 1,000 IOPS · 21.75 MB/s, 앱 노드 t3.medium 2,000 IOPS · 43.375 MB/s(둘 다 볼륨 gp3 3,000 IOPS · 125 MB/s보다 낮다). 앱 노드 기준선은 회차 MemTotal 로 유형을 골라 적는다. 크레딧과 함께 읽는다. 부하 생성기 헤드룸이 20% 미만이면 그 회차는 버린다.</p>
 <table><tr><th class="k">헤드룸 20% 미만 자원</th><td class="b">{{ tight|length }}개: {{ tight|join(", ") }}</td></tr></table>
 <p class="small">「최대」는 이 회차 안의 최댓값이다 — 한계 회차(S8)가 아니면 헤드룸은 「이 부하에서의 여유」이지 한계 여유가 아니다.</p>
 <p class="small">둘 이상이면 하나를 늘려도 바로 다음 것에 걸린다.</p>
