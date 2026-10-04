@@ -139,13 +139,13 @@ ul { margin: 2px 0 6px 18px; padding: 0; } li { margin: 1px 0; }
 <tr><td>[5.1]</td><td>슬롯별 분배 (W2)</td><td>네 슬롯에 고르게 갔나 · 죽은 슬롯</td><td>한 슬롯이 죽으면 숫자가 바뀐다</td></tr>
 <tr><td>[6.4]</td><td>커넥션 풀 대기 · 획득 · 타임아웃 (W3)</td><td>풀에서 줄을 섰나</td><td>DB가 빨라도 풀에서 막히면 느리다</td></tr>
 <tr><td>[5.1][7.4]</td><td>Tomcat 바쁜 스레드 (W4)</td><td>요청 스레드가 말랐나</td><td>큐 대기의 대리 지표</td></tr>
-<tr><td>[5.1]</td><td>힙 · 힙 밖 · GC (W5)</td><td>메모리 · GC가 한계를 정했나</td><td>슬롯 메모리 상한 680 MiB</td></tr>
+<tr><td>[5.1]</td><td>힙 · 힙 밖 · GC (W5)</td><td>메모리 · GC가 한계를 정했나</td><td>슬롯 메모리 상한 768 MiB</td></tr>
 <tr><td>[3] S6</td><td>비동기 · 스케줄러 큐 (W6)</td><td>배치가 밀렸나</td><td>배치 동시 시나리오의 판정</td></tr>
 <tr><td>[5.4][7.1]</td><td>Redis 서버 지표 · lettuce 명령 지연 (W9)</td><td>캐시 · 토큰에 시간이 쓰였나</td><td>추적에 Redis 구간이 없다</td></tr>
 <tr><td>[7.4]</td><td>CPU user · system · iowait · steal (O1 · O3)</td><td>어느 노드 CPU가 먼저 찼나</td><td>가상 머신은 steal이 따로 포화를 만든다</td></tr>
 <tr><td>[7.4]</td><td>load ÷ vCPU (O2)</td><td>실행 대기가 생겼나</td><td>사용률만으로는 줄이 안 보인다</td></tr>
 <tr><td>[7.4][7.8]</td><td>가용 메모리 · OOM 강제 종료 (O4 · O5)</td><td>메모리로 무너졌나</td><td>네 노드 모두 스왑이 없다</td></tr>
-<tr><td>[7.4]</td><td>디스크 util% · 대기 · IOPS · 처리량 (O8)</td><td>디스크가 한계를 정했나</td><td>t3.small EBS 기준선</td></tr>
+<tr><td>[7.4]</td><td>디스크 util% · 대기 · IOPS · 처리량 (O8)</td><td>디스크가 한계를 정했나</td><td>EBS 기준선 — DB 노드 t3.small · 앱 노드 t3.medium</td></tr>
 <tr><td>[11.2][7.4]</td><td>EBS · CPU 버스트 크레딧 (O15 스냅샷)</td><td>두 회차가 같은 조건에서 출발했나</td><td>바닥나면 같은 질의가 몇 배 느려진다</td></tr>
 <tr><td>[7.4][7.8]</td><td>TCP 대기열 넘침 · TIME_WAIT (O10)</td><td>연결을 버렸나</td><td>오류가 아니라 타임아웃으로 보인다</td></tr>
 <tr><td>[7.4]</td><td>conntrack (O11, APP-01)</td><td>NAT 표가 찼나</td><td>APP-01이 입구와 NAT을 겸한다</td></tr>
@@ -920,18 +920,20 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <tr><th>계층</th><th>자원</th><th>상한</th><th>한계 시점</th><th>헤드룸</th></tr>
 <tr><td>OS</td><td>앱노드 CPU</td><td>2 vCPU × 2</td><td class="b"></td><td class="b"></td></tr>
 <tr><td>OS</td><td>앱노드 steal · load÷vCPU</td><td>-</td><td class="b"></td><td>-</td></tr>
-<tr><td>OS</td><td>앱노드 가용 메모리</td><td>2 GB × 2</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>OS</td><td>앱노드 가용 메모리</td><td>4 GiB (MemTotal 3,831 MiB) × 2</td><td class="b"></td><td class="b"></td></tr>
 <tr><td>OS</td><td>DB노드 CPU</td><td>2 vCPU</td><td class="b"></td><td class="b"></td></tr>
 <tr><td>OS</td><td>DB노드 steal · iowait</td><td>-</td><td class="b"></td><td>-</td></tr>
-<tr><td>OS</td><td>디스크 IOPS (EBS 기준선)</td><td>1,000</td><td class="b"></td><td class="b"></td></tr>
-<tr><td>OS</td><td>디스크 처리량 (EBS 기준선)</td><td>21.75 MB/s</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>OS</td><td>DB노드 디스크 IOPS (EBS 기준선)</td><td>1,000 (t3.small)</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>OS</td><td>DB노드 디스크 처리량 (EBS 기준선)</td><td>21.75 MB/s (t3.small)</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>OS</td><td>앱노드 디스크 IOPS (EBS 기준선)</td><td>2,000 (t3.medium)</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>OS</td><td>앱노드 디스크 처리량 (EBS 기준선)</td><td>43.375 MB/s (t3.medium)</td><td class="b"></td><td class="b"></td></tr>
 <tr><td>OS</td><td>EBS 버스트 크레딧</td><td>100%</td><td class="b"></td><td>-</td></tr>
 <tr><td>OS</td><td>CPU 크레딧</td><td class="b"></td><td class="b"></td><td>비용 항목</td></tr>
 <tr><td>OS</td><td>네트워크</td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 <tr><td>OS</td><td>TCP 대기열 넘침 · TIME_WAIT</td><td>0</td><td class="b"></td><td>-</td></tr>
 <tr><td>OS</td><td>conntrack (APP-01)</td><td>65,536</td><td class="b"></td><td class="b"></td></tr>
 <tr><td>OS</td><td>OOM 강제 종료</td><td>0</td><td class="b"></td><td>-</td></tr>
-<tr><td>앱</td><td>슬롯 컨테이너 메모리</td><td>680 MiB × 4</td><td class="b"></td><td class="b"></td></tr>
+<tr><td>앱</td><td>슬롯 컨테이너 메모리</td><td>768 MiB × 4</td><td class="b"></td><td class="b"></td></tr>
 <tr><td>앱</td><td>요청 처리 스레드</td><td>200 (합)</td><td class="b"></td><td class="b"></td></tr>
 <tr><td>앱</td><td>힙</td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 <tr><td>경계</td><td>기본 커넥션 풀</td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
@@ -943,7 +945,7 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <tr><td>캐시</td><td>캐시 메모리</td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 <tr><td>시험</td><td>부하 생성기 CPU</td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 </table>
-<p class="small">EBS 상한은 t3.small 인스턴스 쪽 기준선(볼륨 gp3 3,000 IOPS · 125 MB/s보다 낮다). 크레딧과 함께 읽는다. 부하 생성기 헤드룸이 20% 미만이면 그 회차는 버린다.</p>
+<p class="small">EBS 상한은 인스턴스 쪽 기준선 — DB 노드 t3.small 1,000 IOPS · 21.75 MB/s, 앱 노드 t3.medium 2,000 IOPS · 43.375 MB/s(둘 다 볼륨 gp3 3,000 IOPS · 125 MB/s보다 낮다). 앱 노드 기준선은 t3.medium 전환(#394) 뒤 회차 기준이다 — 그 전 회차(#390)의 앱 노드는 t3.small 이었다. 크레딧과 함께 읽는다. 부하 생성기 헤드룸이 20% 미만이면 그 회차는 버린다.</p>
 <table><tr><th class="k">헤드룸 20% 미만 자원</th><td class="b">___개: </td></tr></table>
 <p class="small">둘 이상이면 하나를 늘려도 바로 다음 것에 걸린다.</p>
 </section>

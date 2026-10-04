@@ -40,6 +40,9 @@ KEEP_BUCKETS = ("hikaricp_connections_acquire_seconds_bucket", "http_server_requ
 
 APP_VCPU = 2
 DB_VCPU = 2
+# 인스턴스 쪽 EBS 기준선(IOPS · 바이트/초 · 유형) — aws ec2 describe-instance-types(ap-northeast-2, 2026-10-05 조회)의
+# BaselineIops · BaselineThroughputInMBps. 볼륨(gp3 3,000 IOPS · 125 MB/s)보다 낮아 먼저 닿는다
+EBS_BASELINE = {"db": (1000.0, 21.75e6, "t3.small"), "app": (2000.0, 43.375e6, "t3.medium")}
 PG_MAX_CONN_DEFAULT = 48
 CONNTRACK_DEFAULT = 65536
 _DISK_DEV = re.compile(r"^(nvme\d+n\d+|xvd[a-z]+|sd[a-z]+|vd[a-z]+)$")
@@ -1019,8 +1022,9 @@ def headroom(out):
         if o.get("mem_total_bytes") and o.get("mem_available_min_bytes") is not None:
             add("OS", f"{node} 메모리 사용", o["mem_total_bytes"], o["mem_total_bytes"] - o["mem_available_min_bytes"], "B")
         add("OS", f"{node} 디스크 util", 100.0, o.get("disk_util_pct_max"), "%")
-        add("OS", f"{node} 디스크 IOPS", 1000.0, (o.get("disk_iops") or {}).get("max"), "IOPS", "t3.small EBS 기준선")
-        add("OS", f"{node} 디스크 처리량", 21.75e6, (o.get("disk_bps") or {}).get("max"), "B/s", "t3.small EBS 기준선")
+        e_iops, e_bps, e_type = EBS_BASELINE["db" if is_db else "app"]
+        add("OS", f"{node} 디스크 IOPS", e_iops, (o.get("disk_iops") or {}).get("max"), "IOPS", f"{e_type} EBS 기준선")
+        add("OS", f"{node} 디스크 처리량", e_bps, (o.get("disk_bps") or {}).get("max"), "B/s", f"{e_type} EBS 기준선")
         if o.get("conntrack"):
             add("OS", f"{node} conntrack", o["conntrack"].get("limit") or CONNTRACK_DEFAULT, o["conntrack"]["max"])
         add("OS", f"{node} TCP 대기열 넘침", 0, o.get("listen_overflows_delta"), "회")

@@ -18,9 +18,13 @@ from pathlib import Path
 from jinja2 import ChainableUndefined, Environment, FileSystemLoader, Undefined
 
 from . import compare
+from .prom import EBS_BASELINE
 from .util import RESULTS_DIR, REPORT_SRC_DIR, KST, read_json, rnd, fmt_kst
 
 MISSING = "미측정"
+# 앱 노드 t3.medium — MemTotal 3,831 MiB(#394 반영 뒤 실측). 회차에 MemTotal 이 없을 때만 쓴다 — 있으면 실측을 적는다
+# (#394 전 회차의 앱 노드는 2 GiB 였다)
+APP_MEM_TXT = "4 GiB (MemTotal 3,831 MiB) × 2"
 
 
 # ---------------------------------------------------------------- 필터
@@ -407,18 +411,22 @@ def headroom_rows(s):
     pf_txt = f" · 주요 페이지 폴트 최대 {f_v(pf, 1)}/s" if pf is not None else ""
     if avail:
         a, t = min(avail, key=lambda x: x[0] / x[1])
-        add("OS", "앱노드 가용 메모리", "2 GB × 2", f"최소 가용 {f_mb(a)}{pf_txt}", rnd(100.0 * a / t, 1))
+        add("OS", "앱노드 가용 메모리", f"MemTotal {f_mb(t)} × {len(avail)}", f"최소 가용 {f_mb(a)}{pf_txt}", rnd(100.0 * a / t, 1))
     else:
-        add("OS", "앱노드 가용 메모리", "2 GB × 2", MISSING + pf_txt, None)
+        add("OS", "앱노드 가용 메모리", APP_MEM_TXT, MISSING + pf_txt, None)
     d_cpu = mx(dbs, "cpu_pct", "max")
     add("OS", "DB노드 CPU", "2 vCPU", f_v(d_cpu, 1, " %"), hr(100, d_cpu))
     add("OS", "DB노드 steal · iowait", "-", f"steal {f_v(mx(dbs, 'cpu_modes_pct', 'steal', 'max'), 1)}% · iowait {f_v(mx(dbs, 'cpu_modes_pct', 'iowait', 'max'), 1)}%" + procs(dbs), "-")
-    iops = mx(dbs, "disk_iops", "max")
-    aw = mx(dbs, "disk_await_ms", "all")
-    aw_txt = f" · 요청당 대기 {f_v(aw, 2, ' ms')} (구간 최대 {f_v(mx(dbs, 'disk_await_ms', 'max_interval'), 2, ' ms')})" if aw is not None else ""
-    add("OS", "디스크 IOPS (EBS 기준선)", "1,000", f_v(iops, 0) + aw_txt, hr(1000, iops))
-    bps = mx(dbs, "disk_bps", "max")
-    add("OS", "디스크 처리량 (EBS 기준선)", "21.75 MB/s", f_v(bps / 1e6 if bps is not None else None, 2, " MB/s"), hr(21.75e6, bps))
+    # EBS 기준선은 인스턴스 유형마다 다르다 — DB 노드(t3.small)와 앱 노드(t3.medium)를 따로 잰다
+    for keys, kind, who in ((dbs, "db", "DB노드"), (apps, "app", "앱노드")):
+        e_iops, e_bps, e_type = EBS_BASELINE[kind]
+        iops = mx(keys, "disk_iops", "max")
+        aw = mx(keys, "disk_await_ms", "all")
+        aw_txt = f" · 요청당 대기 {f_v(aw, 2, ' ms')} (구간 최대 {f_v(mx(keys, 'disk_await_ms', 'max_interval'), 2, ' ms')})" if aw is not None else ""
+        add("OS", f"{who} 디스크 IOPS (EBS 기준선)", f"{e_iops:,.0f} ({e_type})", f_v(iops, 0) + aw_txt, hr(e_iops, iops))
+        bps = mx(keys, "disk_bps", "max")
+        add("OS", f"{who} 디스크 처리량 (EBS 기준선)", f"{e_bps / 1e6:g} MB/s ({e_type})", f_v(bps / 1e6 if bps is not None else None, 2, " MB/s"),
+            hr(e_bps, bps))
     cr = s.get("credits") or {}
     add("OS", "EBS 버스트 크레딧", "100%", f"회차 뒤 최소 {f_v(cr.get('ebs_post_min'), 1, '%')}", "-")
     cpuc = [v["cpu_credit_balance"]["post"] for v in (cr.get("nodes") or {}).values() if v["cpu_credit_balance"]["post"] is not None]
@@ -446,10 +454,10 @@ def headroom_rows(s):
     if cm:
         v = max(cm, key=lambda d: d.get("container_memory_max_pct") or 0)
         lim = v.get("container_memory_limit_bytes")
-        add("앱", "슬롯 컨테이너 메모리", f"{f_mb(lim)} × {len(cm)}" if lim else "680 MiB × 4", f_mb(v["container_memory_max_bytes"]),
+        add("앱", "슬롯 컨테이너 메모리", f"{f_mb(lim)} × {len(cm)}" if lim else "768 MiB × 4", f_mb(v["container_memory_max_bytes"]),
             hr(lim, v["container_memory_max_bytes"]) if lim else None)
     else:
-        add("앱", "슬롯 컨테이너 메모리", "680 MiB × 4", MISSING, None)
+        add("앱", "슬롯 컨테이너 메모리", "768 MiB × 4", MISSING, None)
     add("앱", "요청 처리 스레드", f_v(at.get("tomcat_max_total"), 0) + " (합)" if at.get("tomcat_max_total") else "200 (합)",
         f"동시 최대 합 {f_v(at.get('tomcat_busy_sum_max'), 0)}", hr(at.get("tomcat_max_total"), at.get("tomcat_busy_sum_max")))
     hmax = [v.get("heap_max_bytes") for v in (R("slots") or {}).values() if v.get("heap_max_bytes")]
