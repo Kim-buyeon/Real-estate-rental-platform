@@ -1,0 +1,785 @@
+# 엔드포인트 시험(endpoints.jmx)의 질의 정의 — 실제 값 EXPLAIN(E01) · 질의 속도가 읽는다(INF-06 #390). 계약은 login.yaml 과 같다.
+# 읽는 쪽: chaos-harness/measure/node/explain.sh <회차> <이 파일을 값으로 채운 사본> [--allow-write] · analyze explain.py.
+#
+# **로컬 추적 db.statement 와 대조 전이다.** 아래 SQL 은 소스(매퍼 XML · 엔티티 매핑 · 저장소 메서드 이름)로 맞춘 모양이다.
+# 로컬 추적 스모크에서 실제 문장(값은 ? 로 나온다)과 열 순서 · 별칭 · 문장 수를 맞춰 보고 이 줄을 지운다. 다르면 이 파일을 고친다.
+# 특히 추정인 것 — ① existsById 의 모양(Spring Data JPA 의 count(*) 질의, 행 수 상한이 붙는지) ② 파생 exists 질의의
+# 「fetch first 1 rows only」 ③ IDENTITY 삽입의 RETURNING ④ 파생 삭제(조회 뒤 기본 키 삭제) ⑤ PESSIMISTIC_WRITE 의 잠금 절
+# ⑥ 엔티티 그래프 조인의 별칭. 열 목록 · 별칭 규칙은 login.yaml 머리 주석과 같다(식별자 다음 속성 이름 순, <표 앞글자>1_0).
+#
+# **자리표시 — 이 파일을 그대로 explain.sh 에 주지 않는다.** ${...} 를 실제 값으로 바꾼 사본을 준다(ENDPOINTS.md 「E01 값 채우기」 —
+# property-ids.csv 의 top 묶음 · 가입 가능 첫 줄과 그 구의 표시 영역을 플랜과 같은 규칙으로 계산한다).
+#   ${PROPERTY_ID} · ${DISTRICT} · ${PROPERTY_TYPE}   표본 매물(가입 가능 · 등기 · 대장 · 판정 있음)
+#   ${MIN_LAT} ${MAX_LAT} ${MIN_LNG} ${MAX_LNG}        그 구의 표시 영역(지도 2단계) · ${CELL_LAT} ${CELL_LNG} = 영역 ÷ 12
+#   ${R_MIN_LAT} ${R_MAX_LAT} ${R_MIN_LNG} ${R_MAX_LNG} 그 매물 좌표 중심 반경 1 km 의 바운딩 박스(GeoDistanceCalculator.boundingBox)
+#   ${EMAIL}                                          시험 계정(예 jmeter+001@rental.test). 사용자 식별자는 login.yaml 처럼 하위 질의로
+# 좌표 · 칸 값은 JDBC 가 float8 로 보낸다(Double) — ::float8 를 붙였다.
+#
+# 노드 — @ReplicaRead(PropertyQueryService 의 getDistrictCounts · search · getMapClusters)만 replica(읽기 분산 운영 켜짐, #343).
+# 그 밖은 표시가 없어 primary 다. 위험도 · 대출 한도 · 대장 · 등기는 GET 이어도 쓰기 트랜잭션을 연다(RiskAnalysisCommandService).
+#
+# 요청 하나가 내는 문장 수(정상 경로 — 등기 · 대장 · 판정이 있고 결론이 그대로인 매물, 캐시 적중 제외):
+#   properties/district-counts 0(캐시 적중) | 1(미스 — TTL 10분)   properties/map-clusters 2   properties(반경) 1   properties(목록) 1
+#   properties/{id} 1   properties/{id}/risk 17(+2 결론이 바뀔 때)   me/wishlist 1   등록 4 · 해제 2(행이 없으면 1)   loans/limit 22(+2)
+#   notifications 2   properties/{id}/ledger 3   properties/{id}/registry 5   me/profile 2 · 수정 4   me/notification-subscriptions 1
+#   · 수정 9(신규 매물 자치구 2개 기준)   auth/reissue 1   notifications/{id}/read 2(읽지 않은 알림) | 1(이미 읽음 · 없음)
+#   notifications/read-all 1   auth/logout 0 · notifications/stream-ticket 0(Redis 만)
+
+queries:
+  # ── properties/district-counts — 캐시 미스일 때만(DistrictCountCacheStore, 필터 조합 = 키). 플랜은 필터 없이 부른다 ──
+  - id: district_counts
+    source: PropertyMapper.xml:103 selectDistrictCounts (PropertyQueryService.java:70)
+    endpoint: properties/district-counts
+    kind: read
+    node: replica
+    sql: |
+      SELECT p.district AS name,
+             COUNT(*) AS total_count,
+             SUM(CASE WHEN ra.risk_grade = 'SAFE' THEN 1 ELSE 0 END) AS safe_count,
+             SUM(CASE WHEN ra.risk_grade = 'CAUTION' THEN 1 ELSE 0 END) AS caution_count,
+             SUM(CASE WHEN ra.risk_grade = 'DANGER' THEN 1 ELSE 0 END) AS danger_count
+        FROM property p
+        LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
+       GROUP BY p.district
+       ORDER BY p.district
+
+  # ── properties/map-clusters — 칸 집계, 이어서 합계 > 40 이면 한 건 칸의 마커(식별자 목록), ≤ 40 이면 영역 마커 ──
+  - id: map_cluster_cells
+    source: PropertyMapper.xml:183 selectClusterCells (PropertyQueryService.java:120)
+    endpoint: properties/map-clusters
+    kind: read
+    node: replica
+    sql: |
+      SELECT g.row_index,
+             g.col_index,
+             COUNT(*) AS count,
+             ROUND(AVG(g.latitude), 7) AS latitude,
+             ROUND(AVG(g.longitude), 7) AS longitude,
+             SUM(CASE WHEN g.risk_grade = 'SAFE' THEN 1 ELSE 0 END) AS safe_count,
+             SUM(CASE WHEN g.risk_grade = 'CAUTION' THEN 1 ELSE 0 END) AS caution_count,
+             SUM(CASE WHEN g.risk_grade = 'DANGER' THEN 1 ELSE 0 END) AS danger_count,
+             SUM(CASE WHEN g.risk_grade IS NULL THEN 1 ELSE 0 END) AS unanalyzed_count,
+             MIN(g.property_id) AS representative_id
+        FROM (SELECT p.property_id,
+                     p.latitude,
+                     p.longitude,
+                     ra.risk_grade,
+                     CASE WHEN FLOOR((p.latitude - ${MIN_LAT}::float8) / ${CELL_LAT}::float8) < 0 THEN 0
+                          WHEN FLOOR((p.latitude - ${MIN_LAT}::float8) / ${CELL_LAT}::float8) > 11 THEN 11
+                          ELSE CAST(FLOOR((p.latitude - ${MIN_LAT}::float8) / ${CELL_LAT}::float8) AS INTEGER) END AS row_index,
+                     CASE WHEN FLOOR((p.longitude - ${MIN_LNG}::float8) / ${CELL_LNG}::float8) < 0 THEN 0
+                          WHEN FLOOR((p.longitude - ${MIN_LNG}::float8) / ${CELL_LNG}::float8) > 11 THEN 11
+                          ELSE CAST(FLOOR((p.longitude - ${MIN_LNG}::float8) / ${CELL_LNG}::float8) AS INTEGER) END AS col_index
+                FROM property p
+                LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
+               WHERE p.district = '${DISTRICT}'
+                 AND p.latitude BETWEEN CAST(${MIN_LAT}::float8 AS NUMERIC) AND CAST(${MAX_LAT}::float8 AS NUMERIC)
+                 AND p.longitude BETWEEN CAST(${MIN_LNG}::float8 AS NUMERIC) AND CAST(${MAX_LNG}::float8 AS NUMERIC)) g
+       GROUP BY g.row_index, g.col_index
+       ORDER BY g.row_index, g.col_index
+
+  # 실제 식별자 목록은 칸 집계 결과(한 건뿐인 칸의 대표 식별자)라 요청마다 길이가 다르다 — 대표로 한 건만 넣었다.
+  # 계획 모양(기본 키 조회 × 목록 길이)은 같다. 목록 길이는 로컬 추적에서 본다
+  - id: map_markers_by_ids
+    source: PropertyMapper.xml:146 selectMarkersByIds (PropertyQueryService.java:142)
+    endpoint: properties/map-clusters
+    kind: read
+    node: replica
+    sql: |
+      SELECT p.property_id,
+             p.latitude,
+             p.longitude,
+             p.deposit,
+             ra.risk_grade,
+             ct.code_value AS contract_type,
+             COALESCE(p.monthly_rent, 0) AS monthly_rent,
+             p.district,
+             ra.lease_ratio AS debt_ratio,
+             CASE WHEN ra.risk_id IS NULL THEN NULL
+                  ELSE EXISTS (SELECT 1
+                                 FROM mortgage_history mh
+                                WHERE mh.registry_id = ra.registry_id
+                                  AND mh.is_active = TRUE)
+             END AS has_senior_debt
+        FROM property p
+        JOIN property_code ct ON ct.code_id = p.contract_type_code_id
+        LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
+       WHERE p.property_id IN (${PROPERTY_ID})
+       ORDER BY p.property_id
+
+  # ── properties(반경 — 지도 3단계): 바운딩 박스로 1차 조회, 거리는 앱이 계산 ──
+  - id: properties_radius_markers
+    source: PropertyMapper.xml:139 selectMarkers (PropertyQueryService.java:176)
+    endpoint: properties
+    kind: read
+    node: replica
+    sql: |
+      SELECT p.property_id,
+             p.latitude,
+             p.longitude,
+             p.deposit,
+             ra.risk_grade,
+             ct.code_value AS contract_type,
+             COALESCE(p.monthly_rent, 0) AS monthly_rent,
+             p.district,
+             ra.lease_ratio AS debt_ratio,
+             CASE WHEN ra.risk_id IS NULL THEN NULL
+                  ELSE EXISTS (SELECT 1
+                                 FROM mortgage_history mh
+                                WHERE mh.registry_id = ra.registry_id
+                                  AND mh.is_active = TRUE)
+             END AS has_senior_debt
+        FROM property p
+        JOIN property_code ct ON ct.code_id = p.contract_type_code_id
+        LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
+       WHERE p.district = '${DISTRICT}'
+         AND p.latitude BETWEEN CAST(${R_MIN_LAT}::float8 AS NUMERIC) AND CAST(${R_MAX_LAT}::float8 AS NUMERIC)
+         AND p.longitude BETWEEN CAST(${R_MIN_LNG}::float8 AS NUMERIC) AND CAST(${R_MAX_LNG}::float8 AS NUMERIC)
+       ORDER BY p.property_id
+
+  # ── properties(목록 — 첫 페이지, 기본 정렬 등록일 내림 · size 20 → LIMIT 21). 전세가율순이 아니라 LATERAL 분기를 타지 않는다 ──
+  - id: properties_list
+    source: PropertyMapper.xml:249 selectList (PropertyQueryService.java:241)
+    endpoint: properties
+    kind: read
+    node: replica
+    sql: |
+      SELECT p.property_id,
+             p.district,
+             p.address,
+             pt.code_value AS property_type,
+             ct.code_value AS contract_type,
+             p.deposit,
+             COALESCE(p.monthly_rent, 0) AS monthly_rent,
+             p.area_sqm,
+             p.floor,
+             ra.risk_grade,
+             ra.lease_ratio AS debt_ratio,
+             p.registered_at AT TIME ZONE 'Asia/Seoul' AS registered_at
+        FROM property p
+        JOIN property_code ct ON ct.code_id = p.contract_type_code_id
+        JOIN property_code pt ON pt.code_id = p.property_type_code_id
+        LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
+       WHERE p.district = '${DISTRICT}'
+       ORDER BY p.registered_at DESC, p.property_id DESC
+       LIMIT 21
+
+  # ── properties/{id} — 로그인 사용자라 관심 여부 EXISTS 가 붙는다 ──
+  - id: property_detail
+    source: PropertyMapper.xml:331 selectDetail (PropertyQueryService.java:162)
+    endpoint: properties/{id}
+    kind: read
+    node: primary
+    sql: |
+      SELECT p.property_id,
+             p.district,
+             p.address,
+             p.latitude,
+             p.longitude,
+             pt.code_value AS property_type,
+             ct.code_value AS contract_type,
+             p.deposit,
+             COALESCE(p.monthly_rent, 0) AS monthly_rent,
+             p.area_sqm,
+             p.floor,
+             p.landlord_name,
+             p.market_price,
+             p.price_type,
+             p.price_date,
+             ra.risk_grade,
+             ra.lease_ratio AS debt_ratio,
+             ra.insurance_eligible_yn AS insurance_eligible,
+             EXISTS (SELECT 1 FROM wishlist w
+                      WHERE w.property_id = p.property_id AND w.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')) AS wishlisted,
+             p.registered_at AT TIME ZONE 'Asia/Seoul' AS registered_at
+        FROM property p
+        JOIN property_code ct ON ct.code_id = p.contract_type_code_id
+        JOIN property_code pt ON pt.code_id = p.property_type_code_id
+        LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
+       WHERE p.property_id = ${PROPERTY_ID}
+
+  # ── properties/{id}/risk — 수집 확인 트랜잭션 둘(등기 · 대장, 각자 매물을 다시 읽는다) + 판정 쓰기 트랜잭션 하나 ──
+  # 트랜잭션마다 영속성 문맥이 새로 열려(open-in-view 없음) 매물 조회가 세 번 나간다. 모두 같은 문장이라 id 하나로 둔다(문장 수는 위 표)
+  - id: risk_property_by_id
+    source: PropertyRepository.findById — RegistryCommandService.java:153 · LedgerCommandService.java:214 · RiskAnalysisCommandService.judgeAndRecord (요청당 3회, loans/limit 도 3회)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select p1_0.property_id, p1_0.address, p1_0.area_sqm, p1_0.bjdong_code, p1_0.built_year, p1_0.bun, p1_0.contract_type_code_id,
+             p1_0.registered_at, p1_0.deposit, p1_0.district, p1_0.floor, p1_0.ji, p1_0.landlord_name, p1_0.latitude, p1_0.longitude,
+             p1_0.market_price, p1_0.monthly_rent, p1_0.price_date, p1_0.price_type, p1_0.property_type_code_id,
+             p1_0.is_reanalysis_pending, p1_0.sigungu_code, p1_0.status_code_id
+        from property p1_0
+       where p1_0.property_id = ${PROPERTY_ID}
+
+  - id: risk_registry_exists
+    source: BuildingRegistryRepository.existsByPropertyId (RegistryCommandService.java:146)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select br1_0.registry_id
+        from building_registry br1_0
+       where br1_0.property_id = ${PROPERTY_ID}
+       fetch first 1 rows only
+
+  - id: risk_ledger_exists
+    source: BuildingLedgerRepository.existsByPropertyId (LedgerCommandService.java:216)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select bl1_0.ledger_id
+        from building_ledger bl1_0
+       where bl1_0.property_id = ${PROPERTY_ID}
+       fetch first 1 rows only
+
+  - id: risk_registry_by_property
+    source: BuildingRegistryRepository.findByPropertyId (RiskAnalysisCommandService.judgeAndRecord)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select br1_0.registry_id, br1_0.building_purpose, br1_0.building_structure, br1_0.created_at, br1_0.data_source,
+             br1_0.exclusive_area, br1_0.property_id, br1_0.registry_address, br1_0.updated_at
+        from building_registry br1_0
+       where br1_0.property_id = ${PROPERTY_ID}
+
+  - id: risk_ledger_by_property
+    source: BuildingLedgerRepository.findByPropertyId (RiskAnalysisCommandService.judgeAndRecord)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select bl1_0.ledger_id, bl1_0.approval_date, bl1_0.building_area, bl1_0.building_purpose, bl1_0.building_structure,
+             bl1_0.created_at, bl1_0.data_source, bl1_0.exclusive_area, bl1_0.ledger_address, bl1_0.owner_name, bl1_0.property_id,
+             bl1_0.total_floor_area, bl1_0.updated_at, bl1_0.violation_yn
+        from building_ledger bl1_0
+       where bl1_0.property_id = ${PROPERTY_ID}
+
+  - id: risk_criteria_first
+    source: RiskCriteriaRepository.findFirstByOrderByRiskCriteriaIdAsc (RiskAnalysisCommandService.judgeAndRecord)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select rc1_0.risk_criteria_id, rc1_0.caution_lease_ratio, rc1_0.created_at, rc1_0.negative_equity_ratio, rc1_0.updated_at
+        from risk_criteria rc1_0
+       order by rc1_0.risk_criteria_id
+       fetch first 1 rows only
+
+  - id: risk_ownerships
+    source: OwnershipHistoryRepository.findByRegistry (RiskAnalysisCommandService.judgeAndRecord)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select oh1_0.ownership_id, oh1_0.auction_yn, oh1_0.recorded_at, oh1_0.is_current, oh1_0.lease_registration_yn, oh1_0.owner_name,
+             oh1_0.ownership_date, oh1_0.provisional_registration_yn, oh1_0.provisional_seizure_yn, oh1_0.rank_no,
+             oh1_0.registration_cause, oh1_0.registry_id, oh1_0.right_type, oh1_0.seizure_yn, oh1_0.trust_registration_yn
+        from ownership_history oh1_0
+       where oh1_0.registry_id = (select registry_id from building_registry where property_id = ${PROPERTY_ID})
+
+  - id: risk_mortgages
+    source: MortgageHistoryRepository.findByRegistry (RiskAnalysisCommandService.judgeAndRecord)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select mh1_0.mortgage_id, mh1_0.is_active, mh1_0.recorded_at, mh1_0.debtor_name, mh1_0.lease_right_yn, mh1_0.max_bond_amount,
+             mh1_0.mortgage_amount, mh1_0.mortgage_creditor, mh1_0.prior_tenant_deposit, mh1_0.priority_no, mh1_0.receipt_date,
+             mh1_0.registration_cause, mh1_0.registry_id, mh1_0.right_type, mh1_0.senior_debt_yn, mh1_0.tenancy_right_yn
+        from mortgage_history mh1_0
+       where mh1_0.registry_id = (select registry_id from building_registry where property_id = ${PROPERTY_ID})
+
+  # 기관 기준 표 다섯(전량 — 기관 수만큼 작은 표). 요청마다 다시 읽는다 — 캐시가 없다
+  - id: risk_guarantee_criteria_all
+    source: GuaranteeCriteriaRepository.findAll (RiskAnalysisCommandService.judgeAndRecord)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select gc1_0.guarantee_id, gc1_0.collateral_ratio, gc1_0.max_deposit, gc1_0.provider, gc1_0.require_confirmed_date_yn,
+             gc1_0.right_violation_disqualify_yn, gc1_0.senior_debt_ratio_limit, gc1_0.strict_singlehouse_yn, gc1_0.updated_at,
+             gc1_0.violation_disqualify_yn
+        from guarantee_criteria gc1_0
+
+  - id: risk_hf_criteria_all
+    source: HfCriteriaRepository.findAll (RiskAnalysisCommandService.snapshots)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select hc1_0.hf_criteria_id, hc1_0.guarantee_id, hc1_0.loan_linked_required_yn, hc1_0.lowest_premium_yn,
+             hc1_0.newlywed_discount_yn, hc1_0.updated_at, hc1_0.youth_discount_yn
+        from hf_criteria hc1_0
+
+  - id: risk_sgi_criteria_all
+    source: SgiCriteriaRepository.findAll (RiskAnalysisCommandService.snapshots)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select sc1_0.sgi_criteria_id, sc1_0.apartment_unlimited_yn, sc1_0.broker_contract_required_yn, sc1_0.guarantee_id,
+             sc1_0.high_value_available_yn, sc1_0.other_house_limit, sc1_0.private_insurer_yn
+        from sgi_criteria sc1_0
+
+  - id: risk_premium_rates_all
+    source: GuaranteePremiumRateRepository.findAll (RiskAnalysisCommandService.snapshots)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select gpr1_0.premium_rate_id, gpr1_0.debt_ratio_max, gpr1_0.debt_ratio_min, gpr1_0.deposit_max, gpr1_0.deposit_min,
+             gpr1_0.guarantee_id, gpr1_0.house_type, gpr1_0.premium_rate, gpr1_0.updated_at
+        from guarantee_premium_rate gpr1_0
+
+  - id: risk_insurance_products_all
+    source: InsuranceProductRepository.findAll (RiskAnalysisCommandService.snapshots)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select ip1_0.insurance_id, ip1_0.guarantee_id, ip1_0.product_name
+        from insurance_product ip1_0
+
+  # Property.propertyTypeCode 는 LAZY — 판정의 houseType() 이 꺼낼 때 한 번 더 읽는다
+  - id: risk_property_type_code_lazy
+    source: Property.propertyTypeCode 지연 로딩 (RiskAnalysisCommandService.houseType)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select pc1_0.code_id, pc1_0.is_active, pc1_0.code_description, pc1_0.code_group, pc1_0.code_name, pc1_0.code_value, pc1_0.sort_order
+        from property_code pc1_0
+       where pc1_0.code_id = (select property_type_code_id from property where property_id = ${PROPERTY_ID})
+
+  - id: risk_latest_analysis
+    source: RiskAnalysisRepository.findByPropertyIdAndLatestTrue (RiskAnalysisCommandService.record)
+    endpoint: properties/{id}/risk
+    kind: read
+    node: primary
+    sql: |
+      select ra1_0.risk_id, ra1_0.analyzed_at, ra1_0.eligible_guarantee_id, ra1_0.hf_eligible_yn, ra1_0.hug_eligible_yn,
+             ra1_0.insurance_eligible_yn, ra1_0.is_latest, ra1_0.lease_ratio, ra1_0.ledger_id, ra1_0.previous_grade, ra1_0.property_id,
+             ra1_0.registry_id, ra1_0.risk_grade, ra1_0.risk_reason, ra1_0.sgi_eligible_yn
+        from risk_analysis ra1_0
+       where ra1_0.property_id = ${PROPERTY_ID}
+         and ra1_0.is_latest
+
+  # 결론(등급 · 3사 가입 · 전세가율)이 바뀐 때만 — 기존 최신을 내리고(변경 감지, 갱신 가능한 열 전부) 새 최신을 넣는다.
+  # 표본 매물은 이미 판정이 있어 보통 나가지 않는다. 바뀌지 않는 열은 자기 값으로 적었다(login.yaml 과 같은 방식)
+  - id: risk_supersede_latest
+    source: RiskAnalysis.supersede — 변경 감지 UPDATE + flush (RiskAnalysisCommandService.record)
+    endpoint: properties/{id}/risk
+    kind: write
+    node: primary
+    sql: |
+      update risk_analysis
+         set eligible_guarantee_id = eligible_guarantee_id, hf_eligible_yn = hf_eligible_yn, hug_eligible_yn = hug_eligible_yn,
+             insurance_eligible_yn = insurance_eligible_yn, is_latest = false, lease_ratio = lease_ratio, ledger_id = ledger_id,
+             previous_grade = previous_grade, property_id = property_id, registry_id = registry_id, risk_grade = risk_grade,
+             risk_reason = risk_reason, sgi_eligible_yn = sgi_eligible_yn
+       where risk_id = (select risk_id from risk_analysis where property_id = ${PROPERTY_ID} and is_latest)
+
+  # 실제 문장은 값 목록(VALUES)이고 is_latest = true 다. 여기서는 위 UPDATE 없이 혼자 돌아도 최신 유일 인덱스에 걸리지 않게
+  # 기존 최신 행의 값을 옮겨 is_latest = false 로 넣는다 — 쓰는 표 · 인덱스 갱신 수는 같고 부분 인덱스 한 곳만 덜 쓴다
+  - id: risk_insert_latest
+    source: RiskAnalysisRepository.save — IDENTITY 삽입 (RiskAnalysisCommandService.record)
+    endpoint: properties/{id}/risk
+    kind: write
+    node: primary
+    sql: |
+      insert into risk_analysis (analyzed_at, eligible_guarantee_id, hf_eligible_yn, hug_eligible_yn, insurance_eligible_yn, is_latest,
+                                 lease_ratio, ledger_id, previous_grade, property_id, registry_id, risk_grade, risk_reason, sgi_eligible_yn)
+      select localtimestamp, ra.eligible_guarantee_id, ra.hf_eligible_yn, ra.hug_eligible_yn, ra.insurance_eligible_yn, false,
+             ra.lease_ratio, ra.ledger_id, ra.risk_grade, ra.property_id, ra.registry_id, ra.risk_grade, ra.risk_reason, ra.sgi_eligible_yn
+        from risk_analysis ra
+       where ra.property_id = ${PROPERTY_ID} and ra.is_latest
+      returning risk_id
+
+  # ── me/wishlist(조회 — 첫 페이지 size 20 → LIMIT 21) ──
+  - id: wishlist_list
+    source: WishlistMapper.xml:12 selectWishlist (WishlistQueryService.java)
+    endpoint: me/wishlist
+    kind: read
+    node: primary
+    sql: |
+      SELECT w.wish_id,
+             p.property_id,
+             p.district,
+             p.deposit,
+             ra.risk_grade,
+             ra.previous_grade,
+             w.created_at AT TIME ZONE 'Asia/Seoul' AS added_at
+        FROM wishlist w
+        JOIN property p ON p.property_id = w.property_id
+        LEFT JOIN risk_analysis ra ON ra.property_id = w.property_id AND ra.is_latest
+       WHERE w.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+       ORDER BY w.wish_id DESC
+       LIMIT 21
+
+  # ── me/wishlist 등록(POST) — 쓰기 트랜잭션 하나 ──
+  - id: wishlist_add_property_exists
+    source: PropertyRepository.existsById (WishlistCommandService.add)
+    endpoint: me/wishlist
+    kind: read
+    node: primary
+    sql: |
+      select count(*)
+        from property p1_0
+       where p1_0.property_id = ${PROPERTY_ID}
+
+  - id: wishlist_add_duplicate_check
+    source: WishlistRepository.existsByUserIdAndPropertyId (WishlistCommandService.add)
+    endpoint: me/wishlist
+    kind: read
+    node: primary
+    sql: |
+      select w1_0.wish_id
+        from wishlist w1_0
+       where w1_0.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+         and w1_0.property_id = ${PROPERTY_ID}
+       fetch first 1 rows only
+
+  - id: wishlist_add_subscriptions
+    source: NotificationSubscriptionMapper.xml:12 selectByUser (NotificationSubscriptionQueryService.isWishlistMonitoringEnabled — 등록 트랜잭션에 합류)
+    endpoint: me/wishlist
+    kind: read
+    node: primary
+    sql: |
+      SELECT subscription_type,
+             target_district,
+             contract_type,
+             deposit_max,
+             is_active AS active
+        FROM notification_subscription
+       WHERE user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+       ORDER BY subscription_id
+
+  - id: wishlist_insert
+    source: WishlistRepository.saveAndFlush — IDENTITY 삽입 (WishlistCommandService.add)
+    endpoint: me/wishlist
+    kind: write
+    node: primary
+    sql: |
+      insert into wishlist (alert_condition, created_at, monitoring_yn, property_id, user_id)
+      values ('RISK_AND_REGISTRY', localtimestamp, true, ${PROPERTY_ID},
+              (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}'))
+      returning wish_id
+
+  # ── me/wishlist/{id} 해제(DELETE) — 파생 삭제: 엔티티를 읽고 기본 키로 지운다 ──
+  - id: wishlist_remove_find
+    source: WishlistRepository.deleteByUserIdAndPropertyId — 조회 단계 (WishlistCommandService.remove)
+    endpoint: me/wishlist/{id}
+    kind: read
+    node: primary
+    sql: |
+      select w1_0.wish_id, w1_0.alert_condition, w1_0.created_at, w1_0.monitoring_yn, w1_0.property_id, w1_0.user_id
+        from wishlist w1_0
+       where w1_0.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+         and w1_0.property_id = ${PROPERTY_ID}
+
+  - id: wishlist_remove_delete
+    source: WishlistRepository.deleteByUserIdAndPropertyId — em.remove (WishlistCommandService.remove)
+    endpoint: me/wishlist/{id}
+    kind: write
+    node: primary
+    sql: |
+      delete from wishlist
+       where wish_id = (select wish_id from wishlist
+                         where user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+                           and property_id = ${PROPERTY_ID})
+
+  # ── loans/limit — 매물(유형 코드 조인) → 자격 정보 둘 → 위험도 분석(위 risk_* 17문장 그대로) → 규제 · 대표 상품 ──
+  # 트랜잭션을 걸지 않아(LoanCommandService) 저장소 호출마다 자기 트랜잭션이다
+  - id: loan_property_with_type
+    source: PropertyRepository.findWithPropertyTypeCodeByPropertyId — @EntityGraph (LoanCommandService.calculateLimit)
+    endpoint: loans/limit
+    kind: read
+    node: primary
+    sql: |
+      select p1_0.property_id, p1_0.address, p1_0.area_sqm, p1_0.bjdong_code, p1_0.built_year, p1_0.bun, p1_0.contract_type_code_id,
+             p1_0.registered_at, p1_0.deposit, p1_0.district, p1_0.floor, p1_0.ji, p1_0.landlord_name, p1_0.latitude, p1_0.longitude,
+             p1_0.market_price, p1_0.monthly_rent, p1_0.price_date, p1_0.price_type, ptc1_0.code_id, ptc1_0.is_active,
+             ptc1_0.code_description, ptc1_0.code_group, ptc1_0.code_name, ptc1_0.code_value, ptc1_0.sort_order,
+             p1_0.is_reanalysis_pending, p1_0.sigungu_code, p1_0.status_code_id
+        from property p1_0
+        left join property_code ptc1_0 on ptc1_0.code_id = p1_0.property_type_code_id
+       where p1_0.property_id = ${PROPERTY_ID}
+
+  - id: loan_profile_account
+    source: UserProfileMapper.xml:12 selectAccount (UserQueryService.getProfile — loans/limit · me/profile)
+    endpoint: loans/limit
+    kind: read
+    node: primary
+    sql: |
+      SELECT u.name,
+             u.phone,
+             u.email,
+             u.role,
+             u.created_at AT TIME ZONE 'Asia/Seoul' AS created_at
+        FROM users u
+       WHERE u.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+         AND u.deleted_at IS NULL
+
+  - id: loan_profile_qualification
+    source: UserProfileMapper.xml:23 selectProfile (UserQueryService.getProfile — loans/limit · me/profile)
+    endpoint: loans/limit
+    kind: read
+    node: primary
+    sql: |
+      SELECT u.annual_income,
+             u.credit_score,
+             u.existing_loan,
+             u.existing_loan_annual_payment,
+             u.has_house,
+             u.own_fund
+        FROM users u
+       WHERE u.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+         AND u.deleted_at IS NULL
+
+  - id: loan_regulation_latest
+    source: LoanRegulationRepository.findFirstByOrderByEffectiveDateDescRegulationIdDesc (LoanCommandService.calculateLimit)
+    endpoint: loans/limit
+    kind: read
+    node: primary
+    sql: |
+      select lr1_0.regulation_id, lr1_0.deposit_ratio_limit, lr1_0.dsr_limit, lr1_0.dti_limit, lr1_0.effective_date,
+             lr1_0.guarantee_cap_no_house, lr1_0.guarantee_cap_one_house, lr1_0.house_type, lr1_0.region_type, lr1_0.stress_dsr_rate
+        from loan_regulation lr1_0
+       order by lr1_0.effective_date desc, lr1_0.regulation_id desc
+       fetch first 1 rows only
+
+  # 매물 유형의 HF 금리 API 행이 없으면 findFirstByHouseTypeIsNullOrderByLoanIdAsc 가 한 번 더 나간다(시드 예시 행)
+  - id: loan_representative_product
+    source: LoanProductRepository.findFirstByHouseTypeOrderByBaseMonthDescLoanAmountDescInterestRateAscLoanIdAsc (LoanCommandService.representativeProduct)
+    endpoint: loans/limit
+    kind: read
+    node: primary
+    sql: |
+      select lp1_0.loan_id, lp1_0.bank_name, lp1_0.base_month, lp1_0.house_ownership_condition, lp1_0.house_type, lp1_0.income_condition,
+             lp1_0.interest_rate, lp1_0.loan_amount, lp1_0.loan_term, lp1_0.loan_type, lp1_0.max_limit, lp1_0.product_name, lp1_0.rate_type,
+             lp1_0.repayment_type, lp1_0.updated_at
+        from loan_product lp1_0
+       where lp1_0.house_type = '${PROPERTY_TYPE}'
+       order by lp1_0.base_month desc, lp1_0.loan_amount desc, lp1_0.interest_rate, lp1_0.loan_id
+       fetch first 1 rows only
+
+  # ── notifications(목록 — 첫 페이지 LIMIT 21 + 읽지 않은 수) ──
+  - id: notifications_list
+    source: NotificationMapper.xml:13 selectNotifications (NotificationQueryService.findByUser)
+    endpoint: notifications
+    kind: read
+    node: primary
+    sql: |
+      SELECT n.notif_id AS notification_id,
+             n.notif_type AS type,
+             wn.property_id,
+             wn.before_value,
+             wn.after_value,
+             n.is_read AS read,
+             n.created_at AT TIME ZONE 'Asia/Seoul' AS created_at
+        FROM notification n
+        LEFT JOIN wishlist_notification wn ON wn.notif_id = n.notif_id
+       WHERE n.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+       ORDER BY n.notif_id DESC
+       LIMIT 21
+
+  - id: notifications_count_unread
+    source: NotificationMapper.xml:31 countUnread (NotificationQueryService.findByUser)
+    endpoint: notifications
+    kind: read
+    node: primary
+    sql: |
+      SELECT count(*)
+        FROM notification
+       WHERE user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+         AND is_read = FALSE
+
+  # ── properties/{id}/ledger — 수집 확인(매물 · 대장 존재 = risk_property_by_id · risk_ledger_exists 와 같은 문장) + 조회 ──
+  - id: ledger_select
+    source: LedgerMapper.xml:16 selectLedger (LedgerQueryService.getLedger)
+    endpoint: properties/{id}/ledger
+    kind: read
+    node: primary
+    sql: |
+      SELECT p.property_id,
+             bl.building_purpose AS main_purpose,
+             bl.violation_yn AS violation_building,
+             bl.total_floor_area,
+             bl.exclusive_area,
+             bl.approval_date,
+             bl.data_source,
+             bl.updated_at AT TIME ZONE 'Asia/Seoul' AS collected_at
+        FROM property p
+        LEFT JOIN building_ledger bl ON bl.property_id = p.property_id
+       WHERE p.property_id = ${PROPERTY_ID}
+
+  # ── properties/{id}/registry — 수집 확인(매물 · 등기 존재 = risk_property_by_id · risk_registry_exists) + 표제부 · 갑구 · 을구 ──
+  - id: registry_header
+    source: RegistryMapper.xml:15 selectHeader (RegistryQueryService.getRegistry)
+    endpoint: properties/{id}/registry
+    kind: read
+    node: primary
+    sql: |
+      SELECT br.updated_at AT TIME ZONE 'Asia/Seoul' AS collected_at,
+             br.property_id,
+             br.data_source
+        FROM building_registry br
+       WHERE br.property_id = ${PROPERTY_ID}
+
+  - id: registry_ownerships
+    source: RegistryMapper.xml:23 selectOwnerships (RegistryQueryService.getRegistry)
+    endpoint: properties/{id}/registry
+    kind: read
+    node: primary
+    sql: |
+      SELECT oh.is_current AS is_active,
+             oh.registration_cause AS cause,
+             oh.ownership_date AS received_date,
+             oh.owner_name AS holder_name,
+             oh.right_type,
+             oh.rank_no
+        FROM ownership_history oh
+        JOIN building_registry br ON br.registry_id = oh.registry_id
+       WHERE br.property_id = ${PROPERTY_ID}
+       ORDER BY oh.ownership_date ASC NULLS LAST, oh.rank_no ASC, oh.ownership_id ASC
+
+  - id: registry_mortgages
+    source: RegistryMapper.xml:36 selectMortgages (RegistryQueryService.getRegistry)
+    endpoint: properties/{id}/registry
+    kind: read
+    node: primary
+    sql: |
+      SELECT mh.is_active,
+             mh.receipt_date AS received_date,
+             mh.max_bond_amount AS max_claim_amount,
+             mh.mortgage_creditor AS creditor,
+             mh.priority_no AS rank_no
+        FROM mortgage_history mh
+        JOIN building_registry br ON br.registry_id = mh.registry_id
+       WHERE br.property_id = ${PROPERTY_ID}
+       ORDER BY mh.receipt_date ASC NULLS LAST, mh.priority_no ASC, mh.mortgage_id ASC
+
+  # ── me/profile(조회) = loan_profile_account · loan_profile_qualification 두 문장(같은 매퍼). 수정(PUT)은 아래 ──
+  - id: profile_update_find_user
+    source: UserRepository.findByUserIdAndDeletedAtIsNull (UserCommandService.updateProfile)
+    endpoint: me/profile
+    kind: read
+    node: primary
+    sql: |
+      select u1_0.user_id, u1_0.annual_income, u1_0.created_at, u1_0.credit_score, u1_0.deleted_at, u1_0.email, u1_0.existing_loan,
+             u1_0.existing_loan_annual_payment, u1_0.has_house, u1_0.name, u1_0.own_fund, u1_0.phone, u1_0.role
+        from users u1_0
+       where u1_0.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+         and u1_0.deleted_at is null
+
+  # 플랜이 두 값(연소득 4,200만 · 4,500만)을 번갈아 보내 매번 실제로 바뀐다 — 같은 값이면 변경 감지가 UPDATE 를 내지 않는다.
+  # 갱신 가능한 열 전부(created_at 제외). 뒤이어 프로필 조회 두 문장이 나간다(컨트롤러가 수정 뒤 조회)
+  - id: profile_update_users
+    source: User.changeAccount · changeQualification — 변경 감지 UPDATE (UserCommandService.updateProfile)
+    endpoint: me/profile
+    kind: write
+    node: primary
+    sql: |
+      update users
+         set annual_income = 45000000, credit_score = 820, deleted_at = deleted_at, email = email, existing_loan = 0,
+             existing_loan_annual_payment = 0, has_house = false, name = name, own_fund = 50000000, phone = phone, role = role
+       where user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+
+  # ── me/notification-subscriptions(조회) = wishlist_add_subscriptions 와 같은 문장. 수정(PUT)은 아래 — 쓰기 트랜잭션 하나 ──
+  - id: subscriptions_lock_user
+    source: UserRepository.findByIdForUpdate — PESSIMISTIC_WRITE (NotificationSubscriptionCommandService.replace)
+    endpoint: me/notification-subscriptions
+    kind: write
+    node: primary
+    sql: |
+      select u1_0.user_id, u1_0.annual_income, u1_0.created_at, u1_0.credit_score, u1_0.deleted_at, u1_0.email, u1_0.existing_loan,
+             u1_0.existing_loan_annual_payment, u1_0.has_house, u1_0.name, u1_0.own_fund, u1_0.phone, u1_0.role
+        from users u1_0
+       where u1_0.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+         for no key update
+
+  - id: subscriptions_delete_all
+    source: NotificationSubscriptionRepository.deleteAllByUserIdInBulk (NotificationSubscriptionCommandService.replace)
+    endpoint: me/notification-subscriptions
+    kind: write
+    node: primary
+    sql: |
+      delete from notification_subscription
+       where user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+
+  # saveAll — 행마다 하나(플랜 본문: 신규 매물 자치구 2개 + 토글 3개 = 5회). 한 행만 적는다
+  - id: subscriptions_insert
+    source: NotificationSubscriptionRepository.saveAll — IDENTITY 삽입 (NotificationSubscriptionCommandService.replace)
+    endpoint: me/notification-subscriptions
+    kind: write
+    node: primary
+    sql: |
+      insert into notification_subscription (is_active, contract_type, created_at, deposit_max, deposit_min, subscription_type,
+                                             target_district, user_id)
+      values (false, 'DEPOSIT_ONLY', localtimestamp, 250000000, 0, 'NEW_PROPERTY', '강서구',
+              (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}'))
+      returning subscription_id
+
+  - id: subscriptions_wishlist_monitoring
+    source: WishlistRepository.updateMonitoringByUserId (NotificationSubscriptionCommandService.replace)
+    endpoint: me/notification-subscriptions
+    kind: write
+    node: primary
+    sql: |
+      update wishlist
+         set monitoring_yn = true
+       where user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+
+  # ── auth/reissue — 사용자 한 건(리프레시 토큰 확인 · 회전은 Redis) ──
+  - id: reissue_find_user
+    source: UserRepository.findById (UserCommandService.reissue)
+    endpoint: auth/reissue
+    kind: read
+    node: primary
+    sql: |
+      select u1_0.user_id, u1_0.annual_income, u1_0.created_at, u1_0.credit_score, u1_0.deleted_at, u1_0.email, u1_0.existing_loan,
+             u1_0.existing_loan_annual_payment, u1_0.has_house, u1_0.name, u1_0.own_fund, u1_0.phone, u1_0.role
+        from users u1_0
+       where u1_0.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+
+  # ── notifications/{id}/read — 그 계정의 알림 한 건. 읽지 않은 알림이면 변경 감지 UPDATE, 이미 읽었으면 조회만 ──
+  - id: notification_find_own
+    source: NotificationRepository.findByNotifIdAndUserId (NotificationReadCommandService.markRead)
+    endpoint: notifications/{id}/read
+    kind: read
+    node: primary
+    sql: |
+      select n1_0.notif_id, n1_0.created_at, n1_0.is_read, n1_0.notif_type, n1_0.user_id
+        from notification n1_0
+       where n1_0.notif_id = (select max(notif_id) from notification
+                               where user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}'))
+         and n1_0.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+
+  - id: notification_mark_read
+    source: Notification.markRead — 변경 감지 UPDATE (NotificationReadCommandService.markRead)
+    endpoint: notifications/{id}/read
+    kind: write
+    node: primary
+    sql: |
+      update notification
+         set is_read = true, notif_type = notif_type, user_id = user_id
+       where notif_id = (select max(notif_id) from notification
+                          where user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}'))
+
+  # ── notifications/read-all — 벌크 UPDATE 하나(읽지 않은 것만, 부분 인덱스 idx_notification_user_unread) ──
+  - id: notification_mark_all_read
+    source: NotificationRepository.markAllReadByUserId (NotificationReadCommandService.markAllRead)
+    endpoint: notifications/read-all
+    kind: write
+    node: primary
+    sql: |
+      update notification
+         set is_read = true
+       where user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = '${EMAIL}')
+         and is_read = false
+
+snapshots: []

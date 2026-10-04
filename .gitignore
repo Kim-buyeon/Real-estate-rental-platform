@@ -36,3 +36,7 @@ chaos-harness/measure/results/
 chaos-harness/measure/trace-data/
 chaos-harness/measure/.cache/
 chaos-harness/measure/analyze/**/__pycache__/
+
+# 로그인 부하 시험(INF-06 #390) — 계정 CSV(비밀번호가 들어 있다. 원본은 저장소 밖 loadtest-data/secret/)와 BCrypt bench 컴파일 산출물
+chaos-harness/jmeter/**/*.csv
+chaos-harness/jmeter/bench/out/

@@ -1,0 +1,37 @@
+# 로컬 추적 덧씌움 — 루트 docker-compose.yml 위에 얹어 로컬 app 을 측정 모드 추적으로 띄운다(INF-06 #390).
+# 목적은 하나 — 운영 회차 전에 질의 정의(queries/login.yaml)와 BCrypt 구간이 실제 추적(db.statement · 메서드 구간)과 맞는지 본다.
+#
+#   bash chaos-harness/measure/node/trace-receiver.sh start            수신기(127.0.0.1:4318 → chaos-harness/measure/trace-data/spans.jsonl)
+#   docker compose -f docker-compose.yml -f chaos-harness/jmeter/local/compose.trace.yml up -d --build app
+#   (확인 뒤) docker compose -f docker-compose.yml -f chaos-harness/jmeter/local/compose.trace.yml up -d app   ← 덧씌움 없이 다시 띄우면 평시
+#
+# 운영과 같게 둔 것 — JAVA_TOOL_OPTIONS(운영 Compose x-app 의 값 그대로), 설정 파일 자리(/etc/rental/otel/agent.yaml)에
+# infra/otel/agent-measure.yaml. 다른 것 — 메모리 상한이 없다(루트 compose 머리 주석 — 운영 값은 노드 사양에서 나온다). 그래서
+# MaxRAMPercentage=35 는 Docker VM 메모리의 35% 다 — 로컬 힙 · 메모리 수치를 운영과 견주지 않는다.
+#
+# 내보낼 곳 — agent-measure.yaml 은 내보내기가 둘이다(Grafana · 생성기 수신기). 로컬은 둘 다 호스트의 수신기로 보낸다
+# (컨테이너에서 호스트 = host.docker.internal — Docker Desktop). **그래서 구간이 파일에 두 번씩 들어간다** — traceId · spanId 가
+# 같은 줄이 둘이다. 집계 전에 그 둘로 중복을 걸러야 한다(문장 모양 · 구간 이름 대조에는 영향이 없다).
+# 인증 헤더(OTEL_EXPORTER_OTLP_HEADERS)는 빈 값 — 설정 파일의 ${env:…} 치환이 빈 값이 되어 헤더 없이 보낸다(agent.yaml 머리 주석).
+#
+# 배치 스위치 넷은 모두 false — 측정 모드는 배치 구간도 남겨, 켠 채 띄우면 기동 한 번에 수신기 파일이 1 GB 가 났다(측정 README).
+services:
+  app:
+    # 루트 compose 의 rental-backend:local 은 9/22 이미지라 지금 백엔드(마지막 변경 f3b421a, 10/2)와 다르다.
+    # #378 로컬 검증 때 만든 rental-backend:measure(10/3)를 쓴다 — 다시 빌드하면 로컬 디스크를 더 쓴다
+    image: ${RENTAL_BACKEND_IMAGE:-rental-backend:measure}
+    environment:
+      # 앞의 ${JAVA_TOOL_OPTIONS:-} — 띄우는 셸에 값이 있으면 앞에 붙인다(루트 compose 에는 이 키가 없다)
+      JAVA_TOOL_OPTIONS: "${JAVA_TOOL_OPTIONS:-} -XX:+UseG1GC -XX:MaxRAMPercentage=35.0 -XX:MaxDirectMemorySize=64m -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp -javaagent:/app/otel/opentelemetry-javaagent.jar -Dotel.config.file=/etc/rental/otel/agent.yaml"
+      MALLOC_ARENA_MAX: "2"
+      OTEL_JAVAAGENT_ENABLED: "true"
+      OTEL_SERVICE_INSTANCE_ID: local-app
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://host.docker.internal:4318/v1/traces
+      OTEL_EXPORTER_OTLP_HEADERS: ""
+      OTEL_MEASURE_RECEIVER_ENDPOINT: http://host.docker.internal:4318/v1/traces
+      PROPERTY_BATCH_REFRESH_ENABLED: "false"
+      RISK_BATCH_REGISTRYREFRESH_ENABLED: "false"
+      RISK_BATCH_MOCKLEDGERREPLACE_ENABLED: "false"
+      BATCH_STARTUPCATCHUP_ENABLED: "false"
+    volumes:
+      - ./infra/otel/agent-measure.yaml:/etc/rental/otel/agent.yaml:ro

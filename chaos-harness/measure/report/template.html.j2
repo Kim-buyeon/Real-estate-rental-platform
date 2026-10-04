@@ -205,6 +205,24 @@ ul { margin: 2px 0 6px 18px; padding: 0; } li { margin: 1px 0; }
 <tr><td>5xx 비율이 1% 초과</td><td>포화점</td><td class="b">{% if s.jtl %}{{ "해당" if s.jtl.saturation.rate_5xx_over_1pct else "아님" }} ({{ s.key.rate_5xx|v(3, " %") }}){% else %}미측정{% endif %}</td></tr>
 <tr><td>처리량이 목표 RPS를 못 따라가고 정체</td><td>포화점</td><td class="b">{% if s.jtl.saturation.throughput_plateau is none %}판정 불가(창 부족){% else %}{{ "정체 의심" if s.jtl.saturation.throughput_plateau else "정체 아님" }} — 마지막 세 창 TPS {{ s.jtl.saturation.plateau_detail.tps_growth_pct|v(1, "%") }} · 스레드 {{ s.jtl.saturation.plateau_detail.threads_growth_pct|v(1, "%") }}{% endif %} <span class="small">(보조 판정 — 확정은 G1)</span></td></tr>
 </table>
+{% if s.steps and s.steps.basis == "steps.json" %}
+<table>
+<tr><th>단계 ({{ R }})</th><th>목표 → 실제 TPS</th><th>p50 / p95 / p99</th><th>5xx</th><th>닿은 조건</th></tr>
+{% for x in s.steps.steps %}
+<tr><td>{{ x.index }}{% if x.partial %} <span class="small">(일부)</span>{% endif %}</td><td class="b">{{ x.target_rps|v(1) }} → {{ x.actual_rps|v(1) }}</td><td class="b">{{ x.p50|v(0) }} / {{ x.p95|v(0) }} / {{ x.p99|v(0) }} ms{% if not x.p95_usable %} <span class="small">(표본 부족)</span>{% endif %}</td><td class="b">{{ x.rate_5xx|v(2, "%") }}</td><td class="b">{{ (x.saturation_conditions or [])|join(" · ") }}</td></tr>
+{% endfor %}
+</table>
+{% set rs = s.steps.route_saturation or {} %}{% if rs|length > 1 %}
+<table>
+<tr><th>엔드포인트 ({{ R }})</th><th>먼저 넘은 단계</th><th>그때 실제 TPS · p95</th><th>그 앞 단계 (엔드포인트 한계)</th><th>가장 큰 구성 요소</th></tr>
+{% for r, x in rs.items() %}
+<tr><td>{{ r }}</td><td class="b">{% if x.index %}{{ x.index }} — {{ x.conditions|join(" · ") }}{% else %}닿지 않음{% endif %}</td><td class="b">{% if x.index %}{{ x.actual_rps|v(1) }} · {{ x.p95|v(0) }} ms{% if not x.p95_usable %} <span class="small">(표본 부족)</span>{% endif %}{% endif %}</td><td class="b">{% if x.limit_index %}단계 {{ x.limit_index }} · {{ x.limit_rps|v(1) }} TPS{% endif %}</td><td class="b">{{ (x.largest_component.name ~ " " ~ (x.largest_component.share_pct|v(1, "%"))) if x.largest_component else "" }}</td></tr>
+{% endfor %}
+</table>
+<p class="small">엔드포인트별은 p95 500 ms · 5xx 1% 두 조건만 — 엔드포인트마다의 목표 RPS 가 없어 정체는 회차 전체로만 본다.</p>
+{% endif %}
+<div class="key"><b>포화점 (보조 판정 — 확정은 G1)</b> — {% if s.steps.saturation %}{% set sp = s.steps.saturation %}단계 {{ sp.index }}: 실제 {{ sp.actual_rps|v(1) }} TPS(목표 {{ sp.target_rps|v(1) }})에서 p95 {{ sp.p95|v(0) }} ms · 5xx {{ sp.rate_5xx|v(2) }}% — {{ sp.conditions|join(" · ") }}{% else %}이 회차의 단계에서 세 조건 어디에도 닿지 않았다{% endif %}. 「정체」 = 실제가 목표의 90% 미만이고 앞 단계보다 5% 넘게 늘지 않음(시험 계획서 2.3 은 수치를 두지 않는다 — 집계 규칙).</div>
+{% endif %}
 <div class="note">p95만 보면 응답은 빠른데 오류로 무너지는 회차를 놓친다. 포화점은 값으로 적는다 — "100 RPS 근처"가 아니라 "88 RPS에서 p95 512 ms".</div>
 
 <h4>(3) 「안정적이다」는 p95 숫자가 아니라 헤드룸에서 나온다 ★</h4>
@@ -328,7 +346,7 @@ ul { margin: 2px 0 6px 18px; padding: 0; } li { margin: 1px 0; }
 <table>
 <tr><th>엔드포인트</th><th>목표 p95</th><th>실측 p95</th><th>단독 한계</th><th>헤드룸</th><th>상태</th><th>병목 계층</th><th>주로 쓰는 자원</th></tr>
 {% for e in signals %}
-<tr><td>{{ e.label }}<br><span class="small">{{ e.route|n }}</span></td><td class="b">{{ e.target }}</td><td class="b">{{ e.p95|v(1, " ms") }}{{ e.p95_note }}</td><td class="b">{{ e.single_limit|v(1, " TPS") }}</td><td class="b">{{ e.headroom|v(1, "배") }}</td><td class="b {{ e.cls }}">{{ e.color }}</td><td class="b">{{ e.bottleneck_layer|n }}<br><span class="small">{{ e.bottleneck_part|n }}</span></td><td class="b">{{ e.main_resource|n }}</td></tr>
+<tr><td>{{ e.label }}<br><span class="small">{{ e.route|n }}</span></td><td class="b">{{ e.target }}</td><td class="b">{{ e.p95|v(1, " ms") }}{{ e.p95_note }}</td><td class="b">{{ e.single_limit|v(1, " TPS") }}{% if e.single_limit_note %}<br><span class="small">{{ e.single_limit_note }}</span>{% endif %}</td><td class="b">{{ e.headroom|v(1, "배") }}</td><td class="b {{ e.cls }}">{{ e.color }}</td><td class="b">{{ e.bottleneck_layer|n }}<br><span class="small">{{ e.bottleneck_part|n }}</span></td><td class="b">{{ e.main_resource|n }}</td></tr>
 {% else %}
 <tr><td>미측정</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b lg-n">회색</td><td class="b"></td><td class="b"></td></tr>
 {% endfor %}
@@ -425,7 +443,7 @@ SELECT pg_size_pretty(pg_database_size(current_database()));</pre>
 <tr><th class="k">순위</th><th>질의 (앞 60자)</th><th>호출수</th><th>평균</th><th>총시간</th><th>점유율</th><th>엔드포인트</th></tr>
 {% set top = s.db.top_merged or [] %}
 {% for r in top[:5] %}
-<tr><td>{{ loop.index }}</td><td class="b"><code>{{ r.query|short(60) }}</code> <span class="small">{{ r.node }}</span></td><td class="b">{{ r.calls|v(0) }}</td><td class="b">{{ r.mean_ms|v(2, " ms") }}</td><td class="b">{{ r.total_ms|v(0, " ms") }}</td><td class="b">{{ r.share_all_pct|v(1, "%") }}</td><td class="b">{{ (r.routes or [])|join(", ") }}</td></tr>
+<tr><td>{{ loop.index }}</td><td class="b"><code>{{ r.query|short(60) }}</code> <span class="small">{{ r.node }}</span></td><td class="b">{{ r.calls|v(0) }}</td><td class="b">{{ r.mean_ms|v(2, " ms") }}{% if r.trace %}<br><span class="small">추적 p50 {{ r.trace.p50_ms|v(2) }} · p95 {{ r.trace.p95_ms|v(2) }} ms</span>{% endif %}</td><td class="b">{{ r.total_ms|v(0, " ms") }}</td><td class="b">{{ r.share_all_pct|v(1, "%") }}</td><td class="b">{{ (r.routes or [])|join(", ") }}{% if r.routes_source == "질의 파일" %} <span class="small">(질의 파일 endpoint)</span>{% endif %}</td></tr>
 {% else %}
 <tr><td>1</td><td class="b">미측정</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 {% endfor %}
@@ -435,7 +453,7 @@ SELECT pg_size_pretty(pg_database_size(current_database()));</pre>
 <pre>SELECT substring(query,1,60) AS q, calls, mean_exec_time, total_exec_time,
        round(100*total_exec_time/sum(total_exec_time) OVER (),1) AS pct
 FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;</pre>
-<p class="small">「엔드포인트」 칸은 매퍼 소스로 붙인다(질의 통계 문장은 리터럴도 $n). 여러 엔드포인트가 부르면 추적으로 나눈다 → [7.11]</p>
+<p class="small">「엔드포인트」 칸은 매퍼 소스로 붙인다(질의 통계 문장은 리터럴도 $n). 여러 엔드포인트가 부르면 추적으로 나눈다 → [7.11]{% if s.traces.statements %} · 「평균」 칸 아래 작은 글은 같은 문장(정규화한 키)의 추적 SQL 구간 p50 · p95 — 질의 통계 평균은 DB 안 실행, 추적은 앱이 본 왕복(네트워크 · 드라이버 포함){% endif %}</p>
 <table>
 <tr><th>항목</th><th>전 ({{ B or "R__" }})</th><th>후 ({{ R }})</th><th>변화</th></tr>
 {% for label, fn, unit in [("DB 총 실행 시간 (회차, 두 노드)", "total_db_ms", " ms"), ("상위 1종의 점유율", "top1", "%"), ("상위 3종의 점유율", "top3", "%"), ("요청당 DB 시간", "db_ms_per_request", " ms")] %}
@@ -450,7 +468,18 @@ FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;</pre>
 <p class="small">상위 1종이 70%를 넘으면 그 질의 하나가 시스템 한계를 정한다.</p>
 
 <h3>[4.2] 실행 계획 전후 — 질의마다 일곱 줄</h3>
-<table><tr><th class="k">질의</th><td class="b"></td></tr></table>
+{% for p in explain_pairs %}
+{% set q, bq = p.q, p.b %}{% set w, bw = q.warm, (bq.warm if bq else none) %}
+<table><tr><th class="k">질의</th><td class="b"><code>{{ q.id }}</code> — {{ q.source|n }} <span class="small">({{ q.kind|n }} · {{ q.node|n }}{% if q.skipped %} · 건너뜀: {{ q.skipped }}{% endif %})</span>{% if q.trace %}<br><span class="small">추적 {{ R }}: {{ q.trace.calls|v(0) }}회 · p50 {{ q.trace.p50_ms|v(2, " ms") }} · p95 {{ q.trace.p95_ms|v(2, " ms") }} · 요청당 {{ q.trace.per_request|v(2) }}회{% if q.trace_by_step %} · 단계별 p95 {% for x in q.trace_by_step %}{{ x.index }}: {{ x.p95_ms|v(1) }}{{ " / " if not loop.last }}{% endfor %} ms{% endif %}</span>{% endif %}</td></tr></table>
+<table>
+<tr><th>항목</th><th>전 ({{ B or "R__" }})</th><th>후 ({{ R }})</th></tr>
+{% for label, f in [("접근 방법", "access"), ("조인 방법", "join"), ("예상 행 / 실제 행", "rows"), ("추정 오차", "err"), ("읽은 블록 (hit / read)", "blocks"), ("정렬 / 임시 파일", "sort"), ("실행 시간", "time")] %}
+<tr><td>{{ label }}</td>{% for x in [bw, w] %}<td class="b">{% if loop.first and not b %}{% elif not x %}미측정{% elif f == "access" %}{{ x.access|join(" · ") }}{% elif f == "join" %}{{ x.join|join(" · ") }}{% elif f == "rows" %}{{ x.est_rows|v(0) }} / {{ x.act_rows|v(0) }}{% if x.loops and x.loops > 1 %} × {{ x.loops }} loops{% endif %}{% elif f == "err" %}{{ x.error_factor|v(2, "배") }}{% if x.error_node %} <span class="small">({{ x.error_node }})</span>{% endif %}{% if x.error_over_limit %} ⚠{% endif %}{% elif f == "blocks" %}{{ x.blocks_hit|v(0) }} / {{ x.blocks_read|v(0) }}{% elif f == "sort" %}{{ x.sort }} · 임시 블록 {{ x.temp_blocks|v(0) }}{% elif f == "time" %}{{ x.execution_ms|v(3, " ms") }} <span class="small">(계획 {{ x.planning_ms|v(3, " ms") }}{% if loop.last and q.cold %} · 콜드 {{ q.cold.execution_ms|v(3, " ms") }} · 블록 {{ q.cold.blocks_hit|v(0) }} / {{ q.cold.blocks_read|v(0) }}{% endif %})</span>{% endif %}</td>{% endfor %}</tr>
+{% endfor %}
+<tr><td>운영 실제 계획 (auto_explain)</td><td class="b">{% if bq and bq.auto_explain_plans is not none %}{{ bq.auto_explain_plans }} 중 {{ bq.auto_explain_same }}{% elif b %}미측정{% endif %}</td><td class="b">{% if q.auto_explain_plans is not none %}{{ q.auto_explain_plans }} 중 {{ q.auto_explain_same }} <span class="small">(같은 문장의 실제 계획 / 그중 접근 방법이 이 EXPLAIN 과 같은 것)</span>{% else %}미측정{% endif %}</td></tr>
+</table>
+{% else %}
+<table><tr><th class="k">질의</th><td class="b">미측정 — results/{{ s.folder }}/explain/ 없음 (node/explain.sh)</td></tr></table>
 <table>
 <tr><th>항목</th><th>전 (R__)</th><th>후 (R__)</th></tr>
 <tr><td>접근 방법</td><td class="b"></td><td class="b"></td></tr>
@@ -461,10 +490,12 @@ FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;</pre>
 <tr><td>정렬 / 임시 파일</td><td class="b"></td><td class="b"></td></tr>
 <tr><td>실행 시간</td><td class="b"></td><td class="b"></td></tr>
 </table>
+{% endfor %}
+{% if s.explain %}<p class="small">실제 값 EXPLAIN (ANALYZE, BUFFERS, SETTINGS) 세 번 중 마지막 — 콜드(첫 번째)는 실행 시간 칸 괄호. {{ "로컬" if s.explain.local else "운영" }} {{ s.explain.captured_utc|n }}{% if s.explain.allow_write %} · 쓰기 질의는 BEGIN … ROLLBACK{% endif %}.</p>{% endif %}
 <div class="note"><b>읽는 법</b> — 예상과 실제가 10배 이상 벌어지면 플래너가 속은 것(통계 부족 · 형 변환). 읽은 블록이 시간보다 믿을 만하다. read ≠ 0이면 디스크. 큰 결과에 Nested Loop면 거의 문제. 임시 파일은 work_mem 초과. EXPLAIN은 실제 파라미터 값으로 뜬다(GENERIC_PLAN으로 판정하면 오진).</div>
 <table>
 <tr><th>운영 실제 계획 (auto_explain)</th><th>전</th><th>후</th></tr>
-{% set ae = [] %}{% for x in [b, s] %}{% set _ = ae.append((x.db.auto_explain.values()|map(attribute='plans')|sum if x and x.db.auto_explain else none)) %}{% endfor %}<tr><td>실제 계획 건수 / 그중 의도한 계획</td><td class="b">{{ (ae[0]|v(0)) ~ " 중 ___" if b else "___ 중 ___" }}</td><td class="b">{{ ae[1]|v(0) }} 중 ___{% if s.db.auto_explain %} <span class="small">({% for n, a in s.db.auto_explain.items() %}{{ n }}: {% for k, c in a.node_counts.items() %}{{ k }} {{ c }}{{ " · " if not loop.last }}{% endfor %}{{ "; " if not loop.last }}{% endfor %})</span>{% endif %}</td></tr>
+{% set ae = [] %}{% for x in [b, s] %}{% set _ = ae.append((x.db.auto_explain.values()|map(attribute='plans')|sum if x and x.db.auto_explain else none)) %}{% endfor %}<tr><td>실제 계획 건수 / 그중 의도한 계획</td><td class="b">{% if b and b.explain and b.explain.auto_explain_plans is not none %}{{ b.explain.auto_explain_plans }} 중 {{ b.explain.auto_explain_same }}{% elif b %}{{ (ae[0]|v(0)) ~ " 중 ___" }}{% else %}___ 중 ___{% endif %}</td><td class="b">{% if s.explain and s.explain.auto_explain_plans is not none %}{{ s.explain.auto_explain_plans }} 중 {{ s.explain.auto_explain_same }} <span class="small">(EXPLAIN 한 질의만 — 회차 전체 {{ ae[1]|v(0) }}건)</span>{% else %}{{ ae[1]|v(0) }} 중 ___{% endif %}{% if s.db.auto_explain %} <span class="small">({% for n, a in s.db.auto_explain.items() %}{{ n }}: {% for k, c in a.node_counts.items() %}{{ k }} {{ c }}{{ " · " if not loop.last }}{% endfor %}{{ "; " if not loop.last }}{% endfor %})</span>{% endif %}</td></tr>
 </table>
 <p class="small">auto_explain은 지금 설정돼 있지 않다. 켜려면 재기동 — 조건 변화다. 안 켰으면 「미측정」.</p>
 </section>
@@ -481,6 +512,7 @@ FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 20;</pre>
 <tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 <tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 </table>
+{% if s.explain %}<p class="small">실제 값 EXPLAIN 이 탄 인덱스 ({{ R }}): {% for p in explain_pairs %}{{ p.q.id }} → {{ (p.q.warm.indexes|join(", ") or "없음") if p.q.warm else "미측정" }}{{ " · " if not loop.last }}{% endfor %}</p>{% endif %}
 <table>
 <tr><th class="k">인덱스 총 크기</th><td class="b">전 ___ MB → 후 ___ MB (+___%)</td></tr>
 <tr><th class="k">쓰기 경로 p95</th><td class="b">전 ___ ms → 후 ___ ms (관심 등록 · 프로필 저장 · 재분석)</td></tr>
@@ -502,11 +534,14 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <table>
 <tr><th>항목</th><th>전</th><th>후</th><th>비고</th></tr>
 <tr><td>한 번도 분석되지 않은 표</td><td class="b"></td><td class="b"></td><td>시드 표는 자동 분석 문턱에 안 닿는다</td></tr>
-<tr><td>추정 오차 10배 초과 질의</td><td class="b"></td><td class="b"></td><td></td></tr>
+<tr><td>추정 오차 10배 초과 질의</td><td class="b">{% if b and b.explain %}{{ b.explain.error_over_limit }} / {{ b.explain.queries|length }}{% endif %}</td><td class="b">{% if s.explain %}{{ s.explain.error_over_limit }} / {{ s.explain.queries|length }}{% endif %}</td><td>{% if s.explain %}실제 값 EXPLAIN 의 노드별 예상 ÷ 실제 최대 (S6){% endif %}</td></tr>
 <tr><td>통계 목표를 올린 열</td><td class="b"></td><td class="b"></td><td>ALTER TABLE … SET STATISTICS</td></tr>
 <tr><td>자동 청소 마지막 실행</td><td class="b"></td><td class="b"></td><td></td></tr>
 <tr><td>바뀐 행 비율 (S3)</td><td class="b"></td><td class="b"></td><td>n_mod_since_analyze ÷ n_live_tup</td></tr>
 </table>
+{% if s.explain and (s.explain.s4 or s.explain.s5) %}
+<p class="small">스냅샷 ({{ R }}) — {% for x in s.explain.s4 %}S4 {{ x.id }}: 통계상 {{ x.estimated|v(0) }} · 실제 {{ x.actual|v(0) }} ({{ x.diff_pct|v(2, "%") }}){{ " · " if not loop.last }}{% endfor %}{% for x in s.explain.s5 %}{{ " · " if loop.first and s.explain.s4 }}S5 {{ x.id }}: {{ x.columns|join(", ") }} {{ x.rows|length }}행 (summary.json explain.s5){{ " · " if not loop.last }}{% endfor %}</p>
+{% endif %}
 
 <h3>[4.5] DB 설정 전후</h3>
 <table>
@@ -546,11 +581,11 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <table>
 <tr><th class="k">순서</th><th>확인 / 방법</th><th>상태</th><th>예상 효과</th></tr>
 <tr><td>1</td><td>ANALYZE를 했는가</td><td class="b">□</td><td class="b"></td></tr>
-<tr><td>2</td><td>추정 행과 실제 행이 벌어지는가</td><td class="b">___개 질의</td><td class="b"></td></tr>
-<tr><td>3</td><td>인덱스를 타는가</td><td class="b">□</td><td class="b"></td></tr>
+<tr><td>2</td><td>추정 행과 실제 행이 벌어지는가</td><td class="b">{{ s.explain.error_over_limit if s.explain else "___" }}개 질의{% if s.explain %} <span class="small">(10배 초과 / EXPLAIN {{ s.explain.queries|length }}개)</span>{% endif %}</td><td class="b"></td></tr>
+<tr><td>3</td><td>인덱스를 타는가</td><td class="b">{% if s.explain %}{{ "■" if s.explain.indexes else "□" }} {{ s.explain.indexes|join(", ") }}{% else %}□{% endif %}</td><td class="b"></td></tr>
 <tr><td>4</td><td>읽은 블록이 결과 행에 비해 과한가</td><td class="b">___배</td><td class="b"></td></tr>
 <tr><td>5</td><td>같은 질의가 요청당 여러 번 불리나</td><td>→ [6] N+1</td><td class="b"></td></tr>
-<tr><td>6</td><td>정렬 · 해시가 디스크로 넘어가는가</td><td class="b">___건</td><td class="b"></td></tr>
+<tr><td>6</td><td>정렬 · 해시가 디스크로 넘어가는가</td><td class="b">{{ s.explain.disk_sorts if s.explain else "___" }}건</td><td class="b"></td></tr>
 <tr><td>7</td><td>커버링 인덱스로 표 방문 제거</td><td class="b"></td><td class="b"></td></tr>
 <tr><td>8</td><td>부분 인덱스 (조건부 행만)</td><td class="b"></td><td class="b"></td></tr>
 <tr><td>9</td><td>필요한 열만 SELECT</td><td>→ [6]</td><td class="b"></td></tr>
@@ -574,14 +609,14 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <table>
 <tr><th>슬롯</th><th>요청 비중</th><th>p95 (서버)</th><th>힙 최대</th><th>재시작</th></tr>
 {% for r in slot_rows %}
-<tr><td>{{ r.slot }}</td><td class="b">{{ r.share|v(1, "%") }}</td><td class="b">{{ r.p95|v(1, " ms") }}</td><td class="b">{{ r.heap|mb }}</td><td class="b">{{ r.restarts|v(0) }}</td></tr>
+<tr><td>{{ r.slot }}</td><td class="b">{{ r.share|v(1, "%") }}</td><td class="b">{{ r.p95|v(1, " ms") }}</td><td class="b">{{ r.heap|mb }}{% if r.cmem %}<br><span class="small">컨테이너 {{ r.cmem|mb }}{% if r.cmem_pct is not none %} ({{ r.cmem_pct }}% 상한){% endif %}</span>{% endif %}</td><td class="b">{{ r.restarts|v(0) }}{% if r.coom %} <span class="small">· 상한 OOM {{ r.coom }}</span>{% endif %}</td></tr>
 {% else %}
 <tr><td>미측정</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 {% endfor %}
 </table>
 <p class="small">25%에서 크게 벗어나거나 재시작이 0이 아니면 그 회차는 「다른 구성」으로 돈 것이다.</p>
 <table>
-{% set ooms = s.resources.nodes.values()|map(attribute="oom_kills_delta")|select("number")|list %}<tr><th class="k">컨테이너 상한 도달</th><td class="b">{% if s.resources.app_totals.restarts %}■ 예 → 재시작 {{ s.resources.app_totals.restarts }}회{% else %}□ 아니오 □ 예 → 종료 ___회 <span class="small">(슬롯 재시작 {{ s.resources.app_totals.restarts|v(0) }})</span>{% endif %}</td><th class="k">노드 OOM (O5)</th><td class="b">{{ (ooms|sum if ooms else none)|v(0, "회") }}</td></tr>
+{% set ooms = s.resources.nodes.values()|map(attribute="oom_kills_delta")|select("number")|list %}<tr><th class="k">컨테이너 상한 도달</th><td class="b">{% if s.resources.app_totals.container_oom_kills %}■ 예 → 상한 OOM {{ s.resources.app_totals.container_oom_kills }}회 · 재시작 {{ s.resources.app_totals.restarts|v(0) }}회{% elif s.resources.app_totals.restarts %}■ 예 → 재시작 {{ s.resources.app_totals.restarts }}회{% else %}□ 아니오 □ 예 → 종료 ___회 <span class="small">(슬롯 재시작 {{ s.resources.app_totals.restarts|v(0) }})</span>{% endif %}</td><th class="k">노드 OOM (O5)</th><td class="b">{{ (ooms|sum if ooms else none)|v(0, "회") }}</td></tr>
 </table>
 
 <h3>[5.2] 앱 CPU 분포 — 어느 코드가 쓰는가</h3>
@@ -606,7 +641,7 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <tr><th>엔드포인트</th><th>요청당 질의</th><th>같은 행 반복</th><th>원인</th><th>전 / 후</th></tr>
 {% for r, t in tr_routes.items() %}
 {% set bt = btr[r] if btr else none %}
-<tr><td>{{ r }}</td><td class="b">{{ t.sql_per_request.mean|v(1) }} <span class="small">(최대 {{ t.sql_per_request.max|v(0) }})</span></td><td class="b">{% for x in t.repeated_statements %}<code>{{ x.statement|short(40) }}</code> ×{{ x.max_per_request }}{{ "<br>"|safe if not loop.last }}{% endfor %}{% if t.per_row_methods %}<br><span class="small">행마다: {{ t.per_row_methods|join(", ") }}</span>{% endif %}</td><td class="b">{{ nar.n_plus_one[r]|n }}</td><td class="b">{% if bt %}{{ bt.sql_per_request.mean|v(1) }} → {{ t.sql_per_request.mean|v(1) }}{% endif %}</td></tr>
+<tr><td>{{ r }}</td><td class="b">{{ t.sql_per_request.mean|v(1) }} <span class="small">(최대 {{ t.sql_per_request.max|v(0) }})</span></td><td class="b">{% for x in t.repeated_statements %}<code>{{ x.statement|short(40) }}</code> ×{{ x.max_per_request }}{{ "<br>"|safe if not loop.last }}{% endfor %}{% if t.per_row_methods %}<br><span class="small">행마다: {{ t.per_row_methods|join(", ") }}</span>{% endif %}</td><td class="b">{{ nar.n_plus_one[r]|n }}{% set eq = (s.explain.queries|selectattr("endpoint", "equalto", r)|list) if s.explain else [] %}{% if eq %}<br><span class="small">E01 질의: {% for q in eq %}{{ q.id }}{% if q.trace %} ({{ q.trace.per_request|v(1) }}회/요청){% endif %}{{ " · " if not loop.last }}{% endfor %}</span>{% endif %}</td><td class="b">{% if bt %}{{ bt.sql_per_request.mean|v(1) }} → {{ t.sql_per_request.mean|v(1) }}{% endif %}</td></tr>
 {% else %}
 <tr><td>미측정 (추적 없음)</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 {% endfor %}
@@ -691,14 +726,17 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <h3>[6.1] 타입 · 바인딩 불일치</h3>
 <table>
 <tr><th>무엇</th><th>앱 쪽</th><th>DB 쪽</th><th>결과</th></tr>
-<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
-<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
+{% set cq = [] %}{% for p in explain_pairs %}{% if p.q.warm and p.q.warm.casts %}{% set _ = cq.append(p.q) %}{% endif %}{% endfor %}
+{% for q in cq %}
+<tr><td class="b">{{ q.id }} <span class="small">{{ q.source|n }}</span></td><td class="b"></td><td class="b">{% for c in q.warm.casts %}<code>({{ c.column }})::{{ c.type }}</code>{{ " · " if not loop.last }}{% endfor %} <span class="small">(EXPLAIN {{ R }})</span></td><td class="b">{{ q.warm.access|join(" · ") }} · {{ q.warm.execution_ms|v(3, " ms") }}</td></tr>
+{% endfor %}
+{% for i in range([2 - cq|length, 0]|max) %}<tr><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>{% endfor %}
 </table>
 <table>
 <tr><th class="k">읽은 블록</th><td class="b">→</td><th class="k">실행 시간</th><td class="b">→</td></tr>
 <tr><th class="k">고친 곳</th><td class="b" colspan="3"></td></tr>
 </table>
-<p class="small">찾는 법 — EXPLAIN에 <code>(열)::타입</code>이 찍히면 그것이다. 찾은 ___개 / 고친 ___개</p>
+<p class="small">찾는 법 — EXPLAIN에 <code>(열)::타입</code>이 찍히면 그것이다. 찾은 {{ (s.explain.casts|length) if s.explain else "___" }}개 / 고친 ___개{% if s.explain %} <span class="small">(실제 값 EXPLAIN {{ s.explain.queries|length }}개 질의의 Index Cond · Filter 등에서 — 「앱 쪽」 바인딩 타입은 매퍼 소스로 적는다)</span>{% endif %}</p>
 
 <h3>[6.2] 트랜잭션 경계 안의 비-DB 작업</h3>
 <table>
@@ -848,6 +886,8 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td class="b">{{ ((bb.extra|selectattr("name", "equalto", r.name)|first).ms)|v(2, " ms") if bb else "" }}</td><td class="b">{{ r.ms|v(2, " ms") }}</td><td></td><td></td><td></td><td>{{ r.source }}</td></tr>
 {% endfor %}
 <tr><th colspan="2">요청 전체 p95 (부하 도구)</th><td class="b">{{ bb.tool_p95_ms|v(2, " ms") if bb else "" }}</td><td class="b">{{ bg.tool_p95_ms|v(2, " ms") }}</td><td></td><td></td><td></td><td>판정 기준</td></tr>
+{% set w1 = (s.resources.server_latency.values()|selectattr("route", "equalto", route)|first) if s.resources.server_latency else none %}
+<tr><th colspan="2">서버 지표 p95 (W1) — 대조용</th><td class="b"></td><td class="b">{% if w1 %}{{ w1.p95_ms|v(1, " ms") }}{% if w1.p95_over_3s %} (3 s 칸 위 — 값 없음){% endif %} <span class="small">· 5xx {{ w1.rate_5xx_pct|v(2, "%") }}</span>{% else %}미측정{% endif %}</td><td></td><td></td><td></td><td>SLO 구간 다섯 칸 사이 보간 — 도구 p95 와 크게 다르면 입구 · 큐 → [0.2]</td></tr>
 </table>
 {% else %}
 <table><tr><th class="k">엔드포인트</th><td class="b">미측정</td><th class="k">회차</th><td class="b">{{ R }}</td></tr></table>
@@ -878,11 +918,13 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <h3>[7.2] 병목이 어느 계층에서 어디로 옮겨갔는가</h3>
 <table>
 <tr><th>부하 수준</th><th>전 — 먼저 닿는 자원 (계층)</th><th>후 — 먼저 닿는 자원 (계층)</th></tr>
-<tr><td>목표 (___ TPS)</td><td class="b"></td><td class="b"></td></tr>
-<tr><td>목표 × 2</td><td class="b"></td><td class="b"></td></tr>
-<tr><td>한계 지점</td><td class="b"></td><td class="b"></td></tr>
-<tr><td>한계 초과</td><td class="b"></td><td class="b"></td></tr>
+{% set cl = (s.steps.levels if s.steps and s.steps.basis == "steps.json" else none) %}{% set bl = (b.steps.levels if b and b.steps and b.steps.basis == "steps.json" else none) %}
+{% for i, label in [(0, "목표"), (1, "목표 × 2"), (2, "한계 지점"), (3, "한계 초과")] %}
+{% set c, bc = (cl[i] if cl else none), (bl[i] if bl else none) %}
+<tr><td>{% if i == 0 %}목표 ({{ s.steps.target_rps|v(1) if cl else "___" }} TPS){% else %}{{ label }}{% endif %}</td>{% for x in [bc, c] %}<td class="b">{% if x and x.index is not none %}{{ x.text or "자원 원천 없음" }} <span class="small">(단계 {{ x.index }} · 실제 {{ x.actual_rps|v(1) }} TPS · p95 {{ x.p95|v(0) }} ms)</span>{% elif x %}해당 단계 없음{% elif loop.last and cl %}미측정{% endif %}</td>{% endfor %}</tr>
+{% endfor %}
 </table>
+{% if cl %}<p class="small">자동 칸 = 그 단계에서 사용률이 가장 높은 자원(노드 CPU 평균 · 요청 스레드 최대 · 풀 활성 최대) · 요청 시간에서 가장 큰 구성 요소. 목표 = {{ s.steps.target_basis }}. 한계 지점 = 포화 단계 바로 앞{% if s.steps.limit and not s.steps.limit.reached %}(포화에 닿지 않아 마지막 단계 — 한계는 이보다 위){% endif %}, 한계 초과 = 포화 단계.</p>{% endif %}
 <p class="small">같은 계층에 머물렀다 → 더 판다 · 다른 계층으로 옮겼다 → [1.1] 3번을 고친다 · 앱 → DB로 옮겼다 → 요청당 질의 수 확인</p>
 <table><tr><th class="k">해석</th><td class="b"></td></tr></table>
 
@@ -938,9 +980,11 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <h4>(3) 헤드룸 배수가 「그 배수까지 같은 속도」를 뜻하지 않는다</h4>
 <table>
 <tr><th>지점</th><th>p95</th><th>비고</th></tr>
-<tr><td>한계의 50%</td><td class="b"></td><td></td></tr>
-<tr><td>한계의 80%</td><td class="b"></td><td>여기서 이미 꺾이면 정상이다</td></tr>
-<tr><td>한계 지점</td><td class="b"></td><td>기준 500 ms 바로 아래</td></tr>
+{% set pa = (s.steps.p95_at if s.steps and s.steps.basis == "steps.json" else []) %}
+{% for f, label, note in [(0.5, "한계의 50%", ""), (0.8, "한계의 80%", "여기서 이미 꺾이면 정상이다"), (1.0, "한계 지점", "기준 500 ms 바로 아래")] %}
+{% set x = (pa|selectattr("fraction", "equalto", f)|first) if pa else none %}
+<tr><td>{{ label }}</td><td class="b">{% if x and x.index is not none %}{{ x.p95|v(0, " ms") }}{% endif %}</td><td>{{ note }}{% if x and x.index is not none %} <span class="small">({{ R }} 단계 {{ x.index }} · 실제 {{ x.actual_rps|v(1) }} TPS — 한계 {{ s.steps.limit.actual_rps|v(1) }} TPS에 가장 가까운 단계)</span>{% endif %}</td></tr>
+{% endfor %}
 </table>
 <table><tr><th class="k">권고 운영 상한</th><td class="b">___ TPS (대표 한계의 50%) — 트래픽 정의서가 배경 부하를 「한계의 절반 이하」로 정한 것과 같은 이유</td></tr></table>
 
@@ -961,9 +1005,10 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <h4>(6) 붕괴 지점은 따로 적는다</h4>
 <table>
 <tr><th>항목</th><th>값</th><th>비고</th></tr>
-<tr><td>실측 한계 (기준 유지)</td><td class="b">___ TPS</td><td></td></tr>
-<tr><td>붕괴 시작 지점</td><td class="b">___ TPS</td><td>오류 · 재시작이 나기 시작</td></tr>
-<tr><td>둘 사이 간격</td><td class="b">___ TPS</td><td>좁으면 기준을 넘는 순간 바로 장애 → [7.8]</td></tr>
+{% set sx = s.steps if s.steps and s.steps.basis == "steps.json" else none %}
+<tr><td>실측 한계 (기준 유지)</td><td class="b">{{ (sx.limit.actual_rps|v(1)) if sx and sx.limit else "___" }} TPS</td><td>{% if sx and sx.limit %}<span class="small">{{ R }} 단계 {{ sx.limit.index }}{% if not sx.limit.reached %} — 포화에 닿지 않음(한계는 이보다 위){% endif %}</span>{% endif %}</td></tr>
+<tr><td>붕괴 시작 지점</td><td class="b">{% if sx and sx.collapse %}{{ sx.collapse.actual_rps|v(1) }}{% elif sx %}닿지 않음 — {% else %}___ {% endif %}TPS</td><td>오류 · 재시작이 나기 시작{% if sx and sx.collapse %} <span class="small">(단계 {{ sx.collapse.index }} — {{ sx.collapse.reason }} 첫 발생)</span>{% endif %}</td></tr>
+<tr><td>둘 사이 간격</td><td class="b">{{ (sx.collapse_gap_rps|v(1)) if sx and sx.collapse else "___" }} TPS</td><td>좁으면 기준을 넘는 순간 바로 장애 → [7.8]</td></tr>
 </table>
 </section>
 
@@ -1016,10 +1061,11 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <table>
 <tr><th class="k">한계 초과 시 동작</th><td class="b"></td></tr>
 <tr><th class="k">무너진 계층</th><td class="b">□ 입구 □ 앱 □ 경계 □ DB □ OS</td></tr>
-<tr><th class="k">프로세스 종료</th><td class="b">□ 없음 □ 앱 ___회 □ DB □ OS (원천: 슬롯 재시작 W2 · OOM O5 · systemd 실패 O14)</td></tr>
+{% set cv = collapse %}
+<tr><th class="k">프로세스 종료</th><td class="b">{{ "□" if cv.any_exit else "■" }} 없음 {{ "■" if cv.app_restarts else "□" }} 앱 {{ cv.app_restarts if cv.app_restarts else "___" }}회 {{ "■" if cv.db_restarts else "□" }} DB {{ "■" if cv.rebooted or cv.oom else "□" }} OS (원천: 슬롯 재시작 W2 · OOM O5 · systemd 실패 O14)<br><span class="small">{{ R }} — 슬롯 재시작 {{ cv.app_restarts|v(0) }} · 노드 OOM {{ cv.oom|v(0) }} · 슬롯 상한 OOM {{ cv.container_oom|v(0) }} · DB 재시작 {{ cv.db_restarts|v(0) }} · 재부팅 {% if cv.boot_known %}{{ cv.rebooted|join(", ") or "없음" }}{% else %}미측정{% endif %} · systemd 실패 유닛 {% if cv.systemd_known %}{{ cv.systemd_failed|join(", ") or "없음" }}{% else %}미측정{% endif %}{% if cv.fs_readonly %} · 읽기 전용 전환 {{ cv.fs_readonly|join(", ") }}{% endif %}</span></td></tr>
 <tr><th class="k">자동 회복</th><td class="b">□ 자동 □ 수동 개입 필요 · 소요 ___</td></tr>
 <tr><th class="k">데이터 유실</th><td class="b">□ 없음 □ 있음 → ___건</td></tr>
-<tr><th class="k">알림이 울렸나</th><td class="b">□ 예 (규칙 ___ · ___분 뒤) □ 아니오</td></tr>
+<tr><th class="k">알림이 울렸나</th><td class="b">{% if not cv.alerts %}□ 예 (규칙 ___ · ___분 뒤) □ 아니오 <span class="small">— 미측정(alerts.json 없음 · node/alerts.sh)</span>{% elif cv.fired %}■ 예 ({% for f in cv.fired %}규칙 {{ f.rule }} · 시작 {{ f.minutes_after_start|v(1) }}분 뒤{% if f.after_end %} (회차 끝난 뒤){% endif %}{{ " / " if not loop.last }}{% endfor %}) □ 아니오{% else %}□ 예 (규칙 ___ · ___분 뒤) ■ 아니오 <span class="small">({{ R }} 구간 + 꼬리 — 상태 전환 {{ cv.alerts.transitions|length }}건, 원천 {{ cv.alerts.source }})</span>{% endif %}{% if cv.alerts and cv.alerts.rules_compare and not cv.alerts.rules_compare.same %}<br><span class="small">⚠ 저장소 정의와 걸린 규칙이 다르다 — 없음 {{ cv.alerts.rules_compare.missing_live|join(", ") or "-" }} · 더 있음 {{ cv.alerts.rules_compare.extra_live|join(", ") or "-" }}</span>{% endif %}</td></tr>
 <tr><th class="k">판정</th><td class="b">□ 합격 □ 불합격</td></tr>
 </table>
 </section>
@@ -1171,7 +1217,8 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 {% set L = nar.feedback.odd or [] %}{% for i in range([L|length, 2]|max) %}{% set r = L[i] if i < L|length else {} %}<tr><td class="b">{{ r.element|n }}</td><td class="b">{{ r.seen|n }}</td><td class="b">{{ r.expected|n }}</td><td class="b">{{ r.cause|n }}</td></tr>{% endfor %}</table>
 <h4>(라) 알림 규칙과의 대조</h4>
 <table><tr><th>시험에서 본 상태</th><th>울린 규칙</th><th>울렸어야 했나</th></tr>
-{% set L = nar.feedback.alerts or [] %}{% for i in range([L|length, 2]|max) %}{% set r = L[i] if i < L|length else {} %}<tr><td class="b">{{ r.state|n }}</td><td class="b">{{ r.rule|n }}</td><td class="b">{{ r.should|n }}</td></tr>{% endfor %}</table>
+{% set L = alert_rows %}{% for i in range([L|length, 2]|max) %}{% set r = L[i] if i < L|length else {} %}<tr><td class="b">{{ r.state|n }}</td><td class="b">{{ r.rule|n }}</td><td class="b">{{ r.should|n }}</td></tr>{% endfor %}</table>
+<p class="small">{% if s.alerts %}상태 · 규칙은 Grafana 상태 이력({{ s.alerts.source or "응답 없음" }})에서 자동, 「울렸어야 했나」는 사람이 적는다 — 알림 규칙은 관측 설계서 5.1 의 일곱.{% else %}알림 상태 이력 미측정 — node/alerts.sh &lt;회차&gt; 로 받는다.{% endif %}</p>
 </section>
 
 <!-- ============ [10] ============ -->
@@ -1190,7 +1237,7 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <div class="note"><b>그래프 규칙</b> — y축은 0에서 · 전후는 같은 축 범위 · 계층 색 통일(OS / 앱 / 경계 / DB / 캐시) · 워밍업 음영 · 캡션에 회차 번호만(조건은 [11.1]) · 본 추세를 본문에 숫자로 다시 적는다 · 노드 지표는 15초 수집이라 그보다 짧은 현상은 안 나온다.</div>
 <h3>그래프 붙일 자리</h3>
 <div class="grid2">
-<table><tr><th>G1 ({{ R }})</th></tr><tr><td style="height:150px">{% if graphs.G1 %}<img src="{{ graphs.G1 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — {{ "기준 회차(--baseline) 없음" if "G1" == "G3" else ("results/contrib.json 없음" if "G1" == "G5" else "원자료 없음") }}</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G1|n }}</td></tr></table>
+<table><tr><th>G1 ({{ R }})</th></tr><tr><td style="height:150px">{% if graphs.G1 %}<img src="{{ graphs.G1 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — {{ "기준 회차(--baseline) 없음" if "G1" == "G3" else ("results/contrib.json 없음" if "G1" == "G5" else "원자료 없음") }}</span>{% endif %}{% if graphs.G1s %}<img src="{{ graphs.G1s }}" style="width:100%;max-height:110mm;object-fit:contain"><br><span class="small">G1 보조 — 단계별 구성 요소 평균 · p95</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G1|n }}</td></tr></table>
 <table><tr><th>G2 ({{ R }})</th></tr><tr><td style="height:150px">{% if graphs.G2 %}<img src="{{ graphs.G2 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — {{ "기준 회차(--baseline) 없음" if "G2" == "G3" else ("results/contrib.json 없음" if "G2" == "G5" else "원자료 없음") }}</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G2|n }}</td></tr></table>
 <table><tr><th>G3</th></tr><tr><td style="height:150px">{% if graphs.G3 %}<img src="{{ graphs.G3 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — {{ "기준 회차(--baseline) 없음" if "G3" == "G3" else ("results/contrib.json 없음" if "G3" == "G5" else "원자료 없음") }}</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G3|n }}</td></tr></table>
 <table><tr><th>G4</th></tr><tr><td style="height:150px">{% if graphs.G4 %}<img src="{{ graphs.G4 }}" style="width:100%;max-height:120mm;object-fit:contain">{% else %}<span class="small">그리지 않음 — {{ "기준 회차(--baseline) 없음" if "G4" == "G3" else ("results/contrib.json 없음" if "G4" == "G5" else "원자료 없음") }}</span>{% endif %}</td></tr><tr><td class="b">읽은 결과 한 줄: {{ nar.graph_notes.G4|n }}</td></tr></table>

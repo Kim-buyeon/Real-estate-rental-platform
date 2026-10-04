@@ -154,6 +154,7 @@ do_stop() {
   log "가져오기"
   for node in $NODES; do
     fetch "$node" "$NODE_RD/metrics-$node.prom.gz" "$RD/metrics/$node.prom.gz"
+    fetch "$node" "$NODE_RD/containers-$node.jsonl.gz" "$RD/containers/$node.jsonl.gz"
     case $node in
       db01|db02)
         # \watch 가 끼우는 빈 줄 · 머리 줄을 거르고 머리를 붙인다

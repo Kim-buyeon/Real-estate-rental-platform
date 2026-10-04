@@ -1,0 +1,124 @@
+# 로그인 시험의 질의 정의 — 실제 값 EXPLAIN(E01) · 질의 속도 · 통계 스냅샷(S4 · S5)이 읽는다(INF-06 #390).
+# 읽는 쪽: chaos-harness/measure/node/explain.sh <회차> <이 파일> [--allow-write] · analyze explain.py.
+#
+# **로컬 추적 db.statement 와 대조 전이다.** 아래 SQL 은 소스(엔티티 매핑 · 매퍼 XML)로 맞춘 모양이다. 로컬 추적 스모크
+# (같은 폴더 README 「로컬 추적 스모크」)에서 실제 문장(db.statement — 값은 ? 로 나온다)과 열 순서 · 별칭 · 문장 수를 맞춰 보고
+# 이 줄을 지운다. 다른 점이 있으면 이 파일을 고친다.
+#
+# 소스로 맞춘 근거
+#   - Hibernate(Boot 4.1) 는 엔티티 조회를 「식별자 다음 속성 이름 순」의 열 목록 · 별칭 <표 앞글자>1_0 으로 낸다.
+#     UserAuth 의 속성 = authType · createdAt · lastLoginAt · passwordHash · providerId · user(user_id).
+#   - 로그인은 문장 넷이다(UserCommandService.login, 트랜잭션 경계 셋 — 9/29 분리):
+#     ① 읽기 트랜잭션 — 인증 수단 조회, 이어서 LoginCredential.from 이 user.getRole() 을 불러 지연 로딩(UserAuth.user 는 LAZY)이
+#        users 를 한 번 더 읽는다. getUserId() 는 식별자라 프록시를 초기화하지 않는다.
+#     ② (BCrypt 대조 — DB 없음)
+#     ③ 쓰기 트랜잭션 — findById 로 다시 읽고(open-in-view false 라 ①의 영속성 문맥이 없다) 변경 감지가 UPDATE.
+#        @DynamicUpdate 가 없어 갱신 가능한 열을 모두 쓴다(created_at 은 updatable=false 라 빠진다).
+#   - 노드: 로그인은 @ReplicaRead 가 없어 primary. 지도 묶음은 @ReplicaRead(PropertyQueryService.getMapClusters)라 읽기 분산이
+#     켜져 있으면 replica(standby)다.
+#
+# 실제 값 — 계정 jmeter+001@rental.test(make-accounts.sh). auth_id · user_id 는 노드마다 달라 그 계정을 찾는 하위 질의로 적었다 —
+# 실제 문장은 상수(바인딩 값)라 계획에 그 하위 질의(InitPlan, 유일 인덱스 한 번)만큼이 더 붙는다. 비교할 때 그 줄은 뺀다.
+# 지도 묶음 값 = run.sh 의 기본 bg_path(API 명세서(매물) 1.12 예시) — 칸 크기는 Java double 로 계산한 값 그대로다
+# ((37.58 − 37.52) ÷ 12, (126.89 − 126.81) ÷ 12, 격자 12 — PropertyQueryService.GRID_DIVISIONS). 좌표 · 칸 값은 JDBC 가
+# float8 로 보낸다(Double) — 그래서 ::float8 를 붙였다.
+
+queries:
+  - id: login_find_auth
+    source: UserAuthRepository.findByAuthTypeAndProviderId (UserCommandService.java:111)
+    kind: read
+    node: primary
+    sql: |
+      select ua1_0.auth_id, ua1_0.auth_type, ua1_0.created_at, ua1_0.last_login_at, ua1_0.password_hash, ua1_0.provider_id, ua1_0.user_id
+        from user_auth ua1_0
+       where ua1_0.auth_type = 'EMAIL'
+         and ua1_0.provider_id = 'jmeter+001@rental.test'
+
+  - id: login_load_user
+    source: UserAuth.user 지연 로딩 — LoginCredential.from 의 user.getRole() (UserCommandService.java:259)
+    kind: read
+    node: primary
+    sql: |
+      select u1_0.user_id, u1_0.annual_income, u1_0.created_at, u1_0.credit_score, u1_0.deleted_at, u1_0.email, u1_0.existing_loan,
+             u1_0.existing_loan_annual_payment, u1_0.has_house, u1_0.name, u1_0.own_fund, u1_0.phone, u1_0.role
+        from users u1_0
+       where u1_0.user_id = (select user_id from user_auth where auth_type = 'EMAIL' and provider_id = 'jmeter+001@rental.test')
+
+  - id: login_find_auth_by_id
+    source: UserAuthRepository.findById — 쓰기 트랜잭션 안 (UserCommandService.java:127)
+    kind: read
+    node: primary
+    sql: |
+      select ua1_0.auth_id, ua1_0.auth_type, ua1_0.created_at, ua1_0.last_login_at, ua1_0.password_hash, ua1_0.provider_id, ua1_0.user_id
+        from user_auth ua1_0
+       where ua1_0.auth_id = (select auth_id from user_auth where auth_type = 'EMAIL' and provider_id = 'jmeter+001@rental.test')
+
+  # 실제 문장은 모든 열에 바인딩 값을 쓴다. 해시를 파일에 적지 않으려고 바뀌지 않는 열은 자기 값으로 적었다 —
+  # 쓰는 열 · 인덱스 열이 같아 계획 · HOT 여부가 같다. 쓰기라 explain.sh --allow-write(BEGIN … ROLLBACK)에서만 돈다 — 운영 작업
+  - id: login_update_last_login
+    source: UserAuth.updateLastLoginAt — 변경 감지 UPDATE (UserCommandService.java:130)
+    kind: write
+    node: primary
+    sql: |
+      update user_auth
+         set auth_type = auth_type, last_login_at = localtimestamp, password_hash = password_hash, provider_id = provider_id, user_id = user_id
+       where auth_id = (select auth_id from user_auth where auth_type = 'EMAIL' and provider_id = 'jmeter+001@rental.test')
+
+  # 지도 2단계(일반 요청 그룹). 칸 집계 뒤 합계가 40 이하면 selectMarkers, 넘으면 한 건 칸의 selectMarkersByIds 가 이어진다 —
+  # 뒤의 식별자는 이 결과에 따라 달라 여기 넣지 않았다(로컬 추적에서 문장 수를 보고 정한다)
+  - id: map_cluster_cells
+    source: PropertyMapper.selectClusterCells (PropertyMapper.xml:183 · PropertyQueryService.java:120)
+    kind: read
+    node: replica
+    sql: |
+      SELECT g.row_index,
+             g.col_index,
+             COUNT(*) AS count,
+             ROUND(AVG(g.latitude), 7) AS latitude,
+             ROUND(AVG(g.longitude), 7) AS longitude,
+             SUM(CASE WHEN g.risk_grade = 'SAFE' THEN 1 ELSE 0 END) AS safe_count,
+             SUM(CASE WHEN g.risk_grade = 'CAUTION' THEN 1 ELSE 0 END) AS caution_count,
+             SUM(CASE WHEN g.risk_grade = 'DANGER' THEN 1 ELSE 0 END) AS danger_count,
+             SUM(CASE WHEN g.risk_grade IS NULL THEN 1 ELSE 0 END) AS unanalyzed_count,
+             MIN(g.property_id) AS representative_id
+        FROM (SELECT p.property_id,
+                     p.latitude,
+                     p.longitude,
+                     ra.risk_grade,
+                     CASE WHEN FLOOR((p.latitude - 37.52::float8) / 0.004999999999999598::float8) < 0 THEN 0
+                          WHEN FLOOR((p.latitude - 37.52::float8) / 0.004999999999999598::float8) > 11 THEN 11
+                          ELSE CAST(FLOOR((p.latitude - 37.52::float8) / 0.004999999999999598::float8) AS INTEGER) END AS row_index,
+                     CASE WHEN FLOOR((p.longitude - 126.81::float8) / 0.006666666666666525::float8) < 0 THEN 0
+                          WHEN FLOOR((p.longitude - 126.81::float8) / 0.006666666666666525::float8) > 11 THEN 11
+                          ELSE CAST(FLOOR((p.longitude - 126.81::float8) / 0.006666666666666525::float8) AS INTEGER) END AS col_index
+                FROM property p
+                LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
+               WHERE p.district = '강서구'
+                 AND p.latitude BETWEEN CAST(37.52::float8 AS NUMERIC) AND CAST(37.58::float8 AS NUMERIC)
+                 AND p.longitude BETWEEN CAST(126.81::float8 AS NUMERIC) AND CAST(126.89::float8 AS NUMERIC)) g
+       GROUP BY g.row_index, g.col_index
+       ORDER BY g.row_index, g.col_index
+
+snapshots:
+  # S4 — 옵티마이저가 아는 행수(pg_class.reltuples)와 실제 행수. 둘이 크게 다르면 계획이 틀린 추정 위에 선다
+  - id: user_auth_rows
+    sql: |
+      SELECT 'user_auth' AS rel, (SELECT reltuples::bigint FROM pg_class WHERE oid = 'user_auth'::regclass) AS reltuples,
+             (SELECT count(*) FROM user_auth) AS actual
+  - id: users_rows
+    sql: |
+      SELECT 'users' AS rel, (SELECT reltuples::bigint FROM pg_class WHERE oid = 'users'::regclass) AS reltuples,
+             (SELECT count(*) FROM users) AS actual
+  # S5 — 조회 조건 열의 통계. provider_id 는 이메일이라 값 목록(most_common_vals · histogram_bounds)을 내지 않고 개수만 낸다
+  - id: user_auth_stats
+    sql: |
+      SELECT attname, null_frac, n_distinct, correlation,
+             CASE WHEN attname = 'auth_type' THEN most_common_vals::text END AS most_common_vals,
+             CASE WHEN attname = 'auth_type' THEN most_common_freqs::text END AS most_common_freqs,
+             cardinality(most_common_freqs) AS mcv_count,
+             (SELECT count(*) FROM unnest(histogram_bounds::text::text[])) AS histogram_count
+        FROM pg_stats
+       WHERE schemaname = 'public'
+         AND tablename = 'user_auth'
+         AND attname IN ('provider_id', 'auth_type')
+       ORDER BY attname

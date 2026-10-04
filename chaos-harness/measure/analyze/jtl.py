@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from collections import defaultdict
 from pathlib import Path
 
@@ -11,6 +12,7 @@ P95_MIN = 100     # p95 를 쓸 수 있는 최소 표본
 P99_MIN = 1000    # p99 를 쓸 수 있는 최소 표본
 TARGET_P95_MS = 500
 TS_BUCKET = 10    # 시계열 창(초)
+SETUP_SUFFIX = " setup"   # chaos-harness/jmeter 플랜의 준비 표본 레이블 꼬리(예: 「auth/signup setup」)
 
 
 def read_rows(path: Path):
@@ -18,6 +20,10 @@ def read_rows(path: Path):
     rows = []
     with open(path, "r", encoding="utf-8", errors="replace", newline="") as f:
         for r in csv.DictReader(f):
+            # 「 setup」 으로 끝나는 레이블(시험 계정 가입 등 준비 표본)은 통계에서 뺀다 — 통계 구간도 이 표본으로 정하지 않는다.
+            # 「 bg」(배경 부하)는 그대로 둔다 — 엔드포인트 키는 레이블이 아니라 URL 로 정하므로 같은 경로와 합쳐진다
+            if (r.get("label") or "").endswith(SETUP_SUFFIX):
+                continue
             try:
                 ts = int(float(r["timeStamp"])) / 1000.0
                 el = float(r["elapsed"])
@@ -130,6 +136,16 @@ def saturation(overall, labels, ts, warmup):
     }
 
 
+def _schedule_end(jtl_path: Path):
+    """회차 폴더의 steps.json(run.sh) 에서 부하 일정이 끝나는 시각(초). 없거나 읽지 못하면 None."""
+    sp = jtl_path.parent.parent / "steps.json"
+    try:
+        st = json.loads(sp.read_text(encoding="utf-8"))
+        return st["start_epoch_ms"] / 1000.0 + max(s["to_s"] for s in st["steps"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def analyze(path: Path, window):
     """통계 구간은 JMeter 가 정한다 — 시작 = 첫 표본 시작(timeStamp, 5.6.3 기본 jmeter.properties 의
     sampleresult.timestamp.start=true), 끝 = 마지막 (timeStamp + elapsed). 워밍업은 이 시작부터 센다.
@@ -137,6 +153,14 @@ def analyze(path: Path, window):
     rows_all = read_rows(path)
     rec_lo, rec_hi = window.start, window.end
     rows_all = [r for r in rows_all if (rec_lo is None or r["ts"] >= rec_lo) and (rec_hi is None or r["ts"] <= rec_hi)]
+    # 부하 일정(steps.json)이 끝난 뒤 시작한 표본은 뺀다 — 일정이 끝나면 Throughput Shaping Timer 가 시험을 멈추고, 그때
+    # 날아가던 요청이 Non HTTP SocketException 으로 남는다(#390 로컬 스모크: 30초 일정 뒤 0 ~ 2.5초에 시작한 11건). 서버 탓이 아니다
+    tail_dropped = 0
+    sched_end = _schedule_end(path)
+    if sched_end is not None:
+        kept = [r for r in rows_all if r["ts"] < sched_end]
+        tail_dropped = len(rows_all) - len(kept)
+        rows_all = kept
     if not rows_all:
         return None, []
     window.start = rows_all[0]["ts"]
@@ -162,6 +186,7 @@ def analyze(path: Path, window):
     usable = "p99" if overall["count"] >= P99_MIN else ("p95" if overall["count"] >= P95_MIN else "참고(표본 부족)")
     res = {
         "requests": overall["count"],
+        "tail_dropped": tail_dropped,
         "duration_sec": rnd(dur, 1),
         "usable_tail": usable,
         "overall": overall,

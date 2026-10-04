@@ -70,10 +70,59 @@ def g1(s, path):
     d.plot(x, [p["error_rate"] for p in ts], color="#c62828", lw=1.6)
     d.set_ylabel("오류율 (%)")
     d.set_xlabel("경과 시간 (초, 10초 창)")
+    st = s.get("steps") or {}
+    marks = [x["from_rel_s"] for x in st.get("steps") or [] if x.get("from_rel_s") is not None] if st.get("basis") == "steps.json" else []
     for ax in axes:
         ax.set_ylim(bottom=0)
         _shade(ax, w)
-    _caption(fig, f"G1 ({s['round']}) — 음영: 워밍업 {w}초")
+        for m in marks[1:]:      # 단계 경계 점선(첫 단계 시작은 0 이라 뺀다). 10초 창 대체는 선이 너무 많아 긋지 않는다
+            ax.axvline(m, color=MUTED, lw=0.8, ls=":", zorder=1)
+    _caption(fig, f"G1 ({s['round']}) — 음영: 워밍업 {w}초" + (" · 점선: 단계 경계" if marks[1:] else ""))
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
+# 단계별 분해의 구성 요소 → 막대 색(계층). 합 밖(큐 · 풀)은 막대에 넣지 않는다 — [7.1] 과 같다
+STEP_PARTS = [("bcrypt", "BCrypt", "앱"), ("methods_other", "그 밖의 메서드", "앱"), ("sql", "SQL", "DB"), ("redis", "Redis", "캐시"),
+              ("external", "외부", "외부"), ("other_spans", "기타 구간", "앱"), ("unexplained", "설명 안 됨", "설명 안 됨")]
+
+
+def g1_steps(s, path):
+    """G1 보조 — 단계마다 요청 하나의 구성 요소 평균(누적 막대, 왼쪽 축)과 도구 p95(선, 아래 판). 이중 축을 쓰지 않는다."""
+    sd = s.get("steps") or {}
+    if sd.get("basis") != "steps.json":      # 10초 창 대체는 막대가 수십 개라 그리지 않는다 — summary 의 steps 로 본다
+        return None
+    st = [x for x in (sd.get("steps") or []) if x.get("count") and not x.get("partial")]
+    if not st or not any(x.get("components") for x in st):
+        return None
+    labels = [f"{x['index']}\n{x['target_rps']:g}→{x['actual_rps']:.1f}" if x.get("target_rps") else f"{x['index']}\n{x['actual_rps']:.1f}"
+              for x in st]
+    xs = list(range(len(st)))
+    fig, (a, b) = plt.subplots(2, 1, figsize=(8.2, 5.6), sharex=True, gridspec_kw={"height_ratios": [2, 1.2]})
+    bottom = [0.0] * len(st)
+    alpha = {"BCrypt": 1.0, "그 밖의 메서드": 0.55, "기타 구간": 0.3}
+    for key, name, lay in STEP_PARTS:
+        vals = [((x.get("components") or {}).get(key) or 0.0) for x in st]
+        if not any(vals):
+            continue
+        a.bar(xs, vals, bottom=bottom, color=LAYER[lay], alpha=alpha.get(name, 1.0), edgecolor="white", linewidth=0.8, label=name,
+              hatch="//" if lay == "설명 안 됨" else None)
+        bottom = [p + q for p, q in zip(bottom, vals)]
+    a.set_ylabel("요청 하나 평균 (ms, 서버 구간)")
+    a.legend(loc="upper left", bbox_to_anchor=(1.01, 1))
+    b.plot(xs, [x["p95"] if x["p95"] is not None else float("nan") for x in st], "-o", color=LAYER["DB"], lw=2, ms=4, label="p95 (도구)")
+    b.axhline(500, color="#c62828", lw=1, alpha=0.7)
+    b.set_ylabel("p95 (ms)")
+    sat = (s.get("steps") or {}).get("saturation")
+    for ax in (a, b):
+        ax.set_ylim(bottom=0)
+        if sat and sat.get("index") in [x["index"] for x in st]:
+            ax.axvline([x["index"] for x in st].index(sat["index"]), color="#c62828", lw=1, ls="--")
+    b.set_xticks(xs)
+    b.set_xticklabels(labels)
+    b.set_xlabel("단계 (목표 → 실제 TPS)")
+    _caption(fig, f"G1 보조 ({s['round']}) — 단계별 구성 요소 평균 · p95" + (f" · 빨간 점선: 포화 단계 {sat['index']}" if sat else ""))
     fig.savefig(path)
     plt.close(fig)
     return path
@@ -293,7 +342,7 @@ def g7(s, path):
 def render_all(s, base, summaries, sig, contrib, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
     made = {}
-    for key, fn in (("G1", lambda p: g1(s, p)), ("G2", lambda p: g2(s, p)), ("G3", lambda p: g3(s, base, p)),
+    for key, fn in (("G1", lambda p: g1(s, p)), ("G1s", lambda p: g1_steps(s, p)), ("G2", lambda p: g2(s, p)), ("G3", lambda p: g3(s, base, p)),
                     ("G4", lambda p: g4(s, p)), ("G5", lambda p: g5(contrib, p)), ("G6", lambda p: g6(summaries, sig, p)),
                     ("G7", lambda p: g7(s, p))):
         p = out_dir / f"{key}.png"

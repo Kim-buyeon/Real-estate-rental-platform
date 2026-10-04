@@ -33,6 +33,11 @@ def run_round(name, baseline=None, report=False):
     miss = s["resources"].get("missing_metrics") or []
     if miss:
         print(f"  없는 지표 {len(miss)}개: " + ", ".join(miss[:8]) + (" …" if len(miss) > 8 else ""))
+    st = s.get("steps") or {}
+    if st.get("basis") == "steps.json":
+        sat = st.get("saturation")
+        print(f"  단계 {len(st['steps'])}개 · 포화(보조) " + (f"단계 {sat['index']} 실제 {sat['actual_rps']} TPS · p95 {sat['p95']} ms — {' · '.join(sat['conditions'])}"
+                                                     if sat else "닿지 않음"))
     if s.get("comparison"):
         for m in s["comparison"]["metrics"][:6]:
             print(f"  {m['name']}: {m['base']} → {m['cur']} ({m['delta_pct']}%, {m['verdict']})")

@@ -9,7 +9,7 @@ import zlib
 from collections import defaultdict
 from pathlib import Path
 
-from .util import open_text, rnd, percentile, canon_node
+from .util import open_text, rnd, percentile, canon_node, route_key
 
 # 필요한 이름만 남긴다 — 노드 하나가 시간당 수백만 표본이라 다 들고 있으면 메모리가 모자란다
 KEEP_PREFIXES = (
@@ -25,8 +25,18 @@ KEEP_PREFIXES = (
     "process_start_time_seconds", "container_memory",
     "redis_keyspace_", "redis_evicted_keys_total", "redis_memory_used_bytes", "redis_memory_max_bytes",
     "redis_connected_clients", "nginx_", "pg_", "rental_pg_",
+    # 관측 설계서 3.2 의 나머지(#390) — 이름은 node exporter v1.9.1 기본 수집기(stat · vmstat · filesystem · diskstats ·
+    # netdev · netstat · timex)와 운영 Compose 가 켠 systemd 수집기의 것. node_filesystem_files 는 files_free 까지 걸린다
+    "node_procs_running", "node_procs_blocked", "node_vmstat_pgmajfault",
+    "node_filesystem_avail_bytes", "node_filesystem_size_bytes", "node_filesystem_files", "node_filesystem_readonly",
+    "node_disk_read_time_seconds_total", "node_disk_write_time_seconds_total",
+    "node_network_receive_errs_total", "node_network_transmit_errs_total",
+    "node_network_receive_drop_total", "node_network_transmit_drop_total",
+    "node_netstat_Tcp_RetransSegs", "node_netstat_Tcp_OutSegs", "node_netstat_Tcp_CurrEstab",
+    "node_timex_sync_status", "node_timex_offset_seconds", "node_boot_time_seconds", "node_systemd_unit_state",
 )
-KEEP_BUCKETS = ("hikaricp_connections_acquire_seconds_bucket",)
+# W1 서버 쪽 지연 — application.yml 의 slo(100ms · 300ms · 500ms · 1s · 3s)가 낸 누적 버킷. 대조용(양식 [0.2])
+KEEP_BUCKETS = ("hikaricp_connections_acquire_seconds_bucket", "http_server_requests_seconds_bucket")
 
 APP_VCPU = 2
 DB_VCPU = 2
@@ -34,6 +44,10 @@ PG_MAX_CONN_DEFAULT = 48
 CONNTRACK_DEFAULT = 65536
 _DISK_DEV = re.compile(r"^(nvme\d+n\d+|xvd[a-z]+|sd[a-z]+|vd[a-z]+)$")
 _NET_DEV = re.compile(r"^(eth|ens|enp|eno)")
+# 실제 마운트만 — 메모리 · 가상 파일시스템과 컨테이너 자리는 뺀다(O6)
+_FS_SKIP_TYPES = {"tmpfs", "devtmpfs", "overlay", "squashfs", "nsfs", "proc", "sysfs", "cgroup", "cgroup2", "autofs",
+                  "rpc_pipefs", "ramfs", "fuse.lxcfs", "devpts", "mqueue", "hugetlbfs", "erofs"}
+_FS_SKIP_MOUNTS = ("/run", "/var/lib/docker", "/var/lib/containers", "/sys", "/proc", "/dev")
 
 
 # ---------------------------------------------------------------- 파서
@@ -355,7 +369,123 @@ def node_os(m: NodeMetrics, win, missing):
                  ("oom_kills_delta", "node_vmstat_oom_kill")):
         if res.get(k) is None:
             missing.append(f"{m.node}:{v}")
+    node_os_extra(m, win, missing, res, devf, netf)
     return res
+
+
+def node_os_extra(m: NodeMetrics, win, missing, res, devf, netf):
+    """관측 설계서 3.2 의 O2 · O4 · O6 · O8 · O9 · O10 · O12 · O13 · O14 (#390). 없으면 missing 에 이름을 남긴다."""
+    t = "node"
+
+    def g(name, filt=None, whole=False):
+        return _in(_series(m.agg(t, name, filt=filt).get(None, {})), win, whole=whole)
+
+    def note(key, name):
+        if res.get(key) is None:
+            missing.append(f"{m.node}:{name}")
+
+    # O2 — 실행 대기 · IO 에 막힌 프로세스 수(게이지, stat 수집기)
+    res["procs_running"] = gstats(g("node_procs_running"))
+    res["procs_blocked"] = gstats(g("node_procs_blocked"))
+    note("procs_running", "node_procs_running")
+    # O4 — 주요 페이지 폴트(디스크에서 다시 읽은 페이지) 초당
+    pf = g("node_vmstat_pgmajfault")
+    if pf:
+        rs = [r for _, r in rates(pf)]
+        res["pgmajfault_per_sec"] = {"max": rnd(max(rs), 2) if rs else None, "mean": rnd(sum(rs) / len(rs), 2) if rs else None,
+                                     "delta": rnd(win_increase(pf, win), 0)}
+    else:
+        res["pgmajfault_per_sec"] = None
+    note("pgmajfault_per_sec", "node_vmstat_pgmajfault")
+    # O6 — 실제 마운트별 사용률 · inode · 읽기 전용
+    fsf = lambda d: d.get("fstype") not in _FS_SKIP_TYPES and not d.get("mountpoint", "").startswith(_FS_SKIP_MOUNTS)
+    fss = {}
+    for mp, d in m.agg(t, "node_filesystem_avail_bytes", filt=fsf, by="mountpoint").items():
+        mf = (lambda x: (lambda d_: fsf(d_) and d_.get("mountpoint") == x))(mp)
+        av = _in(_series(d), win, whole=True)
+        size = _series(m.agg(t, "node_filesystem_size_bytes", filt=mf).get(None, {}))
+        files = _series(m.agg(t, "node_filesystem_files", filt=mf).get(None, {}))
+        ffree = _in(_series(m.agg(t, "node_filesystem_files_free", filt=mf).get(None, {})), win, whole=True)
+        ro = _in(_series(m.agg(t, "node_filesystem_readonly", filt=mf).get(None, {})), win, whole=True)
+        fstype = next((dict(l).get("fstype") for l in m.data[t]["node_filesystem_avail_bytes"] if dict(l).get("mountpoint") == mp), None)
+        sz = size[-1][1] if size else None
+        amin = min(v for _, v in av) if av else None
+        fl = files[-1][1] if files else None
+        fmin = min(v for _, v in ffree) if ffree else None
+        fss[mp] = {"fstype": fstype, "size_bytes": sz, "avail_min_bytes": amin,
+                   "used_pct_max": rnd(100.0 * (1 - amin / sz), 1) if sz and amin is not None else None,
+                   "inodes_used_pct_max": rnd(100.0 * (1 - fmin / fl), 1) if fl and fmin is not None else None,
+                   "readonly": (max(v for _, v in ro) >= 1) if ro else None}
+    res["filesystems"] = fss or None
+    res["fs_used_pct_max"] = max((v["used_pct_max"] for v in fss.values() if v["used_pct_max"] is not None), default=None)
+    res["fs_inodes_used_pct_max"] = max((v["inodes_used_pct_max"] for v in fss.values() if v["inodes_used_pct_max"] is not None), default=None)
+    res["fs_readonly"] = any(v["readonly"] for v in fss.values()) if fss else None
+    note("filesystems", "node_filesystem_avail_bytes")
+    # O8 — 요청당 대기 시간 = (읽기 + 쓰기 시간 증가) ÷ (완료 수 증가). iostat 의 r_await · w_await 와 같은 정의
+    rt, wt = g("node_disk_read_time_seconds_total", devf), g("node_disk_write_time_seconds_total", devf)
+    rc, wc = g("node_disk_reads_completed_total", devf), g("node_disk_writes_completed_total", devf)
+    if rt and wt and rc and wc:
+        drt, dwt, drc, dwc = increase(rt), increase(wt), increase(rc), increase(wc)
+        # 긁기 사이마다의 값 — 그중 최대(짧은 몰림)
+        tm = defaultdict(float)
+        cn = defaultdict(float)
+        for pts, acc in ((rt, tm), (wt, tm), (rc, cn), (wc, cn)):
+            for s_, v in pts:
+                acc[s_] += v
+        stamps = sorted(set(tm) & set(cn))
+        per = []
+        for a, b in zip(stamps, stamps[1:]):
+            dn, dt_ = cn[b] - cn[a], tm[b] - tm[a]
+            if dn > 0 and dt_ >= 0:
+                per.append(1000.0 * dt_ / dn)
+        res["disk_await_ms"] = {"read": rnd(1000.0 * drt / drc, 3) if drc else None,
+                                "write": rnd(1000.0 * dwt / dwc, 3) if dwc else None,
+                                "all": rnd(1000.0 * (drt + dwt) / (drc + dwc), 3) if drc + dwc else None,
+                                "max_interval": rnd(max(per), 3) if per else None}
+    else:
+        res["disk_await_ms"] = None
+    note("disk_await_ms", "node_disk_read_time_seconds_total")
+    # O9 — 물리 장치의 오류 · 버린 패킷(회차 증가) · TCP 재전송
+    net = {}
+    for k, n in (("rx_errs", "node_network_receive_errs_total"), ("tx_errs", "node_network_transmit_errs_total"),
+                 ("rx_drop", "node_network_receive_drop_total"), ("tx_drop", "node_network_transmit_drop_total")):
+        pts = g(n, netf)
+        net[k] = rnd(increase(pts), 0) if pts else None
+    res["net_errors"] = net if any(v is not None for v in net.values()) else None
+    note("net_errors", "node_network_receive_errs_total")
+    rs_, os_ = g("node_netstat_Tcp_RetransSegs"), g("node_netstat_Tcp_OutSegs")
+    if rs_:
+        d_rs = increase(rs_)
+        d_os = increase(os_) if os_ else None
+        res["tcp_retrans"] = {"delta": rnd(d_rs, 0), "per_sec": rnd(d_rs / (win.duration or 1), 3),
+                              "ratio_pct": rnd(100.0 * d_rs / d_os, 3) if d_os else None}
+    else:
+        res["tcp_retrans"] = None
+    note("tcp_retrans", "node_netstat_Tcp_RetransSegs")
+    # O10 — 맺어진 TCP 연결 수
+    res["tcp_estab"] = gstats(g("node_netstat_Tcp_CurrEstab"))
+    note("tcp_estab", "node_netstat_Tcp_CurrEstab")
+    # O12 — 시간 동기(1 = 동기) · 오차. 워밍업 포함 회차 전체
+    ss, off = g("node_timex_sync_status", whole=True), g("node_timex_offset_seconds", whole=True)
+    res["time_sync"] = ({"synced_min": min(v for _, v in ss),
+                         "offset_abs_max_ms": rnd(max(abs(v) for _, v in off) * 1000, 3) if off else None} if ss else None)
+    note("time_sync", "node_timex_sync_status")
+    # O13 — 부팅 시각이 회차 중에 바뀌면 재부팅
+    bt = g("node_boot_time_seconds", whole=True)
+    res["boot"] = {"rebooted": len({round(v) for _, v in bt}) > 1, "boot_time": bt[-1][1]} if bt else None
+    note("boot", "node_boot_time_seconds")
+    # O14 — 회차 구간에 한 번이라도 failed 였던 유닛. 노드에서 직접 긁으므로 상태 다섯 줄이 다 온다 — failed 만 본다
+    su = m.data.get(t, {}).get("node_systemd_unit_state", {})
+    if su:
+        failed = set()
+        for lab, pts in su.items():
+            d = dict(lab)
+            if d.get("state") == "failed" and any(v >= 1 for _, v in _in(sorted(pts), win, whole=True)):
+                failed.add(d.get("name", "?"))
+        res["systemd_failed"] = sorted(failed)
+    else:
+        res["systemd_failed"] = None
+    note("systemd_failed", "node_systemd_unit_state")
 
 
 # ---------------------------------------------------------------- 앱 슬롯
@@ -473,6 +603,28 @@ def app_slot(m: NodeMetrics, target, win, missing):
     res["server_requests_by_uri"] = {k: rnd(v, 0) for k, v in sorted(by_uri.items(), key=lambda x: -x[1])}
     if not reqs:
         missing.append(f"{slot}:http_server_requests_seconds_count")
+    # W1 서버 쪽 지연 · 5xx — (uri, status) 별 요청 수 증가와 누적 버킷 증가. 슬롯을 합쳐 analyze() 가 분위를 낸다
+    cnt_us = {}
+    for lab, pts in m.data.get(target, {}).get("http_server_requests_seconds_count", {}).items():
+        d = dict(lab)
+        if not notact(d):
+            continue
+        p = _in(sorted(pts), win)
+        if p:
+            k = (d.get("uri", "?"), d.get("status", "?"))
+            cnt_us[k] = cnt_us.get(k, 0.0) + win_increase(p, win)
+    bk_us = defaultdict(lambda: defaultdict(float))
+    for lab, pts in m.data.get(target, {}).get("http_server_requests_seconds_bucket", {}).items():
+        d = dict(lab)
+        if not notact(d) or "le" not in d:
+            continue
+        p = _in(sorted(pts), win)
+        if p:
+            bk_us[(d.get("uri", "?"), d.get("status", "?"))][d["le"]] += increase(p)
+    res["_http_counts"] = cnt_us
+    res["_http_buckets"] = {k: dict(v) for k, v in bk_us.items()}
+    if reqs and not bk_us:
+        missing.append(f"{slot}:http_server_requests_seconds_bucket")
     # Redis 명령 지연(lettuce) — 있으면 평균
     lsum = None
     lcnt = None
@@ -486,6 +638,10 @@ def app_slot(m: NodeMetrics, target, win, missing):
     # 실행기 큐 · 스레드 · 파일 · CPU · 재시작
     eq = m.agg(target, "executor_queued_tasks", by="name")
     res["executor_queued_max"] = {k or "-": max((v for _, v in _in(_series(d), win)), default=None) for k, d in eq.items()} or None
+    ea = m.agg(target, "executor_active_threads", by="name")
+    res["executor_active_max"] = {k or "-": max((v for _, v in _in(_series(d), win)), default=None) for k, d in ea.items()} or None
+    # 단계별 집계용 — JVM 사용 메모리(힙 + 힙 밖, 모든 영역 합). 슬롯 컨테이너 RSS 는 원천이 없다(cAdvisor 없음)
+    res["_jvm_ts"] = _in(_series(m.agg(target, "jvm_memory_used_bytes").get(None, {})), win, whole=True)
     th = gauge("jvm_threads_live_threads")
     res["threads_live"] = gstats(th)
     res["open_files"] = gstats(gauge("process_files_open_files"))
@@ -493,6 +649,7 @@ def app_slot(m: NodeMetrics, target, win, missing):
     res["process_cpu_pct"] = {"max": rnd(max(v for _, v in pc) * 100, 1), "mean": rnd(sum(v for _, v in pc) / len(pc) * 100, 1)} if pc else None
     st = gauge("process_start_time_seconds")
     res["restarts"] = len({round(v) for _, v in st}) - 1 if st else None
+    res["_start_ts"] = _in(_series(m.agg(target, "process_start_time_seconds").get(None, {})), win, whole=True)
     cm = gauge("container_memory_usage_bytes")
     res["container_memory_max_bytes"] = max(v for _, v in cm) if cm else None
     return res
@@ -576,6 +733,10 @@ def postgres(m: NodeMetrics, win, missing):
     res["replication_lag_max_sec"] = gmax(lag) if lag else None
     res["max_tx_duration_sec"] = gmax("pg_stat_activity_max_tx_duration")
     res["blocked_sessions_max"] = gmax("rental_pg_blocked_sessions")
+    # DB 재시작 — postmaster 시작 시각이 회차 중에 바뀌었나([7.8] 프로세스 종료 · DB). exporter 의 postmaster 수집기 지표라
+    # 없으면 None 으로 두고 missing 에 올리지 않는다(판정에 꼭 필요한 지표가 아니다)
+    ps = _in(_series(m.agg(t, "pg_postmaster_start_time_seconds").get(None, {})), win, whole=True)
+    res["restarts"] = len({round(v) for _, v in ps}) - 1 if ps else None
     cm = gmax("container_memory_usage_bytes")
     res["container_memory_max_bytes"] = cm
     return res
@@ -620,11 +781,98 @@ def nginx(m: NodeMetrics, win, missing):
 
 # ---------------------------------------------------------------- 묶음
 
-def analyze(metrics_dir: Path, win, tool_requests=None):
-    """노드 파일 전부를 읽어 자원 요약 · 헤드룸 · G2 시계열을 만든다."""
+def _between(pts, lo, hi):
+    return [(t, v) for t, v in pts if lo <= t <= hi]
+
+
+def _step_node(o, steps, acc):
+    """단계마다 노드 CPU 평균 · 최대 — node_os 의 시계열(_cpu_ts)에서. 그 시계열의 점 하나는 앞 긁기부터 그 긁기까지의
+    비율이라 간격 가운데(시각 − 간격/2)가 단계 안인 점만 센다 — 단계 경계의 점이 앞 단계 몫을 끌고 오지 않게."""
+    pts = o.get("_cpu_ts") or []
+    gaps = sorted(b[0] - a[0] for a, b in zip(pts, pts[1:]))
+    half = gaps[len(gaps) // 2] / 2 if gaps else 0.0
+    for st in steps:
+        v = [x for _, x in _between(pts, st["lo"] + half, st["hi"] + half)]
+        if v:
+            acc[st["index"]]["nodes"][o["_node"]] = {"cpu_mean": rnd(sum(v) / len(v), 1), "cpu_max": rnd(max(v), 1)}
+
+
+def _step_slot(m, tg, key, s, steps, acc):
+    """단계마다 슬롯의 바쁜 스레드 · JVM 메모리 · 풀(대기 · 활성 · 획득 평균) · 재시작."""
+    pools = {}
+    for st in steps:
+        lo, hi = st["lo"], st["hi"]
+        busy = [v for _, v in _between(s.get("_tomcat_ts") or [], lo, hi)]
+        jvm = [v for _, v in _between(s.get("_jvm_ts") or [], lo, hi)]
+        heap = [v for _, v in _between(s.get("_heap_ts") or [], lo, hi)]
+        pool_out = {}
+        for pool, p in (s.get("hikari") or {}).items():
+            f = pools.setdefault(pool, (lambda x: (lambda d: d.get("pool") == x))(pool))
+            pend = [v for _, v in _between(p.get("_pending_ts") or [], lo, hi)]
+            act = [v for _, v in _between(p.get("_active_ts") or [], lo, hi)]
+            a_sum = _between(_series(m.agg(tg, "hikaricp_connections_acquire_seconds_sum", filt=f).get(None, {})), lo, hi)
+            a_cnt = _between(_series(m.agg(tg, "hikaricp_connections_acquire_seconds_count", filt=f).get(None, {})), lo, hi)
+            ds, dc = (increase(a_sum), increase(a_cnt)) if a_sum and a_cnt else (None, None)
+            pool_out[pool] = {"pending_max": max(pend) if pend else None, "active_max": max(act) if act else None, "max": p.get("max"),
+                              "acquire_mean_ms": rnd(ds / dc * 1000, 3) if dc else None}
+        # 재시작 — 단계 직전 값부터 단계 안 값까지 시작 시각이 몇 번 바뀌었나
+        stp = s.get("_start_ts") or []
+        before = [v for t, v in stp if t < lo][-1:]
+        vals = before + [v for _, v in _between(stp, lo, hi)]
+        restarts = len({round(v) for v in vals}) - 1 if vals else None
+        acc[st["index"]]["slots"][key] = {
+            "busy_max": max(busy) if busy else None, "busy_mean": rnd(sum(busy) / len(busy), 2) if busy else None,
+            "tomcat_max": s.get("tomcat_max"), "jvm_used_max_bytes": max(jvm) if jvm else None,
+            "heap_used_max_bytes": max(heap) if heap else None, "heap_max_bytes": s.get("heap_max_bytes"),
+            "pools": pool_out, "restarts": restarts}
+
+
+def server_latency(slots_raw):
+    """W1 — 슬롯을 합친 (uri, status) 별 요청 수 · 버킷 증가 → 경로별 p50 · p95(구간 보간) · 5xx 비율.
+    application.yml 의 slo 다섯 칸(0.1 · 0.3 · 0.5 · 1 · 3 초) 사이 보간이라 대조용이다 — 판정은 부하 도구(jtl)."""
+    cnt = defaultdict(float)
+    bk = defaultdict(lambda: defaultdict(float))
+    for s in slots_raw:
+        for k, v in (s.get("_http_counts") or {}).items():
+            cnt[k] += v
+        for k, d in (s.get("_http_buckets") or {}).items():
+            for le, v in d.items():
+                bk[k][le] += v
+    if not cnt and not bk:
+        return None
+    by_uri = defaultdict(lambda: {"count": 0.0, "c5xx": 0.0, "buckets": defaultdict(float), "by_status": {}})
+    for (uri, status), c in cnt.items():
+        u = by_uri[uri]
+        u["count"] += c
+        if str(status).startswith("5"):
+            u["c5xx"] += c
+    for (uri, status), d in bk.items():
+        u = by_uri[uri]
+        for le, v in d.items():
+            u["buckets"][le] += v
+        q95 = _hist_quantile(d, 0.95)
+        u["by_status"][status] = {"count": rnd(cnt.get((uri, status)), 0), "p95_ms": rnd(q95 * 1000, 1) if q95 is not None else None}
+    out = {}
+    for uri, u in sorted(by_uri.items(), key=lambda x: -x[1]["count"]):
+        q50, q95 = _hist_quantile(u["buckets"], 0.5), _hist_quantile(u["buckets"], 0.95)
+        out[uri] = {"count": rnd(u["count"], 0), "p50_ms": rnd(q50 * 1000, 1) if q50 is not None else None,
+                    "p95_ms": rnd(q95 * 1000, 1) if q95 is not None else None,
+                    "p95_over_3s": bool(q95 is not None and q95 >= 3.0),
+                    "route": route_key(uri),          # 엔드포인트 키 — jtl · Nginx · 추적과 같은 키로 잇는다([7.1])
+                    "rate_5xx_pct": rnd(100.0 * u["c5xx"] / u["count"], 3) if u["count"] else None,
+                    "by_status": u["by_status"]}
+    return out
+
+
+def analyze(metrics_dir: Path, win, tool_requests=None, steps=None):
+    """노드 파일 전부를 읽어 자원 요약 · 헤드룸 · G2 시계열을 만든다.
+    steps — [{"index", "lo", "hi"}](유닉스 초)를 주면 단계마다의 노드 CPU · 슬롯 자원을 out["steps"] 에 낸다(steps.py 가 쓴다)."""
     missing = []
     out = {"nodes": {}, "slots": {}, "postgres": {}, "redis": None, "nginx": None}
     ts = {}
+    steps = [st for st in (steps or []) if st.get("lo") is not None and st.get("hi") is not None]
+    step_acc = defaultdict(lambda: {"nodes": {}, "slots": {}})
+    slots_raw = []
     files = sorted(metrics_dir.glob("*.prom*")) if metrics_dir.exists() else []
     if not files:
         out["missing_metrics"] = ["metrics/ 폴더 없음"]
@@ -644,11 +892,17 @@ def analyze(metrics_dir: Path, win, tool_requests=None):
                 ts[f"{node} 메모리"] = {"layer": "OS", "group": ("앱노드 메모리" if node.startswith("app") else "DB노드 메모리"), "points": rel(o["_mem_ts"])}
             if o.get("_disk_ts") and node.startswith("db"):
                 ts[f"{node} 디스크 util"] = {"layer": "OS", "group": "DB 디스크 util", "points": rel(o["_disk_ts"])}
+            if steps:
+                o["_node"] = node
+                _step_node(o, steps, step_acc)
             out["nodes"][node] = {k: v for k, v in o.items() if not k.startswith("_")}
         for tg in m.targets():
             if tg.startswith("app"):
                 s = app_slot(m, tg, win, missing)
                 key = f"{node}/{tg}"
+                if steps:
+                    _step_slot(m, tg, key, s, steps, step_acc)
+                slots_raw.append({"_http_counts": s.get("_http_counts"), "_http_buckets": s.get("_http_buckets")})
                 if s.get("tomcat_max") and s.get("_tomcat_ts"):
                     ts[f"{key} 스레드"] = {"layer": "앱", "group": "요청 스레드", "points": rel([(a, 100.0 * b / s["tomcat_max"]) for a, b in s["_tomcat_ts"]])}
                 if s.get("heap_max_bytes") and s.get("_heap_ts"):
@@ -671,9 +925,12 @@ def analyze(metrics_dir: Path, win, tool_requests=None):
                 out["nginx"] = nginx(m, win, missing)
         del m
     out["app_totals"] = _app_totals(out["slots"], tool_requests, win)
+    out["server_latency"] = server_latency(slots_raw)
     out["headroom"] = headroom(out)
     out["timeseries"] = ts
     out["missing_metrics"] = sorted(set(missing))
+    if steps:
+        out["steps"] = {str(idx): v for idx, v in sorted(step_acc.items())}   # JSON 키는 글자다 — 처음부터 글자로
     return out
 
 
