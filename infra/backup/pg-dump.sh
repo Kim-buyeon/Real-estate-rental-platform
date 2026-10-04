@@ -102,7 +102,24 @@ read -r -a ENCRYPT_ARGV <<< "$BACKUP_ENCRYPT_CMD"
 
 # ── 1. primary 일 때만 돈다 ──
 # timer 는 DB-01 · DB-02 양쪽에 두고 자기가 primary 인지 확인한다 — 승격 뒤 새 primary 가 그대로 이어받는다(설계서 7.2).
-IN_RECOVERY=$("$PSQL" -w -Atqc 'SELECT pg_is_in_recovery()')
+# 부팅 직후의 따라잡기 실행(timer 의 Persistent=true)은 DB 컨테이너가 접속을 받기 전에 돌 수 있다 — 2026-10-04 이 작업이
+# 14:42:40 에 시작했고 postgres 컨테이너는 14:42:42 에 떴다(#392, 같은 일 2026-09-28 #286). 유닛은 다시 시도하지 않으므로 여기서 기다린다.
+# psql 종료 코드 2(접속 실패)일 때만 기다린다 — 1 · 3(질의 · 스크립트 오류)은 기다려도 같으니 바로 실패한다.
+# 상한 5분(5초 × 60) — 부팅 → 컨테이너 시작이 9초였고(10/4 실측) 비정상 종료 뒤 복구 재생 여유를 둔다. 유닛 상한(30분) 안이다
+DB_WAIT_TRIES=${DB_WAIT_TRIES:-60}
+DB_WAIT_INTERVAL=${DB_WAIT_INTERVAL:-5}
+for ((try = 1; ; try++)); do
+  rc=0
+  IN_RECOVERY=$("$PSQL" -w -Atqc 'SELECT pg_is_in_recovery()') || rc=$?
+  [ "$rc" = 0 ] && break
+  if [ "$rc" != 2 ] || [ "$try" -ge "$DB_WAIT_TRIES" ]; then
+    log "!!! primary 확인 질의가 실패했다 — psql 종료 코드 $rc(2 = 접속 실패), ${try}회 시도. 오류는 위 줄(psql)에 있다"
+    exit "$rc"
+  fi
+  [ "$try" = 1 ] && log "DB 가 아직 접속을 받지 않는다 — ${DB_WAIT_INTERVAL}초 간격으로 최대 $(( DB_WAIT_TRIES * DB_WAIT_INTERVAL ))초 기다린다"
+  sleep "$DB_WAIT_INTERVAL"
+done
+[ "$try" -gt 1 ] && log "DB 접속 — ${try}번째 시도"
 if [ "$IN_RECOVERY" != "f" ]; then
   log "standby 다(pg_is_in_recovery = $IN_RECOVERY). 아무것도 하지 않고 끝낸다 — 설계서 7.2"
   # 성공 시각을 쓰지 않는다 — 백업을 만든 것이 아니다. 이 지표는 primary 에서만 뜻을 갖는다
