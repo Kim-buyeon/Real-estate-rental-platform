@@ -140,13 +140,13 @@ ul { margin: 2px 0 6px 18px; padding: 0; } li { margin: 1px 0; }
 <tr><td>[5.1]</td><td>슬롯별 분배 (W2)</td><td>네 슬롯에 고르게 갔나 · 죽은 슬롯</td><td>한 슬롯이 죽으면 숫자가 바뀐다</td></tr>
 <tr><td>[6.4]</td><td>커넥션 풀 대기 · 획득 · 타임아웃 (W3)</td><td>풀에서 줄을 섰나</td><td>DB가 빨라도 풀에서 막히면 느리다</td></tr>
 <tr><td>[5.1][7.4]</td><td>Tomcat 바쁜 스레드 (W4)</td><td>요청 스레드가 말랐나</td><td>큐 대기의 대리 지표</td></tr>
-<tr><td>[5.1]</td><td>힙 · 힙 밖 · GC (W5)</td><td>메모리 · GC가 한계를 정했나</td><td>슬롯 메모리 상한 680 MiB</td></tr>
+<tr><td>[5.1]</td><td>힙 · 힙 밖 · GC (W5)</td><td>메모리 · GC가 한계를 정했나</td><td>슬롯 메모리 상한 768 MiB</td></tr>
 <tr><td>[3] S6</td><td>비동기 · 스케줄러 큐 (W6)</td><td>배치가 밀렸나</td><td>배치 동시 시나리오의 판정</td></tr>
 <tr><td>[5.4][7.1]</td><td>Redis 서버 지표 · lettuce 명령 지연 (W9)</td><td>캐시 · 토큰에 시간이 쓰였나</td><td>추적에 Redis 구간이 없다</td></tr>
 <tr><td>[7.4]</td><td>CPU user · system · iowait · steal (O1 · O3)</td><td>어느 노드 CPU가 먼저 찼나</td><td>가상 머신은 steal이 따로 포화를 만든다</td></tr>
 <tr><td>[7.4]</td><td>load ÷ vCPU (O2)</td><td>실행 대기가 생겼나</td><td>사용률만으로는 줄이 안 보인다</td></tr>
 <tr><td>[7.4][7.8]</td><td>가용 메모리 · OOM 강제 종료 (O4 · O5)</td><td>메모리로 무너졌나</td><td>네 노드 모두 스왑이 없다</td></tr>
-<tr><td>[7.4]</td><td>디스크 util% · 대기 · IOPS · 처리량 (O8)</td><td>디스크가 한계를 정했나</td><td>t3.small EBS 기준선</td></tr>
+<tr><td>[7.4]</td><td>디스크 util% · 대기 · IOPS · 처리량 (O8)</td><td>디스크가 한계를 정했나</td><td>EBS 기준선 — DB 노드 t3.small · 앱 노드 t3.medium</td></tr>
 <tr><td>[11.2][7.4]</td><td>EBS · CPU 버스트 크레딧 (O15 스냅샷)</td><td>두 회차가 같은 조건에서 출발했나</td><td>바닥나면 같은 질의가 몇 배 느려진다</td></tr>
 <tr><td>[7.4][7.8]</td><td>TCP 대기열 넘침 · TIME_WAIT (O10)</td><td>연결을 버렸나</td><td>오류가 아니라 타임아웃으로 보인다</td></tr>
 <tr><td>[7.4]</td><td>conntrack (O11, APP-01)</td><td>NAT 표가 찼나</td><td>APP-01이 입구와 NAT을 겸한다</td></tr>
@@ -944,10 +944,10 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <table>
 <tr><th>계층</th><th>자원</th><th>상한</th><th>최대 ({{ R }})</th><th>헤드룸</th></tr>
 {% for r in headroom %}
-<tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td{{ ' class="b"' if not r.limit }}>{{ r.limit }}</td><td class="b">{{ r.peak }}</td><td{{ ' class="b"' if r.headroom != "-" and r.headroom != "비용 항목" }}>{% if r.headroom is number %}{{ r.headroom|v(1, "%") }}{% elif r.headroom %}{{ r.headroom }}{% else %}미측정{% endif %}</td></tr>
+<tr><td>{{ r.layer }}</td><td>{{ r.name }}</td><td{% if not r.limit %} class="b"{% endif %}>{{ r.limit }}</td><td class="b">{{ r.peak }}</td><td{% if r.headroom != "-" and r.headroom != "비용 항목" %} class="b"{% endif %}>{% if r.headroom is number %}{{ r.headroom|v(1, "%") }}{% elif r.headroom %}{{ r.headroom }}{% else %}미측정{% endif %}</td></tr>
 {% endfor %}
 </table>
-<p class="small">EBS 상한은 t3.small 인스턴스 쪽 기준선(볼륨 gp3 3,000 IOPS · 125 MB/s보다 낮다). 크레딧과 함께 읽는다. 부하 생성기 헤드룸이 20% 미만이면 그 회차는 버린다.</p>
+<p class="small">EBS 상한은 인스턴스 쪽 기준선 — DB 노드 t3.small 1,000 IOPS · 21.75 MB/s, 앱 노드 t3.medium 2,000 IOPS · 43.375 MB/s(둘 다 볼륨 gp3 3,000 IOPS · 125 MB/s보다 낮다). 앱 노드 기준선은 회차 MemTotal 로 유형을 골라 적는다. 크레딧과 함께 읽는다. 부하 생성기 헤드룸이 20% 미만이면 그 회차는 버린다.</p>
 <table><tr><th class="k">헤드룸 20% 미만 자원</th><td class="b">{{ tight|length }}개: {{ tight|join(", ") }}</td></tr></table>
 <p class="small">「최대」는 이 회차 안의 최댓값이다 — 한계 회차(S8)가 아니면 헤드룸은 「이 부하에서의 여유」이지 한계 여유가 아니다.</p>
 <p class="small">둘 이상이면 하나를 늘려도 바로 다음 것에 걸린다.</p>
@@ -1059,14 +1059,15 @@ FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexreli
 <tr><th class="lg-r">불합격하는 무너짐</th><td>타임아웃 폭주 · 프로세스 종료 · OS 정지 · 부하가 빠져도 회복 안 됨 · 수동 개입 필요</td></tr>
 </table>
 <table>
-<tr><th class="k">한계 초과 시 동작</th><td class="b"></td></tr>
-<tr><th class="k">무너진 계층</th><td class="b">□ 입구 □ 앱 □ 경계 □ DB □ OS</td></tr>
+{% set nc = nar.collapse or {} %}
+<tr><th class="k">한계 초과 시 동작</th><td class="b">{{ nc.behavior|n }}</td></tr>
+<tr><th class="k">무너진 계층</th><td class="b">{% for l in ["입구", "앱", "경계", "DB", "OS"] %}{{ "■" if l in (nc.layers or []) else "□" }} {{ l }} {% endfor %}</td></tr>
 {% set cv = collapse %}
 <tr><th class="k">프로세스 종료</th><td class="b">{{ "□" if cv.any_exit else "■" }} 없음 {{ "■" if cv.app_restarts else "□" }} 앱 {{ cv.app_restarts if cv.app_restarts else "___" }}회 {{ "■" if cv.db_restarts else "□" }} DB {{ "■" if cv.rebooted or cv.oom else "□" }} OS (원천: 슬롯 재시작 W2 · OOM O5 · systemd 실패 O14)<br><span class="small">{{ R }} — 슬롯 재시작 {{ cv.app_restarts|v(0) }} · 노드 OOM {{ cv.oom|v(0) }} · 슬롯 상한 OOM {{ cv.container_oom|v(0) }} · DB 재시작 {{ cv.db_restarts|v(0) }} · 재부팅 {% if cv.boot_known %}{{ cv.rebooted|join(", ") or "없음" }}{% else %}미측정{% endif %} · systemd 실패 유닛 {% if cv.systemd_known %}{{ cv.systemd_failed|join(", ") or "없음" }}{% else %}미측정{% endif %}{% if cv.fs_readonly %} · 읽기 전용 전환 {{ cv.fs_readonly|join(", ") }}{% endif %}</span></td></tr>
-<tr><th class="k">자동 회복</th><td class="b">□ 자동 □ 수동 개입 필요 · 소요 ___</td></tr>
-<tr><th class="k">데이터 유실</th><td class="b">□ 없음 □ 있음 → ___건</td></tr>
+<tr><th class="k">자동 회복</th><td class="b">{% if nc.recovery %}{{ "■" if nc.recovery == "자동" else "□" }} 자동 {{ "■" if nc.recovery == "수동" else "□" }} 수동 개입 필요 · 소요 {{ nc.recovery_time|n }}{% else %}□ 자동 □ 수동 개입 필요 · 소요 ___{% endif %}</td></tr>
+<tr><th class="k">데이터 유실</th><td class="b">{% if nc.data_loss %}{{ nc.data_loss }}{% else %}□ 없음 □ 있음 → ___건{% endif %}</td></tr>
 <tr><th class="k">알림이 울렸나</th><td class="b">{% if not cv.alerts %}□ 예 (규칙 ___ · ___분 뒤) □ 아니오 <span class="small">— 미측정(alerts.json 없음 · node/alerts.sh)</span>{% elif cv.fired %}■ 예 ({% for f in cv.fired %}규칙 {{ f.rule }} · 시작 {{ f.minutes_after_start|v(1) }}분 뒤{% if f.after_end %} (회차 끝난 뒤){% endif %}{{ " / " if not loop.last }}{% endfor %}) □ 아니오{% else %}□ 예 (규칙 ___ · ___분 뒤) ■ 아니오 <span class="small">({{ R }} 구간 + 꼬리 — 상태 전환 {{ cv.alerts.transitions|length }}건, 원천 {{ cv.alerts.source }})</span>{% endif %}{% if cv.alerts and cv.alerts.rules_compare and not cv.alerts.rules_compare.same %}<br><span class="small">⚠ 저장소 정의와 걸린 규칙이 다르다 — 없음 {{ cv.alerts.rules_compare.missing_live|join(", ") or "-" }} · 더 있음 {{ cv.alerts.rules_compare.extra_live|join(", ") or "-" }}</span>{% endif %}</td></tr>
-<tr><th class="k">판정</th><td class="b">□ 합격 □ 불합격</td></tr>
+<tr><th class="k">판정</th><td class="b">{{ "■" if nc.verdict == "합격" else "□" }} 합격 {{ "■" if nc.verdict == "불합격" else "□" }} 불합격{% if nc.verdict_note %} — {{ nc.verdict_note }}{% endif %}</td></tr>
 </table>
 </section>
 
