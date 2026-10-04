@@ -1,0 +1,552 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  엔드포인트 부하 시험 플랜(INF-06 #390) — 범위 20개 중 로그인(login.jmx)을 뺀 19개 엔드포인트 — 대상 21개. JMeter 5.6.3 + 플러그인 둘(Custom Thread Groups 의
+  Concurrency Thread Group · Throughput Shaping Timer). 사용법 · 대상별 요청 · 회차 명령은 같은 폴더 ENDPOINTS.md. 실행은 run.sh 에 PLAN 으로 이 파일을 주고
+  mode 자리에 -, 인자 구분자 뒤에 -Jtarget=<대상> 을 붙인다(명령 꼴은 ENDPOINTS.md).
+
+  부하 모델은 열린 모델이다 — 타이머 ep_tst 가 초당 요청 수를 정하고 Concurrency 그룹이 __tstFeedback 으로 스레드를 채운다
+  (jmeter-plugins.org 위키 ThroughputShapingTimer 「Schedule Feedback Function」). 계단은 속성 load_profile(타이머 이름 기준
+  ep_tst.load_profile 이 있으면 그것이 먼저 — 같은 위키 「Special Property Processing」). 초당 요청 수는 정수.
+  타이머는 「요청」 묶음 안에만 걸린다 — 준비 요청(로그인 · 알림 ID)은 초당 요청 수에 들지 않고 레이블이 공백 + setup 으로 끝난다(run.sh 의 계단 시작 시각 계산에서 빠진다).
+
+  -J 속성
+    host · port · protocol    대상(기본 localhost · 443 · https). 운영은 LOAD-01 → APP-01 사설 IP 443
+    target                    대상 하나(ENDPOINTS.md 표의 21개), 묶음 properties · wishlist, 또는 mix(트래픽 정의서 3장 비율). 기본 mix
+    load_profile · hold_s · max_threads   계단 · Concurrency 그룹 Hold(초) · 스레드 상한(기본 300) — run.sh 가 넘긴다
+    accounts                  계정 CSV(머리 줄 email,password) — make-accounts.sh 의 valid.csv
+    property_ids              매물 표본 CSV(sql/property-ids.sql 의 출력). 기본 = accounts 와 같은 폴더의 property-ids.csv
+    bbox                      (선택) 지도 2단계 표시 영역 CSV(district,tier,min_lat,max_lat,min_lng,max_lng). 없으면 표본 좌표에서 계산
+
+  인증 — 계정마다 처음 한 번 로그인해 토큰을 계정에 붙여 둔다. 계정은 반복마다 빌리고 돌려놓아 한 번에 한 스레드만 쓴다.
+  만료 100초 전에 다시 로그인하고, 그래도 401 이면 로그인 뒤 같은 요청을 한 번 더 보낸다(반복 2회 묶음).
+  응답 검증은 요청마다 상태 코드 + $.success 하나씩(JMeter Best Practices — 최소). 204(관심 매물 해제)는 본문이 없어 상태 코드만.
+  레이블 = analyze 엔드포인트 키(같은 키의 다른 요청은 뒤에 종류 — properties radius · list, me/profile update 등).
+  결과 화면 요소(리스너)는 두지 않는다 — 결과는 -l 로 받는다.
+
+  Switch Controller 는 자식 요소 이름(testname)으로 고른다 — 대상 이름을 바꾸면 setUp 스크립트의 TARGETS 와 함께 바꾼다.
+-->
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+<hashTree>
+<TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="INF-06 엔드포인트 부하" enabled="true"><stringProp name="TestPlan.comments">실행은 run.sh(PLAN 에 이 파일). 속성 · 대상은 파일 머리 주석과 ENDPOINTS.md.</stringProp><boolProp name="TestPlan.functional_mode">false</boolProp><boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp><boolProp name="TestPlan.serialize_threadgroups">false</boolProp><elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"/></elementProp><stringProp name="TestPlan.user_define_classpath"></stringProp></TestPlan>
+<hashTree>
+<!-- 연결 5초 · 응답 30초 — 응답 상한은 nginx /api/ 의 proxy_read_timeout 30s 와 같다(login.jmx 와 같은 값) -->
+<ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"/></elementProp><stringProp name="HTTPSampler.domain">${__P(host,localhost)}</stringProp><stringProp name="HTTPSampler.port">${__P(port,443)}</stringProp><stringProp name="HTTPSampler.protocol">${__P(protocol,https)}</stringProp><stringProp name="HTTPSampler.contentEncoding">UTF-8</stringProp><stringProp name="HTTPSampler.path"></stringProp><stringProp name="HTTPSampler.implementation">HttpClient4</stringProp><stringProp name="HTTPSampler.connect_timeout">5000</stringProp><stringProp name="HTTPSampler.response_timeout">30000</stringProp></ConfigTestElement>
+<hashTree/>
+<HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true"><collectionProp name="HeaderManager.headers"><elementProp name="Content-Type" elementType="Header"><stringProp name="Header.name">Content-Type</stringProp><stringProp name="Header.value">application/json</stringProp></elementProp><elementProp name="Accept" elementType="Header"><stringProp name="Header.name">Accept</stringProp><stringProp name="Header.value">application/json</stringProp></elementProp></collectionProp></HeaderManager>
+<hashTree/>
+<SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="준비 setUp" enabled="true"><stringProp name="ThreadGroup.on_sample_error">continue</stringProp><elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true"><boolProp name="LoopController.continue_forever">false</boolProp><stringProp name="LoopController.loops">1</stringProp></elementProp><stringProp name="ThreadGroup.num_threads">1</stringProp><stringProp name="ThreadGroup.ramp_time">1</stringProp><boolProp name="ThreadGroup.scheduler">false</boolProp><stringProp name="ThreadGroup.duration"></stringProp><stringProp name="ThreadGroup.delay"></stringProp><boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp></SetupThreadGroup>
+<hashTree>
+<TestAction guiclass="TestActionGui" testclass="TestAction" testname="CSV 읽기" enabled="true"><intProp name="ActionProcessor.action">1</intProp><intProp name="ActionProcessor.target">0</intProp><stringProp name="ActionProcessor.duration">0</stringProp></TestAction>
+<hashTree>
+<JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="CSV 읽기" enabled="true"><stringProp name="scriptLanguage">groovy</stringProp><stringProp name="parameters"></stringProp><stringProp name="filename"></stringProp><stringProp name="cacheKey">true</stringProp><stringProp name="script">// 준비(setUp, 한 번) — 대상 확인 · CSV 셋을 읽어 모든 스레드가 같이 쓰는 목록을 props 에 둔다. 비밀번호는 로그에 남기지 않는다.
+import org.apache.jmeter.services.FileServer
+import java.util.concurrent.ConcurrentLinkedQueue
+
+def fail = { String msg -&gt;
+    log.error('[endpoints] ' + msg)
+    props.put('ep_ready', 'false')
+    ctx.getEngine().stopTest(true)
+}
+props.put('ep_ready', 'false')
+
+def TARGETS = ['district-counts', 'map-clusters', 'properties-radius', 'properties-list', 'property-detail', 'property-risk',
+               'wishlist-read', 'wishlist-write', 'loans-limit', 'notifications',
+               'ledger', 'registry', 'profile-read', 'profile-write', 'subscriptions-read', 'subscriptions-write', 'reissue',
+               'notification-read', 'notification-read-all', 'logout', 'stream-ticket', 'properties', 'wishlist', 'mix']
+String target = props.get('target') ?: 'mix'
+if (!TARGETS.contains(target)) { fail('target 이 목록에 없다: ' + target + ' — ' + TARGETS.join(' ')); return }
+
+// 트래픽 정의서 3.1(요청 조합) · 3.2(지도 단계)를 반복 단위 가중치로 — 합 195. 근거와 계산은 ENDPOINTS.md 「mix」.
+// wishlist-write 는 반복 하나가 요청 둘(등록 · 해제)이라 요청 몫 6 = 반복 3. 재분석(1%)은 범위 밖이라 뺐다.
+def MIX = [['district-counts', 62], ['map-clusters', 24], ['properties-radius', 18], ['property-detail', 26],
+           ['property-risk', 20], ['properties-list', 14], ['wishlist-read', 12], ['notifications', 8],
+           ['wishlist-write', 3], ['reissue', 4], ['loans-limit', 4]]
+props.put('ep_mix', MIX)
+props.put('ep_mix_total', MIX.sum { it[1] } as Integer)
+// 양식 [1.4] 의 한 칸이 요청 둘인 것 — 단독 회차 하나로 돌 때 둘을 mix 와 같은 비로 섞는다(properties = 반경 18 : 목록 14 —
+// 트래픽 정의서 3.2 3단계 · 3.1 목록, wishlist = 조회 12 : 등록 · 해제 3 반복 — 3.1 의 6% : 3%)
+def GROUPS = [properties: [['properties-radius', 18], ['properties-list', 14]],
+              wishlist  : [['wishlist-read', 12], ['wishlist-write', 3]]]
+props.put('ep_groups', GROUPS)
+
+def base = FileServer.getFileServer().getBaseDir()
+def fileOf = { String p -&gt; def f = new File(p); f.isAbsolute() ? f : new File(base, p) }
+def readCsv = { File f -&gt;
+    def lines = f.readLines('UTF-8').collect { it.replace('﻿', '').replace('\r', '') }.findAll { it.trim() }
+    if (lines.isEmpty()) return []
+    def head = lines[0].split(',', -1).collect { it.trim() }
+    lines.drop(1).collect { ln -&gt; def v = ln.split(',', -1); def m = [:]; head.eachWithIndex { h, i -&gt; m[h] = i &lt; v.length ? v[i].trim() : '' }; m }
+}
+
+// 계정 — 회차 동안 계정 하나는 한 번에 한 스레드만 쓴다(반복마다 빌리고 돌려놓는다). 같은 계정을 두 스레드가 같이 쓰면
+// 재발급 · 로그인이 서로의 리프레시 토큰을 밀어낸다(RefreshTokenStore 는 사용자당 하나)
+String accPath = props.get('accounts')
+if (!accPath) { fail('accounts(계정 CSV)가 없다 — run.sh 가 넘긴다'); return }
+File accFile = fileOf(accPath)
+if (!accFile.canRead()) { fail('계정 CSV 를 읽지 못했다: ' + accFile); return }
+def accounts = readCsv(accFile).findAll { it.email &amp;&amp; it.password }
+if (accounts.isEmpty()) { fail('계정 CSV 에 email,password 행이 없다: ' + accFile); return }
+def sessions = new ConcurrentLinkedQueue()
+accounts.each { sessions.offer([email: it.email, password: it.password, access: null, refresh: null, at: null, noti: null, flip: false]) }
+props.put('ep_sessions', sessions)
+
+// 매물 표본 — property-ids.sql 의 출력. 기본 자리 = 계정 CSV 와 같은 폴더의 property-ids.csv
+String idPath = props.get('property_ids')
+File idFile = idPath ? fileOf(idPath) : new File(accFile.getAbsoluteFile().getParentFile(), 'property-ids.csv')
+if (!idFile.canRead()) { fail('매물 표본 CSV 를 읽지 못했다: ' + idFile + ' — sql/property-ids.sql 로 만든다'); return }
+def rows = readCsv(idFile).findAll { it.property_id &amp;&amp; it.district &amp;&amp; it.tier in ['top', 'rest'] &amp;&amp; it.latitude &amp;&amp; it.longitude }
+def byTier = [top: rows.findAll { it.tier == 'top' }, rest: rows.findAll { it.tier == 'rest' }]
+if (byTier.top.isEmpty() || byTier.rest.isEmpty()) { fail('매물 표본에 top · rest 묶음이 다 있어야 한다: ' + idFile); return }
+def eligible = { String v -&gt; v in ['t', 'true', 'TRUE', 'True', '1'] }
+def loanByTier = [top: byTier.top.findAll { eligible(it.insurance_eligible) }, rest: byTier.rest.findAll { eligible(it.insurance_eligible) }]
+if (loanByTier.top.isEmpty() &amp;&amp; loanByTier.rest.isEmpty()) { fail('가입 가능(insurance_eligible) 매물이 없다 — loans/limit 이 전부 422'); return }
+['top', 'rest'].each { t -&gt; if (loanByTier[t].isEmpty()) log.warn('[endpoints] ' + t + ' 묶음에 가입 가능 매물이 없다 — loans/limit 은 다른 묶음에서 고른다') }
+props.put('ep_ids', byTier)
+props.put('ep_loan_ids', loanByTier)
+
+// 지도 2단계 표시 영역 — bbox CSV(district,tier,min_lat,max_lat,min_lng,max_lng)를 주면 그것, 아니면 표본 좌표의 구별 2 · 98 백분위.
+// 극단값(좌표 오류) 몇 개가 영역을 서울 밖까지 늘리지 않게 백분위로 자른다
+def boxes = [top: [], rest: []]
+String boxPath = props.get('bbox')
+if (boxPath) {
+    File bf = fileOf(boxPath)
+    if (!bf.canRead()) { fail('bbox CSV 를 읽지 못했다: ' + bf); return }
+    readCsv(bf).each { b -&gt; if (b.tier in ['top', 'rest']) boxes[b.tier] &lt;&lt; [district: b.district, min_lat: b.min_lat, max_lat: b.max_lat, min_lng: b.min_lng, max_lng: b.max_lng] }
+} else {
+    def pct = { List&lt;BigDecimal&gt; xs, double p -&gt; def s = xs.sort(false); s[Math.min(s.size() - 1, Math.max(0, (int) Math.floor(p * (s.size() - 1))))] }
+    rows.groupBy { it.district }.each { d, rs -&gt;
+        def la = rs.collect { new BigDecimal(it.latitude) }, lo = rs.collect { new BigDecimal(it.longitude) }
+        def fmt = { BigDecimal x -&gt; x.setScale(7, BigDecimal.ROUND_HALF_UP).toPlainString() }
+        boxes[rs[0].tier] &lt;&lt; [district: d, min_lat: fmt(pct(la, 0.02)), max_lat: fmt(pct(la, 0.98)), min_lng: fmt(pct(lo, 0.02)), max_lng: fmt(pct(lo, 0.98))]
+    }
+}
+if (boxes.top.isEmpty() || boxes.rest.isEmpty()) { fail('표시 영역이 top · rest 묶음에 다 있어야 한다'); return }
+props.put('ep_boxes', boxes)
+
+props.put('ep_ready', 'true')
+log.info('[endpoints] target=' + target + ' 계정 ' + accounts.size() + ' · 매물 top ' + byTier.top.size() + ' rest ' + byTier.rest.size()
+        + ' · 가입 가능 top ' + loanByTier.top.size() + ' rest ' + loanByTier.rest.size()
+        + ' · 영역 top ' + boxes.top*.district + ' rest ' + boxes.rest.size() + '개' + (boxPath ? '(bbox CSV)' : '(표본에서 계산)'))
+</stringProp></JSR223PreProcessor>
+<hashTree/>
+</hashTree>
+</hashTree>
+<com.blazemeter.jmeter.threads.concurrency.ConcurrencyThreadGroup guiclass="com.blazemeter.jmeter.threads.concurrency.ConcurrencyThreadGroupGui" testclass="com.blazemeter.jmeter.threads.concurrency.ConcurrencyThreadGroup" testname="엔드포인트" enabled="true"><elementProp name="ThreadGroup.main_controller" elementType="com.blazemeter.jmeter.control.VirtualUserController"/><stringProp name="ThreadGroup.on_sample_error">continue</stringProp><stringProp name="TargetLevel">${__tstFeedback(ep_tst,1,${__P(max_threads,300)},10)}</stringProp><stringProp name="RampUp"></stringProp><stringProp name="Steps"></stringProp><stringProp name="Hold">${__P(hold_s,0)}</stringProp><stringProp name="LogFilename"></stringProp><stringProp name="Iterations"></stringProp><stringProp name="Unit">S</stringProp></com.blazemeter.jmeter.threads.concurrency.ConcurrencyThreadGroup>
+<hashTree>
+<!-- Flow Control Action(TestAction)은 표본을 남기지 않는다(sample 이 null) — 고르기 · 돌려놓기 스크립트의 자리로만 쓴다 -->
+<TestAction guiclass="TestActionGui" testclass="TestAction" testname="계정 · 대상 고르기" enabled="true"><intProp name="ActionProcessor.action">1</intProp><intProp name="ActionProcessor.target">0</intProp><stringProp name="ActionProcessor.duration">0</stringProp></TestAction>
+<hashTree>
+<JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="고르기" enabled="true"><stringProp name="scriptLanguage">groovy</stringProp><stringProp name="parameters"></stringProp><stringProp name="filename"></stringProp><stringProp name="cacheKey">true</stringProp><stringProp name="script">// 반복마다 — 계정을 빌리고(그 계정의 토큰 · 알림 ID 를 이어받는다) 이번 요청의 대상 · 매물 · 영역을 고른다.
+import java.util.concurrent.ThreadLocalRandom
+
+if (props.get('ep_ready') != 'true') { ctx.getThread().stop(); return }
+def rnd = ThreadLocalRandom.current()
+
+def q = props.get('ep_sessions')
+def s = q.poll()
+long waited = 0
+while (s == null) {          // 계정보다 스레드가 많을 때만 — 부하 생성기 쪽 대기다(ENDPOINTS.md 「계정 수」)
+    Thread.sleep(5); waited += 5; s = q.poll()
+    if (waited == 5000) log.warn('[endpoints] 빌릴 계정이 5초째 없다 — 계정 수 &lt; 동시 스레드 수')
+}
+vars.putObject('ep_session', s)
+vars.put('email', s.email)
+vars.put('password', s.password)
+if (s.access) {
+    vars.put('access_token', s.access); vars.put('refresh_token', s.refresh ?: 'NOT_FOUND'); vars.put('token_at', s.at ?: '0')
+} else {
+    vars.remove('access_token'); vars.remove('refresh_token'); vars.remove('token_at')
+}
+vars.put('auth401', '0')
+
+String target = props.get('target') ?: 'mix'
+String ep = target
+def weighted = { List w -&gt; int x = rnd.nextInt(w.sum { it[1] } as int); for (e in w) { x -= (e[1] as int); if (x &lt; 0) return e[0] }; w[0][0] }
+if (target == 'mix') ep = weighted(props.get('ep_mix'))
+else if (props.get('ep_groups')[target]) ep = weighted(props.get('ep_groups')[target])
+vars.put('ep', ep)
+
+// 트래픽 정의서 3.3 — 상위 3개 자치구 묶음 60 % · 나머지 40 %. 묶음 안에서는 고르게
+String tier = rnd.nextInt(100) &lt; 60 ? 'top' : 'rest'
+def ids = props.get('ep_ids')
+def row = ids[tier][rnd.nextInt(ids[tier].size())]
+vars.put('pid', row.property_id)
+vars.put('district', row.district)
+vars.put('lat', row.latitude)
+vars.put('lng', row.longitude)
+def loans = props.get('ep_loan_ids')
+def lt = loans[tier].isEmpty() ? (tier == 'top' ? 'rest' : 'top') : tier
+vars.put('loan_pid', loans[lt][rnd.nextInt(loans[lt].size())].property_id)
+def boxes = props.get('ep_boxes')[tier]
+def box = boxes[rnd.nextInt(boxes.size())]
+if (ep == 'map-clusters') vars.put('district', box.district)
+vars.put('min_lat', box.min_lat); vars.put('max_lat', box.max_lat); vars.put('min_lng', box.min_lng); vars.put('max_lng', box.max_lng)
+
+// 관심 매물 등록 · 해제 짝 — 계정을 한 스레드만 쓰므로 (사용자, 매물) 쌍이 겹치지 않는다
+def all = ids[rnd.nextInt(100) &lt; 60 ? 'top' : 'rest']
+vars.put('wl_id', all[rnd.nextInt(all.size())].property_id)
+
+// 프로필 수정 — 두 값을 번갈아(같은 값이면 변경 감지가 UPDATE 를 내지 않아 쓰기를 재지 못한다). 값은 API 명세서(회원) 1.1 예시
+if (ep == 'profile-write') { vars.put('annual_income', s.flip ? '42000000' : '45000000'); s.flip = !s.flip }
+
+// 알림 읽음 — 그 계정의 알림 ID 를 처음 한 번 목록(size 100)에서 받는다(준비 요청, 레이블 notifications setup)
+if (ep == 'notification-read') {
+    if (s.noti == null) {
+        vars.put('noti_fetch', '1'); vars.put('noti_has', '0'); vars.put('noti_id', '0')
+    } else {
+        vars.put('noti_fetch', '0')
+        if (s.noti.isEmpty()) { vars.put('noti_has', '0'); vars.put('noti_id', '0') }
+        else { vars.put('noti_has', '1'); vars.put('noti_id', String.valueOf(s.noti[rnd.nextInt(s.noti.size())])) }
+    }
+} else {
+    vars.put('noti_fetch', '0')
+}
+</stringProp></JSR223PreProcessor>
+<hashTree/>
+</hashTree>
+<LoopController guiclass="LoopControlPanel" testclass="LoopController" testname="401 이면 한 번 더" enabled="true"><boolProp name="LoopController.continue_forever">true</boolProp><stringProp name="LoopController.loops">2</stringProp></LoopController>
+<hashTree>
+<IfController guiclass="IfControllerPanel" testclass="IfController" testname="토큰 필요" enabled="true"><stringProp name="IfController.condition">${__groovy(def t = vars.get('access_token'); t == null || t == 'NOT_FOUND' || System.currentTimeMillis() - Long.parseLong(vars.get('token_at') ?: '0') &gt; 1700000L,)}</stringProp><boolProp name="IfController.evaluateAll">false</boolProp><boolProp name="IfController.useExpression">true</boolProp></IfController>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="auth/login setup" enabled="true"><boolProp name="HTTPSampler.postBodyRaw">true</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"><elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{&quot;email&quot;:&quot;${email}&quot;,&quot;password&quot;:&quot;${password}&quot;}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/auth/login</stringProp><stringProp name="HTTPSampler.method">POST</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+<JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="토큰" enabled="true"><stringProp name="JSONPostProcessor.referenceNames">access_token;refresh_token</stringProp><stringProp name="JSONPostProcessor.jsonPathExprs">$.data.accessToken;$.data.refreshToken</stringProp><stringProp name="JSONPostProcessor.match_numbers">1;1</stringProp><stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND;NOT_FOUND</stringProp></JSONPostProcessor>
+<hashTree/>
+<JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="토큰 시각" enabled="true"><stringProp name="scriptLanguage">groovy</stringProp><stringProp name="parameters"></stringProp><stringProp name="filename"></stringProp><stringProp name="cacheKey">true</stringProp><stringProp name="script">// 로그인(준비) 뒤 — 받은 시각을 남긴다. 만료(expiresIn 1800초, API 명세서(회원) 1.2) 100초 전에 미리 다시 로그인한다
+if (prev.getResponseCode() == '200' &amp;&amp; vars.get('access_token') != 'NOT_FOUND') {
+    vars.put('token_at', String.valueOf(System.currentTimeMillis()))
+}
+vars.put('auth401', '0')
+</stringProp></JSR223PostProcessor>
+<hashTree/>
+</hashTree>
+</hashTree>
+<IfController guiclass="IfControllerPanel" testclass="IfController" testname="알림 ID 필요" enabled="true"><stringProp name="IfController.condition">${__groovy(vars.get(&quot;noti_fetch&quot;) == &quot;1&quot;,)}</stringProp><boolProp name="IfController.evaluateAll">false</boolProp><boolProp name="IfController.useExpression">true</boolProp></IfController>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="notifications setup" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"><elementProp name="size" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">100</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">size</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/notifications</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Authorization" enabled="true"><collectionProp name="HeaderManager.headers"><elementProp name="Authorization" elementType="Header"><stringProp name="Header.name">Authorization</stringProp><stringProp name="Header.value">Bearer ${access_token}</stringProp></elementProp></collectionProp></HeaderManager>
+<hashTree/>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+<JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="알림 ID 전부" enabled="true"><stringProp name="JSONPostProcessor.referenceNames">noti_ids</stringProp><stringProp name="JSONPostProcessor.jsonPathExprs">$.data.items[*].notificationId</stringProp><stringProp name="JSONPostProcessor.match_numbers">-1</stringProp><stringProp name="JSONPostProcessor.defaultValues">NONE</stringProp></JSONPostProcessor>
+<hashTree/>
+<JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="알림 ID" enabled="true"><stringProp name="scriptLanguage">groovy</stringProp><stringProp name="parameters"></stringProp><stringProp name="filename"></stringProp><stringProp name="cacheKey">true</stringProp><stringProp name="script">// 알림 ID 받기(준비) 뒤 — 그 계정의 알림 ID 를 계정에 붙여 둔다(다음 반복부터 다시 받지 않는다). 없으면 빈 목록
+def s = vars.getObject('ep_session')
+vars.put('noti_fetch', '0')
+if (prev.getResponseCode() == '200') {
+    // 앞의 추출기(noti_ids, 일치 전부)가 noti_ids_1 … noti_ids_&lt;matchNr&gt; 를 남긴다. 없으면 matchNr = 0
+    int n = (vars.get('noti_ids_matchNr') ?: '0') as int
+    s.noti = (1..n).findAll { n &gt; 0 }.collect { vars.get('noti_ids_' + it) as long }
+    if (s.noti.isEmpty()) {
+        vars.put('noti_has', '0'); vars.put('noti_id', '0')
+        log.info('[endpoints] ' + s.email.replaceAll('@.*', '@…') + ' 알림 없음 — notifications/{id}/read none(404 기대)로 보낸다')
+    } else {
+        vars.put('noti_has', '1')
+        vars.put('noti_id', String.valueOf(s.noti[java.util.concurrent.ThreadLocalRandom.current().nextInt(s.noti.size())]))
+    }
+}
+</stringProp></JSR223PostProcessor>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="요청" enabled="true"/>
+<hashTree>
+<!-- 타이머는 이 묶음 안 요청에만 걸린다 — 준비 요청(로그인 · 알림 ID)은 초당 요청 수에 들지 않는다. 표 칸은 비워 둔다(load_profile 속성) -->
+<kg.apc.jmeter.timers.VariableThroughputTimer guiclass="kg.apc.jmeter.timers.VariableThroughputTimerGui" testclass="kg.apc.jmeter.timers.VariableThroughputTimer" testname="ep_tst" enabled="true"><collectionProp name="load_profile"/></kg.apc.jmeter.timers.VariableThroughputTimer>
+<hashTree/>
+<HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Authorization" enabled="true"><collectionProp name="HeaderManager.headers"><elementProp name="Authorization" elementType="Header"><stringProp name="Header.name">Authorization</stringProp><stringProp name="Header.value">Bearer ${access_token}</stringProp></elementProp></collectionProp></HeaderManager>
+<hashTree/>
+<JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="401 표시" enabled="true"><stringProp name="scriptLanguage">groovy</stringProp><stringProp name="parameters"></stringProp><stringProp name="filename"></stringProp><stringProp name="cacheKey">true</stringProp><stringProp name="script">// 요청마다 — 401(토큰 만료 · 폐기)이면 토큰을 버리고 표시한다. 바깥 반복이 로그인(준비) 뒤 같은 요청을 한 번 더 보낸다
+if (prev.getResponseCode() == '401') {
+    vars.put('auth401', '1')
+    vars.remove('access_token')
+}
+</stringProp></JSR223PostProcessor>
+<hashTree/>
+<SwitchController guiclass="SwitchControllerGui" testclass="SwitchController" testname="엔드포인트" enabled="true"><stringProp name="SwitchController.value">${ep}</stringProp></SwitchController>
+<hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="district-counts" enabled="true"/>
+<hashTree>
+<!-- 필터 없이 — 캐시 키 하나(DistrictCountCacheStore). 트래픽 정의서 3.2 1단계 「캐시 적중 대상」 -->
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="properties/district-counts" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/properties/district-counts</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="map-clusters" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="properties/map-clusters" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"><elementProp name="district" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">${district}</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">district</stringProp></elementProp><elementProp name="minLat" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">${min_lat}</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">minLat</stringProp></elementProp><elementProp name="maxLat" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">${max_lat}</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">maxLat</stringProp></elementProp><elementProp name="minLng" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">${min_lng}</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">minLng</stringProp></elementProp><elementProp name="maxLng" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">${max_lng}</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">maxLng</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/properties/map-clusters</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="properties-radius" enabled="true"/>
+<hashTree>
+<!-- 반경 1 km — API 명세서(매물) 1.3 「동 단위 1 km」. 중심 = 표본 매물 좌표(트래픽 정의서 3.1 여정 규칙) -->
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="properties radius" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"><elementProp name="district" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">${district}</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">district</stringProp></elementProp><elementProp name="lat" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">${lat}</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">lat</stringProp></elementProp><elementProp name="lng" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">${lng}</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">lng</stringProp></elementProp><elementProp name="radiusKm" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">1</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">radiusKm</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/properties</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="properties-list" enabled="true"/>
+<hashTree>
+<!-- 커서 페이지네이션은 첫 페이지만 — 다음 페이지는 키셋 조건 한 줄이 더해진 같은 문장이고, 트래픽 정의서 3.1 의 비중이 페이지를 나누지 않는다 -->
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="properties list" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"><elementProp name="district" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">${district}</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">district</stringProp></elementProp><elementProp name="size" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">20</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">size</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/properties</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="property-detail" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="properties/{id}" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/properties/${pid}</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="property-risk" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="properties/{id}/risk" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/properties/${pid}/risk</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="wishlist-read" enabled="true"/>
+<hashTree>
+<!-- 커서 페이지네이션은 첫 페이지만 — 다음 페이지는 키셋 조건 한 줄이 더해진 같은 문장이고, 트래픽 정의서 3.1 의 비중이 페이지를 나누지 않는다 -->
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="me/wishlist" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/me/wishlist</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="wishlist-write" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="me/wishlist add" enabled="true"><boolProp name="HTTPSampler.postBodyRaw">true</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"><elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{&quot;propertyId&quot;:${wl_id}}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/me/wishlist</stringProp><stringProp name="HTTPSampler.method">POST</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="201" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49587">201</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+<!-- 204 는 본문이 없다(Tomcat 이 버린다) — 상태 코드만 본다. 등록이 실패해도 해제는 보낸다(멱등) — 행이 남지 않게 -->
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="me/wishlist/{id} remove" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/me/wishlist/${wl_id}</stringProp><stringProp name="HTTPSampler.method">DELETE</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="204" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49590">204</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="loans-limit" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="loans/limit" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"><elementProp name="propertyId" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">true</boolProp><stringProp name="Argument.value">${loan_pid}</stringProp><stringProp name="Argument.metadata">=</stringProp><boolProp name="HTTPArgument.use_equals">true</boolProp><stringProp name="Argument.name">propertyId</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/loans/limit</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="notifications" enabled="true"/>
+<hashTree>
+<!-- 커서 페이지네이션은 첫 페이지만 — 다음 페이지는 키셋 조건 한 줄이 더해진 같은 문장이고, 트래픽 정의서 3.1 의 비중이 페이지를 나누지 않는다 -->
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="notifications" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/notifications</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="ledger" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="properties/{id}/ledger" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/properties/${pid}/ledger</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="registry" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="properties/{id}/registry" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/properties/${pid}/registry</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="profile-read" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="me/profile" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/me/profile</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="profile-write" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="me/profile update" enabled="true"><boolProp name="HTTPSampler.postBodyRaw">true</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"><elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{&quot;account&quot;:{&quot;name&quot;:&quot;jmeter&quot;,&quot;phone&quot;:null},&quot;profile&quot;:{&quot;annualIncome&quot;:${annual_income},&quot;creditScore&quot;:820,&quot;existingLoan&quot;:0,&quot;existingLoanAnnualPayment&quot;:0,&quot;hasHouse&quot;:false,&quot;ownFund&quot;:50000000}}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/me/profile</stringProp><stringProp name="HTTPSampler.method">PUT</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="subscriptions-read" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="me/notification-subscriptions" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/me/notification-subscriptions</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="subscriptions-write" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="me/notification-subscriptions update" enabled="true"><boolProp name="HTTPSampler.postBodyRaw">true</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"><elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{&quot;newProperty&quot;:{&quot;enabled&quot;:false,&quot;conditions&quot;:{&quot;districts&quot;:[&quot;강서구&quot;,&quot;구로구&quot;],&quot;contractType&quot;:&quot;DEPOSIT_ONLY&quot;,&quot;depositMax&quot;:250000000}},&quot;rateChange&quot;:{&quot;enabled&quot;:false},&quot;wishlistMonitoring&quot;:{&quot;enabled&quot;:true},&quot;consultSchedule&quot;:{&quot;enabled&quot;:false}}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/me/notification-subscriptions</stringProp><stringProp name="HTTPSampler.method">PUT</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="reissue" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="auth/reissue" enabled="true"><boolProp name="HTTPSampler.postBodyRaw">true</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"><elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{&quot;refreshToken&quot;:&quot;${refresh_token}&quot;}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/auth/reissue</stringProp><stringProp name="HTTPSampler.method">POST</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+<JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="새 토큰" enabled="true"><stringProp name="JSONPostProcessor.referenceNames">access_token;refresh_token</stringProp><stringProp name="JSONPostProcessor.jsonPathExprs">$.data.accessToken;$.data.refreshToken</stringProp><stringProp name="JSONPostProcessor.match_numbers">1;1</stringProp><stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND;NOT_FOUND</stringProp></JSONPostProcessor>
+<hashTree/>
+<JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="토큰 시각" enabled="true"><stringProp name="scriptLanguage">groovy</stringProp><stringProp name="parameters"></stringProp><stringProp name="filename"></stringProp><stringProp name="cacheKey">true</stringProp><stringProp name="script">// 재발급 뒤 — 새 토큰 두 벌로 갈아 끼운다(회전). 앞의 추출기가 access_token · refresh_token 을 이미 바꿨다. 실패면 NOT_FOUND 라 다음에 로그인한다
+if (prev.getResponseCode() == '200' &amp;&amp; vars.get('access_token') != 'NOT_FOUND') {
+    vars.put('token_at', String.valueOf(System.currentTimeMillis()))
+}
+</stringProp></JSR223PostProcessor>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="notification-read" enabled="true"/>
+<hashTree>
+<IfController guiclass="IfControllerPanel" testclass="IfController" testname="알림 있음" enabled="true"><stringProp name="IfController.condition">${__groovy(vars.get(&quot;noti_has&quot;) == &quot;1&quot;,)}</stringProp><boolProp name="IfController.evaluateAll">false</boolProp><boolProp name="IfController.useExpression">true</boolProp></IfController>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="notifications/{id}/read" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/notifications/${noti_id}/read</stringProp><stringProp name="HTTPSampler.method">PATCH</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<!-- 계정에 알림이 없으면 없는 알림(0)을 읽음 처리한다 — 404 NOTIFICATION_NOT_FOUND 를 기대값으로 센다(조회 한 번의 경로) -->
+<IfController guiclass="IfControllerPanel" testclass="IfController" testname="알림 없음" enabled="true"><stringProp name="IfController.condition">${__groovy(vars.get(&quot;noti_has&quot;) != &quot;1&quot;,)}</stringProp><boolProp name="IfController.evaluateAll">false</boolProp><boolProp name="IfController.useExpression">true</boolProp></IfController>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="notifications/{id}/read none" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/notifications/0/read</stringProp><stringProp name="HTTPSampler.method">PATCH</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="404" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="51512">404</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">true</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success false" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">false</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="notification-read-all" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="notifications/read-all" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/notifications/read-all</stringProp><stringProp name="HTTPSampler.method">PATCH</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="logout" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="auth/logout" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/auth/logout</stringProp><stringProp name="HTTPSampler.method">POST</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+<JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="토큰 버림" enabled="true"><stringProp name="scriptLanguage">groovy</stringProp><stringProp name="parameters"></stringProp><stringProp name="filename"></stringProp><stringProp name="cacheKey">true</stringProp><stringProp name="script">// 로그아웃 뒤 — 토큰을 버린다. 다음 반복이 같은 계정으로 다시 로그인한다(레이블 auth/login setup — 로그아웃과 짝)
+if (prev.getResponseCode() == '200') {
+    vars.remove('access_token'); vars.remove('refresh_token'); vars.remove('token_at')
+}
+</stringProp></JSR223PostProcessor>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="stream-ticket" enabled="true"/>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="notifications/stream-ticket" enabled="true"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"></collectionProp></elementProp><stringProp name="HTTPSampler.path">/api/notifications/stream-ticket</stringProp><stringProp name="HTTPSampler.method">POST</stringProp><boolProp name="HTTPSampler.follow_redirects">false</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200" enabled="true"><collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="success true" enabled="true"><stringProp name="JSON_PATH">$.success</stringProp><stringProp name="EXPECTED_VALUE">true</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+</hashTree>
+</hashTree>
+<!-- 401 이 아니면 반복을 끝낸다(BREAK_CURRENT_LOOP = 5). 401 이면 토큰을 버렸으니 다음 바퀴가 로그인 뒤 같은 요청을 보낸다 -->
+<IfController guiclass="IfControllerPanel" testclass="IfController" testname="401 아님" enabled="true"><stringProp name="IfController.condition">${__groovy(vars.get(&quot;auth401&quot;) != &quot;1&quot;,)}</stringProp><boolProp name="IfController.evaluateAll">false</boolProp><boolProp name="IfController.useExpression">true</boolProp></IfController>
+<hashTree>
+<TestAction guiclass="TestActionGui" testclass="TestAction" testname="반복 끝" enabled="true"><intProp name="ActionProcessor.action">5</intProp><intProp name="ActionProcessor.target">0</intProp><stringProp name="ActionProcessor.duration">0</stringProp></TestAction>
+<hashTree/>
+</hashTree>
+</hashTree>
+<TestAction guiclass="TestActionGui" testclass="TestAction" testname="계정 돌려놓기" enabled="true"><intProp name="ActionProcessor.action">1</intProp><intProp name="ActionProcessor.target">0</intProp><stringProp name="ActionProcessor.duration">0</stringProp></TestAction>
+<hashTree>
+<JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="돌려놓기" enabled="true"><stringProp name="scriptLanguage">groovy</stringProp><stringProp name="parameters"></stringProp><stringProp name="filename"></stringProp><stringProp name="cacheKey">true</stringProp><stringProp name="script">// 반복 끝 — 토큰을 계정에 돌려 적고 계정을 돌려놓는다
+def s = vars.getObject('ep_session')
+if (s != null) {
+    String t = vars.get('access_token')
+    boolean ok = t != null &amp;&amp; t != 'NOT_FOUND'
+    s.access = ok ? t : null
+    s.refresh = ok ? vars.get('refresh_token') : null
+    s.at = ok ? vars.get('token_at') : null
+    vars.remove('ep_session')
+    props.get('ep_sessions').offer(s)
+}
+</stringProp></JSR223PreProcessor>
+<hashTree/>
+</hashTree>
+</hashTree>
+</hashTree>
+</hashTree>
+</jmeterTestPlan>
