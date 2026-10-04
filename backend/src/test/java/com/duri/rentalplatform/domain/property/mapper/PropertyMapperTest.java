@@ -351,6 +351,8 @@ class PropertyMapperTest {
         assertThat(first.debtRatio()).isEqualByComparingTo("68.00");
         assertThat(first.hasSeniorDebt()).isTrue();
         assertThat(first.latitude()).isEqualByComparingTo("37.55");
+        assertThat(first.longitude()).isEqualByComparingTo("126.85");
+        assertThat(first.monthlyRent()).isZero();
         assertThat(markers.get(1).riskGrade()).isNull();
     }
 

@@ -100,7 +100,27 @@
         </where>
     </sql>
 
-    <select id="selectDistrictCounts" resultType="com.duri.rentalplatform.domain.property.vo.DistrictCountRow">
+    <!--
+      record 를 돌려주는 조회는 resultType 자동 매핑 대신 이름 지정 <constructor> 로 받는다(#397).
+      인자 이름 자동 매핑(arg-name-based-constructor-auto-mapping)은 행마다 생성자를 다시 찾고, 인자마다 이름을 리플렉션으로 읽어
+      모든 컬럼 이름과 비교한다(MyBatis 3.5.19 DefaultResultSetHandler.applyArgNameBasedConstructorAutoMapping). 운영 프로파일
+      (#390 P01)에서 반경 요청(1 km 약 1,400행) CPU 샘플 183 중 156(85 %)이 이 매핑이었다.
+      이름 지정 <constructor> 는 기동 때 한 번 인자 이름 · 타입으로 생성자를 맞추고(ResultMap.Builder.argNamesOfMatchingConstructor),
+      못 찾으면 기동이 실패한다. 순서가 아니라 이름으로 맞추므로 record 컴포넌트 순서가 바뀌어도 조용히 틀리지 않는다.
+      record 는 setter 가 없어 javaType 이 필요하고, 생성자 인자 타입과 정확히 같아야 한다(원시형 · 상위 타입이면 못 찾는다).
+      column 은 SQL 의 별칭, name 은 record 컴포넌트 이름이다. SELECT 에 컬럼을 더하면 여기에도 더한다.
+    -->
+    <resultMap id="districtCountRow" type="com.duri.rentalplatform.domain.property.vo.DistrictCountRow">
+        <constructor>
+            <arg column="name" name="name" javaType="String"/>
+            <arg column="total_count" name="totalCount" javaType="Long"/>
+            <arg column="safe_count" name="safeCount" javaType="Long"/>
+            <arg column="caution_count" name="cautionCount" javaType="Long"/>
+            <arg column="danger_count" name="dangerCount" javaType="Long"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectDistrictCounts" resultMap="districtCountRow">
         SELECT p.district AS name,
                COUNT(*) AS total_count,
                SUM(CASE WHEN ra.risk_grade = 'SAFE' THEN 1 ELSE 0 END) AS safe_count,
@@ -136,14 +156,30 @@
                END AS has_senior_debt
     </sql>
 
-    <select id="selectMarkers" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse">
+    <!-- markerColumns 의 컬럼. 마커 · 마커 식별자 조회가 함께 쓴다. 이름 지정 <constructor> 인 이유는 districtCountRow 위 주석 -->
+    <resultMap id="propertyMarker" type="com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse">
+        <constructor>
+            <arg column="property_id" name="propertyId" javaType="Long"/>
+            <arg column="latitude" name="latitude" javaType="java.math.BigDecimal"/>
+            <arg column="longitude" name="longitude" javaType="java.math.BigDecimal"/>
+            <arg column="deposit" name="deposit" javaType="Long"/>
+            <arg column="risk_grade" name="riskGrade" javaType="com.duri.rentalplatform.domain.property.enums.RiskGrade"/>
+            <arg column="contract_type" name="contractType" javaType="com.duri.rentalplatform.domain.property.enums.ContractType"/>
+            <arg column="monthly_rent" name="monthlyRent" javaType="Long"/>
+            <arg column="district" name="district" javaType="String"/>
+            <arg column="debt_ratio" name="debtRatio" javaType="java.math.BigDecimal"/>
+            <arg column="has_senior_debt" name="hasSeniorDebt" javaType="Boolean"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectMarkers" resultMap="propertyMarker">
         <include refid="markerColumns"/>
         <include refid="fromPropertyRiskContractType"/>
         <include refid="filter"/>
         ORDER BY p.property_id
     </select>
 
-    <select id="selectMarkersByIds" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse">
+    <select id="selectMarkersByIds" resultMap="propertyMarker">
         <include refid="markerColumns"/>
         <include refid="fromPropertyRiskContractType"/>
         WHERE p.property_id IN
@@ -180,7 +216,23 @@
     </sql>
 
     <!-- 미분석은 최신 분석이 없는 매물이다. risk_grade 는 NOT NULL 이라 NULL 이면 LEFT JOIN 에서 빠진 것이다. -->
-    <select id="selectClusterCells" resultType="com.duri.rentalplatform.domain.property.vo.MapClusterCellRow">
+    <!-- 이름 지정 <constructor> 인 이유는 districtCountRow 위 주석 -->
+    <resultMap id="mapClusterCellRow" type="com.duri.rentalplatform.domain.property.vo.MapClusterCellRow">
+        <constructor>
+            <arg column="row_index" name="rowIndex" javaType="Integer"/>
+            <arg column="col_index" name="colIndex" javaType="Integer"/>
+            <arg column="count" name="count" javaType="Long"/>
+            <arg column="latitude" name="latitude" javaType="java.math.BigDecimal"/>
+            <arg column="longitude" name="longitude" javaType="java.math.BigDecimal"/>
+            <arg column="safe_count" name="safeCount" javaType="Long"/>
+            <arg column="caution_count" name="cautionCount" javaType="Long"/>
+            <arg column="danger_count" name="dangerCount" javaType="Long"/>
+            <arg column="unanalyzed_count" name="unanalyzedCount" javaType="Long"/>
+            <arg column="representative_id" name="representativeId" javaType="Long"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectClusterCells" resultMap="mapClusterCellRow">
         SELECT g.row_index,
                g.col_index,
                COUNT(*) AS count,
@@ -234,6 +286,24 @@
         </choose>
     </sql>
 
+    <!-- 목록 두 조회(selectList · selectListByLeaseRatioIndex)가 함께 쓴다. 이름 지정 <constructor> 인 이유는 districtCountRow 위 주석 -->
+    <resultMap id="propertyListRow" type="com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse">
+        <constructor>
+            <arg column="property_id" name="propertyId" javaType="Long"/>
+            <arg column="district" name="district" javaType="String"/>
+            <arg column="address" name="address" javaType="String"/>
+            <arg column="property_type" name="propertyType" javaType="com.duri.rentalplatform.domain.property.enums.PropertyType"/>
+            <arg column="contract_type" name="contractType" javaType="com.duri.rentalplatform.domain.property.enums.ContractType"/>
+            <arg column="deposit" name="deposit" javaType="Long"/>
+            <arg column="monthly_rent" name="monthlyRent" javaType="Long"/>
+            <arg column="area_sqm" name="areaSqm" javaType="java.math.BigDecimal"/>
+            <arg column="floor" name="floor" javaType="Integer"/>
+            <arg column="risk_grade" name="riskGrade" javaType="com.duri.rentalplatform.domain.property.enums.RiskGrade"/>
+            <arg column="debt_ratio" name="debtRatio" javaType="java.math.BigDecimal"/>
+            <arg column="registered_at" name="registeredAt" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
+
     <!--
       자치구를 지정하고 전세가율로 정렬하는 목록만 최신 분석을 매물 한 건씩 찾는다. 평범한 LEFT JOIN 이면 플래너가 최신 분석 전부를
       해시 조인한다 — risk_analysis 를 이력 행까지(약 300k) 병렬 순차 읽기한다. 매물마다 커버링 부분 유일 인덱스
@@ -246,7 +316,7 @@
       random_page_cost 를 1.1 로 낮추면 플래너가 스스로 이 계획을 고르는 것을 확인했지만(#326) 서버 설정이라 DB 설정 단계로
       미룬다. 그때까지 매퍼가 계획을 정한다.
     -->
-    <select id="selectList" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse">
+    <select id="selectList" resultMap="propertyListRow">
         SELECT p.property_id,
                p.district,
                p.address,
@@ -292,7 +362,7 @@
       앞부분의 정렬 값은 lease_ratio 그대로라 selectList 의 COALESCE(ra.lease_ratio, 대체값)와 같고, 행 비교
       (lease_ratio, property_id) > (값, ID) 는 selectList 의 키셋 조건(값 > 또는 값 = 이고 ID >)과 같다.
     -->
-    <select id="selectListByLeaseRatioIndex" resultType="com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse">
+    <select id="selectListByLeaseRatioIndex" resultMap="propertyListRow">
         SELECT p.property_id,
                p.district,
                p.address,
@@ -328,7 +398,33 @@
          LIMIT #{limit}
     </select>
 
-    <select id="selectDetail" resultType="com.duri.rentalplatform.domain.property.vo.PropertyDetailRow">
+    <!-- 한 행 조회지만 같은 방식으로 맞춘다. 이유는 districtCountRow 위 주석 -->
+    <resultMap id="propertyDetailRow" type="com.duri.rentalplatform.domain.property.vo.PropertyDetailRow">
+        <constructor>
+            <arg column="property_id" name="propertyId" javaType="Long"/>
+            <arg column="district" name="district" javaType="String"/>
+            <arg column="address" name="address" javaType="String"/>
+            <arg column="latitude" name="latitude" javaType="java.math.BigDecimal"/>
+            <arg column="longitude" name="longitude" javaType="java.math.BigDecimal"/>
+            <arg column="property_type" name="propertyType" javaType="com.duri.rentalplatform.domain.property.enums.PropertyType"/>
+            <arg column="contract_type" name="contractType" javaType="com.duri.rentalplatform.domain.property.enums.ContractType"/>
+            <arg column="deposit" name="deposit" javaType="Long"/>
+            <arg column="monthly_rent" name="monthlyRent" javaType="Long"/>
+            <arg column="area_sqm" name="areaSqm" javaType="java.math.BigDecimal"/>
+            <arg column="floor" name="floor" javaType="Integer"/>
+            <arg column="landlord_name" name="landlordName" javaType="String"/>
+            <arg column="market_price" name="marketPrice" javaType="Long"/>
+            <arg column="price_type" name="priceType" javaType="com.duri.rentalplatform.domain.property.enums.PriceType"/>
+            <arg column="price_date" name="priceDate" javaType="java.time.LocalDate"/>
+            <arg column="risk_grade" name="riskGrade" javaType="com.duri.rentalplatform.domain.property.enums.RiskGrade"/>
+            <arg column="debt_ratio" name="debtRatio" javaType="java.math.BigDecimal"/>
+            <arg column="insurance_eligible" name="insuranceEligible" javaType="Boolean"/>
+            <arg column="wishlisted" name="wishlisted" javaType="Boolean"/>
+            <arg column="registered_at" name="registeredAt" javaType="java.time.OffsetDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectDetail" resultMap="propertyDetailRow">
         SELECT p.property_id,
                p.district,
                p.address,
