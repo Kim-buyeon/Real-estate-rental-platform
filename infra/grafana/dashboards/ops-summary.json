@@ -651,7 +651,7 @@
       "id": 9,
       "type": "stat",
       "title": "메모리 여유",
-      "description": "무엇: 노드별 가용 메모리(MemAvailable). 9/26 사고 ① · ②(APP-01 멈춤)의 원인이 메모리 고갈이었다. 부하 중 APP-01 최소 60 ~ 131MB 를 관찰했다.\n\n위험: 노랑 150MiB 미만 · 빨강 60MiB 미만. **경계는 잠정** — 사고 표본이 적다.\n\n할 일: 그 노드에서 free -m · docker stats --no-stream 으로 커지는 컨테이너를 찾는다. 운영 절차서 2장 · 7장.",
+      "description": "무엇: 노드별 가용 메모리(MemAvailable). 9/26 사고 ① · ②(APP-01 멈춤)의 원인이 메모리 고갈이었다. 부하 중 APP-01 최소 60 ~ 131MB 를 관찰했다.\n\n위험: 노랑 150MiB 미만 · 빨강 60MiB 미만. **경계는 잠정** — 노드 크기 비율이 아니라 무응답이 난 절대 가용량(#390 부하 시험에서 58 ~ 73MiB) 기준이다. 앱 노드를 4 GiB(t3.medium)로 올린 뒤의 경계는 다음 부하 시험에서 확정한다.\n\n할 일: 그 노드에서 free -m · docker stats --no-stream 으로 커지는 컨테이너를 찾는다. 운영 절차서 2장 · 7장.",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
