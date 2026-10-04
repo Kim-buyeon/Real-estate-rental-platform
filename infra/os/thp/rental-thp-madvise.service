@@ -1,0 +1,45 @@
+[Unit]
+# 앱 노드(APP-01 · APP-02)의 Transparent Huge Pages 를 always → madvise 로 — #394, 서버 운영 기반 설계서 8장(THP 행).
+# **앱 노드에만 둔다.** DB 노드에는 두지 않는다 — #394 는 앱 노드 메모리 묶음이고 DB 노드의 THP 는 재지 않았다(PostgreSQL 메모리는 DB 설정 묶음).
+#
+# 설치 위치: /etc/systemd/system/rental-thp-madvise.service (root 소유 644). 순서는 운영 절차서 9.1 10-APP —
+#   systemd-analyze verify /home/deploy/rental/infra/os/thp/rental-thp-madvise.service
+#   sudo install -m 644 -o root -g root /home/deploy/rental/infra/os/thp/rental-thp-madvise.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now rental-thp-madvise.service
+#   확인: cat /sys/kernel/mm/transparent_hugepage/enabled → always [madvise] never, journalctl -u rental-thp-madvise -b 에 적용 줄
+# 되돌리기: sudo systemctl disable --now rental-thp-madvise.service → 재부팅(배포판 기본 always 로 돌아온다). 재부팅 없이 바로는
+#   echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+#
+# ── 왜 ──
+#  Rocky 9 의 기본이 enabled=always 다(defrag 는 이미 madvise). always 면 커널이 프로세스가 요청하지 않아도 익명 메모리를 2 MiB 큰 페이지로
+#  채울 수 있어, 실제로 쓰는 몫보다 상주 메모리가 커진다. 운영 슬롯 RSS 중 AnonHugePages 140 · 490 MiB(APP-01 · APP-02, 2026-10-04 23시대 —
+#  /proc/1/smaps_rollup), 노드 전체 530 · 1,170 MiB(/proc/meminfo).
+#  madvise 면 madvise(MADV_HUGEPAGE)로 요청한 구역에만 큰 페이지를 준다(커널 문서 admin-guide/mm/transhuge 「sysfs」).
+#  JVM 은 UseTransparentHugePages=false(기본 — 운영 JDK 21.0.12 PrintFlagsFinal)라 요청하지 않으므로 슬롯은 큰 페이지를 쓰지 않게 된다.
+#  부풀림이 실제로 얼마 줄어드는지는 로컬(WSL2 는 이미 madvise)에서 잴 수 없었다 — **반영 전후 같은 명령으로 실측한다**(#394 10단계).
+#
+# ── 언제 걸리나 ──
+#  이 값은 이미 큰 페이지로 잡힌 메모리를 쪼개지 않는다. 그래서 컨테이너보다 먼저 건다(Before=docker.service). 떠 있는 노드에 처음 설치할 때는
+#  설치 뒤 슬롯을 재생성해야 효과가 난다(운영 절차서 3.1 순서).
+#  커널 명령줄(transparent_hugepage=madvise)로 두지 않은 이유 — 새 커널이 들어올 때 명령줄 인자가 따라가지 않을 수 있다(운영 절차서 9.1
+#  메모리 단락의 crashkernel 사례). 이 유닛은 커널과 무관하게 부팅마다 다시 쓴다.
+#  **확인할 것(미확인)** — tuned 가 노드에서 돌면 그 프로필의 [vm] 설정이 이 값을 다시 쓸 수 있다. 설치 때 systemctl is-active tuned 를 보고,
+#  돌고 있으면 재부팅 뒤 enabled 값이 madvise 로 남는지 확인한다.
+Description=Rental app node THP madvise (#394)
+# docker 보다 먼저 — 순서만 정한다(Wants 가 아니다). 이 유닛이 실패해도 docker 는 뜬다 — 슬롯이 always 로 뜨는 것은 저널 · --failed 로 보고 고친다.
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# systemd 는 명령줄의 $ 를 자기 환경 변수로 치환한다 — 셸 변수는 $$ 로 적는다.
+# 쓰고 나서 다시 읽어 [madvise] 가 선택됐는지 본다 — 아니면 실패로 끝나 systemctl --failed 와 저널에 남는다.
+# 적용 결과(enabled · defrag 둘)를 저널에 한 줄로 남긴다 — 정기 작업과 같이 저널이 확인 수단이다(서버 운영 기반 설계서 7.1).
+ExecStart=/usr/bin/sh -c 'echo madvise > /sys/kernel/mm/transparent_hugepage/enabled'
+ExecStartPost=/usr/bin/sh -c 'e=$$(cat /sys/kernel/mm/transparent_hugepage/enabled); d=$$(cat /sys/kernel/mm/transparent_hugepage/defrag); echo "thp enabled: $$e / defrag: $$d"; case "$$e" in *"[madvise]"*) exit 0 ;; *) exit 1 ;; esac'
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rental-thp
+
+[Install]
+WantedBy=multi-user.target
