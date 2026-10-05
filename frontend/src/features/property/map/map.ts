@@ -1,5 +1,11 @@
 import type { BoundingBox } from '../../../api/property';
-import { BBOX_PRECISION, DISTRICT_LEVEL, SEOUL_BOUNDS, SEOUL_INITIAL_LEVEL } from './constants';
+import {
+  BBOX_PRECISION,
+  BBOX_TILE_UNITS_BY_LEVEL,
+  DISTRICT_LEVEL,
+  SEOUL_BOUNDS,
+  SEOUL_INITIAL_LEVEL,
+} from './constants';
 import type { KakaoMap, KakaoMaps } from './kakao';
 import { isMapSdkReady, loadKakaoMaps } from './loader';
 
@@ -32,16 +38,27 @@ const BBOX_FACTOR = 10 ** BBOX_PRECISION;
 /** 부동소수 오차로 이미 자릿수에 맞는 값이 한 칸 밖으로 밀리는 것을 막는다 */
 const scale = (value: number) => Number((value * BBOX_FACTOR).toFixed(6));
 
+/** 지도 레벨의 타일 크기(10^-BBOX_PRECISION 도 단위). 표 밖 레벨은 가장 가까운 끝 값 — constants 「타일 크기」 */
+export function bboxTileUnits(level: number): number {
+  const last = BBOX_TILE_UNITS_BY_LEVEL.length;
+  const index = Math.min(Math.max(Math.round(level), 1), last) - 1;
+  // index는 위에서 0 ~ length − 1로 잘렸고 표는 비어 있지 않은 상수라 undefined가 될 수 없다
+  return BBOX_TILE_UNITS_BY_LEVEL[index]!;
+}
+
 /**
- * 표시 영역 좌표를 밖으로 반올림한다 — min은 내림, max는 올림 (kakao-map 4장).
- * 안으로 반올림하면 가장자리 마커가 빠진다.
+ * 표시 영역을 지도 레벨의 타일 배수로 밖으로 넓힌다 — min은 내림, max는 올림 (kakao-map 4장).
+ * 안으로 맞추면 가장자리 마커가 빠진다. 같은 지역 · 같은 레벨이면 같은 영역이 되어 서버 캐시가 적중한다.
  */
-export function roundOutward(bbox: RawBoundingBox): BoundingBox {
+export function roundOutward(bbox: RawBoundingBox, level: number): BoundingBox {
+  const tile = bboxTileUnits(level);
+  const down = (value: number) => (Math.floor(scale(value) / tile) * tile) / BBOX_FACTOR;
+  const up = (value: number) => (Math.ceil(scale(value) / tile) * tile) / BBOX_FACTOR;
   return {
-    minLat: Math.floor(scale(bbox.minLat)) / BBOX_FACTOR,
-    maxLat: Math.ceil(scale(bbox.maxLat)) / BBOX_FACTOR,
-    minLng: Math.floor(scale(bbox.minLng)) / BBOX_FACTOR,
-    maxLng: Math.ceil(scale(bbox.maxLng)) / BBOX_FACTOR,
+    minLat: down(bbox.minLat),
+    maxLat: up(bbox.maxLat),
+    minLng: down(bbox.minLng),
+    maxLng: up(bbox.maxLng),
   };
 }
 
@@ -96,17 +113,20 @@ export function moveToPoint(map: KakaoMap, lat: number, lng: number, level: numb
   map.setLevel(level);
 }
 
-/** 현재 표시 영역을 쿼리 키에 넣을 좌표로 읽는다 */
+/** 현재 표시 영역을 그 레벨의 타일 배수로 넓혀 쿼리 키에 넣을 좌표로 읽는다 */
 export function readBoundingBox(map: KakaoMap): BoundingBox {
   const bounds = map.getBounds();
   const southWest = bounds.getSouthWest();
   const northEast = bounds.getNorthEast();
-  return roundOutward({
-    minLat: southWest.getLat(),
-    maxLat: northEast.getLat(),
-    minLng: southWest.getLng(),
-    maxLng: northEast.getLng(),
-  });
+  return roundOutward(
+    {
+      minLat: southWest.getLat(),
+      maxLat: northEast.getLat(),
+      minLng: southWest.getLng(),
+      maxLng: northEast.getLng(),
+    },
+    map.getLevel(),
+  );
 }
 
 /** 재조회 시점은 idle만이다 (kakao-map 4장). 해제 함수를 돌려준다 */
