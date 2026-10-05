@@ -13,11 +13,8 @@ import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
-import com.duri.rentalplatform.domain.loan.entity.LoanProduct;
-import com.duri.rentalplatform.domain.loan.entity.LoanRegulation;
-import com.duri.rentalplatform.domain.loan.repository.LoanProductRepository;
-import com.duri.rentalplatform.domain.loan.repository.LoanRegulationRepository;
-import com.duri.rentalplatform.domain.property.enums.PropertyType;
+import com.duri.rentalplatform.common.cache.CriteriaVersionStore;
+import com.duri.rentalplatform.common.cache.CriteriaVersionWatcher;
 import com.duri.rentalplatform.domain.risk.entity.GuaranteeCriteria;
 import com.duri.rentalplatform.domain.risk.entity.RiskCriteria;
 import com.duri.rentalplatform.domain.risk.enums.GuaranteeProvider;
@@ -30,6 +27,7 @@ import com.duri.rentalplatform.domain.risk.repository.SgiCriteriaRepository;
 import com.duri.rentalplatform.domain.risk.vo.GuaranteeCriteriaSnapshot;
 import com.duri.rentalplatform.domain.risk.vo.JudgementCriteria;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -49,26 +47,23 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * {@link JudgementCriteriaCache} — 첫 접근 적재 · 버전 키 확인 재적재 · Redis 실패 · 커밋 뒤 무효화 · 무효화와 겹친 적재. 저장소 ·
- * Redis · 트랜잭션 관리자는 목이다(컨테이너 없음). 읽기 횟수는 위험 등급 기준 저장소 호출 수로 센다 — 적재 한 번이 그것을 한 번 부른다.
+ * {@link JudgementCriteriaCache} — 첫 접근 적재 · 버전 키 확인 재적재({@link CriteriaVersionWatcher} 를 거쳐) · Redis 실패 · 커밋 뒤
+ * 무효화 · 무효화와 겹친 적재. 저장소 · Redis · 트랜잭션 관리자는 목이다(컨테이너 없음). 대출 한도 기준은 {@code LoanCriteriaCacheTest}. 읽기 횟수는 위험 등급 기준 저장소 호출 수로 센다 — 적재 한 번이 그것을 한 번 부른다.
  */
 class JudgementCriteriaCacheTest {
 
     private GuaranteeCriteriaRepository guaranteeCriteriaRepository;
     private RiskCriteriaRepository riskCriteriaRepository;
-    private LoanRegulationRepository loanRegulationRepository;
-    private LoanProductRepository loanProductRepository;
     private StringRedisTemplate redis;
     private ValueOperations<String, String> values;
     private JudgementCriteriaCache cache;
+    private CriteriaVersionWatcher watcher;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
     void setUp() {
         guaranteeCriteriaRepository = mock(GuaranteeCriteriaRepository.class);
         riskCriteriaRepository = mock(RiskCriteriaRepository.class);
-        loanRegulationRepository = mock(LoanRegulationRepository.class);
-        loanProductRepository = mock(LoanProductRepository.class);
         redis = mock(StringRedisTemplate.class);
         values = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(values);
@@ -79,6 +74,7 @@ class JudgementCriteriaCacheTest {
                 guarantee(12L, GuaranteeProvider.HF));
         when(guaranteeCriteriaRepository.findAll()).thenReturn(rows);
         cache = newCache("mock");
+        watcher = new CriteriaVersionWatcher(new CriteriaVersionStore(redis), List.of(cache), Duration.ofSeconds(1));
     }
 
     @AfterEach
@@ -91,8 +87,8 @@ class JudgementCriteriaCacheTest {
     private JudgementCriteriaCache newCache(String ledgerMode) {
         return new JudgementCriteriaCache(guaranteeCriteriaRepository, mock(HfCriteriaRepository.class),
                 mock(SgiCriteriaRepository.class), mock(GuaranteePremiumRateRepository.class),
-                mock(InsuranceProductRepository.class), riskCriteriaRepository, loanRegulationRepository,
-                loanProductRepository, redis, mock(PlatformTransactionManager.class), ledgerMode);
+                mock(InsuranceProductRepository.class), riskCriteriaRepository, new CriteriaVersionStore(redis),
+                mock(PlatformTransactionManager.class), ledgerMode);
     }
 
     // ---------- 적재 ----------
@@ -198,85 +194,9 @@ class JudgementCriteriaCacheTest {
     }
 
     @Test
-    @DisplayName("대출 규제 · 대출 상품이 바뀌어도 지문은 그대로이고 대출 기준값만 바뀐다")
-    void loanCriteriaDoNotAffectFingerprint() {
-        givenLoanCriteria("4.200");
-        JudgementCriteria before = cache.current();
-        givenLoanCriteria("5.100");
-
-        cache.reload();
-
-        JudgementCriteria after = cache.current();
-        assertThat(after.fingerprint()).isEqualTo(before.fingerprint());
-        assertThat(before.findLoanLimitCriteria(PropertyType.APARTMENT).orElseThrow().interestRate())
-                .isEqualByComparingTo("4.200");
-        assertThat(after.findLoanLimitCriteria(PropertyType.APARTMENT).orElseThrow().interestRate())
-                .isEqualByComparingTo("5.100");
-    }
-
-    @Test
     @DisplayName("대장 연동 모드가 다르면 같은 기준표라도 지문이 다르다")
     void ledgerModeIsPartOfFingerprint() {
         assertThat(newCache("real").current().fingerprint()).isNotEqualTo(newCache("mock").current().fingerprint());
-    }
-
-    // ---------- 대출 기준값 ----------
-
-    @Test
-    @DisplayName("대출 기준값은 매물 유형의 HF 금리 대표 행을 쓰고, 그 유형의 행이 없으면 시드 예시 행을 쓴다")
-    void loanCriteriaUsesTypeProductThenSeedProduct() {
-        givenRegulation();
-        LoanProduct officetel = product("5.000", 300_000_000L);
-        LoanProduct seed = product("4.200", 400_000_000L);
-        when(loanProductRepository.findFirstByHouseTypeOrderByBaseMonthDescLoanAmountDescInterestRateAscLoanIdAsc(
-                PropertyType.OFFICETEL)).thenReturn(Optional.of(officetel));
-        when(loanProductRepository.findFirstByHouseTypeIsNullOrderByLoanIdAsc())
-                .thenReturn(Optional.of(seed));
-
-        JudgementCriteria criteria = cache.current();
-
-        assertThat(criteria.findLoanLimitCriteria(PropertyType.OFFICETEL).orElseThrow().interestRate())
-                .isEqualByComparingTo("5.000");
-        assertThat(criteria.findLoanLimitCriteria(PropertyType.OFFICETEL).orElseThrow().productMaxLimit())
-                .isEqualTo(300_000_000L);
-        assertThat(criteria.findLoanLimitCriteria(PropertyType.APARTMENT).orElseThrow().interestRate())
-                .isEqualByComparingTo("4.200");
-    }
-
-    @Test
-    @DisplayName("대출 기준값은 최신 규제의 값을 계산기 입력으로 옮긴다")
-    void loanCriteriaCarriesRegulation() {
-        givenLoanCriteria("4.200");
-
-        var loan = cache.current().findLoanLimitCriteria(PropertyType.APARTMENT).orElseThrow();
-
-        assertThat(loan.depositRatioLimit()).isEqualByComparingTo("80.00");
-        assertThat(loan.guaranteeCapNoHouse()).isEqualTo(400_000_000L);
-        assertThat(loan.guaranteeCapOneHouse()).isEqualTo(180_000_000L);
-        assertThat(loan.dsrLimit()).isEqualByComparingTo("40.00");
-        assertThat(loan.stressDsrRate()).isEqualByComparingTo("3.00");
-        assertThat(loan.productMaxLimit()).isEqualTo(400_000_000L);
-    }
-
-    @Test
-    @DisplayName("대표 행도 시드 행도 없는 유형은 빈다 — 한도 조회가 시드 결함으로 낸다")
-    void typeWithoutAnyProductIsAbsent() {
-        givenRegulation();
-
-        assertThat(cache.current().findLoanLimitCriteria(PropertyType.APARTMENT)).isEmpty();
-        assertThat(cache.current().findLoanLimitCriteria(PropertyType.OFFICETEL)).isEmpty();
-    }
-
-    @Test
-    @DisplayName("대출 규제 행이 없으면 모든 유형이 빈다 — 위험도 판정 기준은 그대로 읽힌다")
-    void noRegulationLeavesLoanCriteriaEmpty() {
-        LoanProduct seedRow = product("4.200", 400_000_000L);
-        when(loanProductRepository.findFirstByHouseTypeIsNullOrderByLoanIdAsc()).thenReturn(Optional.of(seedRow));
-
-        JudgementCriteria criteria = cache.current();
-
-        assertThat(criteria.loanLimitCriteria()).isEmpty();
-        assertThat(criteria.negativeEquityRatio()).isEqualByComparingTo("80.00");
     }
 
     // ---------- 버전 키 확인 ----------
@@ -284,17 +204,17 @@ class JudgementCriteriaCacheTest {
     @Test
     @DisplayName("버전 키가 바뀌면 다시 읽고, 같으면 읽지 않는다")
     void reloadsOnlyWhenVersionChanges() {
-        when(values.get(JudgementCriteriaCache.VERSION_KEY)).thenReturn("1");
-        cache.reloadIfVersionChanged();
+        when(values.get(CriteriaVersionStore.VERSION_KEY)).thenReturn("1");
+        watcher.reloadIfVersionChanged();
         verify(riskCriteriaRepository, times(1)).findFirstByOrderByRiskCriteriaIdAsc();
 
-        cache.reloadIfVersionChanged();
-        cache.reloadIfVersionChanged();
+        watcher.reloadIfVersionChanged();
+        watcher.reloadIfVersionChanged();
         verify(riskCriteriaRepository, times(1)).findFirstByOrderByRiskCriteriaIdAsc();
 
         givenRiskCriteria("75.00", "70.00");
-        when(values.get(JudgementCriteriaCache.VERSION_KEY)).thenReturn("2");
-        cache.reloadIfVersionChanged();
+        when(values.get(CriteriaVersionStore.VERSION_KEY)).thenReturn("2");
+        watcher.reloadIfVersionChanged();
 
         assertThat(cache.current().negativeEquityRatio()).isEqualByComparingTo("75.00");
         // 값이 바뀐 것을 본 확인이 곧바로 다시 읽었다 — current() 가 또 읽지 않는다.
@@ -304,10 +224,10 @@ class JudgementCriteriaCacheTest {
     @Test
     @DisplayName("버전 키가 아직 없고 지난번에도 없었으면 읽지 않는다")
     void absentVersionKeyTwiceDoesNotReload() {
-        when(values.get(JudgementCriteriaCache.VERSION_KEY)).thenReturn(null);
+        when(values.get(CriteriaVersionStore.VERSION_KEY)).thenReturn(null);
 
-        cache.reloadIfVersionChanged();
-        cache.reloadIfVersionChanged();
+        watcher.reloadIfVersionChanged();
+        watcher.reloadIfVersionChanged();
 
         verifyNoInteractions(riskCriteriaRepository);
     }
@@ -316,10 +236,10 @@ class JudgementCriteriaCacheTest {
     @DisplayName("Redis 에서 버전 키를 읽지 못하면 예외를 올리지 않고 담긴 값을 유지한다")
     void redisReadFailureKeepsCurrentValue() {
         JudgementCriteria before = cache.current();
-        when(values.get(JudgementCriteriaCache.VERSION_KEY)).thenThrow(new IllegalStateException("redis down"));
+        when(values.get(CriteriaVersionStore.VERSION_KEY)).thenThrow(new IllegalStateException("redis down"));
 
-        cache.reloadIfVersionChanged();
-        cache.reloadIfVersionChanged();
+        watcher.reloadIfVersionChanged();
+        watcher.reloadIfVersionChanged();
 
         assertThat(cache.current()).isSameAs(before);
         verify(riskCriteriaRepository, times(1)).findFirstByOrderByRiskCriteriaIdAsc();
@@ -329,12 +249,12 @@ class JudgementCriteriaCacheTest {
     @DisplayName("Redis 가 회복되면 바뀐 버전을 다시 확인해 읽는다")
     void redisRecoveryReloadsOnVersionChange() {
         cache.current();
-        when(values.get(JudgementCriteriaCache.VERSION_KEY)).thenThrow(new IllegalStateException("redis down"));
-        cache.reloadIfVersionChanged();
+        when(values.get(CriteriaVersionStore.VERSION_KEY)).thenThrow(new IllegalStateException("redis down"));
+        watcher.reloadIfVersionChanged();
         givenRiskCriteria("75.00", "70.00");
-        doReturn("5").when(values).get(JudgementCriteriaCache.VERSION_KEY);
+        doReturn("5").when(values).get(CriteriaVersionStore.VERSION_KEY);
 
-        cache.reloadIfVersionChanged();
+        watcher.reloadIfVersionChanged();
 
         assertThat(cache.current().negativeEquityRatio()).isEqualByComparingTo("75.00");
     }
@@ -378,7 +298,7 @@ class JudgementCriteriaCacheTest {
 
         cache.invalidateAfterCommit();
 
-        verify(values).increment(JudgementCriteriaCache.VERSION_KEY);
+        verify(values).increment(CriteriaVersionStore.VERSION_KEY);
         cache.current();
         verify(riskCriteriaRepository, times(2)).findFirstByOrderByRiskCriteriaIdAsc();
     }
@@ -405,7 +325,7 @@ class JudgementCriteriaCacheTest {
 
         runAfterCommit();
 
-        verify(values).increment(JudgementCriteriaCache.VERSION_KEY);
+        verify(values).increment(CriteriaVersionStore.VERSION_KEY);
         cache.current();
         verify(riskCriteriaRepository, times(2)).findFirstByOrderByRiskCriteriaIdAsc();
     }
@@ -430,7 +350,7 @@ class JudgementCriteriaCacheTest {
     @DisplayName("버전 키를 올리지 못해도 예외를 올리지 않고 이 슬롯은 비운다")
     void incrementFailureStillInvalidatesLocalSlot() {
         cache.current();
-        when(values.increment(JudgementCriteriaCache.VERSION_KEY)).thenThrow(new IllegalStateException("redis down"));
+        when(values.increment(CriteriaVersionStore.VERSION_KEY)).thenThrow(new IllegalStateException("redis down"));
 
         cache.invalidateAfterCommit();
 
@@ -501,30 +421,5 @@ class JudgementCriteriaCacheTest {
         when(row.getCollateralRatio()).thenReturn(new BigDecimal("90.00"));
         when(row.getMaxDeposit()).thenReturn(700_000_000L);
         return row;
-    }
-
-    /** 규제 한 행과 시드 예시 상품(금리 인자)을 둔다. 매물 유형의 API 행은 없다. */
-    private void givenLoanCriteria(String seedInterestRate) {
-        givenRegulation();
-        LoanProduct seedRow = product(seedInterestRate, 400_000_000L);
-        when(loanProductRepository.findFirstByHouseTypeIsNullOrderByLoanIdAsc()).thenReturn(Optional.of(seedRow));
-    }
-
-    private void givenRegulation() {
-        LoanRegulation regulation = mock(LoanRegulation.class);
-        when(regulation.getDepositRatioLimit()).thenReturn(new BigDecimal("80.00"));
-        when(regulation.getGuaranteeCapNoHouse()).thenReturn(400_000_000L);
-        when(regulation.getGuaranteeCapOneHouse()).thenReturn(180_000_000L);
-        when(regulation.getDsrLimit()).thenReturn(new BigDecimal("40.00"));
-        when(regulation.getStressDsrRate()).thenReturn(new BigDecimal("3.00"));
-        when(loanRegulationRepository.findFirstByOrderByEffectiveDateDescRegulationIdDesc())
-                .thenReturn(Optional.of(regulation));
-    }
-
-    private static LoanProduct product(String interestRate, long maxLimit) {
-        LoanProduct product = mock(LoanProduct.class);
-        when(product.getInterestRate()).thenReturn(new BigDecimal(interestRate));
-        when(product.getMaxLimit()).thenReturn(maxLimit);
-        return product;
     }
 }

@@ -1,10 +1,10 @@
 package com.duri.rentalplatform.domain.loan.service;
 
+import com.duri.rentalplatform.domain.loan.cache.LoanCriteriaCache;
 import com.duri.rentalplatform.domain.loan.entity.LoanProduct;
 import com.duri.rentalplatform.domain.loan.repository.LoanProductRepository;
 import com.duri.rentalplatform.domain.loan.vo.LoanProductWriteResult;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
-import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
 import com.duri.rentalplatform.external.loanrate.BankLoanRate;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -31,7 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>소득 조건 · 금리 유형 · 대출 기간 — 같은 안내에 상품 값으로 적혀 있지 않아 NULL
  * </ul>
  *
- * <p><b>기준표 캐시 무효화</b> — 넣거나 고친 행이 있으면 커밋 뒤 판정 기준표 슬롯 캐시를 비우고 버전 키를 올린다. 대표 상품(한도
+ * <p><b>기준표 캐시 무효화</b> — 넣거나 고친 행이 있으면 커밋 뒤 대출 기준 슬롯 캐시를 비우고 버전 키를 올린다. 대표 상품(한도
  * 계산의 금리 · 상품 한도)이 그 캐시에 있다. 바뀐 행이 없으면 걸지 않는다.
  */
 @Service
@@ -44,7 +44,7 @@ public class LoanProductRefreshWriter {
     static final boolean HOUSE_OWNERSHIP_ALLOWED = true;
 
     private final LoanProductRepository loanProductRepository;
-    private final JudgementCriteriaCache judgementCriteriaCache;
+    private final LoanCriteriaCache loanCriteriaCache;
 
     /**
      * @param rates    한 기준월의 은행별 금리. 비어 있지 않다 — 빈 결과는 호출부가 걸러 기존 행을 지킨다
@@ -76,7 +76,7 @@ public class LoanProductRefreshWriter {
             }
         }
         if (inserted + updated > 0) {
-            judgementCriteriaCache.invalidateAfterCommit();
+            loanCriteriaCache.invalidateAfterCommit();
         }
         return new LoanProductWriteResult(inserted, updated, unchanged);
     }

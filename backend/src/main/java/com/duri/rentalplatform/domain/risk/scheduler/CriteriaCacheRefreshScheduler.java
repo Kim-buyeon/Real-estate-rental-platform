@@ -1,11 +1,13 @@
 package com.duri.rentalplatform.domain.risk.scheduler;
 
-import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
+import com.duri.rentalplatform.common.cache.CriteriaVersionWatcher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 판정 기준표 슬롯 캐시를 다른 슬롯의 기준 변경에 맞춘다. 동작은 {@link JudgementCriteriaCache} 가 갖는다.
+ * 기준표 슬롯 캐시(위험도 판정 기준 · 대출 한도 기준)를 다른 슬롯의 기준 변경에 맞춘다. 동작은 {@link CriteriaVersionWatcher} 가
+ * 갖는다. 위험도 쪽 패키지에 두는 이유 — 기준표 대부분이 위험도 판정 기준이고, 대출은 이미 위험도를 참조한다(반대 방향 참조를
+ * 만들지 않는다).
  *
  * <p><b>분산 락을 걸지 않는다</b> — 한 번만 실행하는 일이 아니다. 캐시가 슬롯마다 있으므로 모든 슬롯이 각자 돈다.
  *
@@ -13,18 +15,18 @@ import org.springframework.stereotype.Component;
  * 간격은 설정 {@code risk.criteria-cache.*}.
  */
 @Component
-public class JudgementCriteriaRefreshScheduler {
+public class CriteriaCacheRefreshScheduler {
 
-    private final JudgementCriteriaCache judgementCriteriaCache;
+    private final CriteriaVersionWatcher criteriaVersionWatcher;
 
-    public JudgementCriteriaRefreshScheduler(JudgementCriteriaCache judgementCriteriaCache) {
-        this.judgementCriteriaCache = judgementCriteriaCache;
+    public CriteriaCacheRefreshScheduler(CriteriaVersionWatcher criteriaVersionWatcher) {
+        this.criteriaVersionWatcher = criteriaVersionWatcher;
     }
 
-    /** 버전 키가 바뀌었으면 다시 읽는다. */
+    /** 버전 키가 바뀌었으면 모든 기준표 캐시를 다시 읽는다. */
     @Scheduled(fixedDelayString = "${risk.criteria-cache.version-check-interval}")
     public void reloadIfVersionChanged() {
-        judgementCriteriaCache.reloadIfVersionChanged();
+        criteriaVersionWatcher.reloadIfVersionChanged();
     }
 
     /**
@@ -33,6 +35,6 @@ public class JudgementCriteriaRefreshScheduler {
      */
     @Scheduled(fixedDelayString = "${risk.criteria-cache.full-reload-interval}")
     public void reloadAll() {
-        judgementCriteriaCache.reload();
+        criteriaVersionWatcher.reloadAll();
     }
 }

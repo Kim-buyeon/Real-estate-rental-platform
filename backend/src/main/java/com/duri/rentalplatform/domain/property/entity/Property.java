@@ -95,9 +95,16 @@ public class Property extends CreatedAtEntity {
     private LocalDate priceDate;
 
     /**
-     * 시세 금액이 바뀌어 갱신 배치(RISK-08)의 재분석을 기다리는가(V18). {@link #refreshMarketPrice} 가 세우고 배치가 판정을 마치면
-     * {@link #completeReanalysis} 가 내린다. 판정 단계는 이 표시로 재분석 대상을 DB 에서 읽는다 — 적재 단계가 식별자를 메모리에
-     * 모아 넘기지 않는다.
+     * 판정 입력(시세 · 등기 · 대장)이 마지막 판정 뒤에 바뀌어 재분석을 기다리는가(V18). V18 은 시세 금액 변경만을 위해 만들었고
+     * #399 에서 뜻을 넓혔다 — 열 이름 · 정의는 그대로다.
+     * <ul>
+     *   <li>세우는 쪽 — 시세는 {@link #refreshMarketPrice}, 등기 · 대장은 그것을 바꾸는 쓰기가 같은 트랜잭션에서
+     *       {@code PropertyRepository#markReanalysisPending} 으로</li>
+     *   <li>내리는 쪽 — 판정이 성공해 기록하는 쓰기 트랜잭션이 {@code PropertyRepository#clearReanalysisPending} 으로</li>
+     * </ul>
+     * 표시가 서 있으면 위험도 조회는 저장된 판정을 쓰지 않고 다시 판정하고, 갱신 배치(RISK-08)의 판정 단계는 이 표시로 재분석
+     * 대상을 DB 에서 읽는다 — 적재 단계가 식별자를 메모리에 모아 넘기지 않는다. 표시를 엔티티로 내리지 않는 이유는 그 메서드 주석에
+     * 있다.
      */
     @Column(name = "is_reanalysis_pending", nullable = false)
     private boolean reanalysisPending;
@@ -217,14 +224,6 @@ public class Property extends CreatedAtEntity {
             reanalysisPending = true;
         }
         return amountChanged;
-    }
-
-    /**
-     * 갱신 배치(RISK-08)가 시세 변경 재분석 또는 첫 판정을 마쳤다. 재분석 대기 표시를 내린다 — 두 갈래 모두 부른다(#338). 판정
-     * 결론이 같아 새 판정 행이 생기지 않았어도 내린다 — 바뀐 시세로 판정한 것은 같다.
-     */
-    public void completeReanalysis() {
-        reanalysisPending = false;
     }
 
     /** 중복 적재 차단에 쓰는 자연키. */

@@ -17,6 +17,7 @@ import com.duri.rentalplatform.domain.property.entity.BuildingLedger;
 import com.duri.rentalplatform.domain.property.enums.LedgerDataSource;
 import com.duri.rentalplatform.domain.property.enums.LedgerReplacementOutcome;
 import com.duri.rentalplatform.domain.property.repository.BuildingLedgerRepository;
+import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
 import com.duri.rentalplatform.domain.property.service.LedgerCommandService;
 import com.duri.rentalplatform.domain.property.vo.LedgerReplacement;
 import com.duri.rentalplatform.domain.risk.repository.RiskAnalysisRepository;
@@ -46,6 +47,7 @@ class MockLedgerReplaceExecutorTest {
     private RiskAnalysisCommandService riskAnalysisCommandService;
     private BuildingLedgerRepository buildingLedgerRepository;
     private RiskAnalysisRepository riskAnalysisRepository;
+    private PropertyRepository propertyRepository;
     private MockLedgerReplaceExecutor executor;
 
     @BeforeEach
@@ -54,8 +56,10 @@ class MockLedgerReplaceExecutorTest {
         riskAnalysisCommandService = mock(RiskAnalysisCommandService.class);
         buildingLedgerRepository = mock(BuildingLedgerRepository.class);
         riskAnalysisRepository = mock(RiskAnalysisRepository.class);
+        propertyRepository = mock(PropertyRepository.class);
         executor = new MockLedgerReplaceExecutor(ledgerCommandService, riskAnalysisCommandService,
-                buildingLedgerRepository, riskAnalysisRepository, mock(PlatformTransactionManager.class));
+                buildingLedgerRepository, riskAnalysisRepository, propertyRepository,
+                mock(PlatformTransactionManager.class));
     }
 
     @Test
@@ -102,6 +106,33 @@ class MockLedgerReplaceExecutorTest {
 
         verify(riskAnalysisRepository, never()).detachLedger(any());
         verify(buildingLedgerRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("Mock 행을 지울 때 같은 쓰기 트랜잭션에서 재분석 대기를 세운다 — 참조 끊기 · 삭제 뒤, 재분석 앞")
+    void removeMockMarksReanalysisPending() {
+        when(ledgerCommandService.fetchMockReplacement(PROPERTY_ID))
+                .thenReturn(LedgerReplacement.of(LedgerReplacementOutcome.NOT_FOUND));
+        BuildingLedger ledger = storedLedger(true);
+
+        executor.replaceAndAnalyze(PROPERTY_ID);
+
+        InOrder order = inOrder(buildingLedgerRepository, propertyRepository, riskAnalysisCommandService);
+        order.verify(buildingLedgerRepository).delete(ledger);
+        order.verify(propertyRepository).markReanalysisPending(PROPERTY_ID);
+        order.verify(riskAnalysisCommandService).analyzeWithCollectedLedger(PROPERTY_ID);
+    }
+
+    @Test
+    @DisplayName("삭제 직전에 행이 Mock 이 아니게 됐으면 재분석 대기도 세우지 않는다")
+    void removeMockSkippedDoesNotMarkReanalysisPending() {
+        when(ledgerCommandService.fetchMockReplacement(PROPERTY_ID))
+                .thenReturn(LedgerReplacement.of(LedgerReplacementOutcome.NOT_FOUND));
+        storedLedger(false);
+
+        executor.replaceAndAnalyze(PROPERTY_ID);
+
+        verify(propertyRepository, never()).markReanalysisPending(any());
     }
 
     @ParameterizedTest

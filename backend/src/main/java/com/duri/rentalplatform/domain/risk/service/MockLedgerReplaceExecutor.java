@@ -5,6 +5,7 @@ import com.duri.rentalplatform.common.lock.DistributedLock;
 import com.duri.rentalplatform.domain.property.entity.BuildingLedger;
 import com.duri.rentalplatform.domain.property.enums.LedgerReplacementOutcome;
 import com.duri.rentalplatform.domain.property.repository.BuildingLedgerRepository;
+import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
 import com.duri.rentalplatform.domain.property.service.LedgerCommandService;
 import com.duri.rentalplatform.domain.property.vo.LedgerReplacement;
 import com.duri.rentalplatform.domain.risk.repository.RiskAnalysisRepository;
@@ -40,6 +41,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p><b>실패</b> — 락 안의 예외는 잡아 결과에 담는다. 연동 장애(서킷 열림 포함)면 Mock 행은 그대로 남아 다음 회차에 다시 본다.
  *
+ * <p><b>재분석 대기</b> — 바꾸기 · 지우기 · 새로 저장 모두 그 쓰기와 같은 트랜잭션에서 매물의 재분석 대기 표시(V18)를 세운다
+ * (교체 · 저장은 {@link LedgerCommandService}, 삭제는 여기). 재분석이 실패하면 표시가 남아 조회가 Mock 대장으로 낸 저장 판정을 내지
+ * 않고 다시 판정한다 — 다음 회차는 이미 Mock 이 아닌 매물을 다시 보지 않으므로 표시가 회복의 길이다. 밤 매물 갱신 배치의 재분석
+ * 갈래도 표시로 다시 잡는다.
+ *
  * <p><b>트랜잭션</b> — 이 메서드는 열지 않는다. 대장 떼기는 외부 호출이다. 삭제만 여기서 경계를 긋고, 교체 · 재분석은 각
  * 서비스가 긋는다.
  */
@@ -50,6 +56,7 @@ public class MockLedgerReplaceExecutor {
     private final RiskAnalysisCommandService riskAnalysisCommandService;
     private final BuildingLedgerRepository buildingLedgerRepository;
     private final RiskAnalysisRepository riskAnalysisRepository;
+    private final PropertyRepository propertyRepository;
     private final TransactionTemplate writeTransaction;
 
     public MockLedgerReplaceExecutor(
@@ -57,11 +64,13 @@ public class MockLedgerReplaceExecutor {
             RiskAnalysisCommandService riskAnalysisCommandService,
             BuildingLedgerRepository buildingLedgerRepository,
             RiskAnalysisRepository riskAnalysisRepository,
+            PropertyRepository propertyRepository,
             PlatformTransactionManager transactionManager) {
         this.ledgerCommandService = ledgerCommandService;
         this.riskAnalysisCommandService = riskAnalysisCommandService;
         this.buildingLedgerRepository = buildingLedgerRepository;
         this.riskAnalysisRepository = riskAnalysisRepository;
+        this.propertyRepository = propertyRepository;
         this.writeTransaction = new TransactionTemplate(transactionManager);
     }
 
@@ -107,13 +116,14 @@ public class MockLedgerReplaceExecutor {
         }
     }
 
-    /** 분석 행의 참조를 끊고 Mock 대장 행을 지운다. 그 사이 다른 경로가 지웠거나 Mock 이 아니게 됐으면 손대지 않는다. */
+    /** 분석 행의 참조를 끊고 Mock 대장 행을 지우고 재분석 대기를 세운다. 그 사이 다른 경로가 지웠거나 Mock 이 아니게 됐으면 손대지 않는다. */
     private void removeMock(Long propertyId) {
         writeTransaction.executeWithoutResult(status -> buildingLedgerRepository.findByPropertyId(propertyId)
                 .filter(BuildingLedger::isMock)
                 .ifPresent(ledger -> {
                     riskAnalysisRepository.detachLedger(ledger.getLedgerId());
                     buildingLedgerRepository.delete(ledger);
+                    propertyRepository.markReanalysisPending(propertyId);
                 }));
     }
 }

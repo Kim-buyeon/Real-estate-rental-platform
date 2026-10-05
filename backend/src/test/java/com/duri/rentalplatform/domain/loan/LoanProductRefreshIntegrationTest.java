@@ -3,6 +3,7 @@ package com.duri.rentalplatform.domain.loan;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.duri.rentalplatform.TestcontainersConfiguration;
+import com.duri.rentalplatform.domain.loan.cache.LoanCriteriaCache;
 import com.duri.rentalplatform.domain.loan.entity.LoanProduct;
 import com.duri.rentalplatform.domain.loan.repository.LoanProductRepository;
 import com.duri.rentalplatform.domain.loan.service.LoanProductRefreshService;
@@ -10,7 +11,6 @@ import com.duri.rentalplatform.domain.loan.service.LoanProductRefreshWriter;
 import com.duri.rentalplatform.domain.loan.vo.LoanProductRefreshReport;
 import com.duri.rentalplatform.domain.loan.vo.LoanProductWriteResult;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
-import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
 import com.duri.rentalplatform.external.loanrate.BankLoanRate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -52,7 +52,7 @@ class LoanProductRefreshIntegrationTest {
     JdbcTemplate jdbcTemplate;
 
     @Autowired
-    JudgementCriteriaCache criteriaCache;
+    LoanCriteriaCache criteriaCache;
 
     @AfterEach
     void removeApiRows() {

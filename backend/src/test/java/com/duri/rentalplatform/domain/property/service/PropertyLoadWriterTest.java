@@ -229,29 +229,6 @@ class PropertyLoadWriterTest {
         assertThat(priceChanged).isEmpty();
     }
 
-    @Test
-    @DisplayName("재분석 완료: 재분석 대기 표시를 내린다")
-    void completeReanalysisClearsPending() {
-        LocalDate date = LocalDate.of(2026, 8, 1);
-        Property property = storedProperty(1L, "주소1", 280_000_000L, date);
-        property.refreshMarketPrice(300_000_000L, PriceType.ACTUAL_TRANSACTION, date);
-        when(propertyRepository.findById(1L)).thenReturn(Optional.of(property));
-
-        writer.completeReanalysis(1L);
-
-        assertThat(property.isReanalysisPending()).isFalse();
-    }
-
-    @Test
-    @DisplayName("재분석 완료: 그 사이 지워진 매물은 아무것도 하지 않는다")
-    void completeReanalysisIgnoresMissingProperty() {
-        when(propertyRepository.findById(9L)).thenReturn(Optional.empty());
-
-        writer.completeReanalysis(9L);
-
-        verify(propertyRepository, never()).saveAll(any());
-    }
-
     // ---------- 건축물대장 조회 키(PROP-04) ----------
 
     private static final LedgerLookupKey KEY = new LedgerLookupKey("11680", "10100", "0100", "0001");

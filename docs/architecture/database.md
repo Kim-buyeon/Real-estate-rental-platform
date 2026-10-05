@@ -141,7 +141,7 @@
 | Latitude | latitude |  |  | NUMERIC | 10 | 7 | — | 위도 |
 | Longitude | longitude |  |  | NUMERIC | 10 | 7 | — | 경도 |
 | Registered At | registered_at |  | ● | TIMESTAMP | — | — | now() | 매물 등록일시 |
-| Reanalysis Pending | is_reanalysis_pending |  | ● | BOOLEAN | 1 | — | FALSE | 시세 금액이 바뀌어 재분석을 기다린다. 갱신 배치가 세우고 판정이 성공하면 내린다 — 시세 변경 재분석뿐 아니라 최신 판정이 없던 매물의 첫 판정도 포함(#338). 부분 인덱스 `ix_property_reanalysis_pending (property_id) WHERE is_reanalysis_pending` |
+| Reanalysis Pending | is_reanalysis_pending |  | ● | BOOLEAN | 1 | — | FALSE | 판정 입력(시세 · 등기 · 대장)이 마지막 판정 뒤에 바뀌어 재분석을 기다린다(V18 은 시세 금액 전용으로 만들었고 #399 에서 등기 · 대장으로 넓혔다 — 열 정의는 그대로). 시세 갱신 · 등기 이력 교체 · 대장 수집 · 교체 · 삭제가 그 쓰기와 같은 트랜잭션에서 세우고, 판정이 성공해 기록하는 트랜잭션이 내린다 — 최신 판정이 없던 매물의 첫 판정도 포함(#338). 서 있으면 위험도 조회가 저장된 판정을 쓰지 않는다. 부분 인덱스 `ix_property_reanalysis_pending (property_id) WHERE is_reanalysis_pending` |
 | Sigungu Code | sigungu_code |  |  | VARCHAR | 5 | — | — | 건축물대장 조회 키 — 시군구 코드. 넷(시군구 · 법정동 · 번 · 지)이 모두 있거나 모두 없다(CHECK) |
 | Bjdong Code | bjdong_code |  |  | VARCHAR | 5 | — | — | 법정동 코드(도로명주소 API admCd 뒤 5자리) |
 | Bun | bun |  |  | VARCHAR | 4 | — | — | 번(0 채움) |
@@ -334,7 +334,7 @@
 | Risk Reason | risk_reason |  |  | TEXT | — | — | — | 위험도 판정 사유 (사용자 설명용) |
 | Is Latest | is_latest |  | ● | BOOLEAN | 1 | — | TRUE | 최신 분석 결과 여부 |
 | Judgement Snapshot | judgement_snapshot |  |  | TEXT | — | — | — | 판정 근거 JSON — 위험도 응답에서 시세 · 시세 구분 · 기준일 · 분석 시각을 뺀 부분. NULL = 근거 없음(V21 이전 행, 다음 조회가 판정해 채운다) |
-| Criteria Fingerprint | criteria_fingerprint |  |  | VARCHAR | 64 | — | — | 판정에 쓴 기준표 값 · 대장 연동 모드의 SHA-256(16진). 현재 기준의 지문과 다르면 저장된 근거를 쓰지 않고 다시 판정한다 |
+| Criteria Fingerprint | criteria_fingerprint |  |  | VARCHAR | 64 | — | — | 판정에 쓴 기준표 값 · 대장 연동 모드 · 형식 판(판정 규칙이나 근거 모양을 바꾸면 코드에서 올린다)의 SHA-256(16진). 현재 기준의 지문과 다르면 저장된 근거를 쓰지 않고 다시 판정한다 |
 | Analyzed At | analyzed_at |  | ● | TIMESTAMP | — | — | now() | 분석 일시 |
 
 근거 · 지문(V21) — 최신 행에 적는다. 결론이 같아 새 행을 남기지 않는 판정도 최신 행의 근거 · 지문을 새 값으로 고친다(셋이 모두 같으면 쓰지 않는다). 저장된 근거를 언제 돌려주고 언제 다시 판정하는지는 데이터 적재 설계서 1.2 가 정한다. JSONB 가 아니라 TEXT 인 이유는 V21 주석에 있다.

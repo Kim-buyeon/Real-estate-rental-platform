@@ -5,11 +5,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.duri.rentalplatform.TestcontainersConfiguration;
 import com.duri.rentalplatform.domain.admin.dto.request.RiskThresholdUpdateRequest;
 import com.duri.rentalplatform.domain.admin.service.CriteriaCommandService;
+import com.duri.rentalplatform.domain.property.enums.LedgerDataSource;
 import com.duri.rentalplatform.domain.property.enums.RiskGrade;
+import com.duri.rentalplatform.domain.property.service.LedgerCommandService;
 import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
 import com.duri.rentalplatform.domain.risk.dto.response.RiskReanalyzeResponse;
 import com.duri.rentalplatform.domain.risk.dto.response.RiskResponse;
+import com.duri.rentalplatform.external.buildingledger.BuildingLedgerDocument;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +62,9 @@ class StoredJudgementIntegrationTest {
 
     @Autowired
     CriteriaCommandService criteriaCommandService;
+
+    @Autowired
+    LedgerCommandService ledgerCommandService;
 
     @Autowired
     JudgementCriteriaCache criteriaCache;
@@ -261,6 +268,77 @@ class StoredJudgementIntegrationTest {
 
         assertThat(after.isNegativeEquity()).isTrue();
         assertThat(latestRow(propertyId).get("risk_grade")).isEqualTo(after.riskGrade().name());
+        // 판정이 성공해 기록되면 같은 트랜잭션에서 재분석 대기가 내려간다(시세가 판정에 쓴 값 그대로라서).
+        assertThat(reanalysisPending(propertyId)).isFalse();
+    }
+
+    @Test
+    @DisplayName("대장 교체 뒤 판정이 돌지 못하면 재분석 대기가 남고, 조회가 다시 판정해 근거를 새로 적은 뒤에야 대기가 내려가 저장된 판정이 나간다")
+    void ledgerReplacementWithoutJudgementKeepsPendingUntilGetRejudges() {
+        long propertyId = insertProperty(340_000_000L);
+        RiskResponse first = service.findLatestOrAnalyze(propertyId);
+        // 전제 — 첫 판정이 Mock 대장을 수집했고 판정 뒤 대기는 내려가 있다.
+        assertThat(jdbc.queryForObject("SELECT data_source FROM building_ledger WHERE property_id = ?", String.class,
+                propertyId)).isEqualTo("MOCK");
+        assertThat(reanalysisPending(propertyId)).isFalse();
+
+        // 대장 교체는 성공했는데 뒤이은 판정은 실패한 상태 — 교체만 하고 판정을 부르지 않는다.
+        boolean replaced = ledgerCommandService.replaceMock(propertyId, buildingHubDocument());
+
+        assertThat(replaced).isTrue();
+        assertThat(reanalysisPending(propertyId)).isTrue();
+        // 낡은 근거에 표지 값을 심는다 — 저장된 판정이 나가면 표지가, 다시 판정하면 실제 값이 나온다.
+        stampMarker(propertyId, first.judgement());
+        assertThat(countRows(propertyId)).isEqualTo(1);
+
+        RiskResponse rejudged = service.findLatestOrAnalyze(propertyId);
+
+        assertThat(rejudged.debtRatio()).isNotEqualByComparingTo("12.34");
+        assertThat(reanalysisPending(propertyId)).isFalse();
+        assertThat(jsonMapper.readValue((String) latestRow(propertyId).get("judgement_snapshot"),
+                RiskResponse.Judgement.class)).isEqualTo(rejudged.judgement());
+
+        // 대기가 내려간 뒤에는 저장된 판정이 나간다.
+        stampMarker(propertyId, first.judgement());
+        assertThat(service.findLatestOrAnalyze(propertyId).debtRatio()).isEqualByComparingTo("12.34");
+        assertThat(reanalysisPending(propertyId)).isFalse();
+    }
+
+    @Test
+    @DisplayName("재분석 대기 매물의 판정은 그 사이 바뀐 시세를 덮지 않는다 — 시세는 그대로, 대기는 내려간다")
+    void judgementDoesNotOverwriteChangedMarketPrice() {
+        long propertyId = insertProperty(340_000_000L);
+        service.findLatestOrAnalyze(propertyId);
+        jdbc.update("UPDATE property SET market_price = 350000000, is_reanalysis_pending = TRUE "
+                + "WHERE property_id = ?", propertyId);
+
+        RiskResponse response = service.findLatestOrAnalyze(propertyId);
+
+        assertThat(response.marketPrice()).isEqualTo(350_000_000L);
+        assertThat(jdbc.queryForObject("SELECT market_price FROM property WHERE property_id = ?", Long.class,
+                propertyId)).isEqualTo(350_000_000L);
+        assertThat(reanalysisPending(propertyId)).isFalse();
+    }
+
+    private boolean reanalysisPending(long propertyId) {
+        return jdbc.queryForObject("SELECT is_reanalysis_pending FROM property WHERE property_id = ?", Boolean.class,
+                propertyId);
+    }
+
+    /** 최신 행의 근거를 부채비율 12.34 표지 값으로 바꾼다 — 응답이 저장된 근거에서 왔는지 다시 계산했는지 가른다. */
+    private void stampMarker(long propertyId, RiskResponse.Judgement original) {
+        RiskResponse.Judgement marked = new RiskResponse.Judgement(original.riskGrade(), original.gradeReason(),
+                new BigDecimal("12.34"), original.seniorDebtTotal(), original.isNegativeEquity(),
+                original.insuranceEligible(), original.providers(), original.personalConditions(),
+                original.rightViolations(), original.warnings(), original.consistency());
+        jdbc.update("UPDATE risk_analysis SET judgement_snapshot = ? WHERE property_id = ? AND is_latest",
+                jsonMapper.writeValueAsString(marked), propertyId);
+    }
+
+    private static BuildingLedgerDocument buildingHubDocument() {
+        return new BuildingLedgerDocument("서울특별시 종로구 동망산길 19 (창신동)", null, "공동주택", "철근콘크리트구조",
+                null, new BigDecimal("14544.66"), null, LocalDate.of(1992, 11, 25), null,
+                LedgerDataSource.BUILDING_HUB);
     }
 
     private int countRows(long propertyId) {

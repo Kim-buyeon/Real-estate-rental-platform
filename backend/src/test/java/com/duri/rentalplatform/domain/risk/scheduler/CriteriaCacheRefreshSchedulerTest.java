@@ -4,21 +4,21 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
-import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
+import com.duri.rentalplatform.common.cache.CriteriaVersionWatcher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** {@link JudgementCriteriaRefreshScheduler} — 두 반복 작업이 캐시의 서로 다른 동작을 부른다. 동작 자체는 캐시 테스트가 본다. */
-class JudgementCriteriaRefreshSchedulerTest {
+/** {@link CriteriaCacheRefreshScheduler} — 두 반복 작업이 감시자의 서로 다른 동작을 부른다. 동작 자체는 감시자 테스트가 본다. */
+class CriteriaCacheRefreshSchedulerTest {
 
-    private JudgementCriteriaCache cache;
-    private JudgementCriteriaRefreshScheduler scheduler;
+    private CriteriaVersionWatcher cache;
+    private CriteriaCacheRefreshScheduler scheduler;
 
     @BeforeEach
     void setUp() {
-        cache = mock(JudgementCriteriaCache.class);
-        scheduler = new JudgementCriteriaRefreshScheduler(cache);
+        cache = mock(CriteriaVersionWatcher.class);
+        scheduler = new CriteriaCacheRefreshScheduler(cache);
     }
 
     @Test
@@ -27,7 +27,7 @@ class JudgementCriteriaRefreshSchedulerTest {
         scheduler.reloadIfVersionChanged();
 
         verify(cache).reloadIfVersionChanged();
-        verify(cache, never()).reload();
+        verify(cache, never()).reloadAll();
     }
 
     @Test
@@ -35,7 +35,7 @@ class JudgementCriteriaRefreshSchedulerTest {
     void safetyNetCallsReload() {
         scheduler.reloadAll();
 
-        verify(cache).reload();
+        verify(cache).reloadAll();
         verify(cache, never()).reloadIfVersionChanged();
     }
 }

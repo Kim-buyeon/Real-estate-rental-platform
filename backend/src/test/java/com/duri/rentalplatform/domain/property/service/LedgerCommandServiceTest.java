@@ -408,6 +408,73 @@ class LedgerCommandServiceTest {
         assertThat(ledger.getTotalFloorArea()).isEqualByComparingTo("100.00");
     }
 
+    @Test
+    @DisplayName("새 대장을 저장하면 같은 쓰기 트랜잭션에서 저장 직전에 재분석 대기를 세운다")
+    void saveMarksReanalysisPending() {
+        givenProperty();
+        when(client.fetch(any())).thenReturn(Optional.of(document()));
+
+        service.collectIfAbsent(PROPERTY_ID);
+
+        InOrder order = inOrder(transactionManager, propertyRepository, buildingLedgerRepository);
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(propertyRepository).markReanalysisPending(PROPERTY_ID);
+        order.verify(buildingLedgerRepository).saveAndFlush(any());
+        order.verify(transactionManager).commit(any());
+    }
+
+    @Test
+    @DisplayName("대장을 저장하지 않는 경로(이미 있음 · 뗄 대장 없음 · 초당 한도)는 재분석 대기를 세우지 않는다")
+    void noSaveDoesNotMarkReanalysisPending() {
+        givenProperty();
+        when(buildingLedgerRepository.existsByPropertyId(PROPERTY_ID)).thenReturn(true);
+        service.collectIfAbsent(PROPERTY_ID);
+
+        when(buildingLedgerRepository.existsByPropertyId(PROPERTY_ID)).thenReturn(false);
+        when(client.fetch(any())).thenReturn(Optional.empty());
+        service.collectIfAbsent(PROPERTY_ID);
+
+        when(client.fetch(any())).thenThrow(new BuildingLedgerRateLimitedException("시험"));
+        service.collectIfAbsent(PROPERTY_ID);
+
+        verify(propertyRepository, never()).markReanalysisPending(any());
+    }
+
+    @Test
+    @DisplayName("교체 저장: Mock 행을 바꾸면 재분석 대기를 세운다")
+    void replaceMockMarksReanalysisPending() {
+        BuildingLedger ledger = BuildingLedger.collect(PROPERTY_ID, "서울특별시 시험구 시험로 1", "김임대", "공동주택",
+                "철근콘크리트구조", new BigDecimal("600.30"), new BigDecimal("2550.00"), new BigDecimal("42.50"),
+                LocalDate.of(1998, 4, 18), true, LedgerDataSource.MOCK);
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.of(ledger));
+
+        service.replaceMock(PROPERTY_ID, buildingHubDocument());
+
+        verify(propertyRepository).markReanalysisPending(PROPERTY_ID);
+    }
+
+    @Test
+    @DisplayName("교체 저장: Mock 이 아닌 행은 바꾸지 않으므로 재분석 대기도 세우지 않는다")
+    void replaceMockOnNonMockDoesNotMarkReanalysisPending() {
+        BuildingLedger ledger = BuildingLedger.collect(PROPERTY_ID, "서울특별시 종로구 동망산길 19 (창신동)", null, "공동주택",
+                null, null, new BigDecimal("100.00"), null, null, null, LedgerDataSource.BUILDING_HUB);
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.of(ledger));
+
+        service.replaceMock(PROPERTY_ID, buildingHubDocument());
+
+        verify(propertyRepository, never()).markReanalysisPending(any());
+    }
+
+    @Test
+    @DisplayName("교체 저장: 대장 행이 없으면 재분석 대기를 세우지 않는다")
+    void replaceMockWithoutLedgerDoesNotMarkReanalysisPending() {
+        when(buildingLedgerRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.empty());
+
+        service.replaceMock(PROPERTY_ID, buildingHubDocument());
+
+        verify(propertyRepository, never()).markReanalysisPending(any());
+    }
+
     private void givenStoredLedger(LedgerDataSource dataSource) {
         BuildingLedger ledger = mock(BuildingLedger.class);
         when(ledger.isMock()).thenReturn(dataSource == LedgerDataSource.MOCK);

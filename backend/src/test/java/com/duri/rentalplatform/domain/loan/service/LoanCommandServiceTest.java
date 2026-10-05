@@ -12,17 +12,17 @@ import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.domain.loan.cache.LoanCriteriaCache;
 import com.duri.rentalplatform.domain.loan.dto.response.LoanLimitResponse;
 import com.duri.rentalplatform.domain.loan.enums.AppliedRegulation;
+import com.duri.rentalplatform.domain.loan.vo.LoanCriteria;
 import com.duri.rentalplatform.domain.loan.vo.LoanLimitCriteria;
 import com.duri.rentalplatform.domain.property.entity.Property;
 import com.duri.rentalplatform.domain.property.entity.PropertyCode;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
-import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
 import com.duri.rentalplatform.domain.risk.dto.response.RiskResponse;
 import com.duri.rentalplatform.domain.risk.service.RiskAnalysisCommandService;
-import com.duri.rentalplatform.domain.risk.vo.JudgementCriteria;
 import com.duri.rentalplatform.domain.user.dto.response.ProfileResponse;
 import com.duri.rentalplatform.domain.user.service.UserQueryService;
 import java.math.BigDecimal;
@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@link LoanCommandService} — 404 · 422 두 종 · 기준값을 계산기로 옮기는 것 · 가입 여부를 위험도 조회로 얻고 매물을 한 번만 읽는 것.
- * 계산 경계는 계산기 테스트가, 대표 상품의 선택 규칙은 {@code JudgementCriteriaCacheTest} 와
+ * 계산 경계는 계산기 테스트가, 대표 상품의 선택 규칙은 {@code LoanCriteriaCacheTest} 와
  * {@code LoanProductRefreshIntegrationTest} 가 본다.
  */
 class LoanCommandServiceTest {
@@ -46,7 +46,7 @@ class LoanCommandServiceTest {
     private UserQueryService userQueryService;
     private RiskAnalysisCommandService riskAnalysisCommandService;
     private PropertyRepository propertyRepository;
-    private JudgementCriteriaCache judgementCriteriaCache;
+    private LoanCriteriaCache loanCriteriaCache;
     private Property property;
     private LoanCommandService service;
 
@@ -55,9 +55,9 @@ class LoanCommandServiceTest {
         userQueryService = mock(UserQueryService.class);
         riskAnalysisCommandService = mock(RiskAnalysisCommandService.class);
         propertyRepository = mock(PropertyRepository.class);
-        judgementCriteriaCache = mock(JudgementCriteriaCache.class);
+        loanCriteriaCache = mock(LoanCriteriaCache.class);
         service = new LoanCommandService(userQueryService, riskAnalysisCommandService, propertyRepository,
-                judgementCriteriaCache);
+                loanCriteriaCache);
     }
 
     @Test
@@ -66,7 +66,7 @@ class LoanCommandServiceTest {
         when(propertyRepository.findWithPropertyTypeCodeByPropertyId(PROPERTY_ID)).thenReturn(Optional.empty());
 
         assertErrorCode(ErrorCode.PROPERTY_NOT_FOUND);
-        verifyNoInteractions(riskAnalysisCommandService, judgementCriteriaCache);
+        verifyNoInteractions(riskAnalysisCommandService, loanCriteriaCache);
     }
 
     @Test
@@ -80,7 +80,7 @@ class LoanCommandServiceTest {
                     assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PROFILE_INCOMPLETE);
                     assertThat(e.getField()).isEqualTo("annualIncome");
                 });
-        verifyNoInteractions(riskAnalysisCommandService, judgementCriteriaCache);
+        verifyNoInteractions(riskAnalysisCommandService, loanCriteriaCache);
     }
 
     @Test
@@ -91,7 +91,7 @@ class LoanCommandServiceTest {
         givenEligible(false);
 
         assertErrorCode(ErrorCode.LOAN_PROPERTY_NOT_ELIGIBLE);
-        verifyNoInteractions(judgementCriteriaCache);
+        verifyNoInteractions(loanCriteriaCache);
     }
 
     @Test
@@ -204,8 +204,7 @@ class LoanCommandServiceTest {
     }
 
     private void givenCriteria(Map<PropertyType, LoanLimitCriteria> loanLimitCriteria) {
-        when(judgementCriteriaCache.current()).thenReturn(new JudgementCriteria(
-                List.of(), Map.of(), new BigDecimal("80.00"), new BigDecimal("70.00"), loanLimitCriteria, "fp"));
+        when(loanCriteriaCache.current()).thenReturn(new LoanCriteria(loanLimitCriteria));
     }
 
     /** 시드와 같은 규제 값(보증금 80% · 무주택 상한 4억 · 보유 상한 1.8억 · DSR 40% · 스트레스 3%p)에 금리 · 상품 한도를 얹는다. */

@@ -16,6 +16,8 @@ import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.common.cache.CriteriaVersionStore;
+import com.duri.rentalplatform.common.cache.CriteriaVersionWatcher;
 import com.duri.rentalplatform.domain.property.entity.BuildingLedger;
 import com.duri.rentalplatform.domain.property.entity.Property;
 import com.duri.rentalplatform.domain.property.entity.PropertyCode;
@@ -24,8 +26,6 @@ import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import com.duri.rentalplatform.domain.property.repository.BuildingLedgerRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
 import com.duri.rentalplatform.domain.property.service.LedgerCommandService;
-import com.duri.rentalplatform.domain.loan.repository.LoanProductRepository;
-import com.duri.rentalplatform.domain.loan.repository.LoanRegulationRepository;
 import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
 import com.duri.rentalplatform.domain.risk.dto.response.RiskResponse;
 import com.duri.rentalplatform.domain.risk.entity.BuildingRegistry;
@@ -106,6 +106,7 @@ class RiskAnalysisCommandServiceTest {
     private ApplicationEventPublisher eventPublisher;
     private RiskAnalysisCommandService service;
     private JudgementCriteriaCache criteriaCache;
+    private CriteriaVersionWatcher criteriaVersionWatcher;
 
     @BeforeEach
     void setUp() {
@@ -124,6 +125,7 @@ class RiskAnalysisCommandServiceTest {
         riskCriteriaRepository = mock(RiskCriteriaRepository.class);
         riskAnalysisRepository = mock(RiskAnalysisRepository.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
+        criteriaVersionWatcher = mock(CriteriaVersionWatcher.class);
         service = serviceWithLedgerMode("mock");
     }
 
@@ -131,11 +133,12 @@ class RiskAnalysisCommandServiceTest {
         // 기준표는 실제 캐시가 목 저장소에서 읽는다 — 첫 판정 때 읽으므로 각 테스트의 기준 스텁이 그대로 쓰인다.
         criteriaCache = new JudgementCriteriaCache(guaranteeCriteriaRepository,
                 hfCriteriaRepository, sgiCriteriaRepository, premiumRateRepository, insuranceProductRepository,
-                riskCriteriaRepository, mock(LoanRegulationRepository.class), mock(LoanProductRepository.class),
-                mock(StringRedisTemplate.class), mock(PlatformTransactionManager.class), buildingLedgerMode);
+                riskCriteriaRepository, new CriteriaVersionStore(mock(StringRedisTemplate.class)),
+                mock(PlatformTransactionManager.class), buildingLedgerMode);
         return new RiskAnalysisCommandService(registryCommandService, ledgerCommandService, propertyRepository,
                 buildingRegistryRepository, ownershipHistoryRepository, mortgageHistoryRepository,
-                buildingLedgerRepository, riskAnalysisRepository, criteriaCache, JsonMapper.builder().build(),
+                buildingLedgerRepository, riskAnalysisRepository, criteriaCache, criteriaVersionWatcher,
+                JsonMapper.builder().build(),
                 eventPublisher, mock(PlatformTransactionManager.class), buildingLedgerMode);
     }
 
@@ -705,6 +708,159 @@ class RiskAnalysisCommandServiceTest {
         assertThat(saved.getJudgementSnapshot()).isNotEqualTo(oldSnapshot);
         assertThat(readSnapshot(saved)).isEqualTo(response.judgement());
         assertThat(saved.getCriteriaFingerprint()).isEqualTo(criteriaCache.current().fingerprint());
+    }
+
+    // ---------- 재분석 대기 내리기 · 지문 불일치 때 버전 확인 ----------
+
+    @Test
+    @DisplayName("판정에 성공하면 재분석 대기를 판정에 쓴 시세로 내린다")
+    void successfulJudgementClearsReanalysisPendingWithJudgedMarketPrice() {
+        givenSafeProperty();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        service.analyze(PROPERTY_ID);
+
+        verify(propertyRepository).clearReanalysisPending(PROPERTY_ID, 300_000_000L);
+    }
+
+    @Test
+    @DisplayName("같은 결론이라 새 행을 남기지 않는 판정도 재분석 대기를 내린다")
+    void unchangedConclusionJudgementAlsoClearsReanalysisPending() {
+        givenSafeProperty();
+        RiskAnalysis latest = analysis(RiskGrade.SAFE, true, "50.0");
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.of(latest));
+
+        service.analyze(PROPERTY_ID);
+
+        verify(propertyRepository).clearReanalysisPending(PROPERTY_ID, 300_000_000L);
+    }
+
+    @Test
+    @DisplayName("판정 저장이 예외로 끝나면 재분석 대기를 내리지 않는다")
+    void failedJudgementDoesNotClearReanalysisPending() {
+        givenSafeProperty();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        when(riskAnalysisRepository.save(any())).thenThrow(new IllegalStateException("저장 실패"));
+
+        assertThatThrownBy(() -> service.analyze(PROPERTY_ID)).isInstanceOf(IllegalStateException.class);
+
+        verify(propertyRepository, never()).clearReanalysisPending(any(), any());
+    }
+
+    @Test
+    @DisplayName("판정 입력(등기)을 못 읽어 판정이 중단되면 재분석 대기를 내리지 않는다")
+    void abortedJudgementDoesNotClearReanalysisPending() {
+        givenSafeProperty();
+        when(buildingRegistryRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.analyze(PROPERTY_ID)).isInstanceOf(BusinessException.class);
+
+        verify(propertyRepository, never()).clearReanalysisPending(any(), any());
+    }
+
+    @Test
+    @DisplayName("저장된 판정을 그대로 돌려줄 때는 재분석 대기를 건드리지 않는다")
+    void storedJudgementHitDoesNotTouchReanalysisPending() {
+        givenSafeProperty();
+        RiskAnalysis stored = storedLatest();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.of(stored));
+
+        service.findLatestOrAnalyze(PROPERTY_ID);
+
+        verify(propertyRepository, never()).clearReanalysisPending(any(), any());
+        verify(propertyRepository, never()).markReanalysisPending(any());
+    }
+
+    @Test
+    @DisplayName("지문이 같으면 버전 키를 확인하지 않는다")
+    void matchingFingerprintDoesNotCheckVersion() {
+        givenSafeProperty();
+        RiskAnalysis stored = storedLatest();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.of(stored));
+
+        service.findLatestOrAnalyze(PROPERTY_ID);
+
+        verifyNoInteractions(criteriaVersionWatcher);
+    }
+
+    @Test
+    @DisplayName("지문이 다르고 조절된 확인이 새 기준을 읽어 지문이 같아지면 저장된 판정을 낸다 — 수집 · 판정 없음")
+    void fingerprintMismatchResolvedByVersionCheckReturnsStoredJudgement() {
+        givenSafeProperty();
+        RiskAnalysis stored = storedLatest();
+        RiskCriteria riskCriteria = riskCriteriaRepository.findFirstByOrderByRiskCriteriaIdAsc().orElseThrow();
+        // 다른 슬롯이 바뀐 기준(위험 기준 82)으로 판정해 지문을 적었다. 이 슬롯 캐시는 아직 옛 기준(80)을 든다.
+        when(riskCriteria.getNegativeEquityRatio()).thenReturn(new BigDecimal("82.00"));
+        criteriaCache.invalidate();
+        String otherSlotFingerprint = criteriaCache.current().fingerprint();
+        stored.recordJudgement(stored.getJudgementSnapshot(), otherSlotFingerprint);
+        when(riskCriteria.getNegativeEquityRatio()).thenReturn(new BigDecimal("80.00"));
+        criteriaCache.invalidate();
+        assertThat(criteriaCache.current().fingerprint()).isNotEqualTo(otherSlotFingerprint);
+        // 확인이 버전 변화를 보고 캐시를 다시 읽는 것을 흉내낸다 — 이 슬롯이 DB 의 새 기준(82)을 읽는다.
+        when(criteriaVersionWatcher.reloadIfVersionChangedThrottled()).thenAnswer(invocation -> {
+            when(riskCriteria.getNegativeEquityRatio()).thenReturn(new BigDecimal("82.00"));
+            criteriaCache.invalidate();
+            criteriaCache.reload();
+            return true;
+        });
+        clearInteractions();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.of(stored));
+
+        RiskResponse response = service.findLatestOrAnalyze(PROPERTY_ID);
+
+        verify(criteriaVersionWatcher).reloadIfVersionChangedThrottled();
+        assertThat(response.riskGrade()).isEqualTo(RiskGrade.SAFE);
+        verifyNoInteractions(registryCommandService, ledgerCommandService, buildingRegistryRepository);
+        verify(riskAnalysisRepository, never()).save(any());
+        verify(propertyRepository, never()).clearReanalysisPending(any(), any());
+    }
+
+    @Test
+    @DisplayName("지문이 다르고 조절된 확인이 false 이면(막힘 · 변화 없음 · Redis 실패) 판정 경로로 간다")
+    void fingerprintMismatchWithoutVersionChangeRejudges() {
+        givenSafeProperty();
+        RiskAnalysis stored = storedLatest();
+        stored.recordJudgement(stored.getJudgementSnapshot(), "stale-fingerprint");
+        clearInteractions();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.of(stored));
+        when(criteriaVersionWatcher.reloadIfVersionChangedThrottled()).thenReturn(false);
+
+        service.findLatestOrAnalyze(PROPERTY_ID);
+
+        verify(criteriaVersionWatcher).reloadIfVersionChangedThrottled();
+        verify(registryCommandService).collectIfAbsent(PROPERTY_ID);
+        verify(propertyRepository).clearReanalysisPending(PROPERTY_ID, 300_000_000L);
+    }
+
+    @Test
+    @DisplayName("지문이 다르고 확인이 true 여도 지문이 여전히 다르면 판정 경로로 간다")
+    void fingerprintStillDifferentAfterVersionCheckRejudges() {
+        givenSafeProperty();
+        RiskAnalysis stored = storedLatest();
+        stored.recordJudgement(stored.getJudgementSnapshot(), "stale-fingerprint");
+        clearInteractions();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.of(stored));
+        when(criteriaVersionWatcher.reloadIfVersionChangedThrottled()).thenReturn(true);
+
+        service.findLatestOrAnalyze(PROPERTY_ID);
+
+        verify(registryCommandService).collectIfAbsent(PROPERTY_ID);
+    }
+
+    @Test
+    @DisplayName("재분석 대기 매물은 지문을 보기 전에 판정 경로로 가므로 버전 키를 확인하지 않는다")
+    void reanalysisPendingDoesNotCheckVersion() {
+        givenSafeProperty();
+        RiskAnalysis stored = storedLatest();
+        Property property = propertyRepository.findById(PROPERTY_ID).orElseThrow();
+        when(property.isReanalysisPending()).thenReturn(true);
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.of(stored));
+
+        service.findLatestOrAnalyze(PROPERTY_ID);
+
+        verifyNoInteractions(criteriaVersionWatcher);
     }
 
     /** 첫 분석을 실제로 돌려 저장된 최신 행(근거 · 지문 포함, 시각 EARLIER)을 만든다. 상호작용 기록은 비운다. */

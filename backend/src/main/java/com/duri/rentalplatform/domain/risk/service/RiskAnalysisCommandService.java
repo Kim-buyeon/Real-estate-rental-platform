@@ -2,6 +2,7 @@ package com.duri.rentalplatform.domain.risk.service;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.common.cache.CriteriaVersionWatcher;
 import com.duri.rentalplatform.domain.property.entity.BuildingLedger;
 import com.duri.rentalplatform.domain.property.entity.Property;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
@@ -58,10 +59,19 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>최신 분석 행에 근거 JSON 이 있다 — V21 이전 행 · 근거를 읽지 못한 행은 다시 판정해 채운다</li>
  *   <li>그 행의 기준 지문이 지금 기준표({@link JudgementCriteriaCache})의 지문과 같다 — 관리자 수정 등으로 기준이 바뀌었으면 다시
  *       판정한다</li>
- *   <li>매물이 재분석 대기가 아니다(V18) — 시세 금액이 바뀌었으면 다시 판정한다</li>
+ *   <li>매물이 재분석 대기가 아니다(V18) — 판정 입력(시세 · 등기 · 대장)이 마지막 판정 뒤에 바뀌었으면 다시 판정한다</li>
  * </ul>
- * 등기 · 대장은 따로 확인하지 않는다. 바뀌는 경로(등기 재조회 · 대장 교체 · 시세 갱신 배치, 사용자 재분석)가 모두 {@link #analyze}
- * 또는 {@link #analyzeWithCollectedLedger} 로 판정을 다시 부르고 그때 근거를 새로 적는다.
+ *
+ * <p><b>재분석 대기 표시</b> — 판정 입력을 바꾸는 쓰기(시세 갱신 · 등기 이력 교체 · 대장 수집 · 교체 · 삭제)가 그 쓰기와 같은
+ * 트랜잭션에서 세우고, 판정이 성공해 기록하는 쓰기 트랜잭션이 내린다. 그래서 입력을 바꾼 뒤 판정이 실패해도 표시가 남아 저장된
+ * 판정이 나가지 않는다 — 다음 조회가 다시 판정하고, 밤 갱신 배치의 재분석 갈래도 다시 잡는다. 내릴 때는 판정에 쓴 시세가 지금
+ * 시세와 같을 때만이다({@code PropertyRepository#clearReanalysisPending}). 등기 · 대장 변경이 판정과 겹치는 경우는 막지 않는다 —
+ * 등기 재조회 · 대장 교체는 매물 분석 락 안에서 바꾼 뒤 스스로 다시 판정한다.
+ *
+ * <p><b>지문이 다를 때</b> — 다시 판정하기 전에 버전 키를 한 번 확인한다({@link CriteriaVersionWatcher}, 슬롯당 확인 간격에 한 번).
+ * 다른 슬롯이 방금 바뀐 기준으로 판정해 적었는데 이 슬롯이 아직 옛 기준을 들고 있으면, 옛 기준으로 다시 판정해 덮고 다음 조회가 또
+ * 덮는 왕복이 생긴다. 확인으로 새 기준을 읽어 지문이 같아지면 저장된 판정을 그대로 낸다. 반복 작업의 확인 간격만큼의 창을 줄일
+ * 뿐, 어느 지문이 더 새로운지는 가리지 않는다.
  *
  * <p><b>트랜잭션</b> — 저장된 판정을 돌려주는 조회는 트랜잭션을 열지 않는다(매물 · 최신 분석 행을 저장소 기본 트랜잭션으로 한 건씩
  * 읽는다). 판정할 때는 이렇다. 등기 · 대장 수집은 외부 호출을 포함하므로 이 서비스의 트랜잭션 밖에서 먼저 부른다(두 수집
@@ -107,6 +117,7 @@ public class RiskAnalysisCommandService {
     private final BuildingLedgerRepository buildingLedgerRepository;
     private final RiskAnalysisRepository riskAnalysisRepository;
     private final JudgementCriteriaCache judgementCriteriaCache;
+    private final CriteriaVersionWatcher criteriaVersionWatcher;
     private final JsonMapper jsonMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate writeTransaction;
@@ -122,6 +133,7 @@ public class RiskAnalysisCommandService {
             BuildingLedgerRepository buildingLedgerRepository,
             RiskAnalysisRepository riskAnalysisRepository,
             JudgementCriteriaCache judgementCriteriaCache,
+            CriteriaVersionWatcher criteriaVersionWatcher,
             JsonMapper jsonMapper,
             ApplicationEventPublisher eventPublisher,
             PlatformTransactionManager transactionManager,
@@ -135,6 +147,7 @@ public class RiskAnalysisCommandService {
         this.buildingLedgerRepository = buildingLedgerRepository;
         this.riskAnalysisRepository = riskAnalysisRepository;
         this.judgementCriteriaCache = judgementCriteriaCache;
+        this.criteriaVersionWatcher = criteriaVersionWatcher;
         this.jsonMapper = jsonMapper;
         this.eventPublisher = eventPublisher;
         this.writeTransaction = new TransactionTemplate(transactionManager);
@@ -203,11 +216,24 @@ public class RiskAnalysisCommandService {
             return Optional.empty();
         }
         RiskAnalysis analysis = latest.get();
-        if (!judgementCriteriaCache.current().fingerprint().equals(analysis.getCriteriaFingerprint())) {
+        if (!matchesCurrentCriteria(analysis)) {
             return Optional.empty();
         }
         return readJudgement(analysis).map(judgement -> RiskResponse.of(judgement, property.getMarketPrice(),
                 property.getPriceType(), property.getPriceDate(), analysis.getCreatedAt()));
+    }
+
+    /**
+     * 저장된 지문이 지금 기준의 지문과 같은가. 다르면 버전 키를 한 번 확인해 기준이 바뀌었으면 다시 읽고 한 번 더 본다(클래스 주석
+     * 「지문이 다를 때」). 확인이 간격에 막히거나 Redis 가 실패하면 그대로 「다름」이다.
+     */
+    private boolean matchesCurrentCriteria(RiskAnalysis analysis) {
+        String stored = analysis.getCriteriaFingerprint();
+        if (judgementCriteriaCache.current().fingerprint().equals(stored)) {
+            return true;
+        }
+        return criteriaVersionWatcher.reloadIfVersionChangedThrottled()
+                && judgementCriteriaCache.current().fingerprint().equals(stored);
     }
 
     /** 근거 JSON 을 읽는다. 읽지 못하면 기록하고 빈 값 — 다시 판정해 새로 적는다. */
@@ -281,6 +307,9 @@ public class RiskAnalysisCommandService {
                 property.getMarketPrice(), property.getPriceType(), property.getPriceDate(), null).judgement();
         LocalDateTime analyzedAt = record(propertyId, registry, ledger, negativeEquity, guarantee, grade,
                 criteria, judgement);
+        // 판정 기록과 한 트랜잭션에서 재분석 대기를 내린다 — 판정이 실패해 롤백되면 표시가 남는다(클래스 주석). 엔티티로 내리지
+        // 않는다 — 변경 감지가 매물의 모든 열을 이 트랜잭션이 읽은 값으로 다시 쓴다(PropertyRepository#markReanalysisPending).
+        propertyRepository.clearReanalysisPending(propertyId, marketPrice);
 
         return RiskResponse.of(judgement, property.getMarketPrice(), property.getPriceType(),
                 property.getPriceDate(), analyzedAt);

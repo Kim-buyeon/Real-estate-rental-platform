@@ -17,8 +17,10 @@ com.duri.rentalplatform
 │   ├── vo/                     값 객체 · 집계 객체
 │   ├── loader/                 적재 실행 진입점 (@Component)
 │   ├── scheduler/              반복 실행 배치 진입점 (@Component + @Scheduled)
+│   ├── startup/                기동 때 한 번 도는 진입점 (@Component)
 │   ├── batch/                  Spring Batch 구성 — Job 조립 · ItemReader · ItemProcessor · ItemWriter
 │   ├── store/                  외부 저장소 보관소 (@Component)
+│   ├── cache/                  슬롯 메모리 캐시 (@Component) — 외부 저장소 전제의 예외. 무효화 경로가 있는 것만
 │   ├── event/                  도메인 이벤트 record
 │   ├── listener/               도메인 이벤트 수신자 (@Component)
 │   ├── sender/                 알림 전달 수단 계약과 구현 (@Component)
@@ -28,6 +30,7 @@ com.duri.rentalplatform
 │       └── condition/
 ├── common/                    ApiResponse · CursorPage · ErrorCode · BusinessException · BaseEntity
 │   ├── lock/                   분산 락 애노테이션과 그 관점(@Aspect)
+│   ├── cache/                  슬롯 캐시 공통 — 상위 클래스 · 버전 키 · 버전 감시
 │   └── datasource/             읽기 분산 애노테이션 · 그 관점(@Aspect) · 커넥션 풀 라우팅
 ├── config/
 └── external/<연동 대상>/       인터페이스 + Mock · Real · Fault 구현
@@ -52,6 +55,8 @@ MyBatis XML은 `resources/mapper/<도메인>/`에, Flyway 마이그레이션은 
 | `scheduler/` | 반복 실행 배치 진입점. 한 번만 실행되는 것은 분산 락이 보장한다 | `RegistryRefreshScheduler` |
 | `batch/` | Spring Batch 구성 요소 — Job 조립 · 실행(`@Component`)과 스텝의 읽기 · 처리 · 쓰기 단계. `service/` 는 `batch/` 를 참조하지 않는다(한 방향). 락 · 트랜잭션이 필요한 매물 단위 일은 `service/`의 빈에 맡긴다 | `RegistryRefreshJobFactory` · `WishlistedPropertyIdReader` |
 | `store/` | JPA 밖의 저장소 보관소 | `RefreshTokenStore` |
+| `cache/` | 슬롯 메모리에 드는 캐시. 다른 슬롯에 변경을 알리는 무효화 경로(버전 키)가 있는 것만 둔다 — 없으면 두 프로세스가 다른 값을 본다 | `JudgementCriteriaCache` · `LoanCriteriaCache` |
+| `startup/` | 기동 때 한 번 도는 진입점. 반복 진입점(`scheduler/`)과 나눈다 | `DailyBatchCatchUpRunner` |
 | `event/` | 도메인 이벤트 record | `RiskGradeChangedEvent` |
 | `listener/` | 다른 도메인의 이벤트를 받아 서비스로 잇는 수신자 | `RiskEventListener` |
 | `sender/` | 전달 수단 인터페이스 · 구현과 그 분배자 | `NotificationSender` · `NotificationDispatcher` |

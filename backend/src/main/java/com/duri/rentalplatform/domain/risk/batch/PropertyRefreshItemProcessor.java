@@ -39,7 +39,7 @@ public class PropertyRefreshItemProcessor implements ItemProcessor<PropertyRefre
         }
 
         if (attempt.isFailed()) {
-            log.warn("[매물 갱신 배치] 실패 — 매물 {} 판정 (시세 변경 {})", target.propertyId(), target.priceChanged(),
+            log.warn("[매물 갱신 배치] 실패 — 매물 {} 판정 (재분석 대기 {})", target.propertyId(), target.reanalysisPending(),
                     attempt.failure());
         }
         return attempt;

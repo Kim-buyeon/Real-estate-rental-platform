@@ -7,11 +7,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.duri.rentalplatform.domain.loan.cache.LoanCriteriaCache;
 import com.duri.rentalplatform.domain.loan.entity.LoanProduct;
 import com.duri.rentalplatform.domain.loan.repository.LoanProductRepository;
 import com.duri.rentalplatform.domain.loan.vo.LoanProductWriteResult;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
-import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
 import com.duri.rentalplatform.external.loanrate.BankLoanRate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -31,13 +31,13 @@ class LoanProductRefreshWriterTest {
     private static final long MAX_LIMIT = 400_000_000L;
 
     private LoanProductRepository repository;
-    private JudgementCriteriaCache criteriaCache;
+    private LoanCriteriaCache criteriaCache;
     private LoanProductRefreshWriter writer;
 
     @BeforeEach
     void setUp() {
         repository = mock(LoanProductRepository.class);
-        criteriaCache = mock(JudgementCriteriaCache.class);
+        criteriaCache = mock(LoanCriteriaCache.class);
         writer = new LoanProductRefreshWriter(repository, criteriaCache);
     }
 

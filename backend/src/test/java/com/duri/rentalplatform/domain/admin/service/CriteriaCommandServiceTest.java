@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
@@ -17,8 +18,10 @@ import com.duri.rentalplatform.domain.admin.dto.request.RiskThresholdUpdateReque
 import com.duri.rentalplatform.domain.admin.entity.CriteriaChangeHistory;
 import com.duri.rentalplatform.domain.admin.enums.CriteriaTarget;
 import com.duri.rentalplatform.domain.admin.repository.CriteriaChangeHistoryRepository;
+import com.duri.rentalplatform.domain.loan.cache.LoanCriteriaCache;
 import com.duri.rentalplatform.domain.loan.entity.LoanRegulation;
 import com.duri.rentalplatform.domain.loan.repository.LoanRegulationRepository;
+import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
 import com.duri.rentalplatform.domain.risk.entity.GuaranteeCriteria;
 import com.duri.rentalplatform.domain.risk.entity.GuaranteePremiumRate;
 import com.duri.rentalplatform.domain.risk.entity.HfCriteria;
@@ -38,7 +41,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
 import org.springframework.beans.BeanUtils;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -59,6 +61,7 @@ class CriteriaCommandServiceTest {
     private LoanRegulationRepository loanRegulationRepository;
     private CriteriaChangeHistoryRepository historyRepository;
     private JudgementCriteriaCache criteriaCache;
+    private LoanCriteriaCache loanCriteriaCache;
     private CriteriaCommandService service;
 
     private GuaranteeCriteria hug;
@@ -75,8 +78,9 @@ class CriteriaCommandServiceTest {
         loanRegulationRepository = mock(LoanRegulationRepository.class);
         historyRepository = mock(CriteriaChangeHistoryRepository.class);
         criteriaCache = mock(JudgementCriteriaCache.class);
-        service =new CriteriaCommandService(guaranteeRepository, hfRepository, premiumRateRepository,
-                riskRepository, loanRegulationRepository, historyRepository, criteriaCache);
+        loanCriteriaCache = mock(LoanCriteriaCache.class);
+        service = new CriteriaCommandService(guaranteeRepository, hfRepository, premiumRateRepository,
+                riskRepository, loanRegulationRepository, historyRepository, criteriaCache, loanCriteriaCache);
 
         hug = guarantee(1L, GuaranteeProvider.HUG, "90.00", 700_000_000L, "60.00");
         hf = guarantee(2L, GuaranteeProvider.HF, "90.00", 700_000_000L, null);
@@ -315,19 +319,53 @@ class CriteriaCommandServiceTest {
     }
 
     @Test
-    @DisplayName("대출 규제가 바뀌면 기준표 캐시 무효화를 걸고, 같은 값이면 걸지 않는다")
+    @DisplayName("기관 기준 수정은 위험도 기준 캐시만 무효화하고 대출 기준 캐시는 건드리지 않는다")
+    void guaranteeChangeNeverInvalidatesLoanCache() {
+        service.updateGuarantee(ADMIN_ID, GuaranteeProvider.HUG, new GuaranteeCriteriaUpdateRequest(
+                new BigDecimal("90.0"), 500_000_000L, null, false, REASON));
+
+        verify(criteriaCache, times(1)).invalidateAfterCommit();
+        verifyNoInteractions(loanCriteriaCache);
+    }
+
+    @Test
+    @DisplayName("보증료율 수정은 위험도 기준 캐시만 무효화하고 대출 기준 캐시는 건드리지 않는다")
+    void premiumRateChangeNeverInvalidatesLoanCache() {
+        GuaranteePremiumRate rate = premiumRate(5L, 1L, "0.097");
+        when(premiumRateRepository.findAllById(Set.of(5L))).thenReturn(List.of(rate));
+
+        service.updatePremiumRates(ADMIN_ID, new PremiumRateUpdateRequest(
+                List.of(new PremiumRateUpdateRequest.Rate(5L, new BigDecimal("0.115"))), REASON));
+
+        verify(criteriaCache, times(1)).invalidateAfterCommit();
+        verifyNoInteractions(loanCriteriaCache);
+    }
+
+    @Test
+    @DisplayName("위험 기준 수정은 위험도 기준 캐시만 무효화하고 대출 기준 캐시는 건드리지 않는다")
+    void riskThresholdChangeNeverInvalidatesLoanCache() {
+        service.updateRiskThreshold(ADMIN_ID,
+                new RiskThresholdUpdateRequest(new BigDecimal("80"), new BigDecimal("65.5"), REASON));
+
+        verify(criteriaCache, times(1)).invalidateAfterCommit();
+        verifyNoInteractions(loanCriteriaCache);
+    }
+
+    @Test
+    @DisplayName("대출 규제가 바뀌면 대출 기준 캐시 무효화를 걸고(위험도 기준 캐시는 아니다), 같은 값이면 걸지 않는다")
     void loanRegulationInvalidatesCacheOnlyOnChange() {
         when(loanRegulationRepository.findAllById(Set.of(1L))).thenReturn(List.of(loanRegulation(1L)));
 
         service.updateLoanRegulations(ADMIN_ID, new LoanRegulationUpdateRequest(List.of(
                 new LoanRegulationUpdateRequest.Regulation(1L, new BigDecimal("80"), 400_000_000L, 180_000_000L,
                         new BigDecimal("40"), new BigDecimal("3.0"), new BigDecimal("40"))), REASON));
-        verify(criteriaCache, never()).invalidateAfterCommit();
+        verify(loanCriteriaCache, never()).invalidateAfterCommit();
 
         service.updateLoanRegulations(ADMIN_ID, new LoanRegulationUpdateRequest(List.of(
                 new LoanRegulationUpdateRequest.Regulation(1L, new BigDecimal("70.5"), 400_000_000L, 180_000_000L,
                         new BigDecimal("40"), new BigDecimal("3.0"), new BigDecimal("40"))), REASON));
-        verify(criteriaCache, times(1)).invalidateAfterCommit();
+        verify(loanCriteriaCache, times(1)).invalidateAfterCommit();
+        verify(criteriaCache, never()).invalidateAfterCommit();
     }
 
     @Test

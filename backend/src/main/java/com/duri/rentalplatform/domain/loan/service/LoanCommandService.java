@@ -2,6 +2,7 @@ package com.duri.rentalplatform.domain.loan.service;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.domain.loan.cache.LoanCriteriaCache;
 import com.duri.rentalplatform.domain.loan.calculator.JeonseLoanLimitCalculator;
 import com.duri.rentalplatform.domain.loan.dto.response.LoanLimitResponse;
 import com.duri.rentalplatform.domain.loan.vo.LoanLimitCriteria;
@@ -9,7 +10,6 @@ import com.duri.rentalplatform.domain.loan.vo.LoanLimitInput;
 import com.duri.rentalplatform.domain.property.entity.Property;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
-import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
 import com.duri.rentalplatform.domain.risk.service.RiskAnalysisCommandService;
 import com.duri.rentalplatform.domain.user.dto.response.ProfileResponse;
 import com.duri.rentalplatform.domain.user.service.UserQueryService;
@@ -33,7 +33,7 @@ import org.springframework.stereotype.Service;
  * 기준값 → 계산. 자격 정보 확인을 가입 여부보다 앞에 두어 판정 · 외부 수집 없이 거를 수 있는 것을 먼저 거른다. 매물은 처음 한
  * 번만 읽고 위험도 조회에 넘긴다.
  *
- * <p>대출 규제 · 금리 · 상품 한도는 판정 기준표 슬롯 캐시({@link JudgementCriteriaCache})에서 읽는다. 매물 유형의 대표 상품 선택
+ * <p>대출 규제 · 금리 · 상품 한도는 대출 기준 슬롯 캐시({@link LoanCriteriaCache})에서 읽는다. 매물 유형의 대표 상품 선택
  * 규칙은 {@code LoanProductRepository} 가 갖는다.
  */
 @Service
@@ -45,7 +45,7 @@ public class LoanCommandService {
     private final UserQueryService userQueryService;
     private final RiskAnalysisCommandService riskAnalysisCommandService;
     private final PropertyRepository propertyRepository;
-    private final JudgementCriteriaCache judgementCriteriaCache;
+    private final LoanCriteriaCache loanCriteriaCache;
 
     /**
      * @throws BusinessException {@link ErrorCode#PROPERTY_NOT_FOUND} — 매물 없음,
@@ -68,7 +68,7 @@ public class LoanCommandService {
         }
 
         // 규제 행이나 그 유형의 대표 상품이 없으면 시드 결함이다. 사용자 요청으로 생기는 상태가 아니므로 500 으로 낸다.
-        LoanLimitCriteria criteria = judgementCriteriaCache.current()
+        LoanLimitCriteria criteria = loanCriteriaCache.current()
                 .findLoanLimitCriteria(PropertyType.valueOf(property.getPropertyTypeCode().getCodeValue()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_ERROR));
 

@@ -2,6 +2,7 @@ package com.duri.rentalplatform.domain.admin.service;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.common.cache.CriteriaSlotCache;
 import com.duri.rentalplatform.domain.admin.dto.request.GuaranteeCriteriaUpdateRequest;
 import com.duri.rentalplatform.domain.admin.dto.request.LoanRegulationUpdateRequest;
 import com.duri.rentalplatform.domain.admin.dto.request.PremiumRateUpdateRequest;
@@ -9,6 +10,7 @@ import com.duri.rentalplatform.domain.admin.dto.request.RiskThresholdUpdateReque
 import com.duri.rentalplatform.domain.admin.entity.CriteriaChangeHistory;
 import com.duri.rentalplatform.domain.admin.enums.CriteriaTarget;
 import com.duri.rentalplatform.domain.admin.repository.CriteriaChangeHistoryRepository;
+import com.duri.rentalplatform.domain.loan.cache.LoanCriteriaCache;
 import com.duri.rentalplatform.domain.loan.entity.LoanRegulation;
 import com.duri.rentalplatform.domain.loan.repository.LoanRegulationRepository;
 import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
@@ -45,9 +47,10 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>세 선 단조 {@code cautionLeaseRatio < negativeEquityRatio < min(collateralRatio)} 를 양쪽 수정에서 지킨다.
  * 위반은 400 {@code INVALID_REQUEST}.
  *
- * <p><b>기준표 캐시 무효화</b> — 값이 하나라도 바뀐 요청은 커밋 뒤 판정 기준표 슬롯 캐시를 비우고 버전 키를 올린다
- * ({@link JudgementCriteriaCache#invalidateAfterCommit()}). 이력 행이 곧 「바뀐 값」이라 이력을 저장하는 자리에서 함께 건다.
- * Redis 가 실패해도 수정 요청은 성공한다 — 다른 슬롯은 캐시의 안전망 주기 안에 따라온다.
+ * <p><b>기준표 캐시 무효화</b> — 값이 하나라도 바뀐 요청은 커밋 뒤 그 기준을 든 슬롯 캐시를 비우고 버전 키를 올린다
+ * ({@link CriteriaSlotCache#invalidateAfterCommit()}). 보증 기준 · 보증료율 · 위험 등급 기준은 위험도 기준 캐시
+ * ({@link JudgementCriteriaCache}), 대출 규제는 대출 기준 캐시({@link LoanCriteriaCache})다. 이력 행이 곧 「바뀐 값」이라 이력을
+ * 저장하는 자리에서 함께 건다. Redis 가 실패해도 수정 요청은 성공한다 — 다른 슬롯은 캐시의 안전망 주기 안에 따라온다.
  */
 @Service
 @RequiredArgsConstructor
@@ -64,6 +67,7 @@ public class CriteriaCommandService {
     private final LoanRegulationRepository loanRegulationRepository;
     private final CriteriaChangeHistoryRepository historyRepository;
     private final JudgementCriteriaCache judgementCriteriaCache;
+    private final LoanCriteriaCache loanCriteriaCache;
 
     /** 기관별 기준 수정. {@code requiresLoanLink} 는 HF 만 저장한다. */
     @Transactional
@@ -101,7 +105,7 @@ public class CriteriaCommandService {
                 hf.changeLoanLinkedRequired(request.requiresLoanLink());
             }
         }
-        changes.save();
+        changes.save(judgementCriteriaCache);
     }
 
     /** 요율 값만 수정한다. 없는 식별자 · 중복 식별자는 400. */
@@ -131,7 +135,7 @@ public class CriteriaCommandService {
                 rate.changePremiumRate(premiumRate);
             }
         }
-        changes.save();
+        changes.save(judgementCriteriaCache);
     }
 
     /** 대출 규제 수치 여섯만 수정한다. 없는 식별자 · 중복 식별자는 400. */
@@ -175,7 +179,7 @@ public class CriteriaCommandService {
                         requested.guaranteeCapOneHouse(), dsrLimit, stressDsrRate, dtiLimit);
             }
         }
-        changes.save();
+        changes.save(loanCriteriaCache);
     }
 
     /** 위험 등급 기준 수정. 세 선 단조를 검증한다. */
@@ -203,7 +207,7 @@ public class CriteriaCommandService {
         if (changes.any()) {
             risk.changeThresholds(negativeEquityRatio, cautionLeaseRatio);
         }
-        changes.save();
+        changes.save(judgementCriteriaCache);
     }
 
     private RiskCriteria loadRiskCriteria() {
@@ -264,11 +268,11 @@ public class CriteriaCommandService {
             return !rows.isEmpty();
         }
 
-        /** 바뀐 필드가 있으면 이력을 저장하고, 커밋 뒤 기준표 캐시를 무효화하도록 건다. */
-        void save() {
+        /** 바뀐 필드가 있으면 이력을 저장하고, 커밋 뒤 바뀐 기준을 든 캐시를 무효화하도록 건다. */
+        void save(CriteriaSlotCache<?> changedCriteriaCache) {
             if (!rows.isEmpty()) {
                 historyRepository.saveAll(rows);
-                judgementCriteriaCache.invalidateAfterCommit();
+                changedCriteriaCache.invalidateAfterCommit();
             }
         }
     }
