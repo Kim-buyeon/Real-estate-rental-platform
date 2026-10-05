@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import type { BoundingBox, PropertyFilter } from '../../../api/property';
+import type { PropertyFilter } from '../../../api/property';
 import { Alert } from '../../../components/ui';
 import { propertyQueries } from '../../../queries/property';
 import {
@@ -16,10 +16,11 @@ import {
   lockSeoulView,
   moveToPoint,
   OVERLAY_Z_FRONT,
-  readBoundingBox,
+  readMapArea,
   relayoutMap,
   searchDistrictPoint,
   type KakaoMap,
+  type MapArea,
   type OverlayLayer,
 } from '../map';
 import { useDistrictPoints } from '../hooks/useDistrictPoints';
@@ -32,7 +33,10 @@ import { PropertyMarkerContent } from './PropertyMarkerContent';
 import styles from './MapExplorer.module.css';
 
 /** 아직 이번 단계의 표시 영역을 읽지 못했을 때 쿼리 정의에 넘기는 자리값. enabled가 false라 요청되지 않는다 */
-const PENDING_BBOX: BoundingBox = { minLat: 0, maxLat: 0, minLng: 0, maxLng: 0 };
+const PENDING_AREA: MapArea = {
+  bbox: { minLat: 0, maxLat: 0, minLng: 0, maxLng: 0 },
+  grid: { rows: 1, cols: 1 },
+};
 
 /** SDK 로드 상태. 지도 화면에 들어온 뒤에야 내려받는다 (kakao-map 2장) */
 type SdkStatus = 'loading' | 'ready' | 'error';
@@ -40,12 +44,12 @@ type SdkStatus = 'loading' | 'ready' | 'error';
 const stageKeyOf = (stage: MapStage) => (stage.type === 'seoul' ? 'seoul' : `district:${stage.district}`);
 
 /**
- * 읽은 표시 영역과 그때의 단계. 단계를 함께 들고 있어야 자치구로 막 옮긴 순간에
+ * 읽은 표시 영역(격자 행 · 열 포함)과 그때의 단계. 단계를 함께 들고 있어야 자치구로 막 옮긴 순간에
  * 이전 단계(서울 전체)의 넓은 영역으로 마커를 조회하지 않는다.
  */
 interface MapView {
   stageKey: string;
-  bbox: BoundingBox;
+  area: MapArea;
 }
 
 interface OverlayItem {
@@ -123,10 +127,10 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     const map = createMap(container);
     mapRef.current = map;
     layerRef.current = createOverlayLayer(map);
-    setView({ stageKey: stageKeyRef.current, bbox: readBoundingBox(map) });
+    setView({ stageKey: stageKeyRef.current, area: readMapArea(map) });
 
     const removeIdle = addIdleListener(map, () =>
-      setView({ stageKey: stageKeyRef.current, bbox: readBoundingBox(map) }),
+      setView({ stageKey: stageKeyRef.current, area: readMapArea(map) }),
     );
     const removeClick = addClickListener(map, () => setPreviewId(null));
 
@@ -146,7 +150,7 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     // 크기가 확정된 다음 프레임에 서울 전체로 다시 맞춘다
     const relayoutFrame = requestAnimationFrame(() => {
       lockSeoulView(map);
-      setView({ stageKey: stageKeyRef.current, bbox: readBoundingBox(map) });
+      setView({ stageKey: stageKeyRef.current, area: readMapArea(map) });
     });
 
     return () => {
@@ -188,7 +192,7 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
 
     if (stage.type === 'seoul') {
       fitSeoul(map);
-      setView({ stageKey: stageKeyOf(stage), bbox: readBoundingBox(map) });
+      setView({ stageKey: stageKeyOf(stage), area: readMapArea(map) });
       return;
     }
 
@@ -198,7 +202,7 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
         const current = mapRef.current;
         if (cancelled || !current) return;
         moveToPoint(current, point.lat, point.lng);
-        setView({ stageKey: stageKeyOf(stage), bbox: readBoundingBox(current) });
+        setView({ stageKey: stageKeyOf(stage), area: readMapArea(current) });
       })
       .catch(() => {
         if (!cancelled) setDistrictError('자치구 위치를 찾지 못했습니다. 지도를 움직여 조회해 주세요.');
@@ -220,10 +224,11 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
     [filter, stage],
   );
   // 이번 단계에서 읽은 표시 영역이 있을 때만 조회한다 — 단계가 바뀐 직후의 한 번을 막는다
-  const stageBbox = view?.stageKey === stageKey ? view.bbox : null;
+  const stageArea = view?.stageKey === stageKey ? view.area : null;
+  const { bbox, grid } = stageArea ?? PENDING_AREA;
   const mapClustersQuery = useQuery({
-    ...propertyQueries.mapClusters(markerFilter, stageBbox ?? PENDING_BBOX),
-    enabled: !isSeoul && stageBbox !== null,
+    ...propertyQueries.mapClusters(markerFilter, bbox, grid),
+    enabled: !isSeoul && stageArea !== null,
   });
 
   /** 건수 순위. 겹칠 때 어느 말풍선이 위로 갈지 정한다 — 건수를 그대로 쓰면 상한에 걸려 평평해진다 */

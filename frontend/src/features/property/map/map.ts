@@ -1,9 +1,12 @@
-import type { BoundingBox } from '../../../api/property';
+import type { BoundingBox, MapClusterGrid } from '../../../api/property';
 import {
   BBOX_PRECISION,
   BBOX_LAT_TILE_UNITS_BY_LEVEL,
   BBOX_LNG_TILE_UNITS_BY_LEVEL,
   DISTRICT_LEVEL,
+  GRID_CELLS_PER_LAT_TILE,
+  GRID_CELLS_PER_LNG_TILE,
+  GRID_MAX_DIVISIONS,
   SEOUL_BOUNDS,
   SEOUL_INITIAL_LEVEL,
 } from './constants';
@@ -72,6 +75,25 @@ export function roundOutward(bbox: RawBoundingBox, level: number): BoundingBox {
   };
 }
 
+/**
+ * 맞춘 영역(roundOutward 결과)과 레벨로 묶음 격자의 행 · 열을 정한다 — constants 「묶음 격자」.
+ * 화면 크기를 쓰지 않는다 — 같은 맞춘 영역 · 같은 레벨이면 누구나 같은 값이라 서버 캐시 키가 같고, 칸 경계가 타일 경계에 맞물린다.
+ * 축마다 타일 수 × 타일당 칸 수이고, 상한을 넘으면 타일당 칸 수를 줄인다(타일이 상한보다 많을 때만 상한으로 자른다). 하한 1.
+ */
+export function gridSize(bbox: BoundingBox, level: number): MapClusterGrid {
+  const tile = bboxTileUnits(level);
+  // 정수 단위로 세어 소수 오차 없이 나눈다. 맞춘 영역이면 나누어떨어진다. 영역 0도 타일 하나로 본다
+  const tiles = (min: number, max: number, unit: number) => Math.max(1, Math.round((scale(max) - scale(min)) / unit));
+  const divisions = (tileCount: number, perTile: number) => {
+    const cellsPerTile = Math.min(perTile, Math.max(1, Math.floor(GRID_MAX_DIVISIONS / tileCount)));
+    return Math.min(GRID_MAX_DIVISIONS, tileCount * cellsPerTile);
+  };
+  return {
+    rows: divisions(tiles(bbox.minLat, bbox.maxLat, tile.lat), GRID_CELLS_PER_LAT_TILE),
+    cols: divisions(tiles(bbox.minLng, bbox.maxLng, tile.lng), GRID_CELLS_PER_LNG_TILE),
+  };
+}
+
 /** 서울 전체가 보이도록 이동한다 (kakao-map 3장 — 되돌아가기는 setLevel이 아니라 setBounds다) */
 export function fitSeoul(map: KakaoMap): void {
   const maps = requireMaps();
@@ -123,20 +145,28 @@ export function moveToPoint(map: KakaoMap, lat: number, lng: number, level: numb
   map.setLevel(level);
 }
 
-/** 현재 표시 영역을 그 레벨의 타일 배수로 넓혀 쿼리 키에 넣을 좌표로 읽는다 */
-export function readBoundingBox(map: KakaoMap): BoundingBox {
+/** 묶음 조회의 영역 — 맞춘 표시 영역과 그 영역 · 레벨이 정한 격자 행 · 열. 둘 다 쿼리 키에 들어간다 */
+export interface MapArea {
+  bbox: BoundingBox;
+  grid: MapClusterGrid;
+}
+
+/** 현재 표시 영역을 그 레벨의 타일 배수로 넓혀 읽고, 같은 레벨로 격자 행 · 열을 정한다 */
+export function readMapArea(map: KakaoMap): MapArea {
   const bounds = map.getBounds();
   const southWest = bounds.getSouthWest();
   const northEast = bounds.getNorthEast();
-  return roundOutward(
+  const level = map.getLevel();
+  const bbox = roundOutward(
     {
       minLat: southWest.getLat(),
       maxLat: northEast.getLat(),
       minLng: southWest.getLng(),
       maxLng: northEast.getLng(),
     },
-    map.getLevel(),
+    level,
   );
+  return { bbox, grid: gridSize(bbox, level) };
 }
 
 /** 재조회 시점은 idle만이다 (kakao-map 4장). 해제 함수를 돌려준다 */

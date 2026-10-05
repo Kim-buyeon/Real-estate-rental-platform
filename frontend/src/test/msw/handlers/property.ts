@@ -227,7 +227,21 @@ export const PROPERTY_LIST_PAGE_2: CursorPage<PropertyListItem> = {
 export const propertyHandlers = [
   http.get('/api/properties/district-counts', () => HttpResponse.json({ success: true, data: DISTRICT_COUNTS })),
   // :propertyId보다 앞에 둔다 — 뒤에 두면 map-clusters가 매물 id로 잡힌다
-  http.get('/api/properties/map-clusters', () => HttpResponse.json({ success: true, data: MAP_CLUSTERS })),
+  // 격자 행 · 열은 서버처럼 정수 1 ~ 24만 받는다(명세 1.12) — 화면이 범위 밖을 보내면 테스트가 오류로 드러난다
+  http.get('/api/properties/map-clusters', ({ request }) => {
+    const params = new URL(request.url).searchParams;
+    const invalid = (['rows', 'cols'] as const).find((name) => {
+      const value = params.get(name);
+      return value !== null && !/^(?:[1-9]|1\d|2[0-4])$/.test(value);
+    });
+    if (invalid) {
+      return HttpResponse.json(
+        { success: false, error: { code: 'INVALID_REQUEST', message: '격자 행 · 열은 1 ~ 24입니다.', field: invalid } },
+        { status: 400 },
+      );
+    }
+    return HttpResponse.json({ success: true, data: MAP_CLUSTERS });
+  }),
   buildingLedgerHandler(BUILDING_LEDGER),
   http.get('/api/properties/:propertyId', () => HttpResponse.json({ success: true, data: PROPERTY_DETAIL })),
   http.get('/api/properties', ({ request }) => {
