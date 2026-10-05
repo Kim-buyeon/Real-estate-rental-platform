@@ -1147,7 +1147,7 @@ services:
   # stat_database 수집기가 낸다.
   #
   # 잠금 대기 상한 lock_timeout=2s(#359) — DSN 의 options(-c lock_timeout=2s 를 URL 인코딩)로 이 수집기 세션에만 건다.
-  # 테이블에 ACCESS EXCLUSIVE 잠금(LOCK TABLE · VACUUM FULL · 비동시 REINDEX, standby 는 복제로 재생되는 같은 잠금)이 있으면
+  # 테이블에 ACCESS EXCLUSIVE 잠금(LOCK TABLE · VACUUM FULL · 비동시 REINDEX, standby 는 복제로 재생되는 같은 잠금 — 미확인)이 있으면
   # 내장 stat_user_tables 질의가 그 뒤에서 기다려 /metrics 전체가 멈췄다. 상한이 있으면 그 수집기만 실패하고
   # (pg_scrape_collector_success{collector="stat_user_tables"} 0, 그 지표만 빠짐) 나머지는 나온다 — 로컬 재현 전후(#359 코멘트).
   # 2s 인 이유 — 수집 주기 15s · 스크레이프 제한 10s(agent-db.yml, scrape_timeout 미지정 = Prometheus 기본) 안에 든다.
