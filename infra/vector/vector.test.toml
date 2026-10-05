@@ -1,0 +1,126 @@
+# vector.toml 의 가리기(transforms.redacted) 시험 — 운영 컨테이너에는 마운트하지 않는다(vector.toml 한 파일만 마운트).
+# 돌리는 법(저장소 루트, 환경 변수는 더미): docker run --rm -v "<저장소>/infra/vector:/v:ro" -e GRAFANA_CLOUD_LOKI_URL=http://x
+#   -e GRAFANA_CLOUD_LOKI_USER=x -e GRAFANA_CLOUD_LOKI_TOKEN=x timberio/vector:0.50.0-alpine test /v/vector.toml /v/vector.test.toml
+# 덮어야 할 것과 함께 **덮지 않아야 할 것이 그대로 남는지**를 본다 — 접근 로그 · 앱 로그 · 비슷한 이름의 키.
+
+[[tests]]
+name = "Nginx 오류 로그의 요청 줄 · upstream 주소에서 ticket 값을 덮는다"
+[[tests.inputs]]
+insert_at = "redacted"
+type = "log"
+[tests.inputs.log_fields]
+message = '2026/10/04 18:52:11 [error] 31#31: *1234 upstream prematurely closed connection while reading upstream, client: 203.0.113.7, server: _, request: "GET /api/notifications/stream?ticket=3f2a9c1e-7b4d-4e8a-9a51-0c6d2e8f1b77 HTTP/2.0", upstream: "http://10.20.0.10:8081/api/notifications/stream?ticket=3f2a9c1e-7b4d-4e8a-9a51-0c6d2e8f1b77", host: "3.39.0.1"'
+[[tests.outputs]]
+extract_from = "redacted"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.message, "2026/10/04 18:52:11 [error] 31#31: *1234 upstream prematurely closed connection while reading upstream, client: 203.0.113.7, server: _, request: \"GET /api/notifications/stream?ticket=[REDACTED] HTTP/2.0\", upstream: \"http://10.20.0.10:8081/api/notifications/stream?ticket=[REDACTED]\", host: \"3.39.0.1\"")
+'''
+
+[[tests]]
+name = "recv() 실패 줄도 같다"
+[[tests.inputs]]
+insert_at = "redacted"
+type = "log"
+[tests.inputs.log_fields]
+message = '2026/10/04 19:21:03 [error] 30#30: *5678 recv() failed (104: Connection reset by peer) while reading upstream, client: 203.0.113.7, server: _, request: "GET /api/notifications/stream?ticket=AbC-123_x HTTP/2.0", upstream: "http://10.20.20.30:8082/api/notifications/stream?ticket=AbC-123_x", host: "3.39.0.1"'
+[[tests.outputs]]
+extract_from = "redacted"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert!(!contains(string!(.message), "AbC-123_x"))
+assert!(contains(string!(.message), "recv() failed (104: Connection reset by peer)"))
+assert!(contains(string!(.message), "?ticket=[REDACTED] HTTP/2.0"))
+'''
+
+[[tests]]
+name = "쿼리의 token · access_token · refresh_token 값만 덮고 뒤의 키는 남긴다"
+[[tests.inputs]]
+insert_at = "redacted"
+type = "log"
+[tests.inputs.log_fields]
+message = 'GET /cb?access_token=aaa.bbb&page=2&Token=zzz&refresh_token=r1&id_token=i1&token=t1'
+[[tests.outputs]]
+extract_from = "redacted"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.message, "GET /cb?access_token=[REDACTED]&page=2&Token=[REDACTED]&refresh_token=[REDACTED]&id_token=[REDACTED]&token=[REDACTED]")
+'''
+
+[[tests]]
+name = "비슷한 이름의 키 · 쿼리 밖의 낱말은 덮지 않는다"
+[[tests.inputs]]
+insert_at = "redacted"
+type = "log"
+[tests.inputs.log_fields]
+message = 'GET /api/x?mytoken=keep1&ticket_count=3&tokens=keep2 ticket=keep3 the ticket expired; monkeyJam.a.b'
+[[tests.outputs]]
+extract_from = "redacted"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.message, "GET /api/x?mytoken=keep1&ticket_count=3&tokens=keep2 ticket=keep3 the ticket expired; monkeyJam.a.b")
+'''
+
+[[tests]]
+name = "JWT 모양과 Bearer 값을 덮는다"
+[[tests.inputs]]
+insert_at = "redacted"
+type = "log"
+[tests.inputs.log_fields]
+message = 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.Sig_-x9 / refresh eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIyIn0.AbC / Bearer opaque-Token.123'
+[[tests.outputs]]
+extract_from = "redacted"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.message, "Authorization: Bearer [REDACTED_JWT] / refresh [REDACTED_JWT] / Bearer [REDACTED]")
+'''
+
+[[tests]]
+name = "접근 로그는 그대로 — 쿼리 · 한 조각 커서 eyJ… · 요청 ID"
+[[tests.inputs]]
+insert_at = "redacted"
+type = "log"
+[tests.inputs.log_fields]
+message = '203.0.113.7 - - [04/Oct/2026:18:52:11 +0900] "GET /api/properties?gu=%EA%B0%95%EB%82%A8%EA%B5%AC&sort=JEONSE_RATIO&cursor=eyJpZCI6MTIzfQ HTTP/2.0" 200 5123 "-" "k6" rid=9f8e7d6c rt=0.015 upstream=10.20.0.10:8081 uct=0.001 urt=0.012'
+[[tests.outputs]]
+extract_from = "redacted"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.message, "203.0.113.7 - - [04/Oct/2026:18:52:11 +0900] \"GET /api/properties?gu=%EA%B0%95%EB%82%A8%EA%B5%AC&sort=JEONSE_RATIO&cursor=eyJpZCI6MTIzfQ HTTP/2.0\" 200 5123 \"-\" \"k6\" rid=9f8e7d6c rt=0.015 upstream=10.20.0.10:8081 uct=0.001 urt=0.012")
+'''
+
+[[tests]]
+name = "앱 로그는 그대로 — 요청 ID · trace_id"
+[[tests.inputs]]
+insert_at = "redacted"
+type = "log"
+[tests.inputs.log_fields]
+message = '2026-10-05 10:11:12.345 INFO 1 --- [rental] [nio-8080-exec-3] [9f8e7d6c] [trace_id=4bf92f3577b34da6a3ce929d0e0e4736 flags=01] c.s.r.property.service.PropertyQueryService : 목록 조회 count=20'
+[[tests.outputs]]
+extract_from = "redacted"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.message, "2026-10-05 10:11:12.345 INFO 1 --- [rental] [nio-8080-exec-3] [9f8e7d6c] [trace_id=4bf92f3577b34da6a3ce929d0e0e4736 flags=01] c.s.r.property.service.PropertyQueryService : 목록 조회 count=20")
+'''
+
+[[tests]]
+name = "일반 낱말 bearer 는 덮지 않는다"
+[[tests.inputs]]
+insert_at = "redacted"
+type = "log"
+[tests.inputs.log_fields]
+message = 'the bearer of this request'
+[[tests.outputs]]
+extract_from = "redacted"
+[[tests.outputs.conditions]]
+type = "vrl"
+source = '''
+assert_eq!(.message, "the bearer of this request")
+'''

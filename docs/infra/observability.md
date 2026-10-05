@@ -46,6 +46,22 @@
 | 더할 몫 | systemd 실패 유닛(O14) **약 90** — 어림(실패 줄 APP-01 9 · APP-02 7 · DB 노드 15씩 + 타이머 13 + 상태별 유닛 수 등 28), 반영 때 실측. DB-02 노드 확인(#361, SELinux enforcing)에서 유닛 12 · 타이머 4가 나왔다. 유닛을 목록으로 좁히고 `failed`만 남겨 이 크기다 — 전체 유닛 · 다섯 상태면 수백 유닛 × 5 |
 | **목표** | **8,500 이하** — 배포 때 경로 라벨 등으로 늘어날 몫을 남긴다. DB-02 수집기(3.3)를 그대로 더하면 약 9,200이라 같은 다이어트(3.3 끝)를 함께 한다 |
 
+### 2.4 밖으로 보내는 로그 — 티켓 · 토큰 가리기
+
+**앱 노드의 컨테이너 로그는 거르지 않고 Loki로 간다**(Vector `docker_logs`). 그래서 **노드 밖으로 나가기 전에 Vector가 메시지 안의 비밀 모양을 고정 문자열로 바꾼다**(`infra/vector/vector.toml`의 `transforms.redacted`, #440).
+
+| 덮는 것 | 바뀐 모양 |
+|---|---|
+| 쿼리의 `ticket` · `token` · `access_token` · `refresh_token` · `id_token` 값 — `?` · `&` 바로 뒤의 그 키만(`mytoken=` · `ticket_count=`는 그대로) | `?ticket=[REDACTED]` |
+| JWT 모양 — `eyJ`로 시작하는 세 조각 | `[REDACTED_JWT]` |
+| `Bearer` 뒤의 값 | `Bearer [REDACTED]` |
+
+**왜 Vector에서인가** — 입구 Nginx는 실시간 수신 경로의 접근 로그를 쿼리 없는 형식(`no_query`)으로 남기지만 **오류 로그는 요청 줄 전체를 찍는다** — `upstream prematurely closed connection` · `recv() failed (104: …)` 줄의 `request: "GET /api/notifications/stream?ticket=<값> HTTP/2.0"`과 `upstream: "…?ticket=<값>"`(2026-10-04 18:52 ~ 19:21 부하 시험 중 5건이 Loki로 갔다). `error_log` 지시어는 파일과 수준만 받는다 — 형식을 바꾸는 인자는 상용 구독의 `json`뿐이다([ngx_core_module error_log](https://nginx.org/en/docs/ngx_core_module.html#error_log)). 수준을 `crit`로 올리면 그 줄은 빠지지만 슬롯 연결 실패 같은 진단 줄도 함께 사라진다. 앱 슬롯 로그에서는 24시간 동안 JWT · BCrypt 해시 · `refreshToken` · `ticket=`이 0건이었다(2026-10-05 운영 확인) — 덮기는 앞으로 생길 줄을 위한 그물이다.
+
+**가리지 못하는 것** — 같은 노드의 Docker json 로그 파일(`/var/lib/docker/containers/<id>/<id>-json.log`)에는 원문이 남는다. 읽을 수 있는 것은 root와 `docker` 그룹뿐이고, 운영 Compose의 `logging`(`max-size` 10m · `max-file` 3)으로 회전된다. 티켓은 일회용 · 30초 만료(`application.yml` `ticket-ttl`)다. **정규식이 덮지 않는 모양도 있다** — camelCase 쿼리 키(`accessToken=`), JSON 본문(`"token":"…"`), URL 인코딩(`%3Fticket%3D`), 서명이 빈 JWT, `?` · `&` 없이 맨 앞에 오는 `ticket=`(무관한 낱말을 덮지 않으려고 뺐다). 지금 실제로 새던 것은 Nginx 오류 로그의 `?ticket=` 하나다. **앱이 남기는 값 자체의 마스킹과 가려야 할 값의 정본 목록은 이 절의 범위가 아니다**(#175).
+
+**시험** — `infra/vector/vector.test.toml`(`vector test`) — Nginx 오류 로그 두 모양, 쿼리 키 다섯, JWT · Bearer, 그리고 **덮지 않아야 할 것**(비슷한 이름의 키, 접근 로그의 커서 `eyJ…` 한 조각, 앱 로그의 요청 ID · `trace_id`). 돌리는 명령은 그 파일 머리에 있다.
+
 ---
 
 ## 3. 지표
