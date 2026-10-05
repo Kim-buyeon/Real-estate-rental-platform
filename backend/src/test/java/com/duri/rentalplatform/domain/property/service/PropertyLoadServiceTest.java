@@ -13,12 +13,12 @@ import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.calculator.LandlordNameGenerator;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.enums.SeoulDistrict;
-import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.property.vo.LedgerKeyFill;
 import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
 import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
@@ -99,7 +99,7 @@ class PropertyLoadServiceTest {
     private AddressNormalizeClient addressNormalizeClient;
     private GeocodeClient geocodeClient;
     private PropertyLoadWriter propertyLoadWriter;
-    private DistrictCountCacheStore districtCountCacheStore;
+    private DistrictCountCache districtCountCache;
     private PropertyLoadService service;
 
     @BeforeEach
@@ -109,9 +109,9 @@ class PropertyLoadServiceTest {
         addressNormalizeClient = mock(AddressNormalizeClient.class);
         geocodeClient = mock(GeocodeClient.class);
         propertyLoadWriter = mock(PropertyLoadWriter.class);
-        districtCountCacheStore = mock(DistrictCountCacheStore.class);
+        districtCountCache = mock(DistrictCountCache.class);
         service = new PropertyLoadService(rentTransactionClient, saleTransactionClient,
-                addressNormalizeClient, geocodeClient, propertyLoadWriter, districtCountCacheStore);
+                addressNormalizeClient, geocodeClient, propertyLoadWriter, districtCountCache);
 
         // 기본은 전부 정상 — 실패·건너뜀을 보는 테스트만 아래에서 더 좁은 매처로 덮어쓴다.
         // 더 좁은 매처를 테스트 메서드 안에서(= 이후에) 등록하면 Mockito가 그 매처를 우선한다.
@@ -221,7 +221,7 @@ class PropertyLoadServiceTest {
 
         service.load(1, new PropertyLoadReport());
 
-        verify(districtCountCacheStore, times(1)).bumpGeneration();
+        verify(districtCountCache, times(1)).bumpGeneration();
     }
 
     @Test
@@ -232,7 +232,7 @@ class PropertyLoadServiceTest {
 
         service.refresh(1, new PropertyLoadReport());
 
-        verify(districtCountCacheStore, never()).bumpGeneration();
+        verify(districtCountCache, never()).bumpGeneration();
     }
 
     @Test

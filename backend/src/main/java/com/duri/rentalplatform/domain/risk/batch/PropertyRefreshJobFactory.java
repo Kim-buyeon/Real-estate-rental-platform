@@ -1,8 +1,8 @@
 package com.duri.rentalplatform.domain.risk.batch;
 
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.service.PropertyLoadService;
-import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.risk.service.PropertyRefreshAnalysisExecutor;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshAttempt;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshReport;
@@ -54,7 +54,7 @@ public class PropertyRefreshJobFactory {
     private final PropertyLoadService propertyLoadService;
     private final PropertyMapper propertyMapper;
     private final PropertyRefreshAnalysisExecutor executor;
-    private final DistrictCountCacheStore districtCountCacheStore;
+    private final DistrictCountCache districtCountCache;
     private final int months;
     private final int chunkSize;
 
@@ -62,13 +62,13 @@ public class PropertyRefreshJobFactory {
             PropertyLoadService propertyLoadService,
             PropertyMapper propertyMapper,
             PropertyRefreshAnalysisExecutor executor,
-            DistrictCountCacheStore districtCountCacheStore,
+            DistrictCountCache districtCountCache,
             @Value("${property.batch.refresh.months}") int months,
             @Value("${property.batch.refresh.page-size}") int chunkSize) {
         this.propertyLoadService = propertyLoadService;
         this.propertyMapper = propertyMapper;
         this.executor = executor;
-        this.districtCountCacheStore = districtCountCacheStore;
+        this.districtCountCache = districtCountCache;
         this.months = months;
         this.chunkSize = chunkSize;
     }
@@ -107,7 +107,7 @@ public class PropertyRefreshJobFactory {
                 .build();
 
         return new JobBuilder(JOB_NAME, jobRepository)
-                .listener(new DistrictCountGenerationBumpListener(districtCountCacheStore))
+                .listener(new DistrictCountGenerationBumpListener(districtCountCache))
                 .start(loadStep)
                 .next(analysisStep)
                 .build();

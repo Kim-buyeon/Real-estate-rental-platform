@@ -1,11 +1,11 @@
 package com.duri.rentalplatform.domain.property.scheduler;
 
-import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 자치구 집계 슬롯 로컬 캐시를 다른 슬롯의 세대 변경에 맞춘다. 동작은 {@link DistrictCountCacheStore#refreshGeneration()} 이
+ * 자치구 집계 슬롯 로컬 캐시를 다른 슬롯의 세대 변경에 맞춘다. 동작은 {@link DistrictCountCache#refreshGeneration()} 이
  * 갖는다.
  *
  * <p><b>분산 락을 걸지 않는다</b> — 한 번만 실행하는 일이 아니다. 로컬 캐시가 슬롯마다 있으므로 모든 슬롯이 각자 돈다.
@@ -17,15 +17,15 @@ import org.springframework.stereotype.Component;
 @Component
 public class DistrictCountGenerationScheduler {
 
-    private final DistrictCountCacheStore districtCountCacheStore;
+    private final DistrictCountCache districtCountCache;
 
-    public DistrictCountGenerationScheduler(DistrictCountCacheStore districtCountCacheStore) {
-        this.districtCountCacheStore = districtCountCacheStore;
+    public DistrictCountGenerationScheduler(DistrictCountCache districtCountCache) {
+        this.districtCountCache = districtCountCache;
     }
 
     /** 세대 키가 바뀌었으면 이 슬롯의 로컬 캐시를 비운다. */
     @Scheduled(fixedDelayString = "${property.district-counts.generation-check-interval}")
     public void refreshGeneration() {
-        districtCountCacheStore.refreshGeneration();
+        districtCountCache.refreshGeneration();
     }
 }

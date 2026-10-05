@@ -1,6 +1,6 @@
 package com.duri.rentalplatform.domain.risk.batch;
 
-import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.listener.JobExecutionListener;
 
@@ -17,14 +17,14 @@ import org.springframework.batch.core.listener.JobExecutionListener;
  */
 public class DistrictCountGenerationBumpListener implements JobExecutionListener {
 
-    private final DistrictCountCacheStore districtCountCacheStore;
+    private final DistrictCountCache districtCountCache;
 
-    public DistrictCountGenerationBumpListener(DistrictCountCacheStore districtCountCacheStore) {
-        this.districtCountCacheStore = districtCountCacheStore;
+    public DistrictCountGenerationBumpListener(DistrictCountCache districtCountCache) {
+        this.districtCountCache = districtCountCache;
     }
 
     @Override
     public void afterJob(JobExecution jobExecution) {
-        districtCountCacheStore.bumpGeneration();
+        districtCountCache.bumpGeneration();
     }
 }

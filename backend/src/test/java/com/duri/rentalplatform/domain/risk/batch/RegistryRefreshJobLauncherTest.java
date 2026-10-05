@@ -13,9 +13,9 @@ import static org.mockito.Mockito.when;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.dto.condition.WishlistedPropertyCondition;
 import com.duri.rentalplatform.domain.property.mapper.WishlistMapper;
-import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
 import com.duri.rentalplatform.domain.risk.enums.RegistryRefreshOutcome;
 import com.duri.rentalplatform.domain.risk.service.RegistryRefreshBatchExecutor;
@@ -61,14 +61,14 @@ class RegistryRefreshJobLauncherTest {
     private TaskExecutorJobOperator jobOperator;
     private RegistryRefreshJobFactory jobFactory;
     private BatchSuccessStore successStore;
-    private DistrictCountCacheStore districtCountCacheStore;
+    private DistrictCountCache districtCountCache;
 
     @BeforeEach
     void setUp() throws Exception {
         wishlistMapper = mock(WishlistMapper.class);
         executor = mock(RegistryRefreshBatchExecutor.class);
         successStore = mock(BatchSuccessStore.class);
-        districtCountCacheStore = mock(DistrictCountCacheStore.class);
+        districtCountCache = mock(DistrictCountCache.class);
 
         ResourcelessJobRepository jobRepository = new ResourcelessJobRepository();
         jobOperator = new TaskExecutorJobOperator();
@@ -76,7 +76,7 @@ class RegistryRefreshJobLauncherTest {
         jobOperator.setJobRegistry(new MapJobRegistry());
         jobOperator.afterPropertiesSet();
 
-        jobFactory = new RegistryRefreshJobFactory(jobRepository, wishlistMapper, executor, districtCountCacheStore,
+        jobFactory = new RegistryRefreshJobFactory(jobRepository, wishlistMapper, executor, districtCountCache,
                 CHUNK_SIZE);
     }
 
@@ -182,7 +182,7 @@ class RegistryRefreshJobLauncherTest {
 
         service(AT_0300).run(DATE);
 
-        verify(districtCountCacheStore, times(1)).bumpGeneration();
+        verify(districtCountCache, times(1)).bumpGeneration();
     }
 
     @Test
@@ -192,7 +192,7 @@ class RegistryRefreshJobLauncherTest {
                 .thenThrow(new DataAccessResourceFailureException("db down"));
 
         assertThatThrownBy(() -> service(AT_0300).run(DATE)).isInstanceOf(IllegalStateException.class);
-        verify(districtCountCacheStore, times(1)).bumpGeneration();
+        verify(districtCountCache, times(1)).bumpGeneration();
     }
 
     @Test

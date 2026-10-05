@@ -14,6 +14,7 @@ import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.CursorCodec;
 import com.duri.rentalplatform.common.CursorPage;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.calculator.GeoDistanceCalculator;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
@@ -31,7 +32,6 @@ import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
-import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.property.vo.BoundingBox;
 import com.duri.rentalplatform.domain.property.vo.MapClusterCellRow;
 import com.duri.rentalplatform.domain.property.vo.PropertyDetailRow;
@@ -53,14 +53,14 @@ import org.mockito.ArgumentCaptor;
 class PropertyQueryServiceTest {
 
     private PropertyMapper propertyMapper;
-    private DistrictCountCacheStore districtCountCacheStore;
+    private DistrictCountCache districtCountCache;
     private PropertyQueryService service;
 
     @BeforeEach
     void setUp() {
         propertyMapper = mock(PropertyMapper.class);
-        districtCountCacheStore = mock(DistrictCountCacheStore.class);
-        service = new PropertyQueryService(propertyMapper, districtCountCacheStore);
+        districtCountCache = mock(DistrictCountCache.class);
+        service = new PropertyQueryService(propertyMapper, districtCountCache);
     }
 
     private static PropertySearchRequest listRequest(Integer size) {
@@ -245,7 +245,7 @@ class PropertyQueryServiceTest {
         DistrictCountRequest filter = new DistrictCountRequest(
                 null, null, null, null, null, null, null, null, null);
         DistrictCountsResponse cached = new DistrictCountsResponse(List.of(), 7L, OffsetDateTime.now());
-        when(districtCountCacheStore.getOrLoad(eq(filter), any())).thenReturn(cached);
+        when(districtCountCache.getOrLoad(eq(filter), any())).thenReturn(cached);
 
         DistrictCountsResponse result = service.getDistrictCounts(filter);
 
@@ -258,7 +258,7 @@ class PropertyQueryServiceTest {
     void districtCountsCacheMissQueriesMapper() {
         DistrictCountRequest filter = new DistrictCountRequest(
                 null, null, null, null, null, null, null, null, null);
-        when(districtCountCacheStore.getOrLoad(eq(filter), any())).thenAnswer(invocation -> {
+        when(districtCountCache.getOrLoad(eq(filter), any())).thenAnswer(invocation -> {
             Supplier<DistrictCountsResponse> loader = invocation.getArgument(1);
             return loader.get();
         });

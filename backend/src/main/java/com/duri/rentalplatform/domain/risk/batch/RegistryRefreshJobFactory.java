@@ -1,7 +1,7 @@
 package com.duri.rentalplatform.domain.risk.batch;
 
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.mapper.WishlistMapper;
-import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.risk.service.RegistryRefreshBatchExecutor;
 import com.duri.rentalplatform.domain.risk.vo.RegistryRefreshAttempt;
 import com.duri.rentalplatform.domain.risk.vo.RegistryRefreshReport;
@@ -44,19 +44,19 @@ public class RegistryRefreshJobFactory {
     private final JobRepository jobRepository;
     private final WishlistMapper wishlistMapper;
     private final RegistryRefreshBatchExecutor executor;
-    private final DistrictCountCacheStore districtCountCacheStore;
+    private final DistrictCountCache districtCountCache;
     private final int chunkSize;
 
     public RegistryRefreshJobFactory(
             JobRepository jobRepository,
             WishlistMapper wishlistMapper,
             RegistryRefreshBatchExecutor executor,
-            DistrictCountCacheStore districtCountCacheStore,
+            DistrictCountCache districtCountCache,
             @Value("${risk.batch.registry-refresh.page-size}") int chunkSize) {
         this.jobRepository = jobRepository;
         this.wishlistMapper = wishlistMapper;
         this.executor = executor;
-        this.districtCountCacheStore = districtCountCacheStore;
+        this.districtCountCache = districtCountCache;
         this.chunkSize = chunkSize;
     }
 
@@ -78,7 +78,7 @@ public class RegistryRefreshJobFactory {
                 .build();
 
         return new JobBuilder(JOB_NAME, jobRepository)
-                .listener(new DistrictCountGenerationBumpListener(districtCountCacheStore))
+                .listener(new DistrictCountGenerationBumpListener(districtCountCache))
                 .start(step)
                 .build();
     }

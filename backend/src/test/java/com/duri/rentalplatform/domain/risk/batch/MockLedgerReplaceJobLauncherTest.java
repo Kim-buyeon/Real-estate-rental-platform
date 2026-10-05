@@ -12,11 +12,11 @@ import static org.mockito.Mockito.when;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.dto.condition.LedgerReplaceTargetCondition;
 import com.duri.rentalplatform.domain.property.enums.LedgerDataSource;
 import com.duri.rentalplatform.domain.property.enums.LedgerReplacementOutcome;
 import com.duri.rentalplatform.domain.property.mapper.LedgerMapper;
-import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
 import com.duri.rentalplatform.domain.risk.service.MockLedgerReplaceExecutor;
 import com.duri.rentalplatform.domain.risk.store.BatchSuccessStore;
@@ -59,7 +59,7 @@ class MockLedgerReplaceJobLauncherTest {
     private JobOperator jobOperator;
     private MockLedgerReplaceJobFactory jobFactory;
     private BatchSuccessStore successStore;
-    private DistrictCountCacheStore districtCountCacheStore;
+    private DistrictCountCache districtCountCache;
 
     @BeforeEach
     void setUp() {
@@ -68,9 +68,9 @@ class MockLedgerReplaceJobLauncherTest {
         when(dailyQuota.remaining()).thenReturn(100L);
         executor = mock(MockLedgerReplaceExecutor.class);
         successStore = mock(BatchSuccessStore.class);
-        districtCountCacheStore = mock(DistrictCountCacheStore.class);
+        districtCountCache = mock(DistrictCountCache.class);
 
-        jobFactory = new MockLedgerReplaceJobFactory(ledgerMapper, dailyQuota, executor, districtCountCacheStore,
+        jobFactory = new MockLedgerReplaceJobFactory(ledgerMapper, dailyQuota, executor, districtCountCache,
                 CHUNK_SIZE);
         jobOperator = DedicatedJobOperators.create(jobFactory.jobRepository(), "Mock 대장 교체 배치");
     }
@@ -203,7 +203,7 @@ class MockLedgerReplaceJobLauncherTest {
 
         launcher().run(DATE);
 
-        verify(districtCountCacheStore, times(1)).bumpGeneration();
+        verify(districtCountCache, times(1)).bumpGeneration();
     }
 
     @Test
@@ -213,14 +213,14 @@ class MockLedgerReplaceJobLauncherTest {
                 .thenThrow(new DataAccessResourceFailureException("db down"));
 
         assertThatThrownBy(() -> launcher().run(DATE)).isInstanceOf(IllegalStateException.class);
-        verify(districtCountCacheStore, times(1)).bumpGeneration();
+        verify(districtCountCache, times(1)).bumpGeneration();
     }
 
     @Test
     @DisplayName("Job 저장소는 이 배치 전용이다 — 기동 뒤 따라잡기로 등기 재조회 배치와 한 프로세스에서 겹쳐도 실행 기록을 나눠 쓰지 않는다")
     void usesDedicatedJobRepository() {
         MockLedgerReplaceJobFactory another =
-                new MockLedgerReplaceJobFactory(ledgerMapper, dailyQuota, executor, districtCountCacheStore,
+                new MockLedgerReplaceJobFactory(ledgerMapper, dailyQuota, executor, districtCountCache,
                 CHUNK_SIZE);
 
         assertThat(jobFactory.jobRepository()).isNotNull().isNotSameAs(another.jobRepository());

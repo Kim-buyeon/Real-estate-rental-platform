@@ -1,6 +1,7 @@
 package com.duri.rentalplatform.domain.property.service;
 
 import com.duri.rentalplatform.common.BusinessException;
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.calculator.ContractTypeClassifier;
 import com.duri.rentalplatform.domain.property.calculator.LandlordNameGenerator;
 import com.duri.rentalplatform.domain.property.calculator.MarketPriceCalculator;
@@ -8,7 +9,6 @@ import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.enums.SeoulDistrict;
-import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.property.vo.LedgerKeyFill;
 import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
 import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
@@ -88,7 +88,7 @@ public class PropertyLoadService {
     private final AddressNormalizeClient addressNormalizeClient;
     private final GeocodeClient geocodeClient;
     private final PropertyLoadWriter propertyLoadWriter;
-    private final DistrictCountCacheStore districtCountCacheStore;
+    private final DistrictCountCache districtCountCache;
 
     /**
      * 서울 25개 자치구의 최근 {@code months} 개월 실거래를 적재한다.
@@ -107,7 +107,7 @@ public class PropertyLoadService {
         try {
             loadAll(months, report, null);
         } finally {
-            districtCountCacheStore.bumpGeneration();
+            districtCountCache.bumpGeneration();
         }
     }
 

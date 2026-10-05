@@ -1,7 +1,7 @@
 package com.duri.rentalplatform.domain.risk.batch;
 
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.mapper.LedgerMapper;
-import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.risk.service.MockLedgerReplaceExecutor;
 import com.duri.rentalplatform.domain.risk.vo.MockLedgerReplaceAttempt;
 import com.duri.rentalplatform.domain.risk.vo.MockLedgerReplaceReport;
@@ -42,19 +42,19 @@ public class MockLedgerReplaceJobFactory {
     private final LedgerMapper ledgerMapper;
     private final BuildingLedgerDailyQuota dailyQuota;
     private final MockLedgerReplaceExecutor executor;
-    private final DistrictCountCacheStore districtCountCacheStore;
+    private final DistrictCountCache districtCountCache;
     private final int chunkSize;
 
     public MockLedgerReplaceJobFactory(
             LedgerMapper ledgerMapper,
             BuildingLedgerDailyQuota dailyQuota,
             MockLedgerReplaceExecutor executor,
-            DistrictCountCacheStore districtCountCacheStore,
+            DistrictCountCache districtCountCache,
             @Value("${risk.batch.mock-ledger-replace.page-size}") int chunkSize) {
         this.ledgerMapper = ledgerMapper;
         this.dailyQuota = dailyQuota;
         this.executor = executor;
-        this.districtCountCacheStore = districtCountCacheStore;
+        this.districtCountCache = districtCountCache;
         this.chunkSize = chunkSize;
     }
 
@@ -81,7 +81,7 @@ public class MockLedgerReplaceJobFactory {
                 .build();
 
         return new JobBuilder(JOB_NAME, jobRepository)
-                .listener(new DistrictCountGenerationBumpListener(districtCountCacheStore))
+                .listener(new DistrictCountGenerationBumpListener(districtCountCache))
                 .start(step)
                 .build();
     }
