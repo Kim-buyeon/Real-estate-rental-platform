@@ -62,6 +62,15 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       timeout: 2s
+      # Sentinel 접속(INF-01 #404) — master · nodes 가 있으면 Boot 가 위 host · port 대신 Sentinel 에게 주 Redis 를 묻는다.
+      # 비어 있으면(로컬 · CI · Sentinel 전 운영) 지금처럼 host · port 단일 노드다. 빈 값도 Boot 에게는 「설정됨」이라
+      # RedisSentinelConfig 가 둘 다 빈 Sentinel 설정을 지운다 — 한쪽만 있으면 기동을 멈춘다.
+      # nodes 는 쉼표로 이은 host:port 목록. password 는 Sentinel 자체의 비밀번호이고, 주 Redis 의 비밀번호는 위 password 다.
+      # TLS 는 따로 켜지 않는다 — spring.data.redis.ssl.* 를 켜면 Sentinel 접속에도 같은 SSL · 번들이 걸린다(RedisSentinelConfig 주석).
+      sentinel:
+        master: ${SPRING_DATA_REDIS_SENTINEL_MASTER:}
+        nodes: ${SPRING_DATA_REDIS_SENTINEL_NODES:}
+        password: ${SPRING_DATA_REDIS_SENTINEL_PASSWORD:}
   jpa:
     hibernate:
       ddl-auto: validate
