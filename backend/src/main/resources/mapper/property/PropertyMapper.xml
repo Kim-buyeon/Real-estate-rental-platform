@@ -88,11 +88,24 @@
                 AND p.latitude BETWEEN CAST(#{minLat} AS NUMERIC) AND CAST(#{maxLat} AS NUMERIC)
                 AND p.longitude BETWEEN CAST(#{minLng} AS NUMERIC) AND CAST(#{maxLng} AS NUMERIC)
             </if>
-            <!-- 목록 키셋. 정렬 값이 같은 행은 식별자로 가른다. 목록 외 조회는 lastId 가 null 이다. -->
+            <!--
+              목록 키셋. 정렬 값이 같은 행은 식별자로 가른다. 목록 외 조회는 lastId 가 null 이다.
+              보증금순은 행 비교 (p.deposit, p.property_id) > / < (값, ID) 로 쓴다. deposit 은 NOT NULL 이라 행 비교와 OR 식
+              (값 > 또는 값 = 이고 ID >)이 같은 행을 고른다. OR 식은 B-tree 탐색 조건이 되지 못해 ix_property_deposit(V26)을 순서대로
+              읽으면 커서 앞의 행을 전부 읽고 거른다 — 행 비교는 인덱스 탐색 시작점이 된다(#425 로컬 재현, 깊은 커서 내림
+              220,249 → 23 버퍼). 등록일 · 전세가율순 커서는 이번 범위 밖이라 OR 식 그대로다.
+            -->
             <if test="lastId != null">
-                AND (<include refid="sortExpr"/> <include refid="keysetOp"/> <include refid="lastSortValue"/>
-                     OR (<include refid="sortExpr"/> = <include refid="lastSortValue"/>
-                         AND p.property_id <include refid="keysetOp"/> #{lastId}))
+                <choose>
+                    <when test="sortKey.name() == 'DEPOSIT'">
+                        AND (p.deposit, p.property_id) <include refid="keysetOp"/> (#{lastDeposit}, #{lastId})
+                    </when>
+                    <otherwise>
+                        AND (<include refid="sortExpr"/> <include refid="keysetOp"/> <include refid="lastSortValue"/>
+                             OR (<include refid="sortExpr"/> = <include refid="lastSortValue"/>
+                                 AND p.property_id <include refid="keysetOp"/> #{lastId}))
+                    </otherwise>
+                </choose>
             </if>
         </where>
     </sql>
@@ -337,7 +350,7 @@
     <!--
       목록. 등급 · 전세가율이 매물 열(V22)이라 판정 표를 조인하지 않는다. V22 전에는 자치구 + 전세가율순 목록이 판정 표 해시
       조인을 피하려고 LATERAL 로 매물 한 건씩 최신 분석을 찾았다(#326) — 조인이 없어져 그 갈래도 없앴다. 자치구가 있으면 자치구
-      인덱스로 좁힌 매물을 정렬한다.
+      인덱스로 좁힌 매물을 정렬한다. 보증금순은 ix_property_deposit (deposit, property_id)(V26)을 정렬 순서대로 읽고 LIMIT 에서 멈춘다.
     -->
     <select id="selectList" resultMap="propertyListRow">
         SELECT p.property_id,

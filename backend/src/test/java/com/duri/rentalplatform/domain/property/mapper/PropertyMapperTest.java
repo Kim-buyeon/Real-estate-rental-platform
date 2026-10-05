@@ -27,6 +27,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import org.apache.ibatis.mapping.BoundSql;
+import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -510,6 +512,158 @@ class PropertyMapperTest {
 
         assertThat(all).containsExactly(cheapA, cheapB, pricey);
         assertThat(afterA).containsExactly(cheapB, pricey);
+    }
+
+    /**
+     * 보증금순 키셋(행 비교, V26) 픽스처. 식별자 발급 순서가 보증금과 섞이게 넣어, 행 비교 방향이 뒤집히거나 식별자만으로
+     * 가르면 결과가 달라지게 한다. 반환: [highEarly(300), lowEarly(100), e1, e2, e3(모두 200), highLate(300), lowLate(100)].
+     */
+    private long[] insertDepositKeysetFixture(String district) {
+        long highEarly = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 300L, 0L, 37.5, 126.8, T0);
+        long lowEarly = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.5, 126.8, T0);
+        long e1 = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.5, 126.8, T0);
+        long e2 = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.5, 126.8, T0);
+        long e3 = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.5, 126.8, T0);
+        long highLate = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 300L, 0L, 37.5, 126.8, T0);
+        long lowLate = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.5, 126.8, T0);
+        return new long[] {highEarly, lowEarly, e1, e2, e3, highLate, lowLate};
+    }
+
+    @Test
+    @DisplayName("목록: 보증금 내림차순 키셋 — 경계에 걸친 같은 보증금은 식별자 내림차순으로 이어지고 빠지거나 겹치지 않는다")
+    void listDepositDescKeysetWithTiesAtBoundary() {
+        long cheap = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.5, 126.8, T0);
+        long e1 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.5, 126.8, T0);
+        long e2 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.5, 126.8, T0);
+        long e3 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.5, 126.8, T0);
+        long top = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 300L, 0L, 37.5, 126.8, T0);
+
+        List<Long> first = ids(propertyMapper.selectList(list(PropertySortKey.DEPOSIT, false,
+                null, null, null, null, 2)));
+        List<Long> second = ids(propertyMapper.selectList(list(PropertySortKey.DEPOSIT, false,
+                200L, null, null, e3, 2)));
+        List<Long> third = ids(propertyMapper.selectList(list(PropertySortKey.DEPOSIT, false,
+                200L, null, null, e1, 2)));
+        List<Long> empty = ids(propertyMapper.selectList(list(PropertySortKey.DEPOSIT, false,
+                100L, null, null, cheap, 2)));
+
+        assertThat(first).containsExactly(top, e3);
+        assertThat(second).containsExactly(e2, e1);
+        assertThat(third).containsExactly(cheap);
+        assertThat(empty).isEmpty();
+    }
+
+    @Test
+    @DisplayName("목록: 보증금 키셋은 행 비교다 — 커서보다 작은/큰 보증금은 식별자와 무관하게 방향대로 가르고, 같은 보증금만 식별자로 가른다")
+    void listDepositKeysetSeparatesByDepositThenId() {
+        long[] fx = insertDepositKeysetFixture(D1);
+        long highEarly = fx[0];
+        long lowEarly = fx[1];
+        long e1 = fx[2];
+        long e2 = fx[3];
+        long e3 = fx[4];
+        long highLate = fx[5];
+        long lowLate = fx[6];
+
+        // 오름: 커서 (200, e2) 뒤 — 더 큰 보증금은 식별자가 작아도(highEarly) 들고, 더 작은 보증금은 식별자가 커도(lowLate) 빠진다.
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.DEPOSIT, true,
+                200L, null, null, e2, 100)))).containsExactly(e3, highEarly, highLate);
+        // 내림: 반대 — 더 작은 보증금은 식별자가 커도(lowLate) 들고, 더 큰 보증금은 식별자가 작아도(highEarly) 빠진다.
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.DEPOSIT, false,
+                200L, null, null, e2, 100)))).containsExactly(e1, lowEarly, lowLate);
+        // 전체 순서 — 보증금, 같으면 식별자(내림은 둘 다 내림).
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.DEPOSIT, true,
+                null, null, null, null, 100)))).containsExactly(lowEarly, lowLate, e1, e2, e3, highEarly, highLate);
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.DEPOSIT, false,
+                null, null, null, null, 100)))).containsExactly(highLate, highEarly, e3, e2, e1, lowLate, lowEarly);
+    }
+
+    @Test
+    @DisplayName("목록: 자치구 없는 보증금순 + 커서 — 여러 자치구 매물이 하나의 보증금 · 식별자 순서로 이어진다")
+    void listDepositKeysetWithoutDistrictSpansDistricts() {
+        long a = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.5, 126.8, T0);
+        long b = insertProperty(D2, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.5, 126.8, T0);
+        long c = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.5, 126.8, T0);
+        long cheapD2 = insertProperty(D2, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.5, 126.8, T0);
+        long priceyD1 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 300L, 0L, 37.5, 126.8, T0);
+        long[] fx = {a, b, c, cheapD2, priceyD1};
+
+        // 자치구 없으면 다른 데이터가 섞일 수 있어 이 테스트의 매물만 걸러 본다.
+        assertThat(mineOf(propertyMapper.selectList(depositListBy(filter(null), true, 200L, b, 1000)), fx))
+                .containsExactly(c, priceyD1);
+        assertThat(mineOf(propertyMapper.selectList(depositListBy(filter(null), false, 200L, b, 1000)), fx))
+                .containsExactly(a, cheapD2);
+        assertThat(mineOf(propertyMapper.selectList(depositListBy(filter(null), false, null, null, 1000)), fx))
+                .containsExactly(priceyD1, c, b, a, cheapD2);
+    }
+
+    @Test
+    @DisplayName("목록: 보증금 키셋은 계약 유형 필터와 함께 걸어도 필터 안의 매물만 커서 뒤로 이어 준다")
+    void listDepositKeysetWithContractTypeFilter() {
+        long[] m = insertTypeMatrix(); // 보증금 100(전세) 200(월세) 300(전세) 400(월세), 식별자도 같은 방향
+
+        assertThat(ids(propertyMapper.selectList(depositListBy(typeFilter(ContractType.MONTHLY_RENT, null),
+                false, 400L, m[3], 10)))).containsExactly(m[1]);
+        assertThat(ids(propertyMapper.selectList(depositListBy(typeFilter(ContractType.MONTHLY_RENT, null),
+                true, 200L, m[1], 10)))).containsExactly(m[3]);
+        assertThat(ids(propertyMapper.selectList(depositListBy(typeFilter(ContractType.DEPOSIT_ONLY, null),
+                false, 300L, m[2], 10)))).containsExactly(m[0]);
+    }
+
+    @Test
+    @DisplayName("목록: 보증금 키셋은 보증금 범위 필터와 함께 걸어도 범위 밖을 끌어오지 않는다")
+    void listDepositKeysetWithDepositRangeFilter() {
+        long[] m = insertTypeMatrix(); // 보증금 100 200 300 400
+        DistrictCountRequest range = new DistrictCountRequest(D1, null, 150L, 350L, null, null, null, null, null);
+
+        assertThat(ids(propertyMapper.selectList(depositListBy(range, false, 300L, m[2], 10))))
+                .containsExactly(m[1]); // 100 은 범위 밖
+        assertThat(ids(propertyMapper.selectList(depositListBy(range, true, 200L, m[1], 10))))
+                .containsExactly(m[2]); // 400 은 범위 밖
+    }
+
+    @Autowired
+    SqlSessionFactory sqlSessionFactory;
+
+    /**
+     * 질의 모양 확인 — 플래너의 선택이 아니다. 테스트 데이터가 작아 실제 플래너는 인덱스를 고르지 않으므로 순차 스캔 · 정렬 ·
+     * 비트맵 스캔을 꺼 두고, 「자치구 없는 보증금 내림 + 커서」 질의가 ix_property_deposit 를 탐색 조건(Index Cond)으로 받고
+     * 별도 Sort 없이 인덱스 순서를 쓸 수 있는가만 본다. OR 식으로 되돌리면 Index Cond 에 커서 비교가 오르지 못한다.
+     */
+    @Test
+    @DisplayName("목록: 자치구 없는 보증금 내림 + 커서 질의는 ix_property_deposit 를 탐색 조건으로 받고 Sort 노드가 없다 (질의 모양 확인, 플래너 선택 아님)")
+    void depositDescKeysetCanUseDepositIndexWithoutSort() {
+        PropertySearchCondition cond = depositListBy(filter(null), false, 200L, 1L, 10);
+        org.apache.ibatis.session.Configuration cfg = sqlSessionFactory.getConfiguration();
+        BoundSql bound = cfg.getMappedStatement(
+                "com.duri.rentalplatform.domain.property.mapper.PropertyMapper.selectList").getBoundSql(cond);
+        org.apache.ibatis.reflection.MetaObject meta = cfg.newMetaObject(cond);
+
+        List<String> plan = jdbc.execute((java.sql.Connection con) -> {
+            try (java.sql.Statement st = con.createStatement()) {
+                st.execute("SET LOCAL enable_seqscan = off");
+                st.execute("SET LOCAL enable_sort = off");
+                st.execute("SET LOCAL enable_bitmapscan = off");
+            }
+            try (java.sql.PreparedStatement ps = con.prepareStatement("EXPLAIN " + bound.getSql())) {
+                int i = 1;
+                for (org.apache.ibatis.mapping.ParameterMapping pm : bound.getParameterMappings()) {
+                    ps.setObject(i++, meta.getValue(pm.getProperty()));
+                }
+                List<String> lines = new java.util.ArrayList<>();
+                try (java.sql.ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        lines.add(rs.getString(1));
+                    }
+                }
+                return lines;
+            }
+        });
+
+        String text = String.join("\n", plan);
+        assertThat(text).contains("ix_property_deposit");
+        assertThat(plan).anyMatch(l -> l.contains("Index Cond") && l.contains("deposit"));
+        assertThat(text).doesNotContain("Sort");
     }
 
     @Test
@@ -1070,6 +1224,13 @@ class PropertyMapperTest {
         BigDecimal nullDebtRatio = new BigDecimal(ascending ? "1000" : "-1000");
         return PropertySearchCondition.ofList(f, sortKey, ascending, nullDebtRatio,
                 null, lastDebtRatio, null, lastId, limit);
+    }
+
+    /** 보증금순 목록 조건 — 자치구 · 필터를 인자로 받고 보증금 커서를 건다. */
+    private static PropertySearchCondition depositListBy(DistrictCountRequest f, boolean ascending,
+            Long lastDeposit, Long lastId, int limit) {
+        return PropertySearchCondition.ofList(f, PropertySortKey.DEPOSIT, ascending,
+                new BigDecimal(ascending ? "1000" : "-1000"), lastDeposit, null, null, lastId, limit);
     }
 
     /** D1 로 좁히고 계약 유형 · 매물 유형만 거는 필터. */
