@@ -1,5 +1,6 @@
 package com.duri.rentalplatform.domain.risk.batch;
 
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.service.PropertyLoadService;
 import com.duri.rentalplatform.domain.risk.service.PropertyRefreshAnalysisExecutor;
@@ -37,6 +38,9 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
  * <p><b>회차마다 만드는 이유 · 스텝 트랜잭션 · 판정 스텝의 동기화를 끄는 이유</b>는 {@link RegistryRefreshJobFactory} 와 같다.
  * 적재 스텝도 resourceless 관리자로 돈다 — JPA 관리자로 두면 스텝 전체가 한 DB 트랜잭션이 되어 25개 자치구의 외부 호출이 그 안에
  * 든다. 저장 경계는 적재 쓰기 서비스가 덩어리마다 긋는다. 적재 스텝만 동기화를 켜 두는 이유는 {@link #create} 안의 주석.
+ *
+ * <p><b>끝나면 자치구 집계 캐시의 세대를 올린다</b>(#406) — 두 스텝이 매물 수 · 등급 분포를 바꾼다. 시점과 이유는
+ * {@link DistrictCountGenerationBumpListener}.
  */
 @Component
 public class PropertyRefreshJobFactory {
@@ -50,6 +54,7 @@ public class PropertyRefreshJobFactory {
     private final PropertyLoadService propertyLoadService;
     private final PropertyMapper propertyMapper;
     private final PropertyRefreshAnalysisExecutor executor;
+    private final DistrictCountCache districtCountCache;
     private final int months;
     private final int chunkSize;
 
@@ -57,11 +62,13 @@ public class PropertyRefreshJobFactory {
             PropertyLoadService propertyLoadService,
             PropertyMapper propertyMapper,
             PropertyRefreshAnalysisExecutor executor,
+            DistrictCountCache districtCountCache,
             @Value("${property.batch.refresh.months}") int months,
             @Value("${property.batch.refresh.page-size}") int chunkSize) {
         this.propertyLoadService = propertyLoadService;
         this.propertyMapper = propertyMapper;
         this.executor = executor;
+        this.districtCountCache = districtCountCache;
         this.months = months;
         this.chunkSize = chunkSize;
     }
@@ -100,6 +107,7 @@ public class PropertyRefreshJobFactory {
                 .build();
 
         return new JobBuilder(JOB_NAME, jobRepository)
+                .listener(new DistrictCountGenerationBumpListener(districtCountCache))
                 .start(loadStep)
                 .next(analysisStep)
                 .build();

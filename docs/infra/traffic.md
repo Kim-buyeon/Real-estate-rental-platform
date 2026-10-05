@@ -146,7 +146,7 @@ NOTI-03은 장시간 유지되는 연결이므로 RPS로 표현할 수 없다. �
 
 **T2와 T3의 관계** — T2는 한계를 찾고, T3는 그 한계보다 충분히 낮은 지점에서 고정한다. 25 RPS는 T2로 확인한 한계의 절반 이하여야 한다. 배경 부하가 이미 포화 근처면 장애를 넣지 않아도 지표가 흔들린다.
 
-**T5의 실행 방법** — ~~`FLUSHALL` 이후 즉시 인가한다.~~ **캐시 키만 지운다**(2026-09-27 · #278) — T3 배경 중 `redis-cli --scan --pattern 'property:district-counts:*'` 로 찾은 키를 `DEL`. `FLUSHALL` 은 캐시가 아닌 키(로그인 리프레시 토큰 `refresh:*` · 알림 중복 방지 · SSE 티켓 · 재분석 간격)까지 지워 인증 실패가 캐시 효과에 섞인다. 결과는 용량 산정 리포트. T3와 같은 조건에서 캐시 상태만 다르므로 두 결과의 차이가 곧 공유 저장소의 기여분이다.
+**T5의 실행 방법** — ~~`FLUSHALL` 이후 즉시 인가한다.~~ **캐시 키만 지운다**(2026-09-27 · #278) — T3 배경 중 `redis-cli --scan --pattern 'property:district-counts:*'` 로 찾은 키를 `DEL`. `FLUSHALL` 은 캐시가 아닌 키(로그인 리프레시 토큰 `refresh:*` · 알림 중복 방지 · SSE 티켓 · 재분석 간격)까지 지워 인증 실패가 캐시 효과에 섞인다. 결과는 용량 산정 리포트. T3와 같은 조건에서 캐시 상태만 다르므로 두 결과의 차이가 곧 공유 저장소의 기여분이다. **#406 이후에는 세대를 올린다** — 자치구 집계에 슬롯 로컬 캐시가 생겨 Redis 키만 지우면 슬롯은 계속 로컬에서 답한다(성능 설계서 1.3). T3 배경 중 `redis-cli INCR property:district-counts:gen` 한 번이면 각 슬롯이 세대 확인 간격(`property.district-counts.generation-check-interval`, 1초) 안에 로컬을 비우고, 옛 세대의 Redis 키는 읽히지 않으므로 로컬 · Redis 가 함께 차가워진다. 위의 `--scan` · `DEL` 은 #406 이전 앱에만 쓴다(세대 키도 그 패턴에 걸리지만 지워져도 세대 0 으로 이어 가 해가 없다). 이 경우 차이는 공유 저장소와 슬롯 로컬 캐시를 합친 기여분이다.
 
 **T7이 필요한 이유** — RISK-08 배치는 관심 매물 전량을 일 1회 재분석하며 외부 API 호출과 쓰기를 동반한다. 이 시간대에 조회 응답이 어떻게 되는지가 실제 운영에서 확인해야 할 값이다. T3와 T7의 p95 차이가 배치의 사용자 영향이며, 차이가 크면 배치 실행 시각을 저부하 시간대로 옮기거나 처리 속도를 제한한다.
 
@@ -233,7 +233,7 @@ NOTI-03은 장시간 유지되는 연결이므로 RPS로 표현할 수 없다. �
 | T2 | `load/steps.js` | `ramping-arrival-rate` |
 | T3 | `load/steady.js` | `constant-arrival-rate` |
 | T4 | `load/soak.js` | `constant-arrival-rate` |
-| T5 | `load/steady.js` + 캐시 키 삭제(「T5의 실행 방법」) | `constant-arrival-rate` |
+| T5 | `load/steady.js` + 세대 키 올리기(#406 이후) 또는 캐시 키 삭제(그 전, 「T5의 실행 방법」) | `constant-arrival-rate` |
 | T6 | `load/steady.js` + `deploy.sh` | `constant-arrival-rate` |
 | T7 | `load/steady.js` + 배치를 고정 시각 하나로 한 번(두 앱 노드 `.env` 의 `RISK_BATCH_REGISTRYREFRESH_CRON` → 재배포, 끝나면 지우고 재배포 — 하네스 README) | `constant-arrival-rate` |
 | SSE 동시 연결 | `load/sse.js` (전 프로파일과 병행 실행) | `constant-vus` |

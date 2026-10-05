@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.calculator.LandlordNameGenerator;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
@@ -98,6 +99,7 @@ class PropertyLoadServiceTest {
     private AddressNormalizeClient addressNormalizeClient;
     private GeocodeClient geocodeClient;
     private PropertyLoadWriter propertyLoadWriter;
+    private DistrictCountCache districtCountCache;
     private PropertyLoadService service;
 
     @BeforeEach
@@ -107,8 +109,9 @@ class PropertyLoadServiceTest {
         addressNormalizeClient = mock(AddressNormalizeClient.class);
         geocodeClient = mock(GeocodeClient.class);
         propertyLoadWriter = mock(PropertyLoadWriter.class);
+        districtCountCache = mock(DistrictCountCache.class);
         service = new PropertyLoadService(rentTransactionClient, saleTransactionClient,
-                addressNormalizeClient, geocodeClient, propertyLoadWriter);
+                addressNormalizeClient, geocodeClient, propertyLoadWriter, districtCountCache);
 
         // 기본은 전부 정상 — 실패·건너뜀을 보는 테스트만 아래에서 더 좁은 매처로 덮어쓴다.
         // 더 좁은 매처를 테스트 메서드 안에서(= 이후에) 등록하면 Mockito가 그 매처를 우선한다.
@@ -208,6 +211,28 @@ class PropertyLoadServiceTest {
         assertThat(saved.latitude()).isEqualByComparingTo("37.5000000");
         assertThat(saved.longitude()).isEqualByComparingTo("127.0000000");
         assertThat(saved.landlordName()).isEqualTo(LandlordNameGenerator.generate(saved.naturalKey()));
+    }
+
+    @Test
+    @DisplayName("초기 적재가 끝나면 자치구 집계 캐시의 세대를 한 번 올린다")
+    void initialLoadBumpsDistrictCountGeneration() {
+        when(rentTransactionClient.findRentTransactions(queryOf(PRIMARY, APARTMENT)))
+                .thenReturn(List.of(validTransaction("100-1", new BigDecimal("59.90"), 3)));
+
+        service.load(1, new PropertyLoadReport());
+
+        verify(districtCountCache, times(1)).bumpGeneration();
+    }
+
+    @Test
+    @DisplayName("갱신 적재는 세대를 올리지 않는다 — 판정 스텝까지 끝난 뒤 갱신 배치가 올린다")
+    void refreshLoadDoesNotBumpDistrictCountGeneration() {
+        when(rentTransactionClient.findRentTransactions(queryOf(PRIMARY, APARTMENT)))
+                .thenReturn(List.of(validTransaction("100-1", new BigDecimal("59.90"), 3)));
+
+        service.refresh(1, new PropertyLoadReport());
+
+        verify(districtCountCache, never()).bumpGeneration();
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.duri.rentalplatform.domain.risk.batch;
 
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.mapper.WishlistMapper;
 import com.duri.rentalplatform.domain.risk.service.RegistryRefreshBatchExecutor;
 import com.duri.rentalplatform.domain.risk.vo.RegistryRefreshAttempt;
@@ -30,6 +31,9 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
  * <p><b>트랜잭션 동기화를 끄는 이유</b> — 청크 트랜잭션이 동기화를 켜면 읽기 단계의 MyBatis 세션과 그 커넥션이 청크가 끝날 때까지
  * 스레드에 묶인다. 그러면 외부 호출이 도는 동안 커넥션 하나가 풀로 돌아가지 않는다. 동기화를 끄면 매퍼 호출마다 커넥션을 받고
  * 돌려주어, 배치를 Spring Batch 로 옮기기 전과 같다.
+ *
+ * <p><b>끝나면 자치구 집계 캐시의 세대를 올린다</b>(#406) — 판정이 등급 분포를 바꾼다. 시점과 이유는
+ * {@link DistrictCountGenerationBumpListener}.
  */
 @Component
 public class RegistryRefreshJobFactory {
@@ -40,16 +44,19 @@ public class RegistryRefreshJobFactory {
     private final JobRepository jobRepository;
     private final WishlistMapper wishlistMapper;
     private final RegistryRefreshBatchExecutor executor;
+    private final DistrictCountCache districtCountCache;
     private final int chunkSize;
 
     public RegistryRefreshJobFactory(
             JobRepository jobRepository,
             WishlistMapper wishlistMapper,
             RegistryRefreshBatchExecutor executor,
+            DistrictCountCache districtCountCache,
             @Value("${risk.batch.registry-refresh.page-size}") int chunkSize) {
         this.jobRepository = jobRepository;
         this.wishlistMapper = wishlistMapper;
         this.executor = executor;
+        this.districtCountCache = districtCountCache;
         this.chunkSize = chunkSize;
     }
 
@@ -71,6 +78,7 @@ public class RegistryRefreshJobFactory {
                 .build();
 
         return new JobBuilder(JOB_NAME, jobRepository)
+                .listener(new DistrictCountGenerationBumpListener(districtCountCache))
                 .start(step)
                 .build();
     }

@@ -16,20 +16,27 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * 자치구 집계 캐시. API 명세서(매물) 1.5 「동일한 필터 조합에 대한 응답은 캐싱」.
+ * 자치구 집계의 Redis 층 — 집계 응답과 세대 키 {@value #GENERATION_KEY} 의 읽기 · 쓰기만 한다. 슬롯 로컬 층 · 세대 관리 · 같은 키
+ * 동시 빗나감 합치기는 {@code DistrictCountCache}(cache 패키지)가 갖는다. API 명세서(매물) 1.5 「동일한 필터 조합에 대한 응답은
+ * 캐싱」.
  *
- * <p>앱이 두 프로세스로 뜨므로 프로세스 메모리가 아니라 Redis 에 둔다. 키는 정규화한 필터 조합이다 —
- * 파라미터 순서나 등급 배열의 순서 · 중복이 달라도 같은 조합이면 같은 키다.
+ * <p>키는 세대 + 정규화한 필터 조합이다 — 파라미터 순서나 등급 배열의 순서 · 중복이 달라도 같은 조합이면 같은 키다. 세대가 바뀌면
+ * 옛 세대의 키는 읽히지 않고 TTL 로 사라진다.
  *
- * <p>{@code RedisConfig} 의 {@code RedisTemplate<String, Object>} 를 쓰지 않는다. 그 직렬화기는 기본
- * 타이핑이라 final 인 record 최상위 값에 타입 힌트가 붙지 않아 되읽을 때 구체 타입을 알 수 없다.
- * 문자열 템플릿에 JSON 을 넣고 읽을 때 타입을 지정한다.
+ * <p>{@code RedisConfig} 의 {@code RedisTemplate<String, Object>} 를 쓰지 않는다. 그 직렬화기는 기본 타이핑이라 final 인 record
+ * 최상위 값에 타입 힌트가 붙지 않아 되읽을 때 구체 타입을 알 수 없다. 문자열 템플릿에 JSON 을 넣고 읽을 때 타입을 지정한다.
  *
- * <p>Redis 장애는 조회 실패로 번지지 않게 한다. 캐시를 못 읽거나 못 쓰면 경고만 남기고 DB 집계로 간다.
+ * <p>집계 응답의 읽기 · 쓰기 실패는 경고만 남긴다 — 조회 실패로 번지지 않게 한다. 세대 키의 읽기 · 올리기 실패는 그대로 올린다 —
+ * 부르는 쪽이 경우마다 다르게 다룬다.
  */
 @Slf4j
 @Component
 public class DistrictCountCacheStore {
+
+    public static final String GENERATION_KEY = "property:district-counts:gen";
+
+    /** 세대 키가 없을 때의 세대. 키가 지워져도 이 값으로 이어 간다. */
+    public static final String INITIAL_GENERATION = "0";
 
     private static final String KEY_PREFIX = "property:district-counts:";
 
@@ -46,9 +53,15 @@ public class DistrictCountCacheStore {
         this.ttl = ttl;
     }
 
-    public Optional<DistrictCountsResponse> find(DistrictCountRequest filter) {
+    /** Redis TTL. 로컬 층이 항목 수명의 상한을 계산할 때 쓴다. */
+    public Duration ttl() {
+        return ttl;
+    }
+
+    /** 세대의 집계. 없거나 읽지 못하면 빈 값 — 실패는 경고만 남긴다. */
+    public Optional<DistrictCountsResponse> find(String generation, DistrictCountRequest filter) {
         try {
-            String json = redis.opsForValue().get(key(filter));
+            String json = redis.opsForValue().get(key(generation, filter));
             return json == null
                     ? Optional.empty()
                     : Optional.of(jsonMapper.readValue(json, DistrictCountsResponse.class));
@@ -58,16 +71,43 @@ public class DistrictCountCacheStore {
         }
     }
 
-    public void save(DistrictCountRequest filter, DistrictCountsResponse response) {
+    /** 세대의 집계를 TTL 로 쓴다. 실패는 경고만 남긴다. */
+    public void save(String generation, DistrictCountRequest filter, DistrictCountsResponse response) {
         try {
-            redis.opsForValue().set(key(filter), jsonMapper.writeValueAsString(response), ttl);
+            redis.opsForValue().set(key(generation, filter), jsonMapper.writeValueAsString(response), ttl);
         } catch (RuntimeException e) {
             log.warn("자치구 집계 캐시 쓰기 실패", e);
         }
     }
 
+    /**
+     * 지금 세대. 키가 없으면 {@link #INITIAL_GENERATION}.
+     *
+     * @throws RuntimeException Redis 를 읽지 못했을 때
+     */
+    public String readGeneration() {
+        String value = redis.opsForValue().get(GENERATION_KEY);
+        return value == null ? INITIAL_GENERATION : value;
+    }
+
+    /**
+     * 세대를 올린다.
+     *
+     * @return 올린 뒤의 세대. Redis 가 값을 돌려주지 않으면 null
+     * @throws RuntimeException Redis 에 쓰지 못했을 때
+     */
+    public String incrementGeneration() {
+        Long next = redis.opsForValue().increment(GENERATION_KEY);
+        return next == null ? null : next.toString();
+    }
+
+    /** 세대의 집계 키. */
+    public static String key(String generation, DistrictCountRequest filter) {
+        return KEY_PREFIX + "g" + generation + ":" + filterKey(filter);
+    }
+
     /** 필터를 고정 순서의 문자열로 정규화한다. 빈 값은 비어 있는 칸으로 둔다. */
-    static String key(DistrictCountRequest f) {
+    public static String filterKey(DistrictCountRequest f) {
         StringJoiner joiner = new StringJoiner("|");
         joiner.add("district=" + blankToEmpty(f.district()));
         joiner.add("contractType=" + str(f.contractType()));
@@ -78,7 +118,7 @@ public class DistrictCountCacheStore {
         joiner.add("riskGrade=" + grades(f.riskGrade()));
         joiner.add("areaMin=" + (f.areaMin() == null ? "" : f.areaMin().stripTrailingZeros().toPlainString()));
         joiner.add("areaMax=" + (f.areaMax() == null ? "" : f.areaMax().stripTrailingZeros().toPlainString()));
-        return KEY_PREFIX + joiner;
+        return joiner.toString();
     }
 
     private static String grades(List<RiskGrade> grades) {

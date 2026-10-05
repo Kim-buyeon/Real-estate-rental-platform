@@ -50,6 +50,9 @@ public class RiskReanalysisCommandService {
     /**
      * 매물의 등기를 다시 떼어 위험도를 재분석한다.
      *
+     * <p>자치구 집계 캐시의 세대는 올리지 않는다(#406) — 한 건마다 모든 슬롯의 집계 캐시를 비우면 캐시가 무의미하다. 이 등급
+     * 변화는 집계에 Redis TTL 안에 보인다(아키텍처 설계서(성능) 1.3 「낡음 상한」). 세대는 배치가 끝날 때 올린다.
+     *
      * @throws BusinessException {@link ErrorCode#PROPERTY_NOT_FOUND} — 매물이 없을 때,
      *                           {@link ErrorCode#RISK_REANALYZE_TOO_SOON} — 최소 간격 안일 때(retryAfter 포함),
      *                           {@link ErrorCode#EXTERNAL_API_UNAVAILABLE} — 등기 · 대장 수집이 실패했거나 대기 상한을 넘었을 때

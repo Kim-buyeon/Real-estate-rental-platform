@@ -27,6 +27,10 @@ repositories {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	// 자치구 집계의 슬롯 로컬 캐시(PROP-08, #406) — 크기 상한 · 만료 · 같은 키 동시 빗나감 합치기. 버전은 Boot BOM 이
+	// 관리한다(Boot 4.1.1 → caffeine.version 3.2.4). 캐시 추상화(spring-boot-starter-cache)는 쓰지 않는다 — 세대 키와
+	// 만료 상한을 직접 다룬다.
+	implementation 'com.github.ben-manes.caffeine:caffeine'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'

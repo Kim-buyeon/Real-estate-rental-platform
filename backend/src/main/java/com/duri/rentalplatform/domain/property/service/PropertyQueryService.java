@@ -5,6 +5,7 @@ import com.duri.rentalplatform.common.CursorCodec;
 import com.duri.rentalplatform.common.CursorPage;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.datasource.ReplicaRead;
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.calculator.GeoDistanceCalculator;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
@@ -20,7 +21,6 @@ import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerRespon
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkersResponse;
 import com.duri.rentalplatform.domain.property.enums.PropertySortKey;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
-import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.property.vo.BoundingBox;
 import com.duri.rentalplatform.domain.property.vo.MapClusterCellRow;
 import com.duri.rentalplatform.domain.property.vo.MarkerCandidateRow;
@@ -71,18 +71,17 @@ public class PropertyQueryService {
     static final int RADIUS_MARKER_LIMIT = GRID_DIVISIONS * GRID_DIVISIONS;
 
     private final PropertyMapper propertyMapper;
-    private final DistrictCountCacheStore districtCountCacheStore;
+    private final DistrictCountCache districtCountCache;
 
-    /** 자치구 집계. 같은 필터 조합은 캐시에서 돌려준다. 읽기 분산이 켜지면 읽기용 풀에서 읽는다(#343). */
+    /**
+     * 자치구 집계. 같은 필터 조합은 캐시(슬롯 로컬 → Redis)에서 돌려준다 — {@link DistrictCountCache}. 둘 다 빗나가면 이
+     * 스레드에서 집계한다. 읽기 분산이 켜지면 읽기용 풀에서 읽는다(#343).
+     */
     @ReplicaRead
     public DistrictCountsResponse getDistrictCounts(DistrictCountRequest filter) {
-        return districtCountCacheStore.find(filter).orElseGet(() -> {
-            DistrictCountsResponse response = DistrictCountsResponse.of(
-                    propertyMapper.selectDistrictCounts(PropertySearchCondition.ofFilter(filter)),
-                    OffsetDateTime.now(SEOUL));
-            districtCountCacheStore.save(filter, response);
-            return response;
-        });
+        return districtCountCache.getOrLoad(filter, () -> DistrictCountsResponse.of(
+                propertyMapper.selectDistrictCounts(PropertySearchCondition.ofFilter(filter)),
+                OffsetDateTime.now(SEOUL)));
     }
 
     /**

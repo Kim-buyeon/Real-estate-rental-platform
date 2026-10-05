@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
+import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
 import com.duri.rentalplatform.domain.property.dto.condition.WishlistedPropertyCondition;
 import com.duri.rentalplatform.domain.property.mapper.WishlistMapper;
 import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
@@ -60,12 +61,14 @@ class RegistryRefreshJobLauncherTest {
     private TaskExecutorJobOperator jobOperator;
     private RegistryRefreshJobFactory jobFactory;
     private BatchSuccessStore successStore;
+    private DistrictCountCache districtCountCache;
 
     @BeforeEach
     void setUp() throws Exception {
         wishlistMapper = mock(WishlistMapper.class);
         executor = mock(RegistryRefreshBatchExecutor.class);
         successStore = mock(BatchSuccessStore.class);
+        districtCountCache = mock(DistrictCountCache.class);
 
         ResourcelessJobRepository jobRepository = new ResourcelessJobRepository();
         jobOperator = new TaskExecutorJobOperator();
@@ -73,7 +76,8 @@ class RegistryRefreshJobLauncherTest {
         jobOperator.setJobRegistry(new MapJobRegistry());
         jobOperator.afterPropertiesSet();
 
-        jobFactory = new RegistryRefreshJobFactory(jobRepository, wishlistMapper, executor, CHUNK_SIZE);
+        jobFactory = new RegistryRefreshJobFactory(jobRepository, wishlistMapper, executor, districtCountCache,
+                CHUNK_SIZE);
     }
 
     @Test
@@ -169,6 +173,26 @@ class RegistryRefreshJobLauncherTest {
 
         assertThatThrownBy(() -> service(AT_0300).run(DATE)).isInstanceOf(IllegalStateException.class);
         verify(successStore, never()).markSucceeded(any(), any());
+    }
+
+    @Test
+    @DisplayName("회차가 끝나면 자치구 집계 캐시의 세대를 한 번 올린다")
+    void bumpsDistrictCountGenerationAfterRun() {
+        page(null);
+
+        service(AT_0300).run(DATE);
+
+        verify(districtCountCache, times(1)).bumpGeneration();
+    }
+
+    @Test
+    @DisplayName("회차가 실패로 끝나도 세대를 올린다 — 그때까지 저장한 판정이 이미 반영돼 있다")
+    void bumpsDistrictCountGenerationEvenWhenFailed() {
+        when(wishlistMapper.selectWishlistedPropertyIds(any()))
+                .thenThrow(new DataAccessResourceFailureException("db down"));
+
+        assertThatThrownBy(() -> service(AT_0300).run(DATE)).isInstanceOf(IllegalStateException.class);
+        verify(districtCountCache, times(1)).bumpGeneration();
     }
 
     @Test
