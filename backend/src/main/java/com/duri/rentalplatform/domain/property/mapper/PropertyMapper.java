@@ -1,6 +1,6 @@
 package com.duri.rentalplatform.domain.property.mapper;
 
-import com.duri.rentalplatform.domain.property.dto.condition.PriceChangedPropertyCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.ReanalysisPendingPropertyCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertySearchCondition;
@@ -51,9 +51,9 @@ public interface PropertyMapper {
     List<Long> selectUnanalyzedPropertyIds(UnanalyzedPropertyCondition condition);
 
     /**
-     * 시세 금액이 바뀌어 재분석을 기다리는 매물(is_reanalysis_pending) 중 최신 판정이 있는 매물의 식별자를 식별자 오름차순으로
+     * 판정 입력(시세 · 등기 · 대장)이 바뀌어 재분석을 기다리는 매물(is_reanalysis_pending) 중 최신 판정이 있는 매물의 식별자를 식별자 오름차순으로
      * {@code limit} 건. 매물 갱신 배치(RISK-08)의 재분석 대상이다. 최신 판정이 없는 대기 매물은
      * {@link #selectUnanalyzedPropertyIds} 가 내주므로 두 조회가 겹치지 않는다. 식별자 자체가 커서라 동률이 없다.
      */
-    List<Long> selectPriceChangedPropertyIds(PriceChangedPropertyCondition condition);
+    List<Long> selectReanalysisPendingPropertyIds(ReanalysisPendingPropertyCondition condition);
 }

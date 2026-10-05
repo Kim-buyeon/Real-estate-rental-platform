@@ -15,7 +15,7 @@ import static org.mockito.Mockito.when;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
-import com.duri.rentalplatform.domain.property.dto.condition.PriceChangedPropertyCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.ReanalysisPendingPropertyCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyCondition;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.service.PropertyLoadService;
@@ -93,7 +93,7 @@ class PropertyRefreshJobLauncherTest {
         order.verify(executor).analyze(PropertyRefreshTarget.unanalyzed(1L));
         order.verify(executor).analyze(PropertyRefreshTarget.unanalyzed(21L));
         order.verify(executor).analyze(PropertyRefreshTarget.unanalyzed(22L));
-        order.verify(executor).analyze(PropertyRefreshTarget.priceChanged(5L));
+        order.verify(executor).analyze(PropertyRefreshTarget.reanalysisPending(5L));
         assertThat(report.getNewProperties()).isEqualTo(2);
         assertThat(report.getPriceChangedProperties()).isEqualTo(1);
         assertThat(report.getAnalysisTargets()).isEqualTo(4);
@@ -110,10 +110,10 @@ class PropertyRefreshJobLauncherTest {
         priceChangedPage(null, 1L, 2L);
         page(null, 3L, 4L);
         page(4L);
-        when(executor.analyze(PropertyRefreshTarget.priceChanged(1L)))
+        when(executor.analyze(PropertyRefreshTarget.reanalysisPending(1L)))
                 .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
-        when(executor.analyze(PropertyRefreshTarget.priceChanged(2L))).thenReturn(PropertyRefreshAttempt.failed(
-                PropertyRefreshTarget.priceChanged(2L), new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE)));
+        when(executor.analyze(PropertyRefreshTarget.reanalysisPending(2L))).thenReturn(PropertyRefreshAttempt.failed(
+                PropertyRefreshTarget.reanalysisPending(2L), new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE)));
         when(executor.analyze(PropertyRefreshTarget.unanalyzed(3L))).thenThrow(new QueryTimeoutException("redis"));
 
         PropertyRefreshReport report = launcher(AT_0200).run(DATE);
@@ -136,7 +136,7 @@ class PropertyRefreshJobLauncherTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasRootCause(failure);
         verify(executor, never()).analyze(any());
-        verify(propertyMapper, never()).selectPriceChangedPropertyIds(any());
+        verify(propertyMapper, never()).selectReanalysisPendingPropertyIds(any());
         verify(propertyMapper, never()).selectUnanalyzedPropertyIds(any());
     }
 
@@ -236,8 +236,8 @@ class PropertyRefreshJobLauncherTest {
 
     /** 시세 변경 매물 한 페이지. 조회를 심지 않은 페이지는 목 기본값인 빈 목록이다. */
     private void priceChangedPage(Long lastPropertyId, Long... propertyIds) {
-        when(propertyMapper.selectPriceChangedPropertyIds(
-                new PriceChangedPropertyCondition(lastPropertyId, CHUNK_SIZE)))
+        when(propertyMapper.selectReanalysisPendingPropertyIds(
+                new ReanalysisPendingPropertyCondition(lastPropertyId, CHUNK_SIZE)))
                 .thenReturn(List.of(propertyIds));
     }
 

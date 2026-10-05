@@ -53,6 +53,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p><b>수집 시각</b> — 응답의 {@code collectedAt} 은 표제부 수정일시다. 이력만 바꾸면 표제부 행은 그대로라 감사 리스너가
  * 수정일시를 갱신하지 않으므로, 감사 기능({@link AuditingHandler})에 수정 표시를 맡겨 같은 트랜잭션에서 반영한다. 시각을
  * 코드에서 직접 넣지 않는다.
+ *
+ * <p><b>재분석 대기</b> — 이력을 교체하면 같은 트랜잭션에서 매물의 재분석 대기 표시(V18)를 세운다. 등기는 판정 입력이라 저장된
+ * 판정이 낡았다 — 뒤이은 판정이 실패해도 표시가 남아 조회가 저장된 판정을 내지 않는다({@code RiskAnalysisCommandService}). 처음
+ * 저장할 때는 세우지 않는다 — 분석 행은 등기를 참조해야 하므로(registry_id NOT NULL) 등기가 없던 매물에는 저장된 판정이 없다.
  */
 @Service
 public class RegistryCommandService {
@@ -188,6 +192,7 @@ public class RegistryCommandService {
         ownershipHistoryRepository.deleteAllInBatch(ownerships);
         mortgageHistoryRepository.deleteAllInBatch(mortgages);
         saveHistories(registry, document);
+        propertyRepository.markReanalysisPending(propertyId);
 
         auditingHandler.markModified(registry);
         // 반영한 수정일시를 이벤트에 담는다. flush 때 감사 리스너가 한 번 더 채우므로 그 뒤의 값을 읽는다.

@@ -10,7 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.duri.rentalplatform.domain.property.dto.condition.PriceChangedPropertyCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.ReanalysisPendingPropertyCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyCondition;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshTarget;
@@ -49,9 +49,9 @@ class PropertyRefreshTargetReaderTest {
                 PropertyRefreshTarget.unanalyzed(1L),
                 PropertyRefreshTarget.unanalyzed(2L),
                 PropertyRefreshTarget.unanalyzed(10L),
-                PropertyRefreshTarget.priceChanged(3L),
-                PropertyRefreshTarget.priceChanged(7L),
-                PropertyRefreshTarget.priceChanged(9L));
+                PropertyRefreshTarget.reanalysisPending(3L),
+                PropertyRefreshTarget.reanalysisPending(7L),
+                PropertyRefreshTarget.reanalysisPending(9L));
     }
 
     @Test
@@ -66,7 +66,7 @@ class PropertyRefreshTargetReaderTest {
         assertThat(targets).containsExactly(
                 PropertyRefreshTarget.unanalyzed(3L),
                 PropertyRefreshTarget.unanalyzed(7L),
-                PropertyRefreshTarget.priceChanged(1L));
+                PropertyRefreshTarget.reanalysisPending(1L));
         verify(propertyMapper, times(2)).selectUnanalyzedPropertyIds(any());
     }
 
@@ -78,8 +78,8 @@ class PropertyRefreshTargetReaderTest {
 
         List<PropertyRefreshTarget> targets = readAll(reader());
 
-        assertThat(targets).containsExactly(PropertyRefreshTarget.priceChanged(1L));
-        verify(propertyMapper, times(1)).selectPriceChangedPropertyIds(any());
+        assertThat(targets).containsExactly(PropertyRefreshTarget.reanalysisPending(1L));
+        verify(propertyMapper, times(1)).selectReanalysisPendingPropertyIds(any());
         verify(propertyMapper, times(1)).selectUnanalyzedPropertyIds(any());
     }
 
@@ -93,7 +93,7 @@ class PropertyRefreshTargetReaderTest {
         assertThat(reader.read()).isNull();
         assertThat(reader.read()).isNull();
 
-        verify(propertyMapper, times(1)).selectPriceChangedPropertyIds(any());
+        verify(propertyMapper, times(1)).selectReanalysisPendingPropertyIds(any());
         verify(propertyMapper, times(1)).selectUnanalyzedPropertyIds(any());
     }
 
@@ -113,7 +113,7 @@ class PropertyRefreshTargetReaderTest {
 
         assertThat(reader.read()).isEqualTo(PropertyRefreshTarget.unanalyzed(5L));
 
-        verify(propertyMapper, never()).selectPriceChangedPropertyIds(any());
+        verify(propertyMapper, never()).selectReanalysisPendingPropertyIds(any());
     }
 
     @Test
@@ -128,7 +128,7 @@ class PropertyRefreshTargetReaderTest {
     }
 
     private void priceChangedPage(Long lastPropertyId, Long... propertyIds) {
-        when(propertyMapper.selectPriceChangedPropertyIds(new PriceChangedPropertyCondition(lastPropertyId, PAGE_SIZE)))
+        when(propertyMapper.selectReanalysisPendingPropertyIds(new ReanalysisPendingPropertyCondition(lastPropertyId, PAGE_SIZE)))
                 .thenReturn(List.of(propertyIds));
     }
 

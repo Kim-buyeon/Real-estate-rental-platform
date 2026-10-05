@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.duri.rentalplatform.TestcontainersConfiguration;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
-import com.duri.rentalplatform.domain.property.dto.condition.PriceChangedPropertyCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.ReanalysisPendingPropertyCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertySearchCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyCondition;
@@ -900,8 +900,8 @@ class PropertyMapperTest {
         markReanalysisPending(pendingSuperseded);
         markReanalysisPending(pendingAnalyzed2);
 
-        List<Long> ids = propertyMapper.selectPriceChangedPropertyIds(
-                new PriceChangedPropertyCondition(pendingAnalyzed - 1, 100));
+        List<Long> ids = propertyMapper.selectReanalysisPendingPropertyIds(
+                new ReanalysisPendingPropertyCondition(pendingAnalyzed - 1, 100));
 
         assertThat(ids).containsExactly(pendingAnalyzed, pendingAnalyzed2);
     }
@@ -917,10 +917,10 @@ class PropertyMapperTest {
             markReanalysisPending(id);
         });
 
-        List<Long> firstPage = propertyMapper.selectPriceChangedPropertyIds(
-                new PriceChangedPropertyCondition(first - 1, 2));
-        List<Long> lastPage = propertyMapper.selectPriceChangedPropertyIds(
-                new PriceChangedPropertyCondition(firstPage.getLast(), 2));
+        List<Long> firstPage = propertyMapper.selectReanalysisPendingPropertyIds(
+                new ReanalysisPendingPropertyCondition(first - 1, 2));
+        List<Long> lastPage = propertyMapper.selectReanalysisPendingPropertyIds(
+                new ReanalysisPendingPropertyCondition(firstPage.getLast(), 2));
 
         assertThat(firstPage).containsExactly(first, second);
         assertThat(lastPage).containsExactly(third);
@@ -934,8 +934,8 @@ class PropertyMapperTest {
         markReanalysisPending(id);
         long count = jdbc.queryForObject("SELECT count(*) FROM property", Long.class);
 
-        List<Long> ids = propertyMapper.selectPriceChangedPropertyIds(
-                new PriceChangedPropertyCondition(null, (int) count));
+        List<Long> ids = propertyMapper.selectReanalysisPendingPropertyIds(
+                new ReanalysisPendingPropertyCondition(null, (int) count));
 
         assertThat(ids).contains(id).isSorted();
     }
@@ -952,8 +952,8 @@ class PropertyMapperTest {
 
         List<Long> unanalyzed = propertyMapper.selectUnanalyzedPropertyIds(
                 new UnanalyzedPropertyCondition(pendingNew - 1, 100));
-        List<Long> priceChanged = propertyMapper.selectPriceChangedPropertyIds(
-                new PriceChangedPropertyCondition(pendingNew - 1, 100));
+        List<Long> priceChanged = propertyMapper.selectReanalysisPendingPropertyIds(
+                new ReanalysisPendingPropertyCondition(pendingNew - 1, 100));
 
         assertThat(unanalyzed).containsExactly(pendingNew, plainNew);
         assertThat(priceChanged).containsExactly(pendingAnalyzed);

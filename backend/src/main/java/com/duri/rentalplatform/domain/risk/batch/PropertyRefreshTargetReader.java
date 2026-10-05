@@ -1,6 +1,6 @@
 package com.duri.rentalplatform.domain.risk.batch;
 
-import com.duri.rentalplatform.domain.property.dto.condition.PriceChangedPropertyCondition;
+import com.duri.rentalplatform.domain.property.dto.condition.ReanalysisPendingPropertyCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyCondition;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshTarget;
@@ -16,8 +16,9 @@ import org.springframework.batch.infrastructure.item.ItemReader;
  * <ol>
  *   <li><b>최신 판정이 없는 매물</b> — 이번 회차의 신규 매물과, 앞 회차에 첫 판정이 실패해 남은 매물. 재분석 대기 표시가 있어도
  *       최신 판정이 없으면 여기서 나온다</li>
- *   <li><b>시세가 바뀐 매물</b> — 적재가 재분석 대기로 표시한 매물(V18) 중 최신 판정이 있는 매물. 재분석 대상이다. 판정을 마치면
- *       표시가 내려간다. 이번 회차 적재가 바꾼 매물과, 앞 회차에 재분석이 실패 · 경합으로 끝나 남은 매물이 함께 나온다</li>
+ *   <li><b>재분석 대기 매물</b> — 재분석 대기 표시(V18)가 있는 매물 중 최신 판정이 있는 매물. 재분석 대상이다. 판정을 마치면
+ *       표시가 내려간다. 이번 회차 적재가 시세를 바꾼 매물, 등기 · 대장이 바뀐 뒤 판정이 실패한 매물, 앞 회차에 재분석이 실패 ·
+ *       경합으로 끝나 남은 매물이 함께 나온다</li>
  * </ol>
  *
  * <p><b>순서</b> — 새 매물이 먼저다(#338). 시세 변경 매물은 판정이 늦어도 이전 등급이 보이지만, 새 매물은 판정 전까지 「미분석」으로
@@ -39,7 +40,7 @@ import org.springframework.batch.infrastructure.item.ItemReader;
 public class PropertyRefreshTargetReader implements ItemReader<PropertyRefreshTarget> {
 
     private final IdCursor unanalyzed;
-    private final IdCursor priceChanged;
+    private final IdCursor reanalysisPending;
 
     public PropertyRefreshTargetReader(PropertyMapper propertyMapper, int pageSize) {
         if (pageSize < 1) {
@@ -47,19 +48,19 @@ public class PropertyRefreshTargetReader implements ItemReader<PropertyRefreshTa
         }
         this.unanalyzed = new IdCursor(pageSize, (lastId, limit) ->
                 propertyMapper.selectUnanalyzedPropertyIds(new UnanalyzedPropertyCondition(lastId, limit)));
-        this.priceChanged = new IdCursor(pageSize, (lastId, limit) ->
-                propertyMapper.selectPriceChangedPropertyIds(new PriceChangedPropertyCondition(lastId, limit)));
+        this.reanalysisPending = new IdCursor(pageSize, (lastId, limit) ->
+                propertyMapper.selectReanalysisPendingPropertyIds(new ReanalysisPendingPropertyCondition(lastId, limit)));
     }
 
-    /** 다음 대상. 새 매물을 다 내준 뒤 시세 변경 매물. 더 없으면 null — 스텝은 null 을 읽기 끝으로 본다. */
+    /** 다음 대상. 새 매물을 다 내준 뒤 재분석 대기 매물. 더 없으면 null — 스텝은 null 을 읽기 끝으로 본다. */
     @Override
     public PropertyRefreshTarget read() {
         Long next = unanalyzed.next();
         if (next != null) {
             return PropertyRefreshTarget.unanalyzed(next);
         }
-        next = priceChanged.next();
-        return next == null ? null : PropertyRefreshTarget.priceChanged(next);
+        next = reanalysisPending.next();
+        return next == null ? null : PropertyRefreshTarget.reanalysisPending(next);
     }
 
     /** 식별자 오름차순 커서 한 갈래. 한 페이지만 든다. */

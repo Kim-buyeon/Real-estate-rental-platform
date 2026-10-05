@@ -23,6 +23,7 @@ import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.DynamicUpdate;
 
 /**
  * 매물. 국토교통부 전월세 실거래가에서 적재하며, 사용자나 관리자가 등록하는 경로는 없다 —
@@ -41,8 +42,16 @@ import lombok.NoArgsConstructor;
  * {@code ddl-auto: validate} 에서 타입이 어긋난다. 스키마를 따르고 <b>문서와의 어긋남은 그대로
  * 둔다</b> — 이미 알려진 미해결 문서 이슈이며 이 변경에서 고치지 않는다. 원 단위 정수라 Long 으로
  * 정확히 표현된다. 나눗셈과 이율이 들어가는 판정 · 한도 계산은 BigDecimal 로 한다.
+ *
+ * <p><b>{@code @DynamicUpdate} — 바뀐 열만 UPDATE 한다.</b> Hibernate 의 기본 UPDATE 는 매핑된 모든 열을 그 트랜잭션이 읽어 둔
+ * 값으로 다시 쓴다. 매물은 여러 쓰기가 다른 열을 따로 고친다 — 갱신 배치의 시세(변경 감지), 조회 키 보강(변경 감지), 등기 · 대장
+ * 쓰기와 판정 기록의 재분석 대기 표시(벌크 UPDATE, #399). 기본 UPDATE 면 시세 기준일만 고치는 쓰기나 조회 키 보강이 읽어 둔
+ * {@code is_reanalysis_pending} 을 다시 써서, 그 사이 다른 트랜잭션이 세운 대기를 지우거나 내린 대기를 되살린다. 바뀐 열만 쓰면
+ * 각 쓰기가 자기 열만 건드린다. 대가는 UPDATE 문을 매번 만드는 비용(문장 캐시를 못 씀)이고, 매물 쓰기는 배치 위주라 작다. 같은
+ * 열을 두 쓰기가 동시에 고치는 경합은 이것으로 막히지 않는다 — 그 경우는 조건부 벌크 UPDATE({@code PropertyRepository})가 맡는다.
  */
 @Entity
+@DynamicUpdate
 @Getter
 @Table(name = "property")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -95,9 +104,16 @@ public class Property extends CreatedAtEntity {
     private LocalDate priceDate;
 
     /**
-     * 시세 금액이 바뀌어 갱신 배치(RISK-08)의 재분석을 기다리는가(V18). {@link #refreshMarketPrice} 가 세우고 배치가 판정을 마치면
-     * {@link #completeReanalysis} 가 내린다. 판정 단계는 이 표시로 재분석 대상을 DB 에서 읽는다 — 적재 단계가 식별자를 메모리에
-     * 모아 넘기지 않는다.
+     * 판정 입력(시세 · 등기 · 대장)이 마지막 판정 뒤에 바뀌어 재분석을 기다리는가(V18). V18 은 시세 금액 변경만을 위해 만들었고
+     * #399 에서 뜻을 넓혔다 — 열 이름 · 정의는 그대로다.
+     * <ul>
+     *   <li>세우는 쪽 — 시세는 {@link #refreshMarketPrice}, 등기 · 대장은 그것을 바꾸는 쓰기가 같은 트랜잭션에서
+     *       {@code PropertyRepository#markReanalysisPending} 으로</li>
+     *   <li>내리는 쪽 — 판정이 성공해 기록하는 쓰기 트랜잭션이 {@code PropertyRepository#clearReanalysisPending} 으로</li>
+     * </ul>
+     * 표시가 서 있으면 위험도 조회는 저장된 판정을 쓰지 않고 다시 판정하고, 갱신 배치(RISK-08)의 판정 단계는 이 표시로 재분석
+     * 대상을 DB 에서 읽는다 — 적재 단계가 식별자를 메모리에 모아 넘기지 않는다. 표시를 엔티티로 내리지 않는 이유는 그 메서드 주석에
+     * 있다.
      */
     @Column(name = "is_reanalysis_pending", nullable = false)
     private boolean reanalysisPending;
@@ -217,14 +233,6 @@ public class Property extends CreatedAtEntity {
             reanalysisPending = true;
         }
         return amountChanged;
-    }
-
-    /**
-     * 갱신 배치(RISK-08)가 시세 변경 재분석 또는 첫 판정을 마쳤다. 재분석 대기 표시를 내린다 — 두 갈래 모두 부른다(#338). 판정
-     * 결론이 같아 새 판정 행이 생기지 않았어도 내린다 — 바뀐 시세로 판정한 것은 같다.
-     */
-    public void completeReanalysis() {
-        reanalysisPending = false;
     }
 
     /** 중복 적재 차단에 쓰는 자연키. */

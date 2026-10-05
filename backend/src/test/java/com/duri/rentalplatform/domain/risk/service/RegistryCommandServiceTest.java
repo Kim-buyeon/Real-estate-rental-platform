@@ -281,6 +281,65 @@ class RegistryCommandServiceTest {
     }
 
     @Test
+    @DisplayName("이력을 교체하는 CHANGED 경로는 같은 쓰기 트랜잭션에서 재분석 대기를 세운다")
+    void refreshChangedMarksReanalysisPending() {
+        givenProperty();
+        when(registryClient.fetch(any())).thenReturn(document());
+        BuildingRegistry registry = storedRegistry();
+        List<MortgageHistory> mortgages = List.of(MortgageHistory.record(registry, 1, MortgageRightType.MORTGAGE,
+                "○○은행", "김임대", LocalDate.of(2019, 3, 11), "설정계약", 100_000_000L, 120_000_000L, 0L, true));
+        when(ownershipHistoryRepository.findByRegistry(registry)).thenReturn(storedOwnerships(registry));
+        when(mortgageHistoryRepository.findByRegistry(registry)).thenReturn(mortgages);
+
+        service.refresh(PROPERTY_ID);
+
+        InOrder order = inOrder(transactionManager, mortgageHistoryRepository, propertyRepository);
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(mortgageHistoryRepository).saveAll(anyList());
+        order.verify(propertyRepository).markReanalysisPending(PROPERTY_ID);
+        order.verify(transactionManager).commit(any());
+    }
+
+    @Test
+    @DisplayName("저장된 것과 같은 UNCHANGED 경로는 재분석 대기를 세우지 않는다")
+    void refreshUnchangedDoesNotMarkReanalysisPending() {
+        givenProperty();
+        when(registryClient.fetch(any())).thenReturn(document());
+        BuildingRegistry registry = storedRegistry();
+        when(ownershipHistoryRepository.findByRegistry(registry)).thenReturn(storedOwnerships(registry));
+        when(mortgageHistoryRepository.findByRegistry(registry)).thenReturn(storedMortgages(registry));
+
+        service.refresh(PROPERTY_ID);
+
+        verify(propertyRepository, never()).markReanalysisPending(any());
+    }
+
+    @Test
+    @DisplayName("첫 수집(refresh 로 처음 저장)은 재분석 대기를 세우지 않는다 — 등기 없던 매물엔 저장된 판정이 없다")
+    void refreshFirstCollectionDoesNotMarkReanalysisPending() {
+        givenProperty();
+        when(registryClient.fetch(any())).thenReturn(document());
+        when(buildingRegistryRepository.findByPropertyId(PROPERTY_ID)).thenReturn(Optional.empty());
+        when(buildingRegistryRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.refresh(PROPERTY_ID);
+
+        verify(propertyRepository, never()).markReanalysisPending(any());
+    }
+
+    @Test
+    @DisplayName("collectIfAbsent 의 첫 수집도 재분석 대기를 세우지 않는다")
+    void collectIfAbsentDoesNotMarkReanalysisPending() {
+        givenProperty();
+        when(registryClient.fetch(any())).thenReturn(document());
+        when(buildingRegistryRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.collectIfAbsent(PROPERTY_ID);
+
+        verify(propertyRepository, never()).markReanalysisPending(any());
+    }
+
+    @Test
     @DisplayName("소유권 이전으로 유효 건수가 같아도 변동 전 · 후 요약이 다르다")
     void refreshOwnershipTransferSummariesDiffer() {
         givenProperty();

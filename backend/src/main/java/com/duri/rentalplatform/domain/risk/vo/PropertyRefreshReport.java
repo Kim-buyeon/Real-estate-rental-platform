@@ -7,7 +7,7 @@ import lombok.Getter;
 /**
  * 매물 갱신 배치(RISK-08) 한 회차의 집계. 적재 단계의 집계({@link PropertyLoadReport})와 판정 단계의 건수를 함께 든다.
  *
- * <p><b>단계 사이의 전달</b> — 없다. 적재 단계는 건수만 남기고, 판정 단계의 읽기는 대상(시세가 바뀐 매물 · 최신 판정이 없는
+ * <p><b>단계 사이의 전달</b> — 없다. 적재 단계는 건수만 남기고, 판정 단계의 읽기는 대상(재분석 대기 매물 · 최신 판정이 없는
  * 매물)을 DB 에서 식별자 커서로 읽는다. 식별자 목록을 여기에 담으면 회차 동안 신규 매물 수만큼 쌓인다 — 2026-09-30 운영 회차가
  * 적재 직후 컨테이너 메모리 상한을 넘었다.
  *
@@ -69,7 +69,7 @@ public class PropertyRefreshReport {
             failed++;
             return;
         }
-        if (attempt.target().priceChanged()) {
+        if (attempt.target().reanalysisPending()) {
             reanalyzed++;
         } else {
             firstAnalyzed++;

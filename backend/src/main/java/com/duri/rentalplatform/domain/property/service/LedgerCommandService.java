@@ -58,6 +58,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p><b>대장 행이 없는 매물</b> — 교체 배치는 대장 행이 없고 조회 키가 있는 매물도 대상으로 삼는다. 그 매물은
  * {@link #fetchMockReplacement} 가 {@link LedgerReplacementOutcome#NO_LEDGER} 를 주고, 배치가 {@link #collectIfAbsent} 로
  * 수집한다 — 저장 경로를 따로 두지 않는다.
+ *
+ * <p><b>재분석 대기</b> — 대장을 새로 저장하거나 바꾸면 같은 트랜잭션에서 매물의 재분석 대기 표시(V18)를 세운다. 대장은 판정
+ * 입력이라 그 전의 판정(대장 없이 · Mock 대장으로 낸 것)이 낡았다 — 뒤이은 판정이 실패해도 표시가 남아 조회가 저장된 판정을 내지
+ * 않는다. 판정이 성공하면 판정 쪽이 내린다. 지우는 경로(배치)도 같다.
  */
 @Slf4j
 @Service
@@ -175,6 +179,7 @@ public class LedgerCommandService {
         Boolean replaced = writeTransaction.execute(status -> buildingLedgerRepository.findByPropertyId(propertyId)
                 .filter(BuildingLedger::isMock)
                 .map(ledger -> {
+                    propertyRepository.markReanalysisPending(propertyId);
                     ledger.replaceWith(
                             document.ledgerAddress(),
                             document.ownerName(),
@@ -251,6 +256,7 @@ public class LedgerCommandService {
     }
 
     private void save(Long propertyId, BuildingLedgerDocument document) {
+        propertyRepository.markReanalysisPending(propertyId);
         buildingLedgerRepository.saveAndFlush(BuildingLedger.collect(
                 propertyId,
                 document.ledgerAddress(),

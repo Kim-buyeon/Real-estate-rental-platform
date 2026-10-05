@@ -1,8 +1,6 @@
 package com.duri.rentalplatform.domain.risk.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -11,14 +9,12 @@ import static org.mockito.Mockito.when;
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.lock.DistributedLock;
-import com.duri.rentalplatform.domain.property.service.PropertyLoadWriter;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshAttempt;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshTarget;
 import java.lang.reflect.Method;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.InOrder;
 import org.springframework.context.expression.MethodBasedEvaluationContext;
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
@@ -32,20 +28,18 @@ class PropertyRefreshAnalysisExecutorTest {
     private static final long PROPERTY_ID = 2048L;
 
     private RiskAnalysisCommandService riskAnalysisCommandService;
-    private PropertyLoadWriter propertyLoadWriter;
     private PropertyRefreshAnalysisExecutor executor;
 
     @BeforeEach
     void setUp() {
         riskAnalysisCommandService = mock(RiskAnalysisCommandService.class);
-        propertyLoadWriter = mock(PropertyLoadWriter.class);
-        executor = new PropertyRefreshAnalysisExecutor(riskAnalysisCommandService, propertyLoadWriter);
+        executor = new PropertyRefreshAnalysisExecutor(riskAnalysisCommandService);
     }
 
     @Test
     @DisplayName("시세가 바뀐 매물은 대장을 다시 떼지 않고 수집해 둔 대장으로 판정을 다시 돌린다 — 건축HUB 초당 한도에 묶이지 않게(#328)")
     void reanalyzesPriceChangedProperty() {
-        PropertyRefreshTarget target = PropertyRefreshTarget.priceChanged(PROPERTY_ID);
+        PropertyRefreshTarget target = PropertyRefreshTarget.reanalysisPending(PROPERTY_ID);
 
         PropertyRefreshAttempt attempt = executor.analyze(target);
 
@@ -57,39 +51,6 @@ class PropertyRefreshAnalysisExecutorTest {
     }
 
     @Test
-    @DisplayName("시세 변경 재분석을 마치면 판정 뒤에 재분석 대기 표시를 내린다 — 결론이 같아 판정 행이 늘지 않아도 매 회차 다시 나오지 않게")
-    void clearsReanalysisPendingAfterReanalysis() {
-        executor.analyze(PropertyRefreshTarget.priceChanged(PROPERTY_ID));
-
-        InOrder order = inOrder(riskAnalysisCommandService, propertyLoadWriter);
-        order.verify(riskAnalysisCommandService).analyzeWithCollectedLedger(PROPERTY_ID);
-        order.verify(propertyLoadWriter).completeReanalysis(PROPERTY_ID);
-    }
-
-    @Test
-    @DisplayName("재분석이 실패하면 재분석 대기 표시를 내리지 않는다 — 다음 회차가 다시 잡는다")
-    void keepsReanalysisPendingWhenAnalysisFails() {
-        when(riskAnalysisCommandService.analyzeWithCollectedLedger(PROPERTY_ID))
-                .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
-
-        PropertyRefreshAttempt attempt = executor.analyze(PropertyRefreshTarget.priceChanged(PROPERTY_ID));
-
-        assertThat(attempt.isFailed()).isTrue();
-        verify(propertyLoadWriter, never()).completeReanalysis(PROPERTY_ID);
-    }
-
-    @Test
-    @DisplayName("재분석 대기 표시를 내리다 실패하면 실패로 담는다 — 표시가 남아 다음 회차에 한 번 더 판정한다")
-    void clearFailureIsCapturedAsResult() {
-        IllegalStateException failure = new IllegalStateException("db down");
-        doThrow(failure).when(propertyLoadWriter).completeReanalysis(PROPERTY_ID);
-
-        PropertyRefreshAttempt attempt = executor.analyze(PropertyRefreshTarget.priceChanged(PROPERTY_ID));
-
-        assertThat(attempt.failure()).isSameAs(failure);
-    }
-
-    @Test
     @DisplayName("최신 판정이 없는 매물(첫 판정)은 대장 수집을 포함한 판정을 돌린다")
     void analyzesUnanalyzedProperty() {
         PropertyRefreshAttempt attempt = executor.analyze(PropertyRefreshTarget.unanalyzed(PROPERTY_ID));
@@ -97,28 +58,6 @@ class PropertyRefreshAnalysisExecutorTest {
         verify(riskAnalysisCommandService).analyze(PROPERTY_ID);
         verify(riskAnalysisCommandService, never()).analyzeWithCollectedLedger(PROPERTY_ID);
         assertThat(attempt.analyzed()).isTrue();
-    }
-
-    @Test
-    @DisplayName("첫 판정을 마치면 판정 뒤에 재분석 대기 표시를 내린다 — 판정 없이 표시가 선 새 매물이 다음 회차에 다시 나오지 않게")
-    void clearsReanalysisPendingAfterFirstAnalysis() {
-        executor.analyze(PropertyRefreshTarget.unanalyzed(PROPERTY_ID));
-
-        InOrder order = inOrder(riskAnalysisCommandService, propertyLoadWriter);
-        order.verify(riskAnalysisCommandService).analyze(PROPERTY_ID);
-        order.verify(propertyLoadWriter).completeReanalysis(PROPERTY_ID);
-    }
-
-    @Test
-    @DisplayName("첫 판정이 실패하면 재분석 대기 표시를 내리지 않는다")
-    void keepsReanalysisPendingWhenFirstAnalysisFails() {
-        when(riskAnalysisCommandService.analyze(PROPERTY_ID))
-                .thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
-
-        PropertyRefreshAttempt attempt = executor.analyze(PropertyRefreshTarget.unanalyzed(PROPERTY_ID));
-
-        assertThat(attempt.isFailed()).isTrue();
-        verify(propertyLoadWriter, never()).completeReanalysis(PROPERTY_ID);
     }
 
     @Test
@@ -148,7 +87,7 @@ class PropertyRefreshAnalysisExecutorTest {
 
         // 관점과 같은 방식으로 평가한다 — 인자 이름 #target 과 그 접근자가 읽히는지까지 확인한다.
         MethodBasedEvaluationContext context = new MethodBasedEvaluationContext(executor, analyze,
-                new Object[] {PropertyRefreshTarget.priceChanged(PROPERTY_ID)}, new DefaultParameterNameDiscoverer());
+                new Object[] {PropertyRefreshTarget.reanalysisPending(PROPERTY_ID)}, new DefaultParameterNameDiscoverer());
         String key = new SpelExpressionParser().parseExpression(lock.key()).getValue(context, String.class);
         assertThat(key).isEqualTo("risk:analysis:lock:" + PROPERTY_ID);
     }

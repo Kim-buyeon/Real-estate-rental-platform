@@ -3,6 +3,7 @@ package com.duri.rentalplatform.domain.loan;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.duri.rentalplatform.TestcontainersConfiguration;
+import com.duri.rentalplatform.domain.loan.cache.LoanCriteriaCache;
 import com.duri.rentalplatform.domain.loan.entity.LoanProduct;
 import com.duri.rentalplatform.domain.loan.repository.LoanProductRepository;
 import com.duri.rentalplatform.domain.loan.service.LoanProductRefreshService;
@@ -50,9 +51,25 @@ class LoanProductRefreshIntegrationTest {
     @Autowired
     JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    LoanCriteriaCache criteriaCache;
+
     @AfterEach
     void removeApiRows() {
         jdbcTemplate.update("DELETE FROM loan_product WHERE house_type IS NOT NULL");
+        // JDBC 로 지운 것은 기준표 캐시가 모른다 — 다음 테스트가 지운 행의 금리를 대표 상품으로 읽지 않게 비운다.
+        criteriaCache.invalidateAfterCommit();
+    }
+
+    @Test
+    @DisplayName("금리 갱신이 커밋되면 기준표 캐시의 대출 기준값이 새 대표 금리로 바뀐다")
+    void refreshCommitInvalidatesCriteriaCache() {
+        criteriaCache.current();
+
+        writer.write(PropertyType.APARTMENT, AUGUST, List.of(rate("캐시은행", "3.55", 700L)), MAX_LIMIT);
+
+        assertThat(criteriaCache.current().findLoanLimitCriteria(PropertyType.APARTMENT).orElseThrow().interestRate())
+                .isEqualByComparingTo("3.55");
     }
 
     @Test
