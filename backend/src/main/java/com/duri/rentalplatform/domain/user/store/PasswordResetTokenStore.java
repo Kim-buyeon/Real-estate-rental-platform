@@ -99,6 +99,23 @@ public class PasswordResetTokenStore {
     }
 
     /**
+     * 토큰이 지금 유효한지 본다. <b>소비하지 않는다</b> — 같은 토큰으로 다시 부르거나 {@link #consume} 할 수 있다.
+     *
+     * <p>확정 경로가 비밀번호 해시(느린 연산 · 상한 포화면 503)를 계산하기 전에 부른다. 무효 토큰 요청마다 해시를 치르지 않고, 해시가
+     * 503 으로 끝나도 토큰이 남아 다시 시도할 수 있다. 여기서 참이어도 소비가 보장되지는 않는다 — 동시 사용 중 하나만 고르는 것은
+     * {@link #consume} 이다.
+     *
+     * @return 토큰의 회원 식별자. 없거나 만료 · 사용됨 · 대체됨이면 빈 값
+     */
+    public Optional<Long> find(String token) {
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        String userId = stringRedisTemplate.opsForValue().get(TOKEN_KEY_PREFIX + hash(token));
+        return Optional.ofNullable(userId).map(Long::valueOf);
+    }
+
+    /**
      * 토큰을 쓴다. 성공하면 그 토큰은 사라진다 — 같은 토큰의 두 번째 호출은 비어 있다.
      *
      * <p>회원 키는 지우지 않는다. 가리키는 토큰 키가 이미 없으니 해가 없고 수명으로 사라진다. 지우려고 다시 읽고 비교하면 그 사이에

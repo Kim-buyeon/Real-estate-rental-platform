@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -30,6 +31,7 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -54,6 +56,7 @@ class UserCommandServicePasswordResetTest {
     private RefreshTokenStore refreshTokenStore;
     private PasswordResetTokenStore tokenStore;
     private PasswordResetMailSender mailSender;
+    private PlatformTransactionManager transactionManager;
     private UserCommandService service;
 
     @BeforeEach
@@ -63,9 +66,9 @@ class UserCommandServicePasswordResetTest {
         refreshTokenStore = mock(RefreshTokenStore.class);
         tokenStore = mock(PasswordResetTokenStore.class);
         mailSender = mock(PasswordResetMailSender.class);
+        transactionManager = mock(PlatformTransactionManager.class);
         service = new UserCommandService(mock(UserRepository.class), userAuthRepository, passwordEncoder,
-                mock(JwtTokenProvider.class), refreshTokenStore, tokenStore, mailSender,
-                mock(PlatformTransactionManager.class));
+                mock(JwtTokenProvider.class), refreshTokenStore, tokenStore, mailSender, transactionManager);
     }
 
     @Test
@@ -112,7 +115,7 @@ class UserCommandServicePasswordResetTest {
     @DisplayName("확정 — 토큰의 회원 비밀번호를 인코딩해 바꾸고 그 회원의 리프레시 토큰을 폐기한다")
     void confirmChangesPasswordAndRevokesRefreshToken() {
         UserAuth userAuth = emailAuth("old-hash");
-        when(tokenStore.consume(TOKEN)).thenReturn(Optional.of(USER_ID));
+        givenValidToken();
         when(userAuthRepository.findByUserUserIdAndAuthType(USER_ID, AuthType.EMAIL))
                 .thenReturn(Optional.of(userAuth));
         when(passwordEncoder.encode(NEW_PASSWORD)).thenReturn("new-hash");
@@ -124,25 +127,77 @@ class UserCommandServicePasswordResetTest {
     }
 
     @Test
-    @DisplayName("확정 — 토큰이 무효(없음 · 만료 · 사용됨 · 대체됨)면 AUTH_RESET_TOKEN_INVALID 이고 아무것도 바꾸지 않는다")
+    @DisplayName("확정 — 조회(소비 없이) → 해시 → 소비 → 쓰기 트랜잭션 순서다. 해시는 트랜잭션 밖이다")
+    void confirmHashesOutsideTransactionBeforeConsuming() {
+        givenValidToken();
+        when(userAuthRepository.findByUserUserIdAndAuthType(USER_ID, AuthType.EMAIL))
+                .thenReturn(Optional.of(emailAuth("old-hash")));
+        when(passwordEncoder.encode(NEW_PASSWORD)).thenReturn("new-hash");
+
+        service.confirmPasswordReset(new PasswordResetConfirmRequest(TOKEN, NEW_PASSWORD));
+
+        InOrder order = inOrder(tokenStore, passwordEncoder, transactionManager, userAuthRepository, refreshTokenStore);
+        order.verify(tokenStore).find(TOKEN);
+        order.verify(passwordEncoder).encode(NEW_PASSWORD);
+        order.verify(tokenStore).consume(TOKEN);
+        order.verify(transactionManager).getTransaction(any());
+        order.verify(userAuthRepository).findByUserUserIdAndAuthType(USER_ID, AuthType.EMAIL);
+        order.verify(refreshTokenStore).delete(USER_ID);
+        order.verify(transactionManager).commit(any());
+    }
+
+    @Test
+    @DisplayName("확정 — 토큰이 무효(없음 · 만료 · 사용됨 · 대체됨)면 해시 없이 AUTH_RESET_TOKEN_INVALID 이고 아무것도 바꾸지 않는다")
     void confirmWithInvalidTokenFails() {
-        when(tokenStore.consume(TOKEN)).thenReturn(Optional.empty());
+        when(tokenStore.find(TOKEN)).thenReturn(Optional.empty());
 
         assertInvalidToken(() -> service.confirmPasswordReset(new PasswordResetConfirmRequest(TOKEN, NEW_PASSWORD)));
 
-        verifyNoInteractions(userAuthRepository, passwordEncoder, refreshTokenStore);
+        verify(tokenStore, never()).consume(anyString());
+        verifyNoInteractions(userAuthRepository, passwordEncoder, refreshTokenStore, transactionManager);
+    }
+
+    @Test
+    @DisplayName("확정 — 해시가 503 SERVICE_BUSY 면 토큰을 소비하지 않는다 — 같은 토큰으로 다시 시도할 수 있다")
+    void confirmKeepsTokenWhenHashingIsBusy() {
+        when(tokenStore.find(TOKEN)).thenReturn(Optional.of(USER_ID));
+        when(passwordEncoder.encode(NEW_PASSWORD)).thenThrow(new BusinessException(ErrorCode.SERVICE_BUSY));
+
+        assertThatThrownBy(() -> service.confirmPasswordReset(new PasswordResetConfirmRequest(TOKEN, NEW_PASSWORD)))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.SERVICE_BUSY));
+
+        verify(tokenStore, never()).consume(anyString());
+        verifyNoInteractions(userAuthRepository, refreshTokenStore, transactionManager);
+    }
+
+    @Test
+    @DisplayName("확정 — 조회는 통과했으나 소비 직전에 다른 요청이 먼저 썼으면 AUTH_RESET_TOKEN_INVALID 이고 아무것도 바꾸지 않는다")
+    void confirmLosingConcurrentConsumeFails() {
+        when(tokenStore.find(TOKEN)).thenReturn(Optional.of(USER_ID));
+        when(tokenStore.consume(TOKEN)).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(NEW_PASSWORD)).thenReturn("new-hash");
+
+        assertInvalidToken(() -> service.confirmPasswordReset(new PasswordResetConfirmRequest(TOKEN, NEW_PASSWORD)));
+
+        verifyNoInteractions(userAuthRepository, refreshTokenStore, transactionManager);
     }
 
     @Test
     @DisplayName("확정 — 토큰의 회원에게 이메일 인증 수단이 없으면 무효와 같게 AUTH_RESET_TOKEN_INVALID")
     void confirmWithoutEmailAuthFails() {
-        when(tokenStore.consume(TOKEN)).thenReturn(Optional.of(USER_ID));
+        givenValidToken();
         when(userAuthRepository.findByUserUserIdAndAuthType(USER_ID, AuthType.EMAIL)).thenReturn(Optional.empty());
 
         assertInvalidToken(() -> service.confirmPasswordReset(new PasswordResetConfirmRequest(TOKEN, NEW_PASSWORD)));
 
-        verify(passwordEncoder, never()).encode(anyString());
         verifyNoInteractions(refreshTokenStore);
+        verify(transactionManager).rollback(any());
+    }
+
+    private void givenValidToken() {
+        when(tokenStore.find(TOKEN)).thenReturn(Optional.of(USER_ID));
+        when(tokenStore.consume(TOKEN)).thenReturn(Optional.of(USER_ID));
     }
 
     private static void assertInvalidToken(ThrowingCallable call) {

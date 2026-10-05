@@ -67,29 +67,42 @@ public class UserCommandService {
         this.writeTransaction = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
+    /**
+     * 이메일로 가입한다.
+     *
+     * <p><b>비밀번호 해시는 트랜잭션 밖에서 먼저 계산한다</b>(#411). 해시(BCrypt)는 일부러 느리고, 동시 실행 상한이 차면 차례를 최대
+     * 대기 상한까지 기다린다. 경계 안에서 계산하면 그동안 primary 커넥션을 쥔다 — {@link #login} 과 같은 원칙이다. 경계는
+     * {@link TransactionTemplate} 으로 긋는다 — 같은 클래스 안의 메서드에 애노테이션을 붙여 부르면 프록시를 거치지 않아 경계가 생기지 않는다.
+     *
+     * <p>중복 확인을 해시보다 먼저 하지 않는다. 그러려면 트랜잭션이 둘로 나뉘고(확인 · 저장), 저장 쪽 UNIQUE 제약 처리는 어차피
+     * 남는다. 중복 이메일이면 계산한 해시를 버린다 — 가입은 드물어 낭비가 작다. 해시가 503 이면 데이터베이스에 닿지 않는다.
+     */
     public void signUpWithEmail(SignupRequest request) {
-        if (userAuthRepository.existsByAuthTypeAndProviderId(AuthType.EMAIL, request.email())) {
-            throw new BusinessException(ErrorCode.USER_DUPLICATED, "email");
-        }
-
-        User user = userRepository.save(
-                User.signUpWithEmail(request.name(), request.email(), request.phone()));
         String hashedPassword = passwordEncoder.encode(request.password());
-        UserAuth userAuth = UserAuth.signUpWithEmail(user, request.email(), hashedPassword);
 
-        try {
-            // save가 아니라 saveAndFlush를 쓰는 이유: save는 INSERT를 커밋 시점까지 미루고 커밋은 이 메서드가
-            // 끝난 뒤 트랜잭션 경계에서 일어나므로, 아래 catch가 제약 위반을 잡지 못한다. 플러시를 강제해야
-            // 예외가 이 자리에서 난다.
-            userAuthRepository.saveAndFlush(userAuth);
-        } catch (DataIntegrityViolationException e) {
-            // 위의 존재 검사와 이 저장 사이에 같은 이메일의 다른 요청이 끼어들면 둘 다 검사를 통과하고,
-            // 실제로 막는 것은 UNIQUE(auth_type, provider_id) 제약이다. 그대로 두면 전역 처리기가 500으로
-            // 바꾸지만 중복 가입은 409여야 하므로 존재 검사와 같은 예외로 바꿔 던진다.
-            log.warn("Signup rejected by a data integrity constraint", e);
-            throw new BusinessException(ErrorCode.USER_DUPLICATED, "email");
-        }
+        writeTransaction.executeWithoutResult(status -> {
+            if (userAuthRepository.existsByAuthTypeAndProviderId(AuthType.EMAIL, request.email())) {
+                throw new BusinessException(ErrorCode.USER_DUPLICATED, "email");
+            }
+
+            User user = userRepository.save(
+                    User.signUpWithEmail(request.name(), request.email(), request.phone()));
+            UserAuth userAuth = UserAuth.signUpWithEmail(user, request.email(), hashedPassword);
+
+            try {
+                // save가 아니라 saveAndFlush를 쓰는 이유: save는 INSERT를 커밋 시점까지 미루고 커밋은 이 블록이
+                // 끝난 뒤 트랜잭션 경계에서 일어나므로, 아래 catch가 제약 위반을 잡지 못한다. 플러시를 강제해야
+                // 예외가 이 자리에서 난다.
+                userAuthRepository.saveAndFlush(userAuth);
+            } catch (DataIntegrityViolationException e) {
+                // 위의 존재 검사와 이 저장 사이에 같은 이메일의 다른 요청이 끼어들면 둘 다 검사를 통과하고,
+                // 실제로 막는 것은 UNIQUE(auth_type, provider_id) 제약이다. 그대로 두면 전역 처리기가 500으로
+                // 바꾸지만 중복 가입은 409여야 하므로 존재 검사와 같은 예외로 바꿔 던진다. 블록 밖으로 던지면
+                // TransactionTemplate 이 롤백한다.
+                log.warn("Signup rejected by a data integrity constraint", e);
+                throw new BusinessException(ErrorCode.USER_DUPLICATED, "email");
+            }
+        });
     }
 
     /**
@@ -225,23 +238,39 @@ public class UserCommandService {
      * <p>비밀번호 규칙은 컨트롤러의 입력 검증이 이미 봤다. 규칙을 어긴 요청은 여기 닿지 않으므로 토큰이 소비되지 않는다 — 입력
      * 실수 한 번에 메일부터 다시 받게 하지 않는다.
      *
-     * <p>토큰은 {@code GETDEL} 로 먼저 소비한다. 두 요청이 같은 토큰으로 들어와도 하나만 비밀번호를 바꾼다. 소비 뒤 데이터베이스
-     * 저장이 실패하면 토큰은 사라지고 비밀번호는 그대로다 — 다시 요청하면 되고, 반대(바뀌었는데 토큰이 남음)보다 안전하다.
+     * <p><b>순서는 조회 → 해시 → 소비 → 저장이다</b>(#411).
+     * <ol>
+     *   <li>토큰을 소비하지 않고 조회한다. 무효면 해시 없이 400 — 잘못된 토큰 요청마다 BCrypt 를 치르지 않는다.</li>
+     *   <li>해시를 트랜잭션 밖에서 계산한다. 경계 안이면 계산 · 차례 대기 동안 primary 커넥션을 쥔다({@link #login} 과 같은 원칙).
+     *       동시 실행 상한이 차 503 이면 토큰은 아직 남아 있어 같은 링크로 다시 시도할 수 있다.</li>
+     *   <li>토큰을 {@code GETDEL} 로 소비한다. 두 요청이 같은 토큰으로 들어와 둘 다 조회를 통과해도 여기서 하나만 남고, 다른 하나는
+     *       무효와 같은 400 이다. 소비 뒤 데이터베이스 저장이 실패하면 토큰은 사라지고 비밀번호는 그대로다 — 다시 요청하면 되고,
+     *       반대(바뀌었는데 토큰이 남음)보다 안전하다.</li>
+     *   <li>짧은 쓰기 트랜잭션에서 비밀번호를 바꾼다. 경계는 {@link TransactionTemplate} 이다(같은 클래스 자기 호출로는 애노테이션
+     *       경계가 생기지 않는다).</li>
+     * </ol>
      *
      * <p>리프레시 토큰 폐기가 커밋보다 앞선다. 커밋이 실패하면 비밀번호는 그대로인데 로그인만 끊긴 상태가 되지만, 반대로 커밋 뒤에
      * 폐기가 실패하면 옛 비밀번호로 얻은 세션이 살아남는다. 끊기는 쪽을 고른다. 액세스 토큰은 만료까지 남는다(명세 1.3, 로그아웃과 같다).
      */
-    @Transactional
     public void confirmPasswordReset(PasswordResetConfirmRequest request) {
+        if (passwordResetTokenStore.find(request.token()).isEmpty()) {
+            throw new BusinessException(ErrorCode.AUTH_RESET_TOKEN_INVALID);
+        }
+
+        String hashedPassword = passwordEncoder.encode(request.newPassword());
+
         Long userId = passwordResetTokenStore.consume(request.token())
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_RESET_TOKEN_INVALID));
 
-        // 토큰을 발급한 뒤 인증 수단이 사라진 경우다(탈퇴 등). 토큰은 이미 소비됐고 쓸 곳이 없으니 무효와 같게 답한다.
-        UserAuth userAuth = userAuthRepository.findByUserUserIdAndAuthType(userId, AuthType.EMAIL)
-                .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_RESET_TOKEN_INVALID));
+        writeTransaction.executeWithoutResult(status -> {
+            // 토큰을 발급한 뒤 인증 수단이 사라진 경우다(탈퇴 등). 토큰은 이미 소비됐고 쓸 곳이 없으니 무효와 같게 답한다.
+            UserAuth userAuth = userAuthRepository.findByUserUserIdAndAuthType(userId, AuthType.EMAIL)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_RESET_TOKEN_INVALID));
 
-        userAuth.changePassword(passwordEncoder.encode(request.newPassword()));
-        refreshTokenStore.delete(userId);
+            userAuth.changePassword(hashedPassword);
+            refreshTokenStore.delete(userId);
+        });
     }
 
     /** 토큰 두 벌을 발급하고 리프레시 토큰을 보관한다. 같은 키에 덮어쓰는 것이 곧 회전이다. */
