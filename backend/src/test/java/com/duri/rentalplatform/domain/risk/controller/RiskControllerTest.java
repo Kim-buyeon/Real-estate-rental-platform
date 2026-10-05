@@ -80,7 +80,7 @@ class RiskControllerTest {
     @Test
     @DisplayName("토큰 없이 조회하면 명세 1.1 예시와 같은 형태로 응답한다")
     void responseMatchesSpecExample() throws Exception {
-        when(commandService.analyze(1024L)).thenReturn(specExample());
+        when(commandService.findLatestOrAnalyze(1024L)).thenReturn(specExample());
 
         mockMvc.perform(get("/api/properties/1024/risk"))
                 .andExpect(status().isOk())
@@ -121,7 +121,7 @@ class RiskControllerTest {
     @Test
     @DisplayName("매물이 없으면 404 PROPERTY_NOT_FOUND")
     void propertyNotFound() throws Exception {
-        when(commandService.analyze(99L)).thenThrow(new BusinessException(ErrorCode.PROPERTY_NOT_FOUND));
+        when(commandService.findLatestOrAnalyze(99L)).thenThrow(new BusinessException(ErrorCode.PROPERTY_NOT_FOUND));
 
         mockMvc.perform(get("/api/properties/99/risk"))
                 .andExpect(status().isNotFound())
@@ -132,7 +132,7 @@ class RiskControllerTest {
     @Test
     @DisplayName("등기 · 대장 수집이 실패하면 503 EXTERNAL_API_UNAVAILABLE")
     void externalUnavailable() throws Exception {
-        when(commandService.analyze(7L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
+        when(commandService.findLatestOrAnalyze(7L)).thenThrow(new BusinessException(ErrorCode.EXTERNAL_API_UNAVAILABLE));
 
         mockMvc.perform(get("/api/properties/7/risk"))
                 .andExpect(status().isServiceUnavailable())

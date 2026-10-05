@@ -333,7 +333,11 @@
 | Previous Grade | previous_grade |  |  | VARCHAR | 10 | — | — | 직전 위험도 등급 (변경 알림용) |
 | Risk Reason | risk_reason |  |  | TEXT | — | — | — | 위험도 판정 사유 (사용자 설명용) |
 | Is Latest | is_latest |  | ● | BOOLEAN | 1 | — | TRUE | 최신 분석 결과 여부 |
+| Judgement Snapshot | judgement_snapshot |  |  | TEXT | — | — | — | 판정 근거 JSON — 위험도 응답에서 시세 · 시세 구분 · 기준일 · 분석 시각을 뺀 부분. NULL = 근거 없음(V21 이전 행, 다음 조회가 판정해 채운다) |
+| Criteria Fingerprint | criteria_fingerprint |  |  | VARCHAR | 64 | — | — | 판정에 쓴 기준표 값 · 대장 연동 모드의 SHA-256(16진). 현재 기준의 지문과 다르면 저장된 근거를 쓰지 않고 다시 판정한다 |
 | Analyzed At | analyzed_at |  | ● | TIMESTAMP | — | — | now() | 분석 일시 |
+
+근거 · 지문(V21) — 최신 행에 적는다. 결론이 같아 새 행을 남기지 않는 판정도 최신 행의 근거 · 지문을 새 값으로 고친다(셋이 모두 같으면 쓰지 않는다). 저장된 근거를 언제 돌려주고 언제 다시 판정하는지는 데이터 적재 설계서 1.2 가 정한다. JSONB 가 아니라 TEXT 인 이유는 V21 주석에 있다.
 
 인덱스 — (property_id) INCLUDE (risk_id, risk_grade, lease_ratio, registry_id) WHERE is_latest UNIQUE: 매물마다 최신 분석은 하나다. 두 인스턴스의 동시 첫 분석을 DB 가 막고, 목록 · 지도 · 집계의 최신 분석 조인을 겸한다. INCLUDE 열은 지도가 읽는 판정 열이라 지도의 조인이 인덱스 전용 스캔이 된다(V9 → V19 교체, 이름 `uq_risk_analysis_latest` 유지). / (ledger_id): 대장을 떼거나 지울 때 참조하는 분석 행을 찾는다. FK 는 인덱스를 만들지 않는다(V19). / (lease_ratio, property_id) INCLUDE (risk_grade) WHERE is_latest AND lease_ratio IS NOT NULL: 자치구 · 매물 조건 필터가 없는 전세가율순 목록이 이 순서로 읽고 LIMIT 에서 멈춘다 — 운영 측정 필터 없음 오름 693.5 → 0.3ms(V20 주석, #347). 질의에 전세가율 범위 조건(미분석 대체값 경계)이 있어야 플래너가 이 부분 인덱스를 정렬에 쓰므로, 그 경계 밖(판정 없는 매물)은 지금 정렬로 이어 읽는다. 매물 조건 필터가 있으면 오히려 느려져(93.9 → 313.3ms) 쓰지 않는다(V20).
 

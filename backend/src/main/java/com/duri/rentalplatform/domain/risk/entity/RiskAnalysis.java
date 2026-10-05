@@ -13,12 +13,14 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 위험도 분석 한 건(이력성) — 데이터베이스 설계서 16절. 결론만 저장하고 판정 근거는 저장하지 않는다.
+ * 위험도 분석 한 건(이력성) — 데이터베이스 설계서 16절. 결론 열과 함께, 최신 행에는 응답 근거 JSON 과 그때 쓴 판정 기준의 지문을
+ * 둔다(V21). 근거를 언제 돌려주는지는 {@code RiskAnalysisCommandService} 가 정한다.
  *
  * <p><b>감사 상위 클래스</b> — {@code updated_at} 이 없고 생성 시각 컬럼 이름이 {@code analyzed_at} 이다.
  * {@link CreatedAtEntity} 를 상속하고 컬럼명을 맞춘다.
@@ -82,6 +84,14 @@ public class RiskAnalysis extends CreatedAtEntity {
     @Column(name = "is_latest", nullable = false)
     private boolean latest;
 
+    /** 응답 근거 JSON(V21). 시세 · 분석 시각은 넣지 않는다. V21 이전 행은 null 이다. */
+    @Column(columnDefinition = "text")
+    private String judgementSnapshot;
+
+    /** 판정에 쓴 기준표 값 · 대장 연동 모드의 SHA-256 16진(V21). 근거와 함께 적고 함께 null 이다. */
+    @Column(length = 64)
+    private String criteriaFingerprint;
+
     /**
      * 새 분석 결과를 최신 행으로 적는다.
      *
@@ -125,6 +135,18 @@ public class RiskAnalysis extends CreatedAtEntity {
     /** 새 분석이 최신이 되어 이 행을 이력으로 내린다. */
     public void supersede() {
         this.latest = false;
+    }
+
+    /** 이 판정의 근거 · 지문을 적는다. 새 행이면 저장 전에, 결론이 같아 남겨 두는 최신 행이면 변경 감지로 고친다. */
+    public void recordJudgement(String judgementSnapshot, String criteriaFingerprint) {
+        this.judgementSnapshot = judgementSnapshot;
+        this.criteriaFingerprint = criteriaFingerprint;
+    }
+
+    /** 근거 · 지문이 모두 주어진 값과 같은가. 같으면 다시 쓰지 않는다. */
+    public boolean sameJudgement(String judgementSnapshot, String criteriaFingerprint) {
+        return Objects.equals(this.judgementSnapshot, judgementSnapshot)
+                && Objects.equals(this.criteriaFingerprint, criteriaFingerprint);
     }
 
     /** 등급 · 3사 가입 · 저장 전세가율이 모두 같은가. 같으면 새 이력을 남기지 않는다. */
