@@ -44,10 +44,10 @@ description: 배포 전후에 확인할 것을 순서대로 실행한다. 배포
 
 | 확인 | 방법 |
 | --- | --- |
-| 모든 슬롯이 upstream에 있다 | `upstream.conf`에 `down`이 남아 있지 않다 |
-| 모든 슬롯의 readiness가 UP이다 | 슬롯마다 `http://<주소>:<포트>/actuator/health/readiness` — APP-01에서 루프백 둘과 APP-02 사설 IP 둘 |
+| 모든 슬롯이 upstream에 있다 | **두 앱 노드의** `upstream.conf`에 `down`이 남아 있지 않다(입구 이중화 — 두 노드의 Nginx가 같은 파일을 쓴다) |
+| 모든 슬롯의 readiness가 UP이다 | 슬롯마다 `http://<주소>:<포트>/actuator/health/readiness` — 네 슬롯 모두 그 노드의 사설 IP(APP-01 `10.20.0.10` · APP-02 `10.20.1.10`의 8081 · 8082) |
 | 관찰하지 않은 슬롯도 기준 안이다 | 슬롯마다 `bash smoke.sh <주소> <포트>`를 한 번 실행한다 |
-| 구 버전이 남아 있지 않다 | 두 노드의 `docker compose ps` 에서 app-1 · app-2(APP-01은 web도) 이미지 태그가 배포 대상과 같고, 두 노드 `.env`의 `APP_IMAGE`(APP-01은 `WEB_IMAGE`도)도 같다 |
+| 구 버전이 남아 있지 않다 | 두 노드의 `docker compose ps` 에서 app-1 · app-2 · web 이미지 태그가 배포 대상과 같고, 두 노드 `.env`의 `APP_IMAGE` · `WEB_IMAGE`도 같다(입구 이중화 — 두 노드에 web이 있다) |
 | 배포를 기록했다 | 스크립트 출력(시각 · 태그 · 단계)을 남긴다. 월간 운영 보고의 변경 절이 이것을 근거로 쓴다 |
 
 배포 검증이었다면 조회 요청의 상태 코드별 건수를 남긴다. **쓰기 요청의 실패는 손실이 아니다** — 비멱등 요청은 재시도되지 않으므로 「요청 손실 0건」은 조회 요청에 대한 서술이다. 구분해서 적는다 (`docs/infra/runbook.md` 4.2).

@@ -13,7 +13,7 @@
 #   SSH_CONFIG    ssh_config 경로(기본 C:/Users/bu200/loadtest-data/ssh_config — 운영자 PC)
 #   NODE_DIR      노드의 Compose 자리(기본 /home/deploy/rental/infra)
 #   MEASURE_TMP   노드에서 표본을 쌓는 자리(기본 /tmp/rental-measure). 회차마다 그 아래 <회차>/
-#   APP02_ADDR    APP-02 사설 IP(기본 10.20.20.30 — deploy.sh 의 REMOTE_ADDR 와 같은 값)
+#   APP02_ADDR    APP-02 사설 IP(기본 10.20.1.10 — deploy.sh 의 NODE_ADDRS 둘째 값. #404 에서 2c 공개 서브넷으로 옮겼다, 전에는 10.20.20.30)
 #   APP_NODES     슬롯을 다룰 앱 노드(기본 "app01 app02"). APP-02 를 끈 구성이면 "app01"
 #   RESULTS_DIR   회차 결과 자리(기본 chaos-harness/measure/results)
 
@@ -25,7 +25,7 @@ RESULTS_DIR=${RESULTS_DIR:-$MEASURE_ROOT/results}
 SSH_CONFIG=${SSH_CONFIG:-C:/Users/bu200/loadtest-data/ssh_config}
 NODE_DIR=${NODE_DIR:-/home/deploy/rental/infra}
 MEASURE_TMP=${MEASURE_TMP:-/tmp/rental-measure}
-APP02_ADDR=${APP02_ADDR:-10.20.20.30}
+APP02_ADDR=${APP02_ADDR:-10.20.1.10}
 APP_NODES=${APP_NODES:-app01 app02}
 DB_NODES="db01 db02"
 # 배치 스위치 넷 — 시험 동안 전부 false 여야 한다(.env.example 의 배치 주석). 줄이 없으면 앱 기본값 true 다.

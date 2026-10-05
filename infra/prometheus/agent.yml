@@ -13,7 +13,7 @@ global:
   external_labels:
     node: app-01
 
-# 대상은 전부 127.0.0.1 이다. prom-agent 가 호스트 네트워크라 루프백이 호스트를 가리키고, exporter 는
+# 대상은 앱 슬롯(아래 app 잡)을 빼고 전부 127.0.0.1 이다. prom-agent 가 호스트 네트워크라 루프백이 호스트를 가리키고, exporter 는
 # 호스트 루프백에 게시되거나(redis · app) 루프백에 바인딩한다(node · nginx). 컨테이너 IP 로 긁지 않는다 —
 # 컨테이너를 다시 만들면 IP 가 바뀐다.
 # PostgreSQL 은 여기서 긁지 않는다 — postgres exporter 는 DB 노드마다 있고 그 노드의 수집기(agent-db.yml)가 긁는다(#357).
@@ -36,13 +36,16 @@ scrape_configs:
     static_configs:
       - targets: ["127.0.0.1:9113"]
 
-  # 앱 두 슬롯(app-1 · app-2). 슬롯은 instance 라벨(127.0.0.1:8081 · :8082)로 갈린다.
-  # 앱은 이 경로를 인증 없이 열고, 밖에서는 앞단 Nginx 가 /actuator 를 404 로 막는다 — 노드 안의 이 수집기만 닿는다.
+  # 앱 두 슬롯(app-1 · app-2). 슬롯은 instance 라벨(<게시 주소>:8081 · :8082)로 갈린다.
+  # **대상 주소는 슬롯의 게시 주소다**(APP_PUBLISH_ADDR — 운영 Compose 의 prom-agent 주석). 입구 이중화(#404)부터 APP-01 슬롯도
+  # 상대 노드의 Nginx 가 닿도록 사설 IP 하나(10.20.0.10)에만 게시되어 루프백으로는 닿지 않는다. 비우면 127.0.0.1(단일 노드 · 3노드).
+  # instance 라벨이 127.0.0.1:… 에서 10.20.0.10:… 로 바뀐다 — 대시보드가 instance 값을 고정해 두었다면 함께 본다.
+  # 앱은 이 경로를 인증 없이 열고, 밖에서는 앞단 Nginx 가 /actuator 를 404 로 막는다 — 사설망에서는 보안 그룹이 막는다.
   # 배포 중 내려간 슬롯은 그동안 down 으로 보인다
   - job_name: app
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ["127.0.0.1:8081", "127.0.0.1:8082"]
+      - targets: ['@APP_PUBLISH_ADDR@:8081', '@APP_PUBLISH_ADDR@:8082']
 
 remote_write:
   - url: '@GRAFANA_CLOUD_PROM_URL@'
