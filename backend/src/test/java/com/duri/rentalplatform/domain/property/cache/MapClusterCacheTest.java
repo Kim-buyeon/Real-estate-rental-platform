@@ -97,27 +97,28 @@ class MapClusterCacheTest {
     // ---------- 적중 · 키 ----------
 
     @Test
-    @DisplayName("같은 필터 · 영역 · 격자면 두 번째 요청은 DB 를 부르지 않는다")
+    @DisplayName("같은 필터 · 영역 · 행 · 열이면 두 번째 요청은 DB 를 부르지 않는다")
     void sameKeyHitsLocal() {
-        cache.getOrLoad(FILTER, BOX, GRID, loader(7));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
 
-        PropertyMapClustersResponse second = cache.getOrLoad(FILTER, BOX, GRID, loader(99));
+        PropertyMapClustersResponse second = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99));
 
         assertThat(second.total()).isEqualTo(7);
         assertThat(loads).hasValue(1);
     }
 
     @Test
-    @DisplayName("영역 · 필터 · 격자 칸 수 중 하나라도 다르면 다른 항목이다")
+    @DisplayName("영역 · 필터 · 행 수 · 열 수 중 하나라도 다르면 다른 항목이다")
     void anyDifferenceIsDifferentEntry() {
-        cache.getOrLoad(FILTER, BOX, GRID, loader(1));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(1));
 
-        cache.getOrLoad(FILTER, new BoundingBox(37.52, 37.58, 126.81, 126.8901), GRID, loader(2));
+        cache.getOrLoad(FILTER, new BoundingBox(37.52, 37.58, 126.81, 126.8901), GRID, GRID, loader(2));
         cache.getOrLoad(new DistrictCountRequest("강서구", null, null, null, null, null, null, null, null),
-                BOX, GRID, loader(3));
-        cache.getOrLoad(FILTER, BOX, GRID + 1, loader(4));
+                BOX, GRID, GRID, loader(3));
+        cache.getOrLoad(FILTER, BOX, GRID + 1, GRID, loader(4));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID + 1, loader(5));
 
-        assertThat(loads).hasValue(4);
+        assertThat(loads).hasValue(5);
     }
 
     @Test
@@ -125,18 +126,26 @@ class MapClusterCacheTest {
     void coordinateKeyIsNormalized() {
         BoundingBox written = new BoundingBox(Double.parseDouble("37.5200"), Double.parseDouble("37.580"),
                 Double.parseDouble("126.81"), Double.parseDouble("126.890"));
-        assertThat(MapClusterCache.key(FILTER, written, GRID)).isEqualTo(MapClusterCache.key(FILTER, BOX, GRID));
+        assertThat(MapClusterCache.key(FILTER, written, GRID, GRID)).isEqualTo(MapClusterCache.key(FILTER, BOX, GRID, GRID));
 
         BoundingBox negativeZero = new BoundingBox(-0.0, 0.0, -0.0, 0.0);
         BoundingBox zero = new BoundingBox(0.0, 0.0, 0.0, 0.0);
-        assertThat(MapClusterCache.key(FILTER, negativeZero, GRID)).isEqualTo(MapClusterCache.key(FILTER, zero, GRID));
+        assertThat(MapClusterCache.key(FILTER, negativeZero, GRID, GRID)).isEqualTo(MapClusterCache.key(FILTER, zero, GRID, GRID));
     }
 
     @Test
-    @DisplayName("키는 필터 키 · 영역 네 값 · 격자 칸 수를 담는다")
+    @DisplayName("키는 필터 키 · 영역 네 값 · 행 · 열 수를 담는다")
     void keyContents() {
-        assertThat(MapClusterCache.key(FILTER, BOX, GRID))
-                .isEqualTo(DistrictCountCacheStore.filterKey(FILTER) + "|box=37.52,37.58,126.81,126.89|grid=12");
+        assertThat(MapClusterCache.key(FILTER, BOX, 18, 15))
+                .isEqualTo(DistrictCountCacheStore.filterKey(FILTER) + "|box=37.52,37.58,126.81,126.89|rows=18,cols=15");
+    }
+
+    @Test
+    @DisplayName("행 · 열이 같으면 같은 키, 행과 열을 바꾸면 다른 키다")
+    void rowsAndColsAreSeparateKeyParts() {
+        assertThat(MapClusterCache.key(FILTER, BOX, 18, 15)).isEqualTo(MapClusterCache.key(FILTER, BOX, 18, 15));
+        assertThat(MapClusterCache.key(FILTER, BOX, 18, 15)).isNotEqualTo(MapClusterCache.key(FILTER, BOX, 15, 18));
+        assertThat(MapClusterCache.key(FILTER, BOX, 12, 12)).isNotEqualTo(MapClusterCache.key(FILTER, BOX, 12, 13));
     }
 
     // ---------- 세대 ----------
@@ -145,11 +154,11 @@ class MapClusterCacheTest {
     @DisplayName("반복 작업이 바뀐 세대를 읽으면 지도 묶음 캐시도 비운다")
     void generationChangeClearsMapClusters() {
         generationSource.refreshGeneration();
-        cache.getOrLoad(FILTER, BOX, GRID, loader(7));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
 
         when(ops.get(DistrictCountCacheStore.GENERATION_KEY)).thenReturn("4");
         generationSource.refreshGeneration();
-        PropertyMapClustersResponse after = cache.getOrLoad(FILTER, BOX, GRID, loader(8));
+        PropertyMapClustersResponse after = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(8));
 
         assertThat(after.total()).isEqualTo(8);
         assertThat(loads).hasValue(2);
@@ -159,11 +168,11 @@ class MapClusterCacheTest {
     @DisplayName("배치 끝에 세대를 올리면 지도 묶음 캐시도 비운다")
     void bumpClearsMapClusters() {
         generationSource.refreshGeneration();
-        cache.getOrLoad(FILTER, BOX, GRID, loader(7));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
         when(ops.increment(DistrictCountCacheStore.GENERATION_KEY)).thenReturn(4L);
 
         generationSource.bumpGeneration();
-        PropertyMapClustersResponse after = cache.getOrLoad(FILTER, BOX, GRID, loader(8));
+        PropertyMapClustersResponse after = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(8));
 
         assertThat(after.total()).isEqualTo(8);
     }
@@ -175,12 +184,12 @@ class MapClusterCacheTest {
         when(ops.increment(DistrictCountCacheStore.GENERATION_KEY)).thenReturn(4L);
 
         // 읽기 도중에 배치가 끝나 세대가 오르고 캐시가 비워진다 — 읽기는 그 뒤에 끝나 옛 세대 키로 담긴다.
-        PropertyMapClustersResponse stale = cache.getOrLoad(FILTER, BOX, GRID, () -> {
+        PropertyMapClustersResponse stale = cache.getOrLoad(FILTER, BOX, GRID, GRID, () -> {
             loads.incrementAndGet();
             generationSource.bumpGeneration();
             return PropertyMapClustersResponse.unclustered(7, List.of());
         });
-        PropertyMapClustersResponse after = cache.getOrLoad(FILTER, BOX, GRID, loader(8));
+        PropertyMapClustersResponse after = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(8));
 
         assertThat(stale.total()).isEqualTo(7);
         assertThat(after.total()).isEqualTo(8);
@@ -192,9 +201,9 @@ class MapClusterCacheTest {
     void unknownGenerationBypassesCache() {
         when(ops.get(DistrictCountCacheStore.GENERATION_KEY)).thenThrow(new RedisConnectionFailureException("down"));
 
-        cache.getOrLoad(FILTER, BOX, GRID, loader(7));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
         advance(CHECK_INTERVAL);
-        cache.getOrLoad(FILTER, BOX, GRID, loader(8));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(8));
 
         assertThat(loads).hasValue(2);
     }
@@ -204,14 +213,14 @@ class MapClusterCacheTest {
     @Test
     @DisplayName("만료가 지나면 DB 에서 다시 읽는다")
     void expiresAfterLocalTtl() {
-        cache.getOrLoad(FILTER, BOX, GRID, loader(7));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
 
         advance(LOCAL_TTL.minusSeconds(1));
-        cache.getOrLoad(FILTER, BOX, GRID, loader(8));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(8));
         assertThat(loads).hasValue(1);
 
         advance(Duration.ofSeconds(1));
-        PropertyMapClustersResponse after = cache.getOrLoad(FILTER, BOX, GRID, loader(9));
+        PropertyMapClustersResponse after = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(9));
         assertThat(after.total()).isEqualTo(9);
         assertThat(loads).hasValue(2);
     }
@@ -228,20 +237,20 @@ class MapClusterCacheTest {
     void evictsOverMaxWeight() {
         cache = newCache(100);
         BoundingBox otherBox = new BoundingBox(37.40, 37.46, 126.81, 126.89);
-        cache.getOrLoad(FILTER, BOX, GRID, () -> {
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, () -> {
             loads.incrementAndGet();
             return withMarkers(60);
         });
-        cache.getOrLoad(FILTER, otherBox, GRID, () -> {
+        cache.getOrLoad(FILTER, otherBox, GRID, GRID, () -> {
             loads.incrementAndGet();
             return withMarkers(60);
         });
 
-        cache.getOrLoad(FILTER, BOX, GRID, () -> {
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, () -> {
             loads.incrementAndGet();
             return withMarkers(60);
         });
-        cache.getOrLoad(FILTER, otherBox, GRID, () -> {
+        cache.getOrLoad(FILTER, otherBox, GRID, GRID, () -> {
             loads.incrementAndGet();
             return withMarkers(60);
         });
@@ -260,7 +269,7 @@ class MapClusterCacheTest {
         CountDownLatch release = new CountDownLatch(1);
         ExecutorService pool = Executors.newFixedThreadPool(threads);
         try {
-            Future<PropertyMapClustersResponse> first = pool.submit(() -> cache.getOrLoad(FILTER, BOX, GRID, () -> {
+            Future<PropertyMapClustersResponse> first = pool.submit(() -> cache.getOrLoad(FILTER, BOX, GRID, GRID, () -> {
                 loads.incrementAndGet();
                 loading.countDown();
                 await(release);
@@ -269,7 +278,7 @@ class MapClusterCacheTest {
             assertThat(loading.await(5, TimeUnit.SECONDS)).isTrue();
             List<Future<PropertyMapClustersResponse>> waiters = new ArrayList<>();
             for (int i = 1; i < threads; i++) {
-                waiters.add(pool.submit(() -> cache.getOrLoad(FILTER, BOX, GRID, loader(99))));
+                waiters.add(pool.submit(() -> cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99))));
             }
             release.countDown();
 
@@ -286,11 +295,11 @@ class MapClusterCacheTest {
     @Test
     @DisplayName("읽기가 실패하면 예외가 그대로 올라가고 담지 않는다 — 다음 요청이 다시 읽는다")
     void failureIsNotCached() {
-        assertThatThrownBy(() -> cache.getOrLoad(FILTER, BOX, GRID, () -> {
+        assertThatThrownBy(() -> cache.getOrLoad(FILTER, BOX, GRID, GRID, () -> {
             throw new IllegalStateException("db down");
         })).isInstanceOf(IllegalStateException.class);
 
-        PropertyMapClustersResponse after = cache.getOrLoad(FILTER, BOX, GRID, loader(7));
+        PropertyMapClustersResponse after = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
 
         assertThat(after.total()).isEqualTo(7);
         assertThat(loads).hasValue(1);
@@ -302,7 +311,7 @@ class MapClusterCacheTest {
         Thread caller = Thread.currentThread();
         List<Thread> loadThread = new ArrayList<>();
 
-        cache.getOrLoad(FILTER, BOX, GRID, () -> {
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, () -> {
             loadThread.add(Thread.currentThread());
             return PropertyMapClustersResponse.unclustered(1, List.of());
         });

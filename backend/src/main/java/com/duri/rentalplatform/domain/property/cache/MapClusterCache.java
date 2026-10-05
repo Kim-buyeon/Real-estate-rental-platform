@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component;
  * 지도 묶음 응답의 슬롯 로컬 캐시(Caffeine). API 명세서(매물) 1.12 「서버 캐시」 · 아키텍처 설계서(성능) 1.3 의 예외. Redis 층이
  * 없다 — 적중하면 Redis 도 DB 도 부르지 않고, 빗나가면 DB 로 간다.
  *
- * <p><b>키</b> — 세대 + 공통 검색 필터(자치구 집계와 같은 정규화) + 표시 영역 네 값 + 격자 칸 수. 화면이 표시 영역을 타일 격자에
+ * <p><b>키</b> — 세대 + 공통 검색 필터(자치구 집계와 같은 정규화) + 표시 영역 네 값 + 격자 행 · 열 수({@code |rows=R,cols=C}). 화면이 표시 영역을 타일 격자에
  * 맞춰 보내므로(명세 1.12) 같은 지역을 보는 요청이 같은 키가 된다. 좌표는 요청이 {@code Double} 로 받은 값의
  * {@link Double#toString(double)} — 같은 double 이면 같은 문자열이라 {@code 37.5200} 과 {@code 37.52} 가 같은 키다.
  *
@@ -34,7 +34,7 @@ import org.springframework.stereotype.Component;
  * 놓친 다른 슬롯의 세대 변경이 이 안에 보인다.
  *
  * <p><b>크기 상한</b> — 무게(묶음 수 + 마커 수 + 1)의 합({@code property.map-clusters.local-max-weight}). 응답 크기가 표시 영역의
- * 매물 분포에 따라 1 ~ 145 항목으로 달라 건수 상한으로는 힙 사용을 묶을 수 없다.
+ * 매물 분포와 행 · 열 수(각각 1 ~ 24)에 따라 1 ~ 577 항목으로 달라 건수 상한으로는 힙 사용을 묶을 수 없다.
  *
  * <p><b>같은 키 동시 빗나감</b> — 슬롯 안에서 하나만 DB 로 가고 나머지는 그 결과를 기다린다. 읽기는 <b>부른 스레드에서</b> 한다 —
  * 서비스의 읽기 트랜잭션 · 읽기 분산 표시(@ReplicaRead)가 스레드에 묶여 있다. 읽기가 실패하면 기다리던 요청도 같은 예외를 받고,
@@ -77,16 +77,17 @@ public class MapClusterCache {
      *
      * @param filter 공통 검색 필터
      * @param box 표시 영역 — 검증을 마친 값
-     * @param gridDivisions 격자 칸 수(가로 · 세로)
+     * @param rows 격자 행 수(위도 방향)
+     * @param cols 격자 열 수(경도 방향)
      * @param loader DB 조회. 부른 스레드에서 실행된다. 던진 예외는 그대로 올라가고 담기지 않는다
      */
-    public PropertyMapClustersResponse getOrLoad(DistrictCountRequest filter, BoundingBox box, int gridDivisions,
+    public PropertyMapClustersResponse getOrLoad(DistrictCountRequest filter, BoundingBox box, int rows, int cols,
             Supplier<PropertyMapClustersResponse> loader) {
         String gen = generationSource.generationForRequest();
         if (gen == null) {
             return loader.get();
         }
-        String localKey = gen + "|" + key(filter, box, gridDivisions);
+        String localKey = gen + "|" + key(filter, box, rows, cols);
 
         CompletableFuture<PropertyMapClustersResponse> mine = new CompletableFuture<>();
         CompletableFuture<PropertyMapClustersResponse> existing = local.asMap().putIfAbsent(localKey, mine);
@@ -104,12 +105,12 @@ public class MapClusterCache {
         }
     }
 
-    /** 세대를 뺀 키. 필터 · 표시 영역 · 격자 칸 수. */
-    static String key(DistrictCountRequest filter, BoundingBox box, int gridDivisions) {
+    /** 세대를 뺀 키. 필터 · 표시 영역 · 격자 행 · 열 수. */
+    static String key(DistrictCountRequest filter, BoundingBox box, int rows, int cols) {
         return DistrictCountCacheStore.filterKey(filter)
                 + "|box=" + coordinate(box.minLat()) + "," + coordinate(box.maxLat())
                 + "," + coordinate(box.minLng()) + "," + coordinate(box.maxLng())
-                + "|grid=" + gridDivisions;
+                + "|rows=" + rows + ",cols=" + cols;
     }
 
     /** 응답이 든 항목 수 + 1(빈 응답 · 키 · 캐시 노드 몫). */
