@@ -1,0 +1,47 @@
+-- 보증금순 목록 정렬 인덱스(PROP-01 · #425) — ix_property_deposit (deposit, property_id). CREATE INDEX CONCURRENTLY, 트랜잭션 밖.
+--
+-- 목록 selectList 의 보증금순(sortKey DEPOSIT)은 정렬에 쓸 인덱스가 없어 매물 표 전체를 순차 스캔한 뒤 top-N 정렬을 했다.
+--
+-- 열 순서 — 정렬 키(ORDER BY p.deposit, p.property_id) · 커서 키((p.deposit, p.property_id) 행 비교, 매퍼 주석)와 같은 순서다.
+-- 같은 보증금이 많아(운영 pg_stats n_distinct 3,812, 최빈값 1천만 원 9.6 %) 식별자까지 담아야 인덱스 순서가 곧 정렬 순서가 되어
+-- LIMIT 에서 멈춘다. 한 ASC 인덱스를 오름은 앞으로, 내림은 뒤로(Index Scan Backward) 읽으므로 방향별 인덱스를 두지 않는다.
+-- 부분 조건 · INCLUDE 를 두지 않는 이유 — 보증금은 NOT NULL(V1)이고 목록은 미분석 매물도 포함하므로 걸러 낼 행이 없다. 목록은
+-- 열 12개를 읽어 힙 접근은 어차피 필요하고, LIMIT 21 이라 힙을 읽는 행 수가 작다.
+--
+-- 커서와 한 묶음 — 인덱스만 만들면 깊은 커서가 지금보다 나빠진다. 지금의 OR 키셋(deposit < v OR (deposit = v AND id < i))은
+-- B-tree 탐색 조건이 되지 못해, 플래너가 인덱스 순서로 읽으면 커서 앞의 행을 전부 읽고 거른다. 그래서 같은 변경에서 보증금순
+-- 커서를 행 비교로 바꿨다(PropertyMapper.xml filter).
+--
+-- 측정 근거 —
+--   운영 DB-02(standby, PostgreSQL 17.11, 매물 312,661건, 표 173 MB · 22,130 페이지) 읽기 전용 EXPLAIN (ANALYZE, BUFFERS)
+--   2026-10-05: 자치구 없는 보증금 내림 LIMIT 21 = 순차 스캔 → top-N heapsort, 451.9 ms, 버퍼 적중 3,503 · 읽기 18,632.
+--   #402 측정(데우기 1 + 3회 중앙값) 414.0 ms · 버퍼 밖 18,794.
+--   로컬 재현(postgres:17-alpine 17.11, 운영 설정 shared_buffers 64MB · work_mem 4MB · random_page_cost 1.1 ·
+--   effective_cache_size 4GB · 병렬 0, 운영 pg_stats 분포를 따른 합성 매물 312,661건 · 174 MB, 데우기 1 + 3회 중앙값. 로컬
+--   디스크가 느려 절대 시간은 운영보다 길다 — 버퍼 수와 계획 모양이 근거). 인덱스 전 → 뒤 버퍼:
+--     자치구 없음 내림 22,337 → 34(Index Scan Backward → LIMIT) · 오름 22,337 → 32
+--     깊은 커서 내림 — OR 키셋 22,337 → 220,249 · 1,366 ms(퇴행), 행 비교 22,337 → 23 · 0.6 ms
+--     깊은 커서 오름 — OR 키셋 22,337 → 247,598(퇴행), 행 비교 22,337 → 34
+--     계약 유형 필터 22,338 → 81 · 등급 CAUTION(4.7 %) 22,337 → 405 · 보증금 1억 ~ 3억 22,337 → 34
+--     자치구 D7(1/25) 비트맵 12,576 → Index Scan Backward 560
+--     선택도 높은 필터 조합(오피스텔 · CAUTION · 면적 ≥ 140, 약 0.3 %) 22,338 · 274 ms → 27,549 · 324 ms(약 1.2배 — 필터에
+--       걸리는 행을 찾을 때까지 인덱스 순서로 읽는다)
+--     결과 없는 필터(추정 2행) — 순차 그대로(플래너가 인덱스를 고르지 않음)
+--   인덱스 크기 9.6 MB(1,206 페이지), 로컬 CREATE INDEX CONCURRENTLY 1.05 s.
+--
+-- 트랜잭션 밖에서 도는 근거 · 파일에 CONCURRENTLY 문장만 두는 이유 · SET LOCAL lock_timeout 을 넣지 않는 이유는 V24 주석과 같다.
+-- spring.flyway.postgresql.transactional-lock: false(application.yml, #403)도 V24 때 넣은 그대로다.
+--
+-- 잠금 — SHARE UPDATE EXCLUSIVE. 매물 읽기 · 쓰기를 막지 않는다. 표를 두 번 훑고, 시작 시점에 열린 트랜잭션이 끝나기를 기다린다.
+-- 운영 예상 소요 — 같은 표에 CONCURRENTLY 두 개(하나는 더 넓은 커버링)를 만든 V24 의 flyway_schema_history execution_time 이
+-- 2,845 ms 라 1 ~ 2 s 에, 시작 시점에 열린 트랜잭션 대기가 더해진다. 앱 커넥션의 대기 상한은 statement_timeout 30s ·
+-- idle_in_transaction_session_timeout 60s(#405)다.
+--
+-- 중간에 실패하면 — 트랜잭션 밖이라 되돌려지지 않고 INVALID 인덱스가 남으며, 다음 기동은 「failed migration」으로 멈춘다(V24 주석).
+-- 복구 — DROP INDEX IF EXISTS ix_property_deposit 로 남은 것을 지우고, flyway_schema_history 의 V26 실패 행을 지운 뒤 다시 기동한다.
+-- IF NOT EXISTS 를 쓰지 않는 이유는 V24 와 같다.
+--
+-- 대가 — 보증금이 인덱스 열이 되어 보증금이 바뀌는 매물 UPDATE 는 HOT 이 되지 않는다. 매물 갱신은 이미 재분석 대기 부분
+-- 인덱스(V18) 때문에 HOT 이 아니다(V19 · V24 주석).
+
+CREATE INDEX CONCURRENTLY ix_property_deposit ON property (deposit, property_id);

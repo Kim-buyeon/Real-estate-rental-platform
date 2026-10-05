@@ -327,6 +327,25 @@ class SchemaMigrationTest {
     }
 
     @Test
+    @DisplayName("V26: 보증금 목록 인덱스는 property 의 (deposit, property_id) 일반 인덱스이고 유효하며 이력에 성공으로 있다")
+    void depositListIndex() {
+        String def = jdbcTemplate.queryForObject(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'ix_property_deposit'",
+                String.class);
+
+        assertThat(def).contains("property", "(deposit, property_id)");
+        assertThat(def).doesNotContain("UNIQUE").doesNotContain("WHERE").doesNotContain("INCLUDE");
+        // CONCURRENTLY(트랜잭션 밖)라 실패하면 INVALID 인덱스가 남는다 — 유효 여부까지 본다.
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'ix_property_deposit'
+                """, Boolean.class)).isTrue();
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT version FROM flyway_schema_history WHERE version = '26' AND success", String.class))
+                .containsExactly("26");
+    }
+
+    @Test
     @DisplayName("V6: 위험 등급 기준은 CAUTION 경계가 깡통전세 선 이상이면 거부된다")
     void riskCriteriaRejectsNonMonotonicThresholds() {
         assertThatThrownBy(() -> jdbcTemplate.update(
