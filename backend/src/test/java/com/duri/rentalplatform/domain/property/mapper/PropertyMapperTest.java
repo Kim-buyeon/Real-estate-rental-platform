@@ -570,7 +570,7 @@ class PropertyMapperTest {
                 200L, null, null, e2, 100)))).containsExactly(e3, highEarly, highLate);
         // 내림: 반대 — 더 작은 보증금은 식별자가 커도(lowLate) 들고, 더 큰 보증금은 식별자가 작아도(highEarly) 빠진다.
         assertThat(ids(propertyMapper.selectList(list(PropertySortKey.DEPOSIT, false,
-                200L, null, null, e2, 100)))).containsExactly(e1, lowEarly, lowLate);
+                200L, null, null, e2, 100)))).containsExactly(e1, lowLate, lowEarly);
         // 전체 순서 — 보증금, 같으면 식별자(내림은 둘 다 내림).
         assertThat(ids(propertyMapper.selectList(list(PropertySortKey.DEPOSIT, true,
                 null, null, null, null, 100)))).containsExactly(lowEarly, lowLate, e1, e2, e3, highEarly, highLate);
