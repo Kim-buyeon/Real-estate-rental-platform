@@ -3,7 +3,9 @@ package com.duri.rentalplatform.domain.property.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -15,6 +17,7 @@ import com.duri.rentalplatform.common.CursorCodec;
 import com.duri.rentalplatform.common.CursorPage;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
+import com.duri.rentalplatform.domain.property.cache.MapClusterCache;
 import com.duri.rentalplatform.domain.property.calculator.GeoDistanceCalculator;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
@@ -55,13 +58,19 @@ class PropertyQueryServiceTest {
 
     private PropertyMapper propertyMapper;
     private DistrictCountCache districtCountCache;
+    private MapClusterCache mapClusterCache;
     private PropertyQueryService service;
 
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setUp() {
         propertyMapper = mock(PropertyMapper.class);
         districtCountCache = mock(DistrictCountCache.class);
-        service = new PropertyQueryService(propertyMapper, districtCountCache);
+        // 지도 묶음 캐시는 기본으로 빗나간다 — 받은 읽기를 그대로 부른다. 적중은 캐시 테스트(MapClusterCacheTest)가 본다.
+        mapClusterCache = mock(MapClusterCache.class);
+        when(mapClusterCache.getOrLoad(any(), any(), anyInt(), any()))
+                .thenAnswer(invocation -> ((Supplier<PropertyMapClustersResponse>) invocation.getArgument(3)).get());
+        service = new PropertyQueryService(propertyMapper, districtCountCache, mapClusterCache);
     }
 
     private static PropertySearchRequest listRequest(Integer size) {
@@ -497,6 +506,22 @@ class PropertyQueryServiceTest {
                     .satisfies(e -> assertThat(((BusinessException) e).getErrorCode())
                             .isEqualTo(ErrorCode.INVALID_REQUEST));
         }
+        verify(propertyMapper, never()).selectClusterCells(any());
+        verify(mapClusterCache, never()).getOrLoad(any(), any(), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 캐시에 필터 · 표시 영역 · 격자 칸 수(12)를 넘기고, 적중하면 DB 를 부르지 않는다")
+    void mapClustersUsesCache() {
+        PropertyMapClustersResponse cached = PropertyMapClustersResponse.unclustered(3, List.of());
+        // when(...) 로 다시 스텁하면 setUp 의 응답(받은 읽기 실행)이 먼저 불린다 — doReturn 으로 덮는다.
+        doReturn(cached).when(mapClusterCache).getOrLoad(any(), any(), anyInt(), any());
+
+        PropertyMapClustersResponse result = service.getMapClusters(exampleClustersRequest());
+
+        assertThat(result).isSameAs(cached);
+        verify(mapClusterCache).getOrLoad(eq(exampleClustersRequest().toFilter()),
+                eq(new BoundingBox(37.52, 37.58, 126.81, 126.89)), eq(PropertyQueryService.GRID_DIVISIONS), any());
         verify(propertyMapper, never()).selectClusterCells(any());
     }
 
