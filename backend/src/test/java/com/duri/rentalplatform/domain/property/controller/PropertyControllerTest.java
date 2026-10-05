@@ -194,8 +194,8 @@ class PropertyControllerTest {
     }
 
     @Test
-    @DisplayName("지도 묶음: rows · cols 가 없으면 200 이고 서비스에 null 로 넘긴다(기본 12 는 서비스가 채운다)")
-    void mapClustersWithoutGridPassesNull() throws Exception {
+    @DisplayName("지도 묶음: rows · cols 가 없으면 200 이고 요청이 기본 12 로 채워 서비스에 넘긴다")
+    void mapClustersWithoutGridDefaultsTo12() throws Exception {
         when(queryService.getMapClusters(any(PropertyMapClustersRequest.class)))
                 .thenReturn(PropertyMapClustersResponse.unclustered(0L, List.of()));
 
@@ -205,8 +205,8 @@ class PropertyControllerTest {
 
         ArgumentCaptor<PropertyMapClustersRequest> captor = ArgumentCaptor.forClass(PropertyMapClustersRequest.class);
         verify(queryService).getMapClusters(captor.capture());
-        assertThat(captor.getValue().rows()).isNull();
-        assertThat(captor.getValue().cols()).isNull();
+        assertThat(captor.getValue().rows()).isEqualTo(PropertyMapClustersRequest.DEFAULT_GRID_DIVISIONS);
+        assertThat(captor.getValue().cols()).isEqualTo(PropertyMapClustersRequest.DEFAULT_GRID_DIVISIONS);
     }
 
     @Test

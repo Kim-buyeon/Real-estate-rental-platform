@@ -426,8 +426,8 @@ class PropertyQueryServiceTest {
         PropertySearchCondition condition = captor.getValue();
         assertThat(condition.cellLat()).isCloseTo((37.58 - 37.52) / 12, Offset.offset(1e-12));
         assertThat(condition.cellLng()).isCloseTo((126.89 - 126.81) / 12, Offset.offset(1e-12));
-        assertThat(condition.maxRowIndex()).isEqualTo(PropertyQueryService.DEFAULT_GRID_DIVISIONS - 1);
-        assertThat(condition.maxColIndex()).isEqualTo(PropertyQueryService.DEFAULT_GRID_DIVISIONS - 1);
+        assertThat(condition.maxRowIndex()).isEqualTo(PropertyMapClustersRequest.DEFAULT_GRID_DIVISIONS - 1);
+        assertThat(condition.maxColIndex()).isEqualTo(PropertyMapClustersRequest.DEFAULT_GRID_DIVISIONS - 1);
         assertThat(condition.district()).isEqualTo("강서구");
     }
 
@@ -559,8 +559,8 @@ class PropertyQueryServiceTest {
 
         assertThat(result).isSameAs(cached);
         verify(mapClusterCache).getOrLoad(eq(exampleClustersRequest().toFilter()),
-                eq(new BoundingBox(37.52, 37.58, 126.81, 126.89)), eq(PropertyQueryService.DEFAULT_GRID_DIVISIONS),
-                eq(PropertyQueryService.DEFAULT_GRID_DIVISIONS), any());
+                eq(new BoundingBox(37.52, 37.58, 126.81, 126.89)), eq(PropertyMapClustersRequest.DEFAULT_GRID_DIVISIONS),
+                eq(PropertyMapClustersRequest.DEFAULT_GRID_DIVISIONS), any());
         verify(propertyMapper, never()).selectClusterCells(any());
     }
 
