@@ -42,6 +42,7 @@ const scale = (value: number) => Number((value * BBOX_FACTOR).toFixed(6));
 export function bboxTileUnits(level: number): number {
   const last = BBOX_TILE_UNITS_BY_LEVEL.length;
   const index = Math.min(Math.max(Math.round(level), 1), last) - 1;
+  // index는 위에서 0 ~ length − 1로 잘렸고 표는 비어 있지 않은 상수라 undefined가 될 수 없다
   return BBOX_TILE_UNITS_BY_LEVEL[index]!;
 }
 
