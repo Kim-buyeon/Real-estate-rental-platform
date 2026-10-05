@@ -68,8 +68,8 @@ class PropertyQueryServiceTest {
         districtCountCache = mock(DistrictCountCache.class);
         // 지도 묶음 캐시는 기본으로 빗나간다 — 받은 읽기를 그대로 부른다. 적중은 캐시 테스트(MapClusterCacheTest)가 본다.
         mapClusterCache = mock(MapClusterCache.class);
-        when(mapClusterCache.getOrLoad(any(), any(), anyInt(), any()))
-                .thenAnswer(invocation -> ((Supplier<PropertyMapClustersResponse>) invocation.getArgument(3)).get());
+        when(mapClusterCache.getOrLoad(any(), any(), anyInt(), anyInt(), any()))
+                .thenAnswer(invocation -> ((Supplier<PropertyMapClustersResponse>) invocation.getArgument(4)).get());
         service = new PropertyQueryService(propertyMapper, districtCountCache, mapClusterCache);
     }
 
@@ -373,8 +373,13 @@ class PropertyQueryServiceTest {
 
     private static PropertyMapClustersRequest clustersRequest(
             Double minLat, Double maxLat, Double minLng, Double maxLng) {
+        return clustersRequest(minLat, maxLat, minLng, maxLng, null, null);
+    }
+
+    private static PropertyMapClustersRequest clustersRequest(
+            Double minLat, Double maxLat, Double minLng, Double maxLng, Integer rows, Integer cols) {
         return new PropertyMapClustersRequest("강서구", null, null, null, null, null, null, null, null,
-                minLat, maxLat, minLng, maxLng);
+                minLat, maxLat, minLng, maxLng, rows, cols);
     }
 
     /** 명세 1.12 의 요청 예시 영역. */
@@ -410,7 +415,7 @@ class PropertyQueryServiceTest {
     }
 
     @Test
-    @DisplayName("지도 묶음: 격자 집계에 칸 크기 = 영역 ÷ 12, 마지막 칸 번호 11 을 넘긴다")
+    @DisplayName("지도 묶음: 행 · 열이 없으면 기본 12 — 칸 크기 = 영역 ÷ 12, 마지막 행 · 열 번호 11 을 넘긴다")
     void mapClustersPassesGridToMapper() {
         when(propertyMapper.selectClusterCells(any())).thenReturn(List.of());
 
@@ -421,8 +426,41 @@ class PropertyQueryServiceTest {
         PropertySearchCondition condition = captor.getValue();
         assertThat(condition.cellLat()).isCloseTo((37.58 - 37.52) / 12, Offset.offset(1e-12));
         assertThat(condition.cellLng()).isCloseTo((126.89 - 126.81) / 12, Offset.offset(1e-12));
-        assertThat(condition.maxCellIndex()).isEqualTo(PropertyQueryService.GRID_DIVISIONS - 1);
+        assertThat(condition.maxRowIndex()).isEqualTo(PropertyQueryService.DEFAULT_GRID_DIVISIONS - 1);
+        assertThat(condition.maxColIndex()).isEqualTo(PropertyQueryService.DEFAULT_GRID_DIVISIONS - 1);
         assertThat(condition.district()).isEqualTo("강서구");
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 행 ≠ 열이면 칸 높이 = 높이 ÷ 행, 칸 너비 = 폭 ÷ 열, 마지막 번호도 축별이다")
+    void mapClustersUsesRowsAndColsPerAxis() {
+        when(propertyMapper.selectClusterCells(any())).thenReturn(List.of());
+
+        service.getMapClusters(clustersRequest(37.52, 37.58, 126.81, 126.89, 18, 15));
+
+        ArgumentCaptor<PropertySearchCondition> captor = ArgumentCaptor.forClass(PropertySearchCondition.class);
+        verify(propertyMapper).selectClusterCells(captor.capture());
+        PropertySearchCondition condition = captor.getValue();
+        assertThat(condition.cellLat()).isCloseTo((37.58 - 37.52) / 18, Offset.offset(1e-12));
+        assertThat(condition.cellLng()).isCloseTo((126.89 - 126.81) / 15, Offset.offset(1e-12));
+        assertThat(condition.maxRowIndex()).isEqualTo(17);
+        assertThat(condition.maxColIndex()).isEqualTo(14);
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 행 · 열 중 하나만 오면 빠진 쪽만 기본 12 다")
+    void mapClustersDefaultsMissingAxisOnly() {
+        when(propertyMapper.selectClusterCells(any())).thenReturn(List.of());
+
+        service.getMapClusters(clustersRequest(37.52, 37.58, 126.81, 126.89, null, 20));
+
+        ArgumentCaptor<PropertySearchCondition> captor = ArgumentCaptor.forClass(PropertySearchCondition.class);
+        verify(propertyMapper).selectClusterCells(captor.capture());
+        PropertySearchCondition condition = captor.getValue();
+        assertThat(condition.cellLat()).isCloseTo((37.58 - 37.52) / 12, Offset.offset(1e-12));
+        assertThat(condition.cellLng()).isCloseTo((126.89 - 126.81) / 20, Offset.offset(1e-12));
+        assertThat(condition.maxRowIndex()).isEqualTo(11);
+        assertThat(condition.maxColIndex()).isEqualTo(19);
     }
 
     @Test
@@ -507,22 +545,36 @@ class PropertyQueryServiceTest {
                             .isEqualTo(ErrorCode.INVALID_REQUEST));
         }
         verify(propertyMapper, never()).selectClusterCells(any());
-        verify(mapClusterCache, never()).getOrLoad(any(), any(), anyInt(), any());
+        verify(mapClusterCache, never()).getOrLoad(any(), any(), anyInt(), anyInt(), any());
     }
 
     @Test
-    @DisplayName("지도 묶음: 캐시에 필터 · 표시 영역 · 격자 칸 수(12)를 넘기고, 적중하면 DB 를 부르지 않는다")
+    @DisplayName("지도 묶음: 캐시에 필터 · 표시 영역 · 기본 행 · 열(12, 12)을 넘기고, 적중하면 DB 를 부르지 않는다")
     void mapClustersUsesCache() {
         PropertyMapClustersResponse cached = PropertyMapClustersResponse.unclustered(3, List.of());
         // when(...) 로 다시 스텁하면 setUp 의 응답(받은 읽기 실행)이 먼저 불린다 — doReturn 으로 덮는다.
-        doReturn(cached).when(mapClusterCache).getOrLoad(any(), any(), anyInt(), any());
+        doReturn(cached).when(mapClusterCache).getOrLoad(any(), any(), anyInt(), anyInt(), any());
 
         PropertyMapClustersResponse result = service.getMapClusters(exampleClustersRequest());
 
         assertThat(result).isSameAs(cached);
         verify(mapClusterCache).getOrLoad(eq(exampleClustersRequest().toFilter()),
-                eq(new BoundingBox(37.52, 37.58, 126.81, 126.89)), eq(PropertyQueryService.GRID_DIVISIONS), any());
+                eq(new BoundingBox(37.52, 37.58, 126.81, 126.89)), eq(PropertyQueryService.DEFAULT_GRID_DIVISIONS),
+                eq(PropertyQueryService.DEFAULT_GRID_DIVISIONS), any());
         verify(propertyMapper, never()).selectClusterCells(any());
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 요청의 행 · 열을 캐시 키 인자로 그대로 넘긴다")
+    void mapClustersPassesRowsAndColsToCache() {
+        doReturn(PropertyMapClustersResponse.unclustered(0, List.of()))
+                .when(mapClusterCache).getOrLoad(any(), any(), anyInt(), anyInt(), any());
+        PropertyMapClustersRequest request = clustersRequest(37.52, 37.58, 126.81, 126.89, 18, 15);
+
+        service.getMapClusters(request);
+
+        verify(mapClusterCache).getOrLoad(eq(request.toFilter()),
+                eq(new BoundingBox(37.52, 37.58, 126.81, 126.89)), eq(18), eq(15), any());
     }
 
     // ---------- 목록: 전세가율 인덱스 분기 · 이어 붙이기 (PROP-01 · #347) ----------

@@ -59,17 +59,25 @@ public class PropertyQueryService {
 
     private static final PropertySortKey DEFAULT_SORT_KEY = PropertySortKey.REGISTERED_AT;
 
-    /** 지도 묶음의 격자 — 표시 영역을 가로 · 세로 이 수만큼 나눈다. API 명세서(매물) 1.12. */
-    static final int GRID_DIVISIONS = 12;
+    /** 지도 묶음 격자의 기본 행 · 열 수 — 요청에 {@code rows} · {@code cols} 가 없으면 이 수만큼 나눈다. API 명세서(매물) 1.12. */
+    static final int DEFAULT_GRID_DIVISIONS = 12;
+
+    /**
+     * 지도 묶음 격자의 행 · 열 수 상한. API 명세서(매물) 1.12 — 응답이 많아야 1 + 576 항목(묶음 JSON 칸당 약 220 B → 약 127 KB,
+     * 2026-10-05 운영 실측). 검증은 요청 DTO 의 {@code @Max} 가 한다 — 이 상수는 그 값의 근거를 코드에 남긴다.
+     */
+    static final int MAX_GRID_DIVISIONS = 24;
 
     /** 지도 묶음 임계 — 영역의 매물이 이 수 이하면 묶지 않고 전부 마커로 보낸다. API 명세서(매물) 1.12. */
     static final int CLUSTER_THRESHOLD = 40;
 
     /**
-     * 반경 조회의 상한 — 가까운 순으로 이 수만 돌려준다. API 명세서(매물) 1.3. 지도 화면이 한 번에 그리는 최대 표시 수(격자 칸
-     * 수 — 칸마다 묶음 하나나 마커 하나)와 같다. 상한 전에는 1 km 반경 한 번이 후보 1,842행 · 응답 약 590 KB 였다(#390).
+     * 반경 조회의 상한 — 가까운 순으로 이 수만 돌려준다. API 명세서(매물) 1.3. 지도 화면이 한 번에 그리는 최대 표시 수(기본 격자
+     * 12 × 12 의 칸 수 — 화면은 화면 안 칸이 약 12 × 12 가 되도록 행 · 열을 고르고, 칸마다 묶음 하나나 마커 하나)와 같다. 요청이
+     * 고를 수 있는 행 · 열 상한(24)과는 묶지 않는다 — 24 × 24 면 반경 응답이 상한 전(#390 약 590 KB)으로 돌아간다. 상한 전에는
+     * 1 km 반경 한 번이 후보 1,842행 · 응답 약 590 KB 였다(#390).
      */
-    static final int RADIUS_MARKER_LIMIT = GRID_DIVISIONS * GRID_DIVISIONS;
+    static final int RADIUS_MARKER_LIMIT = DEFAULT_GRID_DIVISIONS * DEFAULT_GRID_DIVISIONS;
 
     private final PropertyMapper propertyMapper;
     private final DistrictCountCache districtCountCache;
@@ -122,22 +130,25 @@ public class PropertyQueryService {
      * 지도 묶음. 격자 칸 집계를 먼저 하고, 합계가 임계 이하면 영역 전량을 마커로, 넘으면 두 건 이상인 칸은
      * 묶음 · 한 건뿐인 칸은 마커로 돌려준다. API 명세서(매물) 1.12. 읽기 분산이 켜지면 읽기용 풀에서 읽는다(#343).
      *
-     * <p>같은 필터 · 표시 영역 · 격자는 슬롯 로컬 캐시에서 돌려준다 — {@link MapClusterCache}. 빗나가면 이 스레드에서 조회한다.
+     * <p>같은 필터 · 표시 영역 · 행 · 열은 슬롯 로컬 캐시에서 돌려준다 — {@link MapClusterCache}. 빗나가면 이 스레드에서 조회한다.
      * 검증은 캐시보다 먼저 한다 — 잘못된 영역은 키를 만들지 않는다.
      */
     @ReplicaRead
     public PropertyMapClustersResponse getMapClusters(PropertyMapClustersRequest request) {
         BoundingBox box = validBox(request);
         DistrictCountRequest filter = request.toFilter();
-        return mapClusterCache.getOrLoad(filter, box, GRID_DIVISIONS, () -> loadMapClusters(filter, box));
+        int rows = request.rows() != null ? request.rows() : DEFAULT_GRID_DIVISIONS;
+        int cols = request.cols() != null ? request.cols() : DEFAULT_GRID_DIVISIONS;
+        return mapClusterCache.getOrLoad(filter, box, rows, cols, () -> loadMapClusters(filter, box, rows, cols));
     }
 
-    private PropertyMapClustersResponse loadMapClusters(DistrictCountRequest filter, BoundingBox box) {
-        double cellLat = (box.maxLat() - box.minLat()) / GRID_DIVISIONS;
-        double cellLng = (box.maxLng() - box.minLng()) / GRID_DIVISIONS;
+    private PropertyMapClustersResponse loadMapClusters(DistrictCountRequest filter, BoundingBox box,
+            int rows, int cols) {
+        double cellLat = (box.maxLat() - box.minLat()) / rows;
+        double cellLng = (box.maxLng() - box.minLng()) / cols;
 
         List<MapClusterCellRow> cells = propertyMapper.selectClusterCells(
-                PropertySearchCondition.ofClusters(filter, box, cellLat, cellLng, GRID_DIVISIONS - 1));
+                PropertySearchCondition.ofClusters(filter, box, cellLat, cellLng, rows - 1, cols - 1));
         long total = cells.stream().mapToLong(MapClusterCellRow::count).sum();
 
         if (total <= CLUSTER_THRESHOLD) {
@@ -350,7 +361,7 @@ public class PropertyQueryService {
                 c.propertyType(), c.riskGrades(), c.areaMin(), c.areaMax(),
                 c.minLat(), c.maxLat(), c.minLng(), c.maxLng(),
                 c.sortKey(), ascending, boundary, c.lastDeposit(), boundary, c.lastRegisteredAt(),
-                idBound, remaining, c.cellLat(), c.cellLng(), c.maxCellIndex()));
+                idBound, remaining, c.cellLat(), c.cellLng(), c.maxRowIndex(), c.maxColIndex()));
         if (tail.isEmpty()) {
             return head;
         }

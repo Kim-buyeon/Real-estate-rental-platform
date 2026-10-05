@@ -24,7 +24,7 @@ public interface PropertyMapper {
 
     /**
      * 공통 필터 · 바운딩 박스를 적용한 매물을 격자 칸으로 묶은 집계(명세 1.12). 매물이 있는 칸만, 행 · 열 순.
-     * 조건의 {@code cellLat} · {@code cellLng} · {@code maxCellIndex} 가 채워져 있어야 한다.
+     * 조건의 {@code cellLat} · {@code cellLng} · {@code maxRowIndex} · {@code maxColIndex} 가 채워져 있어야 한다.
      */
     List<MapClusterCellRow> selectClusterCells(PropertySearchCondition condition);
 

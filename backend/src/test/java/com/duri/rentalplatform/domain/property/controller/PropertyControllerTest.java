@@ -1,5 +1,6 @@
 package com.duri.rentalplatform.domain.property.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -28,6 +29,9 @@ import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -35,6 +39,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * {@link PropertyController} 의 인가 · 요청 검증을 확인한다. 서비스는 목킹한다 — 여기서 보는 것은
@@ -186,6 +191,58 @@ class PropertyControllerTest {
                 .andExpect(jsonPath("$.error.field").value("maxLng"));
 
         verify(queryService, never()).getMapClusters(any());
+    }
+
+    @Test
+    @DisplayName("지도 묶음: rows · cols 가 없으면 200 이고 서비스에 null 로 넘긴다(기본 12 는 서비스가 채운다)")
+    void mapClustersWithoutGridPassesNull() throws Exception {
+        when(queryService.getMapClusters(any(PropertyMapClustersRequest.class)))
+                .thenReturn(PropertyMapClustersResponse.unclustered(0L, List.of()));
+
+        mockMvc.perform(clustersRequest())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        ArgumentCaptor<PropertyMapClustersRequest> captor = ArgumentCaptor.forClass(PropertyMapClustersRequest.class);
+        verify(queryService).getMapClusters(captor.capture());
+        assertThat(captor.getValue().rows()).isNull();
+        assertThat(captor.getValue().cols()).isNull();
+    }
+
+    @Test
+    @DisplayName("지도 묶음: rows · cols 가 범위(1 ~ 24) 안이면 그대로 서비스에 넘긴다")
+    void mapClustersPassesGrid() throws Exception {
+        when(queryService.getMapClusters(any(PropertyMapClustersRequest.class)))
+                .thenReturn(PropertyMapClustersResponse.unclustered(0L, List.of()));
+
+        mockMvc.perform(clustersRequest().param("rows", "1").param("cols", "24"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<PropertyMapClustersRequest> captor = ArgumentCaptor.forClass(PropertyMapClustersRequest.class);
+        verify(queryService).getMapClusters(captor.capture());
+        assertThat(captor.getValue().rows()).isEqualTo(1);
+        assertThat(captor.getValue().cols()).isEqualTo(24);
+    }
+
+    @ParameterizedTest(name = "{0}={1}")
+    @CsvSource({"rows, 0", "cols, 25", "rows, abc", "cols, 1.5"})
+    @DisplayName("지도 묶음: rows · cols 가 범위 밖이거나 정수가 아니면 400 INVALID_REQUEST 이고 field 는 그 이름이다")
+    void mapClustersInvalidGridReturns400(String name, String value) throws Exception {
+        mockMvc.perform(clustersRequest().param(name, value))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.error.field").value(name));
+
+        verify(queryService, never()).getMapClusters(any());
+    }
+
+    /** 명세 1.12 요청 예시(필수 값만). */
+    private static MockHttpServletRequestBuilder clustersRequest() {
+        return get("/api/properties/map-clusters")
+                .param("district", "강서구")
+                .param("minLat", "37.52").param("maxLat", "37.58")
+                .param("minLng", "126.81").param("maxLng", "126.89");
     }
 
     @Test
