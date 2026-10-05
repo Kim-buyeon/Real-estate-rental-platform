@@ -110,6 +110,7 @@
 | **`nginx -t`를 reload 전에 항상 실행** | 설정을 스크립트로 수정하므로 치환 실패 가능성이 있다 |
 | **Nginx 설정 변경은 체크아웃 → `nginx -t` → reload로 반영한다. 진입 파일(`infra/nginx/entry.conf`)만 예외다** | `conf.d/` · `main/`은 폴더째 마운트해 `git checkout`이 파일을 새로 만들어도 이름으로 다시 찾는다. 진입 파일은 파일 단위 마운트라 바꾸면 컨테이너가 옛 파일을 계속 보므로 재생성이 필요하다(4.1) |
 | **수집기 설정(`infra/prometheus/agent.yml`) 변경은 체크아웃 → `docker compose up -d --no-deps --force-recreate prom-agent`로 반영한다** — DB 노드의 `agent-db.yml`이면 그 노드에서 `prom-agent-db`, APP-02의 `agent-app-node.yml`이면 그 노드에서 `prom-agent-app-node` | 저장소 파일은 자리표시자가 든 틀이고 기동 셸이 환경 변수로 채운 사본을 tmpfs에 써서 그것으로 뜬다(운영 Compose 주석). 정의가 그대로면 `up -d`는 재생성하지 않아 **옛 대상으로 조용히 계속 돈다** — #209에서 실측. 재생성하는 수십 초 동안 원격 쓰기가 빈다. 반영 뒤 노드에서 `curl -s 127.0.0.1:9090/api/v1/targets`로 전 대상 `up`을 본다(#209 · #211) |
+| **로그 전송기 설정(`infra/vector/vector.toml`) 변경은 그 노드에서 체크아웃 → `docker compose up -d --no-deps --force-recreate vector`로 반영한다** — APP-01 · APP-02 둘 다 | 파일 하나를 바인드 마운트해 체크아웃이 만든 새 파일이 컨테이너에 보이지 않고, 정의가 그대로면 `up -d`는 재생성하지 않는다(위 수집기와 같은 이유). 반영 뒤 `docker compose logs --since 2m vector`에 오류가 없고 Grafana 탐색에서 그 노드의 `{node="…"}` 줄이 다시 들어오는지 본다. 재생성 동안의 로그는 체크포인트(`vectordata`)로 이어 보낸다 |
 | **`down` 플래그만 토글한다** | 서버 목록 자체를 바꾸면 실패 시 설정과 컨테이너 상태가 어긋난다 |
 | **배포 착수 전에 `upstream.conf`가 추적 상태와 같은지 확인하고, 다르면 중단한다** | 위 두 규칙이 부딪히는 자리다. 실패로 멈춘 배포는 슬롯을 `down`으로 남기는데 그 상태에서 체크아웃이 돌면 **죽은 슬롯이 upstream에 되살아난다.** 배포 스크립트가 착수 단계에서 한 번만 본다(3.2) |
 | **제외 → drain → 교체 → 확인 → 복귀 순서 고정** | 컨테이너를 먼저 정지하면 그 사이 요청이 전부 실패한다 |
