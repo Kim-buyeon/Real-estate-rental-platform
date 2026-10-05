@@ -34,8 +34,9 @@
 
 | 노드 | 재부팅 중 | 방법 |
 |---|---|---|
-| APP-01 | **서비스 전체 중단**(입구가 이 노드 하나 — Nginx · Redis가 함께 멈춰 APP-02 슬롯이 살아 있어도 요청이 닿지 않는다, 시스템 구성서 3장). **3노드에서는 NAT을 겸하므로 DB 노드의 인터넷 출구도 함께 끊긴다**(시스템 구성서 4장). **3노드 실측 — 재부팅 명령에서 API 200까지 92초**(2026-09-25, 9.5 9단계). 이하 옛 단일 노드 실측 — **부팅 후 전 컨테이너 정상 88초**(2026-09-23). 화면은 10초쯤에 뜨지만 그때 API 는 아직 실패한다 — **복귀 판정은 API 로 한다**(71초). 2026-09-25 재부팅(SELinux enforcing 전환 확인)은 명령에서 API 첫 200까지 약 93초(9.1) | 공지 후 저트래픽 시간대. 기동 뒤 배포 확인(3장)과 같은 확인 |
-| APP-02 | 기능 영향 없음 — APP-01 두 슬롯이 받는다. **멈춘 동안 원격 슬롯으로 간 요청 일부가 2 ~ 4초 늦다**(시스템 구성서 5.2 · 9.1 APP-02 실측). 다른 노드에는 영향이 없다 | 그대로 재부팅. 그동안 배포하려면 `APP_NODE_SSH=`(3.2). 기동 뒤 APP-01에서 두 원격 슬롯 readiness |
+| APP-01 · APP-02 — **입구 이중화(#404) 반영 뒤** | 입구(고정 IP)를 가진 노드를 재부팅하면 감시가 다른 노드로 옮기기까지 입구가 빈다(미확정 — 9.6 리허설). 그래서 **먼저 계획 이동으로 입구 · Redis primary 를 다른 노드로 옮기고**(9.6 「되돌리기」 첫 두 줄) 재부팅한다 — 그러면 대기 노드 재부팅과 같아진다. 대기 노드 재부팅은 슬롯 둘이 빠지는 것(아래 APP-02 행과 같은 지연)과 그 AZ 사설 노드의 인터넷 출구가 끊기는 것뿐이다 | 계획 이동 → 재부팅 → 기동 뒤 그 노드 저널 「대기 노드다」 · Redis `role` 복제본 |
+| APP-01(#404 이전) | **서비스 전체 중단**(입구가 이 노드 하나 — Nginx · Redis가 함께 멈춰 APP-02 슬롯이 살아 있어도 요청이 닿지 않는다, 시스템 구성서 3장). **3노드에서는 NAT을 겸하므로 DB 노드의 인터넷 출구도 함께 끊긴다**(시스템 구성서 4장). **3노드 실측 — 재부팅 명령에서 API 200까지 92초**(2026-09-25, 9.5 9단계). 이하 옛 단일 노드 실측 — **부팅 후 전 컨테이너 정상 88초**(2026-09-23). 화면은 10초쯤에 뜨지만 그때 API 는 아직 실패한다 — **복귀 판정은 API 로 한다**(71초). 2026-09-25 재부팅(SELinux enforcing 전환 확인)은 명령에서 API 첫 200까지 약 93초(9.1) | 공지 후 저트래픽 시간대. 기동 뒤 배포 확인(3장)과 같은 확인 |
+| APP-02(#404 이전) | 기능 영향 없음 — APP-01 두 슬롯이 받는다. **멈춘 동안 원격 슬롯으로 간 요청 일부가 2 ~ 4초 늦다**(시스템 구성서 5.2 · 9.1 APP-02 실측). 다른 노드에는 영향이 없다 | 그대로 재부팅. 그동안 배포하려면 `APP_NODE_SSH=`(3.2). 기동 뒤 APP-01에서 두 원격 슬롯 readiness |
 | DB-01 | **전 기능 중단**(시스템 구성서 5.2 Primary 정지) | 점검 모드(4.2)로 쓰기를 막고 재부팅, 기동 뒤 해제 |
 | DB-02 | 영향 없음(복제만 잠시 멈춘다). 설계의 NAS-01 · NAT-01은 3노드에 없다 — NAT은 APP-01 행 | 그대로 재부팅. 기동 뒤 복제 재개 확인 |
 
@@ -115,7 +116,7 @@
 | **실패 시 해당 슬롯을 down으로 유지하고 중단** | 남은 슬롯이 구버전으로 계속 서비스하므로 별도 롤백이 불필요하다 |
 | **첫 슬롯은 복귀 전에 관찰한다** | 워밍업 60초 뒤 교체한 슬롯을 직접 두드려(3.3) 통과해야 upstream에 넣는다. 알림 규칙(5xx 비율 · 응답 p95 — 관측 설계서 5.1)은 upstream에 들어간 뒤의 사용자 트래픽을 10분 넘게 보므로 넣기 전 판정에 쓸 수 없어, 판정 요청을 스스로 만든다 |
 | **화면(web)은 슬롯이 모두(두 노드의 넷) 끝난 뒤 교체한다** | 중간에 멈추면 신버전 화면이 구버전 API를 부른다 |
-| **upstream 토글 · readiness · 관찰은 APP-01에서, 원격 슬롯의 교체만 SSH로** | 앞단 Nginx가 APP-01에만 있다. readiness를 APP-01에서 사설망으로 보면 Nginx가 요청을 보내는 길과 같은 길을 본다(4슬롯 — #255) |
+| **배포는 어느 앱 노드에서든 한다. upstream 토글은 두 노드의 Nginx 모두에, readiness · 관찰은 돌리는 노드에서, 상대 노드의 슬롯 · 화면 교체는 SSH로** | 입구 이중화(#404)부터 앞단 Nginx가 두 앱 노드에 하나씩 있고 같은 upstream으로 네 슬롯을 본다 — 한쪽만 토글하면 고정 IP가 옮겨 간 순간 교체 중인 슬롯에 요청이 간다. readiness를 사설망으로 보면 Nginx가 요청을 보내는 길과 같은 길을 본다(4슬롯 — #255). 전에는 앞단이 APP-01에만 있어 모두 APP-01에서 했다 |
 | **이전 이미지 태그 3개 보존** | 배포 완료 후 문제가 발견된 경우의 롤백 경로 |
 | **배포 전 이미지 취약점 스캔** | 취약한 이미지를 올리면 발견할 때까지 노출된 상태로 운영된다 |
 
@@ -144,20 +145,21 @@ bash deploy.sh <이전 해시> --rollback   # 롤백 — 관찰을 건너뛴다(
 
 | 단계 | 하는 일 | 실패하면 |
 |---|---|---|
-| 드리프트 가드 | `upstream.conf`가 추적 상태와 같은지 `git status --porcelain`으로 본다 | 다르면 `down`으로 남은 슬롯을 노드 · 이름으로 짚고 복구 경로를 출력한 뒤, 아무것도 바꾸지 않은 채 멈춘다 |
-| 원격 노드 확인 | `APP_NODE_SSH`로 APP-02에 붙어 체크아웃(`APP_NODE_DIR`)의 `docker-compose.yml` · `.env`가 있는지 본다. 두 노드 체크아웃의 커밋을 비교한다 | 닿지 못하거나 없으면 **아무 슬롯도 건드리지 않고** 멈춘다. 커밋이 다르면 경고만 — 체크아웃을 맞추는 것은 사람이 한다 |
-| 이미지 확인 | 두 이미지가 APP-01에 없으면 받는다. 앱 이미지가 APP-02에 없으면 그 노드가 받는다(APP-01 NAT 경유) | 아무것도 바꾸지 않은 채 멈춘다 |
-| 슬롯마다(APP-02 app-2 → APP-01 app-2 → APP-02 app-1 → APP-01 app-1) | `down` 토글 → drain 30초 → 교체(`--no-deps --force-recreate` — APP-02 슬롯은 SSH로 그 노드의 체크아웃에서) → readiness 60회 × (시도 + 2초) — 루프백처럼 연결이 즉시 거절되면 약 120초, 원격 슬롯이 패킷을 버리면(연결 상한 2초) 약 240초, 연결 뒤 응답이 늦으면(요청 상한 3초) 약 300초(APP-01에서 그 슬롯의 주소로) → **복귀 전 예열** — 주요 조회 세 경로 × `WARM_ROUNDS`(기본 20)를 그 슬롯에 직접(결과는 보지 않는다. 부하 중 배포 T6에서 새 JVM 첫 요청이 최대 4 ~ 6초였다 — #273) | 그 슬롯을 `down`으로 둔 채 멈춘다. 남은 슬롯이 구버전으로 서비스한다 |
+| 이 노드 가리기 | `infra/.env`의 `APP_PUBLISH_ADDR`(자기 사설 IP)로 이 노드와 상대 노드를 가른다(#404) | 두 앱 노드 주소 중 하나가 아니면 아무것도 바꾸지 않고 멈춘다 |
+| 드리프트 가드 | **두 노드의** `upstream.conf`가 추적 상태와 같은지 `git status --porcelain`으로 본다(상대 노드는 SSH로) | 다르면 `down`으로 남은 슬롯을 노드 · 이름으로 짚고 복구 경로를 출력한 뒤, 아무것도 바꾸지 않은 채 멈춘다 |
+| 상대 노드 확인 | `APP_NODE_SSH`로 상대 앱 노드에 붙어 체크아웃(`APP_NODE_DIR`)의 `docker-compose.yml` · `.env`가 있는지, 그 노드의 Nginx가 떠서 `nginx -t`를 통과하는지 본다. 두 노드 체크아웃의 커밋을 비교한다 | 닿지 못하거나 없으면 **아무 슬롯도 건드리지 않고** 멈춘다. 커밋이 다르면 경고만 — 체크아웃을 맞추는 것은 사람이 한다 |
+| 이미지 확인 | 두 이미지가 두 노드에 없으면 각 노드가 받는다(#404부터 상대 노드도 화면 이미지까지) | 아무것도 바꾸지 않은 채 멈춘다 |
+| 슬롯마다(상대 app-2 → 이 노드 app-2 → 상대 app-1 → 이 노드 app-1) | `down` 토글(**두 노드의 Nginx** — 이 노드 → 상대 노드 순) → drain 30초 → 교체(`--no-deps --force-recreate` — 상대 노드 슬롯은 SSH로 그 노드의 체크아웃에서) → readiness 60회 × (시도 + 2초) — 연결이 즉시 거절되면 약 120초, 슬롯이 패킷을 버리면(연결 상한 2초) 약 240초, 연결 뒤 응답이 늦으면(요청 상한 3초) 약 300초(이 노드에서 그 슬롯의 사설 IP로) → **복귀 전 예열** — 주요 조회 세 경로 × `WARM_ROUNDS`(기본 20)를 그 슬롯에 직접(결과는 보지 않는다. 부하 중 배포 T6에서 새 JVM 첫 요청이 최대 4 ~ 6초였다 — #273) | 그 슬롯을 `down`으로 둔 채 멈춘다. 남은 슬롯이 구버전으로 서비스한다 |
 | 첫 슬롯만 | 워밍업 60초 → `smoke.sh <주소> <포트>`(3.3) → 통과해야 복귀 | 같다 |
-| 화면 | 슬롯 넷이 끝난 뒤 web 교체 | — |
-| 기록 | APP-01 `.env`의 `APP_IMAGE` · `WEB_IMAGE`, APP-02 `.env`의 `APP_IMAGE`를 새 태그로(APP-02에는 화면이 없다) | 중간에 멈추면 기록하지 않는다 — `.env`는 구버전을 가리키므로 이후 `docker compose up`이 남은 슬롯을 바꾸지 않는다. **APP-02 기록만 실패하면** 슬롯은 모두 신버전인데 그 노드의 `.env`만 옛 태그다 — 스크립트가 복구 명령을 출력하고 정리 · 드리프트 확인까지 마친 뒤 비0으로 끝난다. **고치기 전에는 APP-02에서 `docker compose up`을 부르지 않는다** — 슬롯이 구버전으로 돌아간다 |
+| 화면 | 슬롯 넷이 끝난 뒤 web 교체 — 이 노드 → 상대 노드(#404) | 상대 노드 교체가 실패하면 끝에서 비0 — 입구가 그 노드로 옮겨 가면 옛 화면이 나간다 |
+| 기록 | 두 노드 `.env`의 `APP_IMAGE` · `WEB_IMAGE`를 새 태그로(#404 — 전에는 APP-02에 화면이 없어 `APP_IMAGE`만) | 중간에 멈추면 기록하지 않는다 — `.env`는 구버전을 가리키므로 이후 `docker compose up`이 남은 슬롯을 바꾸지 않는다. **APP-02 기록만 실패하면** 슬롯은 모두 신버전인데 그 노드의 `.env`만 옛 태그다 — 스크립트가 복구 명령을 출력하고 정리 · 드리프트 확인까지 마친 뒤 비0으로 끝난다. **고치기 전에는 APP-02에서 `docker compose up`을 부르지 않는다** — 슬롯이 구버전으로 돌아간다 |
 | 정리 | 두 노드에서 최근 태그 3개(지금 것 포함)를 남기고 지운다 | — |
 
 - `down` 토글은 이미 `down`인 줄을 건드리지 않는다 — 실패로 멈춘 슬롯을 롤백으로 다시 돌릴 때 `down down`이 되지 않게 한다.
 - `DRAIN` · `WARMUP` · `WARM_ROUNDS`(복귀 전 예열 횟수, 0 이면 끔) · `REGISTRY` 환경 변수로 기본값을 덮을 수 있다(로컬 시험용). 예열의 최악 소요는 슬롯당 약 120 ~ 180초(스크립트 주석).
 - **교체 순서는 노드를 번갈아 한 슬롯씩이다** — 어느 순간에도 두 노드 모두에 서비스하는 슬롯이 남는다. 순서와 이유는 `deploy.sh`의 `SLOTS` 주석이 갖는다.
-- `APP_NODE_SSH` · `APP_NODE_DIR` — APP-02에 붙는 SSH 대상과 그 노드의 체크아웃 자리. 기본값은 `deploy.sh` 머리 주석. SSH는 비대화식(BatchMode)이라 **APP-01 `deploy`가 APP-02 `deploy`에 키로 붙을 수 있어야 한다** — 키 · SSH 설정은 9.1 APP-02. 없으면 「원격 노드 확인」에서 멈춘다(실측 — 9.1 APP-02).
-- **APP-02가 꺼져 있으면 `APP_NODE_SSH=`(빈 값)로 부른다** — 원격 슬롯을 건너뛴다. 건너뛰기 전에 원격 슬롯 readiness를 짧게 한 번 두드려 **하나라도 UP이면 아무것도 바꾸지 않고 멈춘다** — 떠 있는 원격 슬롯이 구버전으로 남으면 배포 끝의 화면 교체가 신버전 화면에서 그 구버전 API를 부르게 만든다(3.1 화면 행). 원격 슬롯을 건너뛴 경우 처음 실제로 바꾼 슬롯이 관찰 대상이다.
+- `APP_NODE_SSH` · `APP_NODE_DIR` — 상대 앱 노드에 붙는 SSH 대상과 그 노드의 체크아웃 자리. 기본값은 `deploy.sh` 머리 주석. SSH는 비대화식(BatchMode)이라 **돌리는 노드의 `deploy`가 상대 노드 `deploy`에 키로 붙을 수 있어야 한다** — #404부터 두 방향(9.6). 없으면 「상대 노드 확인」에서 멈춘다(실측 — 9.1 APP-02).
+- **상대 노드가 꺼져 있으면 `APP_NODE_SSH=`(빈 값)로 부른다** — 상대 노드의 슬롯 · Nginx · 화면을 건너뛴다. 건너뛰기 전에 원격 슬롯 readiness를 짧게 한 번 두드려 **하나라도 UP이면 아무것도 바꾸지 않고 멈춘다** — 떠 있는 원격 슬롯이 구버전으로 남으면 배포 끝의 화면 교체가 신버전 화면에서 그 구버전 API를 부르게 만든다(3.1 화면 행). 원격 슬롯을 건너뛴 경우 처음 실제로 바꾼 슬롯이 관찰 대상이다.
 - **4슬롯 배포 리허설**(2026-09-26 · #255 — 같은 태그 `e97e5b5` 재배포, 표본 1회) — 16:03경 시작 → 16:08:00 「배포 완료」(**약 5분**, 첫 슬롯 관찰 포함). 슬롯별 제외 → 복귀 — APP-02 app-2(첫 슬롯) → APP-01 app-2 16:04:36 → 16:05:41 → APP-02 app-1 16:05:42 → 16:06:53 → APP-01 app-1 16:06:54 → 16:07:58 → web. **슬롯당 readiness 33 ~ 38초.** 배포 구간(16:03:00 ~ 16:08:10) APP-01에서 0.2초 간격 조회 **1,369건 전부 200**, 최대 0.373초(16:07:59 — web 교체 직후). 끝난 뒤 `upstream.conf`가 추적 상태와 같고(드리프트 없음) APP-02 `.env`의 `APP_IMAGE`가 새 태그다. **조회만 보냈다** — 쓰기 요청의 무손실은 이 실측이 말하지 않는다(4.2).
 
 **드리프트 가드가 걸렸을 때** — 배포가 실패로 멈춘 뒤 그대로 다시 배포하는 경우다. 순서대로 밟는다.
@@ -205,11 +207,11 @@ APP-02 슬롯은 그 노드의 사설 IP에 게시되므로 주소를 준다 —
 
 슬롯 목록을 별도 파일로 분리해 배포 스크립트가 이 파일만 수정하게 한다. 서버 항목은 항상 네 개가 상주하며 `down` 플래그만 토글된다(2026-09-26 · #255 — 전에는 두 개).
 
-설정 파일은 `infra/nginx/conf.d/upstream.conf`다. 앱 슬롯 네 개(`app` — APP-01 127.0.0.1:8081 · 8082, APP-02 사설 IP의 8081 · 8082, 모두 `max_fails=3 fail_timeout=10s`, `keepalive 32`)와 정적 화면 하나(`web` — 127.0.0.1:8090)를 둔다. **배포 스크립트는 `app`의 `down` 플래그만 토글한다** — 두 노드의 슬롯이 같은 포트라 「주소:포트」로 가른다.
+설정 파일은 `infra/nginx/conf.d/upstream.conf`다. 앱 슬롯 네 개(`app` — APP-01 · APP-02 사설 IP의 8081 · 8082, 모두 `max_fails=3 fail_timeout=10s`, `keepalive 32`)와 정적 화면 하나(`web` — 127.0.0.1:8090, 그 노드의 것)를 둔다. **두 앱 노드의 Nginx가 이 파일을 그대로 쓴다**(입구 이중화 #404 — 노드별 파일 · 템플릿이 없다. 이유는 그 파일 머리 주석). **배포 스크립트는 `app`의 `down` 플래그만, 두 노드 모두에서 토글한다** — 두 노드의 슬롯이 같은 포트라 「주소:포트」로 가른다.
 
-**주소를 컨테이너 이름이 아니라 IP로 고정한다.** Nginx는 upstream 호스트명을 설정 로드 시점에 한 번 해석하므로, 컨테이너 이름을 쓰면 컨테이너 재생성으로 IP가 바뀌었을 때 옛 IP로 계속 전달하는 문제가 발생할 수 있다. APP-01 슬롯은 루프백, APP-02 슬롯은 그 노드의 고정 사설 IP(시스템 구성서 4장)라 재생성으로 바뀌지 않는다.
+**주소를 컨테이너 이름이 아니라 IP로 고정한다.** Nginx는 upstream 호스트명을 설정 로드 시점에 한 번 해석하므로, 컨테이너 이름을 쓰면 컨테이너 재생성으로 IP가 바뀌었을 때 옛 IP로 계속 전달하는 문제가 발생할 수 있다. 슬롯은 그 노드의 고정 사설 IP(시스템 구성서 4장)라 재생성으로 바뀌지 않는다. #404 전에는 APP-01 슬롯이 루프백이었다 — 상대 노드의 Nginx가 붙어야 해서 사설 IP 게시로 바꿨고, 게시 주소가 하나라 자기 노드의 Nginx도 사설 IP로 본다.
 
-**APP-02가 멈춰 있어도 네 줄은 그대로 둔다**(노드는 함께 켜고 끈다 — 2026-09-26 결정). 원격 두 줄은 연결 시간 초과가 나는 서버가 되고, `/api/`의 재시도가 로컬 슬롯으로 넘기며 `max_fails`가 그 줄을 잠시 뺀다. 대가는 그 동안의 지연이다 — 동작과 값의 자리는 `upstream.conf` 머리 주석과 `default.conf`의 `/api/` 블록, 실측은 9.1 APP-02.
+**한 노드가 멈춰 있어도 네 줄은 그대로 둔다**(노드는 함께 켜고 끈다 — 2026-09-26 결정). 그 노드의 두 줄은 연결 시간 초과가 나는 서버가 되고, `/api/`의 재시도가 로컬 슬롯으로 넘기며 `max_fails`가 그 줄을 잠시 뺀다. 대가는 그 동안의 지연이다 — 동작과 값의 자리는 `upstream.conf` 머리 주석과 `default.conf`의 `/api/` 블록, 실측은 9.1 APP-02.
 
 **Nginx 컨테이너는 `network_mode: host`로 기동한다.** 브리지 네트워크에 두면 컨테이너 안의 `127.0.0.1`이 호스트가 아니라 컨테이너 자신을 가리켜 위 설정이 동작하지 않는다. 호스트 네트워크를 쓰면 애플리케이션이 노출한 루프백 포트에 그대로 접근할 수 있고, 컨테이너 이름 해석에 의존하지 않으므로 DNS 캐싱 문제도 발생하지 않는다.
 
@@ -249,7 +251,9 @@ Compose 정의는 `infra/docker-compose.yml`의 `nginx` 서비스다(배포 스�
 
 ### 4.3 HTTPS 인증서 — 발급 · 갱신
 
-**Let's Encrypt IP 주소 인증서**(`shortlived` 프로필 · 유효 160시간 · ECDSA P-256)를 `infra/tls/issue-cert.sh` 가 발급한다(2026-09-28 · #288, 설계서 4.1). APP-01 에만 있다. 발급 조건 · 기다리는 것 · 한도 보호 · 지표는 스크립트 머리 주석이 갖는다 — 여기에 옮기지 않는다.
+**Let's Encrypt IP 주소 인증서**(`shortlived` 프로필 · 유효 160시간 · ECDSA P-256)를 `infra/tls/issue-cert.sh` 가 발급한다(2026-09-28 · #288, 설계서 4.1). 발급 조건 · 기다리는 것 · 한도 보호 · 지표는 스크립트 머리 주석이 갖는다 — 여기에 옮기지 않는다.
+
+**입구 이중화(#404)부터 두 앱 노드에 있다.** `/etc/rental/entry.env` 의 `ENTRY_IP`(입구 고정 IP)로 발급하고, **고정 IP 를 가진 노드만 발급**해 상대 노드 `deploy` 의 `~/rental-tls-inbox/` 로 사본을 넘긴다. 다른 노드는 발급하지 않고 넘겨받은 쌍을 검사해 끼운다 — 그래서 고정 IP 가 옮겨 가도 새 노드가 이미 같은 IP 의 유효한 인증서를 내보낸다. 사본은 이 작업의 주기(부팅 20초 뒤 · 12시간마다)로 들어간다. 넘기기가 실패하면 지표 `rental_job_last_success_timestamp_seconds{task="tls_cert_copy"}` 가 멈추고, 대기 노드에는 임시 자체 서명이 남아 「자체 서명 사용 중」 경보가 울린다. 고정 IP 를 쓰므로 아래 「켤 때마다(IP 가 바뀐다)」는 더 일어나지 않는다 — `entry.env` 가 없으면 예전처럼 동작한다. 설치 순서는 9.6. **아래 설치 표는 #288 의 APP-01 기록이다.**
 
 **설치(APP-01, 한 번)** — 2026-09-28 에 밟은 순서다.
 
@@ -569,9 +573,11 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 **메모리** — Rocky 9.8 이미지는 **kdump용으로 192 MB를 예약한다**(`crashkernel=1G-4G:192M`) — t3.small의 `free` total이 **1713 MiB**(AL2023 1909)로 보이고, 서비스를 올린 APP-01의 available이 150 MiB까지 내려갔다. **세 노드에서 끈다** — `sudo grubby --update-kernel=ALL --remove-args=crashkernel` → `sudo systemctl disable --now kdump` → 재부팅(2026-09-25, 사용자 승인). 뒤에 total **1905 MiB**, APP-01 available **386 MiB**. 대가는 커널 패닉 때 덤프를 못 남기는 것이다. **새 커널이 설치되면 예약이 다시 붙는다** — 2026-09-26 보안 갱신(5.14.0-687.51.1)이 `crashkernel=…2G-64G:256M`을 달고 들어왔고, 재부팅 뒤 APP-01 total이 1649 MiB로 줄어 부하 아래 메모리가 말라 노드가 멈췄다(#258). `grubby --update-kernel=ALL`은 그때 있던 커널에만 걸리므로 **세 가지를 함께 둔다** — `/etc/kdump.conf`의 `auto_reset_crashkernel no`, `/etc/default/grub`의 `GRUB_CMDLINE_LINUX`에서 `crashkernel=` 제거, `grubby --update-kernel=ALL --remove-args=crashkernel`. 네 노드에 반영했고(2026-09-26 20:2x) APP-01 · DB-02는 재부팅으로 1905 MiB를 확인했다. 확인은 `grep -c crashkernel /proc/cmdline`이 0. 운영 Compose의 메모리 상한은 이 1905 MiB(DB 노드)를 기준으로 맞는다 — 앱 노드는 t3.medium(4 GiB)으로 올렸고(2026-10-05 00:57 APP-02 · 01:01 APP-01, #394) total **3831 MiB**다(두 노드, `free -m`). 유형 변경은 같은 루트 볼륨으로 다시 켜는 것이라 kdump 설정도 남았다 — 두 노드 `grep -c crashkernel /proc/cmdline` 0.
 
+**입구 이중화(#404) 반영 뒤에는 공인 주소가 바뀌지 않는다** — 입구는 고정 IP(Elastic IP)이고 켤 때 SSH 설정 · 카카오맵 도메인 · 인증서를 고칠 일이 없다. 대신 **꺼 둔 동안에도 고정 IP가 과금되고**(시스템 구성서 6장), **켠 뒤 고정 IP가 어느 노드에 있는지 본다** — 되찾지 않으므로 끌 때의 순서에 따라 APP-02에 있을 수 있다(9.6 「켜고 끌 때」). 아래 단락은 그 전의 절차다.
+
 **켜고 끄기(본인 계정 — 작업할 때만 켠다)** — **네 노드(APP-02 포함, #255)를 함께 켜고 끈다**(2026-09-26 결정). 끌 때 `aws ec2 stop-instances --instance-ids <네 ID>`, 켤 때 `start-instances` → `wait instance-status-ok` → `describe-instances --query '…PublicIpAddress'`로 **APP-01의 새 공인 주소**를 얻어 SSH 설정의 `HostName`을 고친다(Elastic IP를 쓰지 않는다 — 시스템 구성서 2.1). 사설 IP는 바뀌지 않는다. **정지해도 EBS는 과금된다.** APP-02만 멈춘 동안은 upstream 네 줄을 그대로 두고(4.1), 배포는 `APP_NODE_SSH=`로 한다(3.2) — 원격 슬롯으로 간 요청이 연결 시간 초과 2초만큼 늦는 것은 받아들인다(같은 결정). **켠 뒤 확인할 것(2026-09-28 추가)** — ① HTTPS 인증서는 부팅 약 32초 뒤 새 IP 로 자동 발급된다(4.3) — `https://<새 IP>` 로 접속을 확인한다. 카카오맵 사이트 도메인도 새 주소로 다시 등록한다(`https://` 를 넣어야 하는지는 미확인 — 설계서 4.1) ② 꺼 둔 동안 02:00 을 넘겼으면 논리 백업을 손으로 한 번(5장 「3노드의 정기 백업」) ③ **켠 직후 `dnf-automatic` 이 놓친 06:00 실행을 따라잡아 보안 갱신을 설치한다** — 2026-09-28 APP-01 은 부팅 약 35분 뒤 14:47 ~ 14:48:42 에 커널을 설치하며(dracut) 노드 CPU 를 크게 썼다(부하 측정 한 단계를 오염시켜 다시 쟀다, #288). 측정 · 배포는 `systemctl status dnf-automatic` 이 끝난(inactive) 뒤에 한다. 커널이 바뀌었으면 다음 재부팅에 반영된다.
 
-**앱 노드 APP-02 준비 — 실제로 밟은 순서**(사용자 본인 계정 · 서울 · 2026-09-26, #255). 3노드 표를 그대로 밟았다. 값(서브넷 · 사설 IP · 보안 그룹)은 시스템 구성서 3 · 4장, 계정 · 신뢰 경로 · Redis TLS의 이유는 설계서 3.3 · 3.6 · 6.2가 갖는다.
+**앱 노드 APP-02 준비 — 실제로 밟은 순서**(사용자 본인 계정 · 서울 · 2026-09-26, #255). **#404 에서 2c 공개 서브넷(`10.20.1.10`)으로 다시 만든다**(같은 볼륨 — 9.6) — 아래 표의 주소 · 보안 그룹 · `.env` · SSH 설정은 그 전의 기록이다. 3노드 표를 그대로 밟았다. 값(서브넷 · 사설 IP · 보안 그룹)은 시스템 구성서 3 · 4장, 계정 · 신뢰 경로 · Redis TLS의 이유는 설계서 3.3 · 3.6 · 6.2가 갖는다.
 
 | 순서 | 명령 | 확인 · 실측 |
 |---|---|---|
@@ -790,3 +796,116 @@ docker stop restore-check        # --rm 이라 복호화한 파일도 함께 사
 - 새 서비스 주소는 APP-01 공인 IP(켤 때마다 바뀐다 — 9.1 「켜고 끄기」). 카카오맵 JS 키의 사이트 도메인에 그 주소를 등록해야 지도가 뜬다
 - **4노드 — 앱 노드 APP-02를 더했다**(2026-09-26 · #255). 순서와 실측은 9.1 「앱 노드 APP-02 준비」. APP-02의 `.env`는 위 2의 DB 노드와 달리 APP-01 사본에서 줄이지 않았다
 - **DB 지표 수집기를 DB 노드로 옮겼다**(#357 — 반영 대기). 반영 때 위 2의 DB 노드 키 목록에 `POSTGRES_MONITOR_USER` · `POSTGRES_MONITOR_PASSWORD`가 더해지고, DB-02는 `PG_EXPORTER_HOST=postgres-standby`도 둔다(운영 Compose `postgres-exporter` 주석). APP-01의 그 둘과 `PG_EXPORTER_SSLMODE`는 쓰이지 않는다
+
+### 9.6 입구 이중화 — 반영 순서 · 전환 리허설 · 되돌리기 (#404)
+
+**무엇을 왜 그렇게 두는지는 시스템 구성서 3장**(액티브-스탠바이 · 고정 IP 이동 · 되찾지 않음 · Redis Sentinel · AZ별 NAT)과 서버 운영 기반 설계서 3장이 갖는다. 여기는 손으로 밟는 순서다. **아직 밟지 않았다** — 밟으며 시각 · 실측을 이 절에 채운다(1장 원칙). 명령은 운영자 PC(AWS CLI · 저장소 체크아웃)와 노드(`deploy` 체크아웃 `/home/deploy/rental`, 관리 명령은 `sudo` 가 되는 계정)에서 돈다.
+
+**순서의 원칙** — 한 번에 한 노드만 서비스에서 뺀다. APP-02를 다시 만드는 동안은 APP-01 혼자 받는다(4.1 — 원격 두 줄이 연결 시간 초과로 빠지는 지연은 받아들인다). APP-01 슬롯의 게시 주소를 바꾸는 동안은 슬롯 하나씩 바꾼다. **앱의 Sentinel 접속(#404 7단계 — 앱 변경)이 든 이미지가 나오기 전에는 7단계를 밟지 않는다** — 그 전까지 슬롯은 지금처럼 APP-01 Redis(6380)에 단독으로 붙는다.
+
+**반영하는 동안 APP-01 의 `rental-tls.timer` 를 멈춘다**(0단계). 그 작업이 Nginx 를 reload 하면 체크아웃만 바뀐 새 upstream(APP-01 슬롯 = 사설 IP)이 슬롯 게시를 바꾸기 전에 실린다.
+
+**APP-01 체크아웃은 9단계 첫 명령에서 바꾼다**(7 · 8단계에서 당기지 않는다). 당긴 뒤 reload 전까지는 디스크의 upstream 이 새것이라, 그 사이 Nginx 컨테이너가 재시작되거나(재생성 · 노드 재부팅 · 다른 작업의 reload) 하면 APP-01 슬롯이 빠진 upstream 이 실린다 — 8단계 전이면 받을 슬롯이 하나도 없다. 그래서 당기기와 reload 를 9단계 안에서 붙여 하고, 그 전에 8단계(APP-02 슬롯)가 서 있어야 한다.
+
+| 단계 | 명령 | 확인 |
+|---|---|---|
+| 0 | APP-01 `sudo systemctl stop rental-tls.timer` | `systemctl is-active rental-tls.timer` → `inactive` |
+| 1 네트워크 | 운영자 PC `DRY_RUN=1 bash infra/aws/entry-network.sh` → 출력을 보고 `bash infra/aws/entry-network.sh` | 끝의 확인 표 — 2c 공개 `10.20.1.0/24` → 공개 경로표(0/0 IGW), 두 사설 서브넷의 경로표가 다르고 둘 다 0/0 → APP-01 ENI, S3 엔드포인트가 두 사설 경로표에. DB-02 에서 WAL 전송이 이어진다(`journalctl -u rental-wal-ship -n 5`) |
+| 2 보안 그룹 | `bash infra/aws/entry-sg.sh` | 규칙 일곱 줄이 「더함」 또는 「있음」, APP-01 그룹에 `rental-app-node` |
+| 3 APP-02 다시 만들기 | 아래 「APP-02 다시 만들기」 | 새 APP-02 `10.20.1.10` · 공인 IP 있음 · 데이터 볼륨이 `/var/lib/docker` |
+| 4 APP-02 OS | APP-02 `sudo bash infra/os/firewalld/app-node.sh`(체크아웃은 아직 옛 커밋 — 먼저 `git -C ~/rental pull` 을 `deploy` 로) → 운영자 PC `bash infra/aws/entry-nat-c.sh` → APP-02 AWS CLI v2(공식 zip — 9.3 과 같다) | `firewall-cmd --list-all` 에 `https` · `26379/tcp` · `forward: yes` · `masquerade: yes`, `ip_forward = 1`. **DB-02 에서** `curl -sS -o /dev/null -w '%{http_code}\n' https://download.docker.com/` 200 · `sudo dnf makecache` — 출구가 APP-02 로 섰다 |
+| 5 노드 간 SSH | ① APP-02 `deploy` 에 `ssh-keygen -t ed25519 -N '' -f ~/.ssh/app-node_ed25519` → 공개키를 APP-01 `deploy` 의 `authorized_keys` 에 `from="10.20.1.10"` 을 붙여 한 줄 → APP-02 `~/.ssh/config`(600)에 `Host 10.20.0.10` · `User deploy` · `IdentityFile ~/.ssh/app-node_ed25519` · `IdentitiesOnly yes` ② APP-01 의 `~/.ssh/config` · `known_hosts` 를 새 주소로 — `Host 10.20.20.30` → `10.20.1.10`, `ssh-keygen -R 10.20.20.30` 뒤 새 호스트 키를 받는다 ③ APP-02 `deploy` 의 `authorized_keys` 에 APP-01 키 줄이 `from="10.20.0.10"` 인지 본다(루트 볼륨을 옮겨 그대로다) | 두 노드에서 `ssh -o BatchMode=yes deploy@<상대> true` 가 묻지 않고 0 |
+| 6 Redis 인증서 | 아래 「Redis 사설 CA」 — 세 노드(APP-01 · APP-02 · DB-02) | 노드마다 `/etc/rental/redis-tls/{server.crt,server.key,ca.crt}`, 앱 노드는 `/etc/rental/redis-tls-ca/ca.crt` 도. `openssl verify -CAfile ca.crt server.crt` OK |
+| 7 APP-01 Redis 인증서 | **체크아웃은 그대로**(위 단락). 6단계의 새 인증서를 둔 뒤 `docker compose restart redis`(옛 정의 그대로 — 인증서만 다시 읽는다) | 재시작 수 초(토큰은 AOF 로 남는다 — 시스템 구성서 5.2). `docker compose exec redis sh -c 'redis-cli --tls --cacert /tls/ca.crt -h 10.20.0.10 -p 6380 -a "$REDIS_PASSWORD" --no-auth-warning ping'` → `PONG`(새 CA 로 검증된다). 옛 정의로도 8단계 복제본의 primary 가 된다 — 복제에 필요한 설정(`masterauth` · `tls-replication`)은 복제본 쪽에만 있다 |
+| 8 APP-02 띄우기 | APP-02 `.env`(아래 「노드별 `.env`」 APP-02 열 — 7단계 전이라 `APP_REDIS_HOST=10.20.0.10` · `APP_REDIS_PORT=6380` 을 남긴다) → `sudo install -D -o root -g root -m 755 ~/rental/infra/tls/issue-cert.sh /opt/rental/infra/tls/issue-cert.sh` → `sudo PREPARE_ONLY=1 /opt/rental/infra/tls/issue-cert.sh` → `docker compose up -d` | `docker compose ps` 11개, redis `role` → `slave` · `master_link_status:up`, 슬롯 readiness(`curl -s 10.20.1.10:8081/actuator/health/readiness`) UP, `curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1/` 200 |
+| 9 APP-01 체크아웃 · upstream · 슬롯 | **8단계의 APP-02 슬롯 둘이 UP 인 것을 먼저 본다**(`curl -s 10.20.1.10:808{1,2}/actuator/health/readiness`). APP-01 `git -C ~/rental pull` → **곧바로** `docker compose exec -T nginx nginx -t && docker compose exec -T nginx nginx -s reload`(새 upstream — 이 순간 APP-01 슬롯은 아직 `10.20.0.10` 에 게시되지 않아 거절되고 요청은 APP-02 슬롯 둘이 받는다. 옛 루프백 슬롯에 남은 요청은 옛 워커가 마친다) → **drain 30초**(배포 스크립트의 `DRAIN` 과 같다) → `.env` 에 `APP_PUBLISH_ADDR=10.20.0.10` · `COMPOSE_PROFILES=app,sentinel` · `REDIS_ANNOUNCE_IP=10.20.0.10` · `REDIS_SENTINEL_MASTER_IP=10.20.0.10` → `docker compose up -d --no-deps --force-recreate app-2` → `10.20.0.10:8082` UP → `app-1` 같게 → `docker compose up -d --no-deps --force-recreate prom-agent`(슬롯 주소) → `docker compose up -d --no-deps --force-recreate redis`(새 정의 — 설정 파일 · `masterauth` · 알림 주소. primary 그대로) | 바꾸는 동안 0.2초 간격 조회(밖에서 APP-01 공인 IP)가 200 — **그동안 슬롯은 APP-02 의 둘뿐이라 처리량이 절반이다**(저트래픽 시간대에 한다). `bash smoke.sh 10.20.0.10 8081` · `8082` 통과, `ss -ltn` 에 `127.0.0.1:808x` 가 없다. `curl -s 127.0.0.1:9090/api/v1/targets` 전 대상 up. `git status` 깨끗. redis 로그에 「처음 만들었다 — replicaof [ ]」, `role` → `master`, APP-02 복제본 `master_link_status:up` |
+| 10 Sentinel | APP-01 `docker compose up -d sentinel` · DB-02 — `git -C ~/rental pull` → `sudo SENTINEL=1 bash infra/os/firewalld/db.sh` → `.env` 에 `COMPOSE_PROFILES=standby,sentinel` · `REDIS_PASSWORD` · `REDIS_ANNOUNCE_IP=10.20.20.10` · `REDIS_SENTINEL_MASTER_IP=10.20.0.10` → `docker compose up -d sentinel`(APP-02 의 것은 8에서 떴다) | 아무 노드에서 `docker compose exec sentinel sh -c 'redis-cli --tls --cacert /tls/ca.crt -h "$REDIS_ANNOUNCE_IP" -p 26379 -a "$REDIS_PASSWORD" --no-auth-warning sentinel ckquorum rental'` → `OK 3 usable Sentinels`, `sentinel master rental` 의 `num-slaves 1` · `num-other-sentinels 2` |
+| 11 앱 → Sentinel | **앱 변경(#404 7단계) 이미지가 있을 때.** 두 노드 `.env` 에 아래 「앱 Sentinel 변수」 → APP-01 에서 `bash deploy.sh <태그>`(새 배포 스크립트 — 두 노드 Nginx 토글) → APP-02 `.env` 의 `APP_REDIS_HOST` · `APP_REDIS_PORT` 를 지운다 | primary 에서 `client list` 에 두 노드 사설 IP 의 슬롯 연결. 9.1 APP-02 「노드 간 토큰」 시험(한 노드에서 로그인 → 다른 노드에서 재발급 → 옛 토큰 거절)을 다시 |
+| 12 고정 IP 할당 · 연결 전 준비 | 운영자 PC `bash infra/aws/entry-eip.sh alloc`(할당만 — 입구는 그대로) → `bash infra/aws/entry-iam.sh` → **주소가 바뀌기 전에** ① 카카오맵 JS 키의 사이트 도메인에 `https://<ENTRY_IP>` 를 더한다(옛 주소는 연결 뒤 지운다) ② 운영자 SSH 설정에 새 주소 줄을 더한다 ③ 두 노드 `/etc/rental/entry.env`(root 644 — 아래 「노드별 `entry.env`」) ④ 두 노드 `issue-cert.sh` 설치(8과 같은 명령) · `rental-tls.{service,timer}` 를 `/etc/systemd/system/` 에 → `daemon-reload`(아직 시작하지 않는다 — 이때 돌면 APP-01 은 고정 IP 를 갖지 않아 「대기」로 보고 옛 인증서를 그대로 둔다) | `describe-addresses` 에 할당만(연결 없음). 두 노드에서 `aws ec2 describe-addresses --region ap-northeast-2 --allocation-ids <ID>` 성공(역할 — 수십 초 걸릴 수 있다) |
+| 13 연결 · 인증서 | 운영자 PC `bash infra/aws/entry-eip.sh attach` → **곧바로** APP-01 `sudo systemctl start rental-tls.service` → APP-02 `sudo systemctl start rental-tls.service` → 두 노드 `sudo systemctl enable --now rental-tls.timer`. 인증서는 연결 뒤에만 받는다 — http-01 확인이 그 주소로 온다(`entry-eip.sh` 머리 주석). 그 수십 초는 옛 주소의 인증서가 나간다 | APP-01 저널에 「이 노드가 가졌다」 · 발급(새 IP 라 한 장) · 「상대 노드에 인증서 사본을 넘겼다」. APP-02 저널에 「넘겨받은 인증서로 바꿨다」. 운영자 PC `curl -sSI https://<ENTRY_IP>/` 가 `-k` 없이 통과, APP-02 사설 IP 로 `openssl s_client -connect 10.20.1.10:443 </dev/null 2>/dev/null \| openssl x509 -noout -ext subjectAltName` → `IP Address:<ENTRY_IP>` |
+| 14 입구 감시 | 두 노드 — `rental-entry-watch.service` 머리 주석의 설치 명령(스크립트 · 유닛) → `sudo ONCE=1 DRY_RUN=1 /opt/rental/infra/os/entry/entry-watch.sh` → `sudo systemctl enable --now rental-entry-watch.service` | APP-01 저널 「이 노드가 입구다」, APP-02 저널 「대기 노드다」 뒤 조용함(상대 응답), `/var/lib/rental-metrics/entry.prom` 의 `rental_entry_eip_held` 1 · 0 |
+| 15 마무리 | 운영자 PC `ALARM_EMAIL=… bash infra/aws/status-check-alarms.sh`(새 APP-02 ID — 같은 이름은 덮어쓴다) · 옛 APP-02 종료 · 새 인스턴스가 처음 받은 루트 볼륨 삭제(아래 표 마지막 줄) | `describe-alarms` 의 APP-02 경보가 새 ID. `maintenance.sh status` 가 두 노드를 보여 준다 |
+
+**APP-02 다시 만들기** — 인스턴스의 주 ENI 는 서브넷을 바꿀 수 없어 새 인스턴스를 2c 공개 서브넷에 만들고 **루트 · 데이터 볼륨을 그대로 옮긴다**(OS 준비 · 계정 · Docker 이미지 · 체크아웃이 남는다 — 9.1 표를 다시 밟지 않는다). 볼륨은 같은 AZ(2c)라 옮길 수 있다. 옛 인스턴스는 새 노드가 설 때까지 지우지 않는다 — 되돌리는 길이다.
+
+| 순서 | 명령 | 확인 |
+|---|---|---|
+| a | APP-02 `sudo rm -f /etc/cloud/cloud-init.disabled` — 새 인스턴스에서 cloud-init 이 새 ENI(새 MAC)로 네트워크를 다시 적게 한다(서버 운영 기반 설계서 8장 cloud-init 행 「ENI 변경을 다시 반영하지 않는다」) | 파일이 없다 |
+| b | `OLD=i-0b2e25a39a9b20d00` · `aws ec2 create-tags --resources $OLD --tags Key=Name,Value=APP-02-old`(스크립트들이 Name 으로 찾는다) → `aws ec2 stop-instances --instance-ids $OLD` → `aws ec2 wait instance-stopped --instance-ids $OLD` | stopped. 이때부터 APP-01 혼자 받는다 |
+| c | `aws ec2 describe-instances --instance-ids $OLD --query 'Reservations[0].Instances[0].[RootDeviceName,BlockDeviceMappings[].[DeviceName,Ebs.VolumeId]]'` 로 루트 · 데이터 볼륨과 장치 이름을 적는다 → 두 볼륨 `detach-volume` → `wait volume-available` | 둘 다 available |
+| d | `NEW=$(aws ec2 run-instances --image-id ami-03fa441f175197a25 --instance-type t3.medium --key-name <키 페어> --network-interfaces "DeviceIndex=0,SubnetId=<2c 공개 서브넷>,PrivateIpAddress=10.20.1.10,AssociatePublicIpAddress=true,Groups=<rental-app>,<rental-app-node>" --metadata-options HttpTokens=required,HttpPutResponseHopLimit=1,HttpEndpoint=enabled --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=APP-02},{Key=Project,Value=rental}]' --query 'Instances[0].InstanceId' --output text)` → `wait instance-running` → `stop-instances` → `wait instance-stopped` | IMDSv2 required · 홉 1(역할을 붙이기 전 — 설계서 3.3) |
+| e | 새 인스턴스의 루트 볼륨(AMI 에서 막 만든 것)을 떼고 → 옛 루트를 c 의 루트 장치 이름으로, 옛 데이터 볼륨을 c 의 장치 이름으로 `attach-volume` → `start-instances` → `wait instance-status-ok` | `describe-instances` — 사설 IP `10.20.1.10` · 공인 IP 있음 · 볼륨 둘 `Encrypted` |
+| f | APP-01 을 거쳐 `10.20.1.10` 에 SSH(호스트 키가 새로 생긴다 — cloud-init 이 새 인스턴스로 보고 다시 만든다) → `cloud-init status --wait` → `ip -4 addr` · `findmnt /var/lib/docker` · `docker ps` → `sudo touch /etc/cloud/cloud-init.disabled` | `10.20.1.10`, 데이터 볼륨 마운트(UUID — 장치 이름이 바뀌어도 맞는다, 9.1 3노드 표 4), Docker 동작. 슬롯 컨테이너는 옛 `.env`(게시 주소 `10.20.20.30`)라 뜨지 못한다 — 8단계에서 고친다 |
+| 마지막 | 15단계에서 — `aws ec2 terminate-instances --instance-ids $OLD`(볼륨은 이미 옮겼다) · d 에서 뗀 루트 볼륨 `delete-volume` | 지운 뒤에는 이 표의 되돌리기가 없다 |
+
+**Redis 사설 CA** — 노드 사이의 Redis · Sentinel 이 서로의 인증서를 같은 `ca.crt` 하나로 검증한다(서버 운영 기반 설계서 3.6). APP-01 에서 root 로 임시 디렉터리(`umask 077`)에 만들고, **CA 개인키는 발급 뒤 지운다**(노드에 남기지 않는다 — 새 노드가 생기면 새 CA 로 세 노드를 다시 발급한다).
+
+```bash
+sudo -i
+umask 077; d=$(mktemp -d)
+openssl ecparam -name prime256v1 -genkey -noout -out "$d/ca.key"
+openssl req -x509 -new -key "$d/ca.key" -days 825 -subj "/CN=rental-redis-ca" -out "$d/ca.crt"
+for n in "app-01 10.20.0.10" "app-02 10.20.1.10" "db-02 10.20.20.10"; do
+  set -- $n
+  openssl ecparam -name prime256v1 -genkey -noout -out "$d/$1.key"
+  openssl req -new -key "$d/$1.key" -subj "/CN=$1.rental.internal" -out "$d/$1.csr"
+  printf 'subjectAltName=IP:%s\n' "$2" > "$d/$1.ext"
+  openssl x509 -req -in "$d/$1.csr" -CA "$d/ca.crt" -CAkey "$d/ca.key" -CAcreateserial -days 825 -extfile "$d/$1.ext" -out "$d/$1.crt"
+done
+shred -u "$d/ca.key"
+```
+
+- APP-01 — `/etc/rental/redis-tls/` 에 `app-01.crt` → `server.crt`, `app-01.key` → `server.key`, `ca.crt`(옛 자체 서명 셋을 바꾼다). `/etc/rental/redis-tls-ca/ca.crt` 도 같은 `ca.crt`. 소유 · 권한은 9.1 APP-02 표 4 와 같게(`999:999`, 키 600).
+- APP-02 · DB-02 — 같은 이름으로 그 노드의 쌍과 `ca.crt`(APP-02 는 `/etc/rental/redis-tls-ca/ca.crt` 도). 옮길 때는 **운영자 PC 파이프로 스트림한다**(9.5 2 — `ssh app-01 'sudo tar -C <d> -cf - app-02.crt app-02.key ca.crt' | ssh app-02 'sudo sh -c "umask 077; mkdir -p /etc/rental/redis-tls && tar -C /etc/rental/redis-tls -xf -"'` 뒤 그 노드에서 이름을 바꾼다) — PC 디스크에 남지 않는다.
+- 다 옮긴 뒤 APP-01 의 임시 디렉터리를 지운다(`shred -u` 뒤 `rmdir`). 만료(825일)는 인증서 발급 날짜로 적는다 — 서버 운영 기반 설계서 10장.
+- **SAN 이 사설 IP 여야 하는 이유** — 앱(Lettuce)은 TLS 상대의 이름을 끝까지 검증한다(백엔드 #404 확인 — 검증 FULL). 슬롯은 Sentinel 셋에 `10.20.0.10` · `10.20.1.10` · `10.20.20.10` 의 26379 로, primary 에 Sentinel 이 알려 준 사설 IP 의 6380 으로 붙는다 — 그래서 **노드마다 그 노드의 사설 IP 가 SAN(IP)** 이어야 하고, 한 노드의 Redis 와 Sentinel 은 같은 인증서를 쓴다(운영 Compose `sentinel` 주석). 위 반복문이 그렇게 만든다. 확인: 노드마다 `openssl x509 -in /etc/rental/redis-tls/server.crt -noout -ext subjectAltName` → `IP Address:<그 노드 사설 IP>`, 그리고 `openssl verify -CAfile /etc/rental/redis-tls/ca.crt /etc/rental/redis-tls/server.crt` → OK. CN 만으로는 검증되지 않는다(Java 는 IP 접속에 SAN 의 IP 만 본다).
+
+**노드별 `.env`**(키 이름만 — 값의 뜻은 운영 Compose 주석. 비밀번호는 그 노드의 `.env` 에만)
+
+| 키 | APP-01 | APP-02 | DB-02 |
+|---|---|---|---|
+| `COMPOSE_PROFILES` | `app,sentinel` | `app-node,sentinel` | `standby,sentinel` |
+| `APP_PUBLISH_ADDR` | `10.20.0.10` | `10.20.1.10` | — |
+| `REDIS_TLS` · `REDIS_TLS_PUBLISH_ADDR` | `on` · `10.20.0.10`(있던 값) | `on` · `10.20.1.10` | — |
+| `REDIS_ANNOUNCE_IP` | `10.20.0.10` | `10.20.1.10` | `10.20.20.10` |
+| `REDIS_REPLICAOF` | 비움(primary) | `10.20.0.10 6380` | — |
+| `REDIS_SENTINEL_MASTER_IP` | `10.20.0.10` | `10.20.0.10` | `10.20.0.10` |
+| `REDIS_PASSWORD` | 있던 값 | APP-01 과 같은 값 | APP-01 과 같은 값(새로 둔다) |
+| `REDIS_TLS_CA_DIR` | 비움(기본 `/etc/rental/redis-tls-ca`) | **비움으로 바꾼다** — 전에는 `/etc/rental/redis-tls`(그때는 CA 만 있었다). 이제 그 자리에 서버 개인키가 있어 슬롯에 붙이면 안 된다 | — |
+| `RENTAL_NODE` | 비움(app-01) | `app-02` | `db-02`(있던 값) |
+
+**노드별 `entry.env`** — `ENTRY_ALLOC_ID` · `ENTRY_IP`(12단계 출력), `AWS_REGION=ap-northeast-2`, APP-01 은 `SELF_ADDR=10.20.0.10` · `PEER_ADDR=10.20.1.10` · `PEER_SSH=deploy@10.20.1.10`, APP-02 는 그 반대. 시크릿이 없다.
+
+**앱 Sentinel 변수**(11단계 — 두 앱 노드 같은 값. 이름은 앱 변경 #404 7단계가 정한 것을 따른다 — 그 변경의 보고에서 확정해 이 줄을 고친다): `SPRING_DATA_REDIS_SENTINEL_MASTER=rental` · `SPRING_DATA_REDIS_SENTINEL_NODES=10.20.0.10:26379,10.20.1.10:26379,10.20.20.10:26379` · `SPRING_DATA_REDIS_SENTINEL_PASSWORD`(= `REDIS_PASSWORD`) · `SPRING_DATA_REDIS_SSL_ENABLED=true` · `SPRING_DATA_REDIS_SSL_BUNDLE=redis` · `SPRING_SSL_BUNDLE_PEM_REDIS_TRUSTSTORE_CERTIFICATE=file:/etc/rental/redis-tls/ca.crt`(컨테이너 안 경로 — 운영 Compose `x-app` 주석). `REDIS_PASSWORD` 는 데이터 노드 비밀번호로 그대로 쓰인다.
+
+#### 전환 리허설
+
+평시 상태(입구 APP-01 · Redis primary APP-01)에서 **APP-01 을 통째로 멈추고** 잰다. 표본 1회씩이다 — 값은 시스템 구성서 5.2 · 서버 운영 기반 설계서 10장의 미확정 칸을 채운다.
+
+| 순서 | 하는 일 | 재는 것 |
+|---|---|---|
+| 1 | 운영자 PC 에서 0.2초 간격 조회를 띄운다 — `while :; do printf '%s ' "$(date +%T.%N)"; curl -s -o /dev/null -m 3 -w '%{http_code} %{time_total}\n' https://<ENTRY_IP>/api/properties/district-counts; sleep 0.2; done > failover.log`. 한 계정으로 로그인해 리프레시 토큰을 받아 둔다 | 기준선 — 전부 200 |
+| 2 | `aws ec2 stop-instances --instance-ids <APP-01>` — 시각을 적는다 | — |
+| 3 | APP-02 `journalctl -u rental-entry-watch -f` · `docker compose logs -f sentinel` | 감시 첫 실패 · 「옮겼다」(association · API 초) 시각, Sentinel `+switch-master` 시각 |
+| 4 | `failover.log` | **입구 공백**(마지막 200 → 다시 첫 200), 그 사이 비 200 건수, 공백 뒤 오류율 |
+| 5 | 1의 리프레시 토큰으로 재발급 | 승격 뒤 토큰이 살아 있는가(비동기 복제 — 잃었으면 재로그인) |
+| 6 | DB-01 에서 `curl -sS -o /dev/null -w '%{http_code}\n' https://download.docker.com/` | APP-01 이 멈춘 동안 2a 출구는 끊긴다(시스템 구성서 5.2). DB-01 WAL 전송은 이어진다(엔드포인트) |
+| 7 | `aws ec2 start-instances --instance-ids <APP-01>` | **되찾지 않는가** — APP-01 저널 「대기 노드다」, 고정 IP 는 APP-02 그대로. APP-01 Redis `role` → `slave`(Sentinel 이 되돌린다). APP-01 이 새 자동 공인 IP 를 받는가(`describe-instances` 의 `PublicIpAddress`) · DB-01 출구 복귀 |
+| 8 | 아래 「되돌리기」의 계획 이동으로 입구 · primary 를 APP-01 로 | 계획 이동의 공백. **고정 IP 를 잃은 APP-02 가 새 자동 공인 IP 를 받는가 · 걸린 시간**(`describe-instances` 의 `PublicIpAddress`, APP-02 에서 `curl -sS -m 5 -o /dev/null -w '%{http_code}\n' https://download.docker.com/`) · **DB-02 의 출구가 다시 서는가**(DB-02 에서 같은 명령 200 · `sudo dnf makecache`) — 받지 못하면 2c 출구가 끊긴 채다(되돌리기 표의 `entry-nat-c.sh back` 으로 APP-01 에 돌린다) |
+
+**부하 시험 중에는 입구 감시를 끈다** — 두 노드 `sudo systemctl stop rental-entry-watch.service`, 시험이 끝나면 `start`. 과부하로 입구 응답이 감시의 요청 상한(4초)을 넘으면 노드가 살아 있어도 고정 IP 를 옮긴다 — 시험 결과가 전환으로 오염되고, 핑퐁 상한(감시 스크립트 머리 주석)에 걸리면 30분 동안 자동 이동이 멈춘다. 시험 계획서의 실행 전 확인에도 같은 줄이 있다.
+
+**핑퐁으로 자동 이동이 멈췄을 때** — 저널 「!!! 핑퐁」 · 지표 `rental_entry_flap_hold_until_timestamp_seconds` 가 0 이 아니다. 입구는 지금 노드에 고정된다. 원인(2a ↔ 2c 사설망 · 판정 값 · 과부하)을 본 뒤 풀려면 그 노드에서 `sudo rm /var/lib/rental-metrics/entry.prom && sudo systemctl restart rental-entry-watch.service` — 기다리면 `FLAP_HOLD`(잠정 1800초) 뒤 스스로 풀린다.
+
+**켜고 끌 때** — 감시는 부팅 뒤 `BOOT_GRACE`(잠정 300초) 동안 옮기지 않고, 끌 때는 docker 보다 먼저 멈춘다(유닛 주석). 그래도 순서가 엇갈리면 입구가 APP-02 로 옮겨 있을 수 있다 — 켠 뒤 `aws ec2 describe-addresses --allocation-ids <ID> --query 'Addresses[0].InstanceId'` 로 보고, 원하면 계획 이동으로 되돌린다. 그대로 두어도 서비스는 같다.
+
+#### 되돌리기
+
+| 상황 | 하는 일 |
+|---|---|
+| 입구를 APP-01 로 되돌린다(계획 이동) | 운영자 PC `aws ec2 associate-address --region ap-northeast-2 --allocation-id <ID> --instance-id <APP-01> --allow-reassociation` — 열린 연결이 한 번 끊긴다. 옮긴 뒤 APP-01 에서 `sudo systemctl start rental-tls.service`(확인만 — 같은 IP 의 사본이 있다) |
+| Redis primary 를 APP-01 로 되돌린다 | APP-02 가 primary 이고 APP-01 이 복제본일 때 아무 Sentinel 에서 `sentinel failover rental` — 쓰기가 수 초 멈춘다 |
+| 입구 감시를 멈춘다(오판이 잦을 때) | 두 노드 `sudo systemctl disable --now rental-entry-watch.service` — 입구는 지금 노드에 고정되고 옮기는 것은 위 계획 이동(손)뿐이다 |
+| 2c 출구를 APP-01 로 되돌린다(APP-02 NAT 이상) | 운영자 PC `bash infra/aws/entry-nat-c.sh back` |
+| APP-02 다시 만들기를 되돌린다(새 인스턴스가 서지 않을 때 — 옛 인스턴스를 지우기 전) | 새 인스턴스 정지 → 두 볼륨을 떼어 옛 인스턴스(`APP-02-old`)에 c 의 장치 이름으로 → 이름 태그를 되돌리고 시작 → `sudo touch /etc/cloud/cloud-init.disabled`. 옛 ENI(`10.20.20.30`)가 그대로라 그 전 구성으로 돌아간다 — `entry-nat-c.sh back` 도 함께 |
+| #404 전체를 되돌린다 | 감시 끄기 → 두 노드 체크아웃을 #404 전 커밋으로 → APP-01 `.env` 의 `APP_PUBLISH_ADDR` 를 비우고 슬롯을 하나씩 재생성(9단계를 거꾸로 — 슬롯 · reload 순서 주의) · `COMPOSE_PROFILES=app` · redis 재생성(설정 파일 `/data/redis.conf` 는 남아도 primary 다 — 복제본이었으면 `docker compose exec redis redis-cli … replicaof no one`) → APP-02 는 슬롯만(`COMPOSE_PROFILES=app-node` — 옛 커밋 정의) · `APP_REDIS_HOST=10.20.0.10` · `APP_REDIS_PORT=6380` → DB-02 sentinel 정지 → 고정 IP 를 떼고 반납(`disassociate-address` → `release-address` — 과금이 멈춘다, APP-01 은 새 자동 공인 IP 를 받는다). APP-02 는 공개 서브넷에 남는다(사설로 되돌리려면 위 「다시 만들기」를 거꾸로) |
