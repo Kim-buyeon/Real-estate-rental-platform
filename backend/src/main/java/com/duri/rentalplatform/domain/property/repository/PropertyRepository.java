@@ -1,6 +1,8 @@
 package com.duri.rentalplatform.domain.property.repository;
 
 import com.duri.rentalplatform.domain.property.entity.Property;
+import com.duri.rentalplatform.domain.property.enums.RiskGrade;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -53,4 +55,23 @@ public interface PropertyRepository extends JpaRepository<Property, Long> {
             + " AND p.reanalysisPending = true AND p.marketPrice = :judgedMarketPrice")
     int clearReanalysisPending(@Param("propertyId") Long propertyId,
             @Param("judgedMarketPrice") Long judgedMarketPrice);
+
+    /**
+     * 최신 판정의 등급 · 전세가율을 매물의 비정규화 열(V22)에 옮긴다. 판정 기록의 쓰기 트랜잭션에서 늘 부른다(결론이 같아도) —
+     * 판정 행과 함께 커밋되거나 함께 롤백된다. 바꾼 행 수(이미 같으면 0).
+     *
+     * <p>값이 이미 같으면 쓰지 않는다 — 행의 새 판과 WAL 을 만들지 않는다. 벌크 UPDATE 인 이유는 {@link #markReanalysisPending}
+     * 과 같고, 엔티티는 이 열을 바꾸지 않는다({@code Property} 주석). 같은 매물의 판정 기록 둘은 최신 판정 행을 내리는 UPDATE ·
+     * 최신 행 유일 인덱스에서 줄을 서므로, 나중에 커밋한 판정이 마지막에 쓴다 — 판정 표의 최신 행과 같은 순서다.
+     *
+     * @param leaseRatio 저장한 판정 행의 전세가율. 열이 NUMERIC(5,2) 로 판정 표와 같아 같은 값으로 반올림된다
+     */
+    @Modifying
+    @Query("UPDATE Property p SET p.riskGrade = :riskGrade, p.leaseRatio = :leaseRatio"
+            + " WHERE p.propertyId = :propertyId"
+            + " AND (p.riskGrade IS NULL OR p.leaseRatio IS NULL"
+            + " OR p.riskGrade <> :riskGrade OR p.leaseRatio <> :leaseRatio)")
+    int applyLatestJudgement(@Param("propertyId") Long propertyId,
+            @Param("riskGrade") RiskGrade riskGrade,
+            @Param("leaseRatio") BigDecimal leaseRatio);
 }

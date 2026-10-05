@@ -281,6 +281,42 @@ class SchemaMigrationTest {
     }
 
     @Test
+    @DisplayName("V22: 매물에 최신 판정 등급 · 전세가율 열이 NULL 허용으로 있고, 전세가율 목록 · 지도 커버링 인덱스가 정의대로 있다")
+    void propertyLatestRiskColumnsAndIndexes() {
+        Map<String, String> columns = jdbcTemplate.queryForList(
+                        """
+                        SELECT column_name, data_type || ':' || COALESCE(character_maximum_length::text, '')
+                                   || ':' || COALESCE(numeric_precision::text, '') || ':' || COALESCE(numeric_scale::text, '')
+                                   || ':' || is_nullable AS def
+                        FROM information_schema.columns
+                        WHERE table_schema = 'public' AND table_name = 'property'
+                          AND column_name IN ('risk_grade', 'lease_ratio')
+                        """)
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        r -> (String) r.get("column_name"), r -> (String) r.get("def")));
+        Map<String, String> indexDefs = jdbcTemplate.queryForList(
+                        """
+                        SELECT indexname, indexdef FROM pg_indexes
+                        WHERE schemaname = 'public'
+                          AND indexname IN ('ix_property_lease_ratio', 'idx_property_district_lat_lng',
+                                            'idx_property_district_lat_lng_cov')
+                        """)
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        r -> (String) r.get("indexname"), r -> (String) r.get("indexdef")));
+
+        assertThat(columns).containsEntry("risk_grade", "character varying:10:::YES")
+                .containsEntry("lease_ratio", "numeric::5:2:YES");
+        assertThat(indexDefs).hasSize(2).doesNotContainKey("idx_property_district_lat_lng_cov");
+        assertThat(indexDefs.get("ix_property_lease_ratio"))
+                .contains("property", "(lease_ratio, property_id)", "INCLUDE (risk_grade)", "WHERE",
+                        "lease_ratio IS NOT NULL");
+        assertThat(indexDefs.get("idx_property_district_lat_lng"))
+                .contains("property", "(district, latitude, longitude)", "INCLUDE (property_id, risk_grade)");
+    }
+
+    @Test
     @DisplayName("V6: 위험 등급 기준은 CAUTION 경계가 깡통전세 선 이상이면 거부된다")
     void riskCriteriaRejectsNonMonotonicThresholds() {
         assertThatThrownBy(() -> jdbcTemplate.update(

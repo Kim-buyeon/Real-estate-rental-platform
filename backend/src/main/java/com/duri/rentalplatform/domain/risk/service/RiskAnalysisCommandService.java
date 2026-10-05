@@ -37,6 +37,7 @@ import com.duri.rentalplatform.domain.risk.vo.OwnershipRightEntry;
 import com.duri.rentalplatform.domain.risk.vo.ProviderJudgement;
 import com.duri.rentalplatform.domain.risk.vo.RightViolationResult;
 import com.duri.rentalplatform.domain.risk.vo.RiskGradeResult;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -83,7 +84,9 @@ import tools.jackson.databind.json.JsonMapper;
  * <p><b>저장 기준</b> — 최신 분석과 등급 · 3사 가입 · 저장 전세가율이 모두 같으면 새 행을 남기지 않는다. 다르거나 없으면
  * 기존 최신을 이력으로 내리고({@code is_latest = false}) 새 행을 최신으로 넣는다({@code previous_grade} = 이전 등급). 어느 쪽이든
  * 최신 행에 이번 판정의 근거 JSON · 기준 지문을 적는다 — 결론이 같아도 근거(보증한도 · 보증료 등)나 기준이 달라졌을 수 있다. 결론 ·
- * 근거 · 지문이 모두 같으면 아무것도 쓰지 않는다.
+ * 근거 · 지문이 모두 같으면 판정 표에는 아무것도 쓰지 않는다. 어느 쪽이든 매물의 최신 판정 비정규화 열(등급 · 전세가율, V22)을 최신 행 값으로
+ * 같은 트랜잭션에서 맞춘다(값이 같으면 쓰지 않는다) — 판정 표의 최신 행을 바꾸는 쓰기는 이 지점뿐이다(대장 떼기 {@code RiskAnalysisRepository#detachLedger} 는
+ * 대장 참조만 바꾼다).
  *
  * <p><b>근거 JSON</b> — 응답에서 시세 셋 · 분석 시각을 뺀 {@link RiskResponse.Judgement} 를 Spring 이 등록한 {@link JsonMapper} 로
  * 적고 읽는다. 뺀 이유는 그 record 주석에 있다. 읽지 못하면 다시 판정한다 — 저장된 근거가 응답을 막지 않는다.
@@ -337,6 +340,9 @@ public class RiskAnalysisCommandService {
                 // 쓰기 트랜잭션 안의 관리 상태 엔티티라 변경 감지가 커밋 때 UPDATE 한다.
                 kept.recordJudgement(snapshot, fingerprint);
             }
+            // 결론이 같아도 매물 열(V22)을 같은 조건부 UPDATE 로 맞춘다 — 앱 밖 쓰기 · 배포 중 옛 슬롯으로 어긋난 열이 판정 때 고쳐진다.
+            // 이미 같으면 벌크 조건이 걸러 0행이라 쓰기가 없다.
+            applyLatestJudgement(propertyId, kept);
             return kept.getCreatedAt();
         }
 
@@ -351,11 +357,23 @@ public class RiskAnalysisCommandService {
                 hug, hf, sgi, grade.riskGrade(), grade.gradeReason(), previousGrade);
         analysis.recordJudgement(snapshot, fingerprint);
         RiskAnalysis saved = riskAnalysisRepository.save(analysis);
+        applyLatestJudgement(propertyId, saved);
         if (previousGrade != null && previousGrade != saved.getRiskGrade()) {
             eventPublisher.publishEvent(new RiskGradeChangedEvent(
                     propertyId, previousGrade, saved.getRiskGrade(), saved.getCreatedAt()));
         }
         return saved.getCreatedAt();
+    }
+
+    /**
+     * 매물의 최신 판정 비정규화 열(V22)을 최신 판정 행의 값으로 맞춘다 — 같은 쓰기 트랜잭션에서. 지도 · 목록 · 집계가 판정 표 대신 이
+     * 열을 읽는다. 엔티티로 쓰지 않는다 — 조건부 벌크 UPDATE 다(PropertyRepository#applyLatestJudgement, 값이 같으면 0행). 열의 소수
+     * 둘째 자리 반올림을 미리 해 둬 값이 같을 때 조건이 쓰기를 건너뛰게 한다 — HALF_UP 은 PostgreSQL NUMERIC 반올림(0 에서 먼 쪽)과
+     * 같다.
+     */
+    private void applyLatestJudgement(Long propertyId, RiskAnalysis latest) {
+        propertyRepository.applyLatestJudgement(propertyId, latest.getRiskGrade(),
+                latest.getLeaseRatio().setScale(2, RoundingMode.HALF_UP));
     }
 
     /** 근거를 JSON 으로 적는다. 적지 못하면 기록하고 null — 판정 결과 저장은 막지 않는다. */

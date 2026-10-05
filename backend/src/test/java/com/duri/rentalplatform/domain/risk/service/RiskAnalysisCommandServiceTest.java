@@ -3,6 +3,7 @@ package com.duri.rentalplatform.domain.risk.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -762,6 +763,66 @@ class RiskAnalysisCommandServiceTest {
         assertThatThrownBy(() -> service.analyze(PROPERTY_ID)).isInstanceOf(BusinessException.class);
 
         verify(propertyRepository, never()).clearReanalysisPending(any(), any());
+    }
+
+    // ---------- 매물의 최신 판정 비정규화 열(V22) ----------
+
+    @Test
+    @DisplayName("첫 분석은 새 최신 행의 등급 · 전세가율(소수 둘째 자리)을 저장 뒤에 매물 열로 옮긴다")
+    void firstAnalysisAppliesLatestJudgementToProperty() {
+        givenSafeProperty();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        givenSaveStampsCreatedAt();
+
+        service.analyze(PROPERTY_ID);
+
+        ArgumentCaptor<BigDecimal> ratio = ArgumentCaptor.forClass(BigDecimal.class);
+        InOrder order = inOrder(riskAnalysisRepository, propertyRepository);
+        order.verify(riskAnalysisRepository).save(any());
+        order.verify(propertyRepository).applyLatestJudgement(eq(PROPERTY_ID), eq(RiskGrade.SAFE), ratio.capture());
+        assertThat(ratio.getValue()).isEqualByComparingTo("50.00");
+        assertThat(ratio.getValue().scale()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("등급이 바뀐 새 최신 행은 새 등급을 매물 열로 옮긴다")
+    void gradeChangeAppliesNewGradeToProperty() {
+        givenSafeProperty();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID))
+                .thenReturn(Optional.of(analysis(RiskGrade.CAUTION, true, "50.00")));
+        givenSaveStampsCreatedAt();
+
+        service.analyze(PROPERTY_ID);
+
+        verify(propertyRepository).applyLatestJudgement(eq(PROPERTY_ID), eq(RiskGrade.SAFE), any());
+    }
+
+    @Test
+    @DisplayName("결론이 같아 새 행을 남기지 않아도 최신 행의 등급 · 전세가율로 같은 조건부 UPDATE 를 부른다 — 값이 같으면 벌크 조건이 0행")
+    void sameConclusionAlsoAppliesLatestRowToProperty() {
+        givenSafeProperty();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID))
+                .thenReturn(Optional.of(analysis(RiskGrade.SAFE, true, "50.0")));
+
+        service.analyze(PROPERTY_ID);
+
+        verify(riskAnalysisRepository, never()).save(any());
+        ArgumentCaptor<BigDecimal> ratio = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(propertyRepository).applyLatestJudgement(eq(PROPERTY_ID), eq(RiskGrade.SAFE), ratio.capture());
+        assertThat(ratio.getValue()).isEqualByComparingTo("50.00");
+        assertThat(ratio.getValue().scale()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("판정 저장이 예외로 끝나면 매물 열을 쓰지 않는다")
+    void failedSaveDoesNotApplyToProperty() {
+        givenSafeProperty();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.empty());
+        when(riskAnalysisRepository.save(any())).thenThrow(new IllegalStateException("저장 실패"));
+
+        assertThatThrownBy(() -> service.analyze(PROPERTY_ID)).isInstanceOf(IllegalStateException.class);
+
+        verify(propertyRepository, never()).applyLatestJudgement(any(), any(), any());
     }
 
     @Test
