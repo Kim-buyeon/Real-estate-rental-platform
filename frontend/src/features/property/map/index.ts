@@ -5,6 +5,7 @@
 
 export {
   BBOX_PRECISION,
+  BBOX_TILE_UNITS_BY_LEVEL,
   DISTRICT_LEVEL,
   OVERLAY_Z_FRONT,
   SEOUL_BOUNDS,
@@ -14,6 +15,7 @@ export {
 export {
   addClickListener,
   addIdleListener,
+  bboxTileUnits,
   createMap,
   fitBoundingBox,
   fitSeoul,
