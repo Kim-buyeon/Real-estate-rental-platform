@@ -1,5 +1,5 @@
 [Unit]
-# 입구 HTTPS 인증서 발급 · 갱신 타이머 — 보안 · 암호화 설계서 4.1(켤 때마다 발급 · 6일 안에 갱신). APP-01 에만 둔다. 설치는 rental-tls.service 머리 주석
+# 입구 HTTPS 인증서 발급 · 갱신 타이머 — 보안 · 암호화 설계서 4.1(켤 때마다 발급 · 6일 안에 갱신). 두 앱 노드에 둔다(#404). 설치는 rental-tls.service 머리 주석
 Description=Rental front TLS certificate timer (20 s after boot, then every 12h)
 
 [Timer]

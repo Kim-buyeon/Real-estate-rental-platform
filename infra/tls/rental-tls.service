@@ -1,5 +1,6 @@
 [Unit]
-# 입구 HTTPS 인증서 발급 · 갱신 — 보안 · 암호화 설계서 4.1 · 4.5 · 5장(INF-07, 이슈 #288). **APP-01 에만 둔다** — 앞단 Nginx 가 그 노드에만 있다.
+# 입구 HTTPS 인증서 발급 · 갱신 — 보안 · 암호화 설계서 4.1 · 4.5 · 5장(INF-07, 이슈 #288). **두 앱 노드에 둔다**(입구 이중화, #404) —
+# 입구 고정 IP 를 가진 노드가 발급 · 상대에 사본, 다른 노드는 사본을 받아 끼운다(issue-cert.sh 머리 「입구 이중화」). 전에는 APP-01 에만 두었다.
 # timer 가 부른다. 직접 한 번 돌릴 때는 systemctl start rental-tls.service
 #
 # 설치(infra/backup/ 유닛과 같은 방식 — 운영 절차서 9.3. 체크아웃은 deploy 홈 — 운영 절차서 9장):
@@ -31,6 +32,9 @@ Type=oneshot
 # 스크립트가 바뀌면 다시 설치한다. 설정은 모두 스크립트 기본값이다 — 바꿀 때(KEY_TYPE · LE_STAGING · RENTAL_DIR)는 Environment= 를
 # 여기에 더하지 말고 drop-in(systemctl edit rental-tls.service)으로 둔다. 시크릿은 없다
 ExecStart=/opt/rental/infra/tls/issue-cert.sh
+# 입구 이중화(#404) — ENTRY_IP · PEER_SSH 를 입구 감시(infra/os/entry/rental-entry-watch.service)와 같은 파일에서 읽는다.
+# 앞의 - 는 파일이 없어도 시작한다는 뜻이다 — 없으면 예전처럼 이 노드의 공인 IP 로 발급한다(단일 입구)
+EnvironmentFile=-/etc/rental/entry.env
 
 # 실행 시간 상한 — 네트워크 너머(Let's Encrypt · 이미지 레지스트리)에 기대는 정기 작업이라 멈춘 전송에서 끝나지 않으면 실패가 남지 않는다
 # (서버 운영 기반 설계서 5.3 의 상한 요구와 같은 이유). 앞단 80 대기 최대 5분 + 이미지 받기 · 발급(수십 초 예상 — 미측정)을 넉넉히 덮는다.
