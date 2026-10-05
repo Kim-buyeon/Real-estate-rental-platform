@@ -1,6 +1,7 @@
 package com.duri.rentalplatform.domain.risk.batch;
 
 import com.duri.rentalplatform.domain.property.mapper.LedgerMapper;
+import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.risk.service.MockLedgerReplaceExecutor;
 import com.duri.rentalplatform.domain.risk.vo.MockLedgerReplaceAttempt;
 import com.duri.rentalplatform.domain.risk.vo.MockLedgerReplaceReport;
@@ -26,6 +27,9 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
  * <p><b>전용 저장소</b> — 앱이 가진 Job 저장소 빈을 쓰지 않고 이 배치만의 resourceless 저장소를 둔다. 이유는
  * {@link PropertyRefreshJobFactory} 와 같다 — 기동 뒤 따라잡기가 아무 시각에나 돌아 같은 프로세스에서 등기 재조회 배치와 겹칠 수
  * 있고, 저장소를 나눠 쓰면 서로의 실행 기록을 덮는다. 이 배치끼리의 겹침은 날짜 락이 막는다.
+ *
+ * <p><b>끝나면 자치구 집계 캐시의 세대를 올린다</b>(#406) — 판정이 등급 분포를 바꾼다. 시점과 이유는
+ * {@link DistrictCountGenerationBumpListener}.
  */
 @Component
 public class MockLedgerReplaceJobFactory {
@@ -38,16 +42,19 @@ public class MockLedgerReplaceJobFactory {
     private final LedgerMapper ledgerMapper;
     private final BuildingLedgerDailyQuota dailyQuota;
     private final MockLedgerReplaceExecutor executor;
+    private final DistrictCountCacheStore districtCountCacheStore;
     private final int chunkSize;
 
     public MockLedgerReplaceJobFactory(
             LedgerMapper ledgerMapper,
             BuildingLedgerDailyQuota dailyQuota,
             MockLedgerReplaceExecutor executor,
+            DistrictCountCacheStore districtCountCacheStore,
             @Value("${risk.batch.mock-ledger-replace.page-size}") int chunkSize) {
         this.ledgerMapper = ledgerMapper;
         this.dailyQuota = dailyQuota;
         this.executor = executor;
+        this.districtCountCacheStore = districtCountCacheStore;
         this.chunkSize = chunkSize;
     }
 
@@ -74,6 +81,7 @@ public class MockLedgerReplaceJobFactory {
                 .build();
 
         return new JobBuilder(JOB_NAME, jobRepository)
+                .listener(new DistrictCountGenerationBumpListener(districtCountCacheStore))
                 .start(step)
                 .build();
     }

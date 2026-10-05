@@ -62,16 +62,15 @@ public class PropertyQueryService {
     private final PropertyMapper propertyMapper;
     private final DistrictCountCacheStore districtCountCacheStore;
 
-    /** 자치구 집계. 같은 필터 조합은 캐시에서 돌려준다. 읽기 분산이 켜지면 읽기용 풀에서 읽는다(#343). */
+    /**
+     * 자치구 집계. 같은 필터 조합은 캐시(슬롯 로컬 → Redis)에서 돌려준다 — {@link DistrictCountCacheStore}. 둘 다 빗나가면 이
+     * 스레드에서 집계한다. 읽기 분산이 켜지면 읽기용 풀에서 읽는다(#343).
+     */
     @ReplicaRead
     public DistrictCountsResponse getDistrictCounts(DistrictCountRequest filter) {
-        return districtCountCacheStore.find(filter).orElseGet(() -> {
-            DistrictCountsResponse response = DistrictCountsResponse.of(
-                    propertyMapper.selectDistrictCounts(PropertySearchCondition.ofFilter(filter)),
-                    OffsetDateTime.now(SEOUL));
-            districtCountCacheStore.save(filter, response);
-            return response;
-        });
+        return districtCountCacheStore.getOrLoad(filter, () -> DistrictCountsResponse.of(
+                propertyMapper.selectDistrictCounts(PropertySearchCondition.ofFilter(filter)),
+                OffsetDateTime.now(SEOUL)));
     }
 
     /**

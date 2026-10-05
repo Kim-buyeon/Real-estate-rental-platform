@@ -19,6 +19,7 @@ import com.duri.rentalplatform.domain.property.dto.condition.ReanalysisPendingPr
 import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyCondition;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.service.PropertyLoadService;
+import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.property.vo.PropertyRefreshResult;
 import com.duri.rentalplatform.domain.risk.enums.DailyBatch;
 import com.duri.rentalplatform.domain.risk.service.PropertyRefreshAnalysisExecutor;
@@ -66,6 +67,7 @@ class PropertyRefreshJobLauncherTest {
     private PropertyRefreshJobFactory jobFactory;
     private JobOperator jobOperator;
     private BatchSuccessStore successStore;
+    private DistrictCountCacheStore districtCountCacheStore;
 
     @BeforeEach
     void setUp() {
@@ -73,7 +75,9 @@ class PropertyRefreshJobLauncherTest {
         propertyMapper = mock(PropertyMapper.class);
         executor = mock(PropertyRefreshAnalysisExecutor.class);
         successStore = mock(BatchSuccessStore.class);
-        jobFactory = new PropertyRefreshJobFactory(propertyLoadService, propertyMapper, executor, MONTHS, CHUNK_SIZE);
+        districtCountCacheStore = mock(DistrictCountCacheStore.class);
+        jobFactory = new PropertyRefreshJobFactory(propertyLoadService, propertyMapper, executor, districtCountCacheStore,
+                MONTHS, CHUNK_SIZE);
         jobOperator = PropertyRefreshJobLauncher.dedicatedJobOperator(jobFactory.jobRepository());
         when(executor.analyze(any())).thenAnswer(invocation -> PropertyRefreshAttempt.analyzed(invocation.getArgument(0)));
     }
@@ -200,6 +204,29 @@ class PropertyRefreshJobLauncherTest {
     }
 
     @Test
+    @DisplayName("회차가 끝나면 판정 스텝 뒤에 자치구 집계 캐시의 세대를 한 번 올린다")
+    void bumpsDistrictCountGenerationAfterAnalysis() {
+        loadReturns(1, 0);
+        page(null, 1L);
+
+        launcher(AT_0200).run(DATE);
+
+        InOrder order = inOrder(executor, districtCountCacheStore);
+        order.verify(executor).analyze(PropertyRefreshTarget.unanalyzed(1L));
+        order.verify(districtCountCacheStore).bumpGeneration();
+        verify(districtCountCacheStore, times(1)).bumpGeneration();
+    }
+
+    @Test
+    @DisplayName("회차가 실패로 끝나도 세대를 올린다 — 그때까지 저장한 매물이 이미 반영돼 있다")
+    void bumpsDistrictCountGenerationEvenWhenFailed() {
+        when(propertyLoadService.refresh(anyInt(), any())).thenThrow(new IllegalStateException("load broke"));
+
+        assertThatThrownBy(() -> launcher(AT_0200).run(DATE)).isInstanceOf(IllegalStateException.class);
+        verify(districtCountCacheStore, times(1)).bumpGeneration();
+    }
+
+    @Test
     @DisplayName("배치 진입점에 날짜 키 분산 락이 대기 0 · 설정 만료 · 설정 연장 간격으로 붙어 있고, 키는 property:batch:refresh:{yyyy-MM-dd} 로 풀린다")
     void dateLockAnnotation() throws NoSuchMethodException {
         Method run = PropertyRefreshJobLauncher.class.getMethod("run", LocalDate.class);
@@ -220,7 +247,8 @@ class PropertyRefreshJobLauncherTest {
     @DisplayName("Job 저장소는 이 배치 전용이다 — 등기 재조회 배치와 한 프로세스에서 겹쳐도 실행 기록을 나눠 쓰지 않는다")
     void usesDedicatedJobRepository() {
         PropertyRefreshJobFactory another =
-                new PropertyRefreshJobFactory(propertyLoadService, propertyMapper, executor, MONTHS, CHUNK_SIZE);
+                new PropertyRefreshJobFactory(propertyLoadService, propertyMapper, executor, districtCountCacheStore,
+                MONTHS, CHUNK_SIZE);
 
         assertThat(jobFactory.jobRepository()).isNotNull().isNotSameAs(another.jobRepository());
     }

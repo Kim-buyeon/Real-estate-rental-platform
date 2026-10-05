@@ -4,7 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
 import com.duri.rentalplatform.TestcontainersConfiguration;
+import com.duri.rentalplatform.domain.property.dto.request.DistrictCountRequest;
+import com.duri.rentalplatform.domain.property.dto.response.DistrictCountsResponse;
 import com.duri.rentalplatform.domain.property.enums.RiskGrade;
+import com.duri.rentalplatform.domain.property.service.PropertyQueryService;
+import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.risk.service.RiskAnalysisCommandService;
 import com.duri.rentalplatform.domain.risk.vo.PropertyRefreshReport;
 import com.duri.rentalplatform.external.realestate.RentBuildingType;
@@ -43,7 +47,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * resourceless 트랜잭션 관리자로 도는데 저장 경계는 적재 쓰기 서비스가 긋는다. (b) 시세가 바뀐 관심 매물의 등급이 바뀌면 커밋 뒤
  * 이벤트로 관심 등록자에게만 알림이 생기는가. (c) 최신 판정이 없는 매물이 판정되는가 — 신규 매물과 적재와 무관한 기존 매물 둘 다.
  * (d) 재분석 대상을 적재가 메모리로 넘기지 않고 판정 스텝이 DB(재분석 대기 표시 V18)에서 읽고, 판정을 마치면 표시를 내리는가 —
- * 앞 회차에 남은 매물까지.
+ * 앞 회차에 남은 매물까지. (e) 끝나면 자치구 집계 캐시의 세대를 올려 배치 전에 담긴 집계를 더 돌려주지 않는가(#406).
  *
  * <p><b>적재 규모</b> — 전월세 · 매매 실거래가 클라이언트를 테스트용으로 바꿔 끼운다. Mock 클라이언트는 한 회차에 25개 구 × 48건 ×
  * 2개 서비스를 만들어 공유 컨테이너에 2,400건을 넣는다. 여기서는 한 자치구 · 아파트 서비스에만 전월세 일곱 건과 매매 두 건(면적대마다
@@ -102,6 +106,9 @@ class PropertyRefreshIntegrationTest {
 
     @Autowired
     RiskAnalysisCommandService riskAnalysisCommandService;
+
+    @Autowired
+    PropertyQueryService propertyQueryService;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -271,6 +278,33 @@ class PropertyRefreshIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(*) FROM risk_analysis WHERE property_id = ?", Integer.class,
                 leftover)).isEqualTo(1);
         assertThat(reanalysisPending(leftover)).isFalse();
+    }
+
+    @Test
+    @DisplayName("배치가 끝나면 자치구 집계 세대가 올라가, 배치 전에 담긴 같은 필터의 집계 대신 새 매물을 센 집계를 돌려준다")
+    void batchEndBumpsDistrictCountGeneration() {
+        DistrictCountRequest filter = new DistrictCountRequest(DISTRICT, null, null, null, null, null, null, null, null);
+        long before = districtCount(propertyQueryService.getDistrictCounts(filter));
+        // 두 번째 호출은 로컬 캐시 적중이다 — 배치 전 값이 담겨 있다.
+        assertThat(districtCount(propertyQueryService.getDistrictCounts(filter))).isEqualTo(before);
+        long generationBefore = generation();
+
+        newPropertyOf(runWithStubbedTransactions(List.of()).report());
+
+        assertThat(generation()).isGreaterThan(generationBefore);
+        assertThat(districtCount(propertyQueryService.getDistrictCounts(filter))).isGreaterThan(before);
+    }
+
+    private long generation() {
+        String value = stringRedisTemplate.opsForValue().get(DistrictCountCacheStore.GENERATION_KEY);
+        return value == null ? 0L : Long.parseLong(value);
+    }
+
+    private static long districtCount(DistrictCountsResponse response) {
+        return response.districts().stream()
+                .filter(district -> DISTRICT.equals(district.name()))
+                .mapToLong(DistrictCountsResponse.District::count)
+                .sum();
     }
 
     private boolean reanalysisPending(long propertyId) {

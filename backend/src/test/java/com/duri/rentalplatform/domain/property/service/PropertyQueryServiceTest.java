@@ -39,7 +39,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Optional;
+import java.util.function.Supplier;
 import org.assertj.core.data.Offset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -245,28 +245,30 @@ class PropertyQueryServiceTest {
         DistrictCountRequest filter = new DistrictCountRequest(
                 null, null, null, null, null, null, null, null, null);
         DistrictCountsResponse cached = new DistrictCountsResponse(List.of(), 7L, OffsetDateTime.now());
-        when(districtCountCacheStore.find(filter)).thenReturn(Optional.of(cached));
+        when(districtCountCacheStore.getOrLoad(eq(filter), any())).thenReturn(cached);
 
         DistrictCountsResponse result = service.getDistrictCounts(filter);
 
         assertThat(result).isEqualTo(cached);
         verify(propertyMapper, never()).selectDistrictCounts(any());
-        verify(districtCountCacheStore, never()).save(any(), any());
     }
 
     @Test
-    @DisplayName("자치구 집계는 캐시가 비어 있으면 매퍼로 조회하고 캐시에 저장한다")
-    void districtCountsCacheMissQueriesMapperAndSaves() {
+    @DisplayName("자치구 집계는 캐시가 빗나가면 캐시가 부르는 적재 함수로 매퍼를 조회한다")
+    void districtCountsCacheMissQueriesMapper() {
         DistrictCountRequest filter = new DistrictCountRequest(
                 null, null, null, null, null, null, null, null, null);
-        when(districtCountCacheStore.find(filter)).thenReturn(Optional.empty());
+        when(districtCountCacheStore.getOrLoad(eq(filter), any())).thenAnswer(invocation -> {
+            Supplier<DistrictCountsResponse> loader = invocation.getArgument(1);
+            return loader.get();
+        });
         when(propertyMapper.selectDistrictCounts(any())).thenReturn(List.of());
 
         DistrictCountsResponse result = service.getDistrictCounts(filter);
 
         assertThat(result.totalCount()).isZero();
+        assertThat(result.aggregatedAt()).isNotNull();
         verify(propertyMapper).selectDistrictCounts(any());
-        verify(districtCountCacheStore).save(eq(filter), any());
     }
 
     // ---------- 지도 묶음 (명세 1.12) ----------

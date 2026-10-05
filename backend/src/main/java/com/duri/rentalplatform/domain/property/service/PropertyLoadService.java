@@ -8,6 +8,7 @@ import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.enums.SeoulDistrict;
+import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.property.vo.LedgerKeyFill;
 import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
 import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
@@ -87,6 +88,7 @@ public class PropertyLoadService {
     private final AddressNormalizeClient addressNormalizeClient;
     private final GeocodeClient geocodeClient;
     private final PropertyLoadWriter propertyLoadWriter;
+    private final DistrictCountCacheStore districtCountCacheStore;
 
     /**
      * 서울 25개 자치구의 최근 {@code months} 개월 실거래를 적재한다.
@@ -95,11 +97,18 @@ public class PropertyLoadService {
      * 그때까지의 건수와 실패 목록이 호출자에게 닿지 못하고 사라진다. 호출자가 들고 있으면 예외가
      * 나가도 남은 기록을 출력할 수 있다.
      *
+     * <p>끝나면 자치구 집계 캐시의 세대를 올린다(#406) — 중간에 멈춰도 그때까지 저장한 매물이 있으므로 {@code finally} 다.
+     * 갱신 적재({@link #refresh})는 올리지 않는다 — 판정 스텝까지 끝난 뒤 갱신 배치가 올린다.
+     *
      * @param months 오늘이 속한 달의 직전 달부터 거슬러 올라갈 개월 수. 이번 달은 신고분이 거의 없다
      * @param report 적재 결과 집계. 호출자가 만들어 넘긴다
      */
     public void load(int months, PropertyLoadReport report) {
-        loadAll(months, report, null);
+        try {
+            loadAll(months, report, null);
+        } finally {
+            districtCountCacheStore.bumpGeneration();
+        }
     }
 
     /**
