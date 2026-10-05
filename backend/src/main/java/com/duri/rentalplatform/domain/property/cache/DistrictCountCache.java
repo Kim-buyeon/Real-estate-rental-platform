@@ -9,8 +9,10 @@ import com.github.benmanes.caffeine.cache.Expiry;
 import com.github.benmanes.caffeine.cache.Ticker;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.locks.ReentrantLock;
@@ -42,6 +44,10 @@ import org.springframework.stereotype.Component;
  * <p><b>같은 키 동시 빗나감</b> — 슬롯 안에서 하나만 Redis · DB 로 가고 나머지는 그 결과를 기다린다. 읽기는 <b>부른 스레드에서</b>
  * 한다 — 서비스의 읽기 트랜잭션 · 읽기 분산 표시(@ReplicaRead)가 스레드에 묶여 있어 다른 스레드로 넘기면 풀이 바뀐다. 읽기가
  * 실패하면 기다리던 요청도 같은 예외를 받고, 실패는 담지 않는다.
+ *
+ * <p><b>세대를 함께 쓰는 캐시</b> — 같은 배치가 같은 순간에 바꾸는 다른 매물 응답의 슬롯 로컬 캐시(지도 묶음 —
+ * {@link MapClusterCache})도 이 세대를 쓴다. 세대 키 · 확인 반복 작업 · 올리기는 하나이고, 그 캐시는
+ * {@link #generationForRequest()} 로 키에 세대를 넣고 {@link #addInvalidationListener(Runnable)} 로 비울 때를 함께 받는다.
  */
 @Slf4j
 @Component
@@ -53,6 +59,8 @@ public class DistrictCountCache {
     private final Ticker ticker;
     private final Clock clock;
     private final AsyncCache<String, DistrictCountsResponse> local;
+    /** 이 슬롯의 로컬을 비울 때 함께 부를 것 — 세대를 함께 쓰는 다른 캐시의 비우기. */
+    private final List<Runnable> invalidationListeners = new CopyOnWriteArrayList<>();
 
     /** 세대를 바꾸는 쪽(반복 작업 · 올리기 · 첫 읽기)을 하나로 줄 세운다. 요청 경로는 tryLock 만 한다. */
     private final ReentrantLock generationLock = new ReentrantLock();
@@ -106,13 +114,10 @@ public class DistrictCountCache {
      * @param loader DB 집계. 부른 스레드에서 실행된다. 던진 예외는 그대로 올라가고 담기지 않는다
      */
     public DistrictCountsResponse getOrLoad(DistrictCountRequest filter, Supplier<DistrictCountsResponse> loader) {
-        String gen = generation;
+        String gen = generationForRequest();
         if (gen == null) {
-            gen = readGenerationOnRequestPath();
-            if (gen == null) {
-                // 세대를 모르면 어느 키가 지금 것인지 알 수 없다 — 담지 않고 DB 로 간다(Redis 장애 중의 예전 동작과 같다).
-                return loader.get();
-            }
+            // 세대를 모르면 어느 키가 지금 것인지 알 수 없다 — 담지 않고 DB 로 간다(Redis 장애 중의 예전 동작과 같다).
+            return loader.get();
         }
         String localKey = gen + "|" + DistrictCountCacheStore.filterKey(filter);
 
@@ -135,6 +140,23 @@ public class DistrictCountCache {
             mine.completeExceptionally(e);
             throw e;
         }
+    }
+
+    /**
+     * 요청 경로에서 쓸 지금 세대. 아직 모르면(기동 직후) 슬롯당 확인 간격에 한 번 읽어 보되 기다리지 않는다 — 읽지 않았거나 못
+     * 읽었으면 null 이고, 부른 쪽은 캐시 없이 DB 로 간다. 세대를 함께 쓰는 캐시도 이것을 부른다.
+     */
+    public String generationForRequest() {
+        String gen = generation;
+        return gen != null ? gen : readGenerationOnRequestPath();
+    }
+
+    /**
+     * 이 슬롯의 로컬을 비울 때(세대가 바뀌었거나 이 슬롯이 올렸을 때) 함께 부를 것을 등록한다. 세대 잠금을 쥔 채 불리므로 짧아야
+     * 하고 Redis · DB 를 부르지 않아야 한다.
+     */
+    public void addInvalidationListener(Runnable listener) {
+        invalidationListeners.add(listener);
     }
 
     /**
@@ -165,7 +187,7 @@ public class DistrictCountCache {
         } catch (RuntimeException e) {
             log.warn("자치구 집계 세대 키를 올리지 못했다 — 다른 슬롯은 로컬 만료 · Redis TTL 안에 새 집계를 읽는다", e);
         } finally {
-            local.synchronous().invalidateAll();
+            invalidateLocal();
             generationLock.unlock();
         }
     }
@@ -217,7 +239,13 @@ public class DistrictCountCache {
         }
         generation = read;
         // 로컬 키에 세대가 들어 있어 남겨도 읽히지 않지만 자리를 차지한다.
+        invalidateLocal();
+    }
+
+    /** 이 슬롯의 로컬과 세대를 함께 쓰는 캐시를 비운다. */
+    private void invalidateLocal() {
         local.synchronous().invalidateAll();
+        invalidationListeners.forEach(Runnable::run);
     }
 
     /** 로컬 항목의 수명 — 로컬 만료와 「집계 시각 + Redis TTL」까지 남은 시간 중 짧은 쪽. 집계 시각이 없으면 로컬 만료. */
