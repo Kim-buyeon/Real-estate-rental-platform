@@ -93,12 +93,20 @@
               보증금순은 행 비교 (p.deposit, p.property_id) > / < (값, ID) 로 쓴다. deposit 은 NOT NULL 이라 행 비교와 OR 식
               (값 > 또는 값 = 이고 ID >)이 같은 행을 고른다. OR 식은 B-tree 탐색 조건이 되지 못해 ix_property_deposit(V26)을 순서대로
               읽으면 커서 앞의 행을 전부 읽고 거른다 — 행 비교는 인덱스 탐색 시작점이 된다(#425 로컬 재현, 깊은 커서 내림
-              220,249 → 23 버퍼). 등록일 · 전세가율순 커서는 이번 범위 밖이라 OR 식 그대로다.
+              220,249 → 23 버퍼).
+              등록일순(기본 정렬)도 같은 이유로 행 비교 (p.registered_at, p.property_id) 다. 두 열 모두 NOT NULL 이라 OR 식과 같은
+              행을 고르고, idx_property_registered(V19) · idx_property_district_registered(V15)의 탐색 시작점이 된다(#437 운영 실측,
+              매물 312,661 · 내림 LIMIT 21 — 커서 깊이 300,000 에서 OR 식 135 ms · 버퍼 13,620 → 행 비교 0.32 ms · 13).
+              전세가율순은 OR 식 그대로다 — 정렬식이 COALESCE(p.lease_ratio, 대체값)라 인덱스 열과 맞지 않고, 자치구 없는 전세가율순은
+              selectListByLeaseRatioIndex 가 행 비교로 따로 읽는다.
             -->
             <if test="lastId != null">
                 <choose>
                     <when test="sortKey.name() == 'DEPOSIT'">
                         AND (p.deposit, p.property_id) <include refid="keysetOp"/> (#{lastDeposit}, #{lastId})
+                    </when>
+                    <when test="sortKey.name() != 'DEBT_RATIO'">
+                        AND (p.registered_at, p.property_id) <include refid="keysetOp"/> (#{lastRegisteredAt}, #{lastId})
                     </when>
                     <otherwise>
                         AND (<include refid="sortExpr"/> <include refid="keysetOp"/> <include refid="lastSortValue"/>

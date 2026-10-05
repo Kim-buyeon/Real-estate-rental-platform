@@ -521,6 +521,91 @@ class PropertyMapperTest {
         assertThat(empty).isEmpty();
     }
 
+    /**
+     * 등록일순 키셋(행 비교, #437) 픽스처. 식별자 발급 순서가 등록 시각과 섞이게 넣어, 행 비교 방향이 뒤집히거나 식별자만으로
+     * 가르면 결과가 달라지게 한다. 반환: [lateEarly(T0+2일), earlyEarly(T0), m1, m2, m3(모두 T0+1일), lateLate(T0+2일),
+     * earlyLate(T0)].
+     */
+    private long[] insertRegisteredKeysetFixture(String district) {
+        long lateEarly = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0.plusDays(2));
+        long earlyEarly = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        long m1 = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0.plusDays(1));
+        long m2 = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0.plusDays(1));
+        long m3 = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0.plusDays(1));
+        long lateLate = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0.plusDays(2));
+        long earlyLate = insertProperty(district, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, T0);
+        return new long[] {lateEarly, earlyEarly, m1, m2, m3, lateLate, earlyLate};
+    }
+
+    @Test
+    @DisplayName("목록: 등록일 오름차순 키셋 — 쪽 경계에 걸친 같은 등록 시각은 식별자 오름차순으로 이어지고 빠지거나 겹치지 않는다")
+    void listRegisteredAtAscKeysetWithTiesAtBoundary() {
+        long[] fx = insertRegisteredKeysetFixture(D1);
+        long lateEarly = fx[0];
+        long earlyEarly = fx[1];
+        long m1 = fx[2];
+        long m2 = fx[3];
+        long m3 = fx[4];
+        long lateLate = fx[5];
+        long earlyLate = fx[6];
+
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.REGISTERED_AT, true,
+                null, null, null, null, 2)))).containsExactly(earlyEarly, earlyLate);
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.REGISTERED_AT, true,
+                null, null, T0, earlyLate, 2)))).containsExactly(m1, m2);
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.REGISTERED_AT, true,
+                null, null, T0.plusDays(1), m2, 2)))).containsExactly(m3, lateEarly);
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.REGISTERED_AT, true,
+                null, null, T0.plusDays(2), lateEarly, 2)))).containsExactly(lateLate);
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.REGISTERED_AT, true,
+                null, null, T0.plusDays(2), lateLate, 2)))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("목록: 등록일 키셋은 행 비교다 — 커서보다 이른/늦은 등록은 식별자와 무관하게 방향대로 가르고, 같은 등록 시각만 식별자로 가른다")
+    void listRegisteredAtKeysetSeparatesByTimeThenId() {
+        long[] fx = insertRegisteredKeysetFixture(D1);
+        long lateEarly = fx[0];
+        long earlyEarly = fx[1];
+        long m1 = fx[2];
+        long m2 = fx[3];
+        long m3 = fx[4];
+        long lateLate = fx[5];
+        long earlyLate = fx[6];
+
+        // 오름: 커서 (T0+1일, m2) 뒤 — 더 늦은 등록은 식별자가 작아도(lateEarly) 들고, 더 이른 등록은 식별자가 커도(earlyLate) 빠진다.
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.REGISTERED_AT, true,
+                null, null, T0.plusDays(1), m2, 100)))).containsExactly(m3, lateEarly, lateLate);
+        // 내림: 반대 — 더 이른 등록은 식별자가 커도(earlyLate) 들고, 더 늦은 등록은 식별자가 작아도(lateEarly) 빠진다.
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.REGISTERED_AT, false,
+                null, null, T0.plusDays(1), m2, 100)))).containsExactly(m1, earlyLate, earlyEarly);
+        // 전체 순서 — 등록 시각, 같으면 식별자(내림은 둘 다 내림).
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.REGISTERED_AT, true,
+                null, null, null, null, 100)))).containsExactly(earlyEarly, earlyLate, m1, m2, m3, lateEarly, lateLate);
+        assertThat(ids(propertyMapper.selectList(list(PropertySortKey.REGISTERED_AT, false,
+                null, null, null, null, 100)))).containsExactly(lateLate, lateEarly, m3, m2, m1, earlyLate, earlyEarly);
+    }
+
+    @Test
+    @DisplayName("목록: 자치구 없는 등록일순 + 커서 — 여러 자치구 매물이 하나의 등록 시각 · 식별자 순서로 이어진다")
+    void listRegisteredAtKeysetWithoutDistrictSpansDistricts() {
+        // 다른 데이터와 섞이지 않게 먼 미래 시각을 쓴다.
+        LocalDateTime base = LocalDateTime.of(2099, 1, 1, 0, 0, 0);
+        long a = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, base.plusDays(1));
+        long b = insertProperty(D2, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, base.plusDays(1));
+        long c = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, base.plusDays(1));
+        long earlyD2 = insertProperty(D2, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, base);
+        long lateD1 = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 126.8, base.plusDays(2));
+        long[] fx = {a, b, c, earlyD2, lateD1};
+
+        assertThat(mineOf(propertyMapper.selectList(registeredListBy(filter(null), true, base.plusDays(1), b, 1000)), fx))
+                .containsExactly(c, lateD1);
+        assertThat(mineOf(propertyMapper.selectList(registeredListBy(filter(null), false, base.plusDays(1), b, 1000)), fx))
+                .containsExactly(a, earlyD2);
+        assertThat(mineOf(propertyMapper.selectList(registeredListBy(filter(null), false, null, null, 1000)), fx))
+                .containsExactly(lateD1, c, b, a, earlyD2);
+    }
+
     @Test
     @DisplayName("목록: 보증금 오름차순 키셋 — 같은 보증금은 식별자 오름차순")
     void listDepositAscKeyset() {
@@ -656,13 +741,50 @@ class PropertyMapperTest {
     @Test
     @DisplayName("목록: 자치구 없는 보증금 내림 + 커서 질의는 ix_property_deposit 를 탐색 조건으로 받고 Sort 노드가 없다 (질의 모양 확인, 플래너 선택 아님)")
     void depositDescKeysetCanUseDepositIndexWithoutSort() {
-        PropertySearchCondition cond = depositListBy(filter(null), false, 200L, 1L, 10);
+        List<String> plan = explainSelectList(depositListBy(filter(null), false, 200L, 1L, 10));
+
+        String text = String.join("\n", plan);
+        assertThat(text).contains("ix_property_deposit");
+        assertThat(plan).anyMatch(l -> l.contains("Index Cond") && l.contains("deposit"));
+        assertThat(text).doesNotContain("Sort");
+    }
+
+    /**
+     * 질의 모양 확인(위 보증금 테스트와 같은 방식, 플래너 선택 아님). 등록일순 + 커서 질의가 등록일 인덱스를 탐색 조건으로 받고
+     * Sort 없이 인덱스 순서를 쓸 수 있는가 — 자치구 없으면 idx_property_registered(V19), 오름은 같은 인덱스를 뒤로 읽는다.
+     * OR 식으로 되돌리면 Index Cond 에 등록일 커서 비교가 오르지 못한다.
+     */
+    @Test
+    @DisplayName("목록: 자치구 없는 등록일순 + 커서 질의는 idx_property_registered 를 탐색 조건으로 받고 Sort 노드가 없다 — 내림 · 오름 (질의 모양 확인, 플래너 선택 아님)")
+    void registeredKeysetWithoutDistrictCanUseRegisteredIndexWithoutSort() {
+        for (boolean ascending : new boolean[] {false, true}) {
+            List<String> plan = explainSelectList(registeredListBy(filter(null), ascending, T0, 1L, 10));
+
+            String text = String.join("\n", plan);
+            assertThat(text).as("ascending=%s", ascending).contains("idx_property_registered");
+            assertThat(plan).as("ascending=%s", ascending)
+                    .anyMatch(l -> l.contains("Index Cond") && l.contains("registered_at"));
+            assertThat(text).as("ascending=%s", ascending).doesNotContain("Sort");
+        }
+    }
+
+    @Test
+    @DisplayName("목록: 자치구 있는 등록일 내림 + 커서 질의는 등록일 커서를 인덱스 탐색 조건으로 받고 Sort 노드가 없다 (질의 모양 확인, 플래너 선택 아님)")
+    void registeredKeysetWithDistrictUsesCursorAsIndexCond() {
+        List<String> plan = explainSelectList(registeredListBy(filter(D1), false, T0, 1L, 10));
+
+        assertThat(plan).anyMatch(l -> l.contains("Index Cond") && l.contains("registered_at"));
+        assertThat(String.join("\n", plan)).doesNotContain("Sort");
+    }
+
+    /** selectList 의 실제 SQL 을 순차 스캔 · 정렬 · 비트맵 스캔을 끈 채 EXPLAIN 한 줄들. 질의 모양 확인 전용. */
+    private List<String> explainSelectList(PropertySearchCondition cond) {
         org.apache.ibatis.session.Configuration cfg = sqlSessionFactory.getConfiguration();
         BoundSql bound = cfg.getMappedStatement(
                 "com.duri.rentalplatform.domain.property.mapper.PropertyMapper.selectList").getBoundSql(cond);
         org.apache.ibatis.reflection.MetaObject meta = cfg.newMetaObject(cond);
 
-        List<String> plan = jdbc.execute((java.sql.Connection con) -> {
+        return jdbc.execute((java.sql.Connection con) -> {
             try (java.sql.Statement st = con.createStatement()) {
                 st.execute("SET LOCAL enable_seqscan = off");
                 st.execute("SET LOCAL enable_sort = off");
@@ -682,11 +804,6 @@ class PropertyMapperTest {
                 return lines;
             }
         });
-
-        String text = String.join("\n", plan);
-        assertThat(text).contains("ix_property_deposit");
-        assertThat(plan).anyMatch(l -> l.contains("Index Cond") && l.contains("deposit"));
-        assertThat(text).doesNotContain("Sort");
     }
 
     @Test
@@ -1254,6 +1371,13 @@ class PropertyMapperTest {
             Long lastDeposit, Long lastId, int limit) {
         return PropertySearchCondition.ofList(f, PropertySortKey.DEPOSIT, ascending,
                 new BigDecimal(ascending ? "1000" : "-1000"), lastDeposit, null, null, lastId, limit);
+    }
+
+    /** 등록일순 목록 조건 — 자치구 · 필터를 인자로 받고 등록일 커서를 건다. */
+    private static PropertySearchCondition registeredListBy(DistrictCountRequest f, boolean ascending,
+            LocalDateTime lastRegisteredAt, Long lastId, int limit) {
+        return PropertySearchCondition.ofList(f, PropertySortKey.REGISTERED_AT, ascending,
+                new BigDecimal(ascending ? "1000" : "-1000"), null, null, lastRegisteredAt, lastId, limit);
     }
 
     /** D1 로 좁히고 계약 유형 · 매물 유형만 거는 필터. */
