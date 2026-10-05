@@ -36,6 +36,15 @@ export interface BoundingBox {
 }
 
 /**
+ * 지도 묶음 격자의 행 · 열 수 — 명세 1.12. 선택 파라미터(정수 1 ~ 24, 기본 12)지만 화면은 항상 보낸다 —
+ * 맞춘 표시 영역과 레벨에서 정한 값(지도 계층 gridSize)
+ */
+export interface MapClusterGrid {
+  rows: number;
+  cols: number;
+}
+
+/**
  * 지도 마커 응답 항목 — 명세 1.4. 지도 묶음 응답(1.12)의 markers가 이 필드 그대로다.
  * 분석 이력이 없는 매물은 riskGrade · debtRatio가 null이다
  */
@@ -104,9 +113,9 @@ export interface DistrictCountList {
 export const fetchDistrictCounts = (filter: PropertyFilter) =>
   request<DistrictCountList>({ url: '/properties/district-counts', params: { ...filter } });
 
-/** PROP-02 · GET /api/properties/map-clusters — 지도 자치구 단계. 표시 영역 넷 모두 필수 (명세 1.12) */
-export const fetchPropertyMapClusters = (filter: PropertyFilter, bbox: BoundingBox) =>
-  request<PropertyMapClusters>({ url: '/properties/map-clusters', params: { ...filter, ...bbox } });
+/** PROP-02 · GET /api/properties/map-clusters — 지도 자치구 단계. 표시 영역 넷 모두 필수, 행 · 열은 선택 (명세 1.12) */
+export const fetchPropertyMapClusters = (filter: PropertyFilter, bbox: BoundingBox, grid: MapClusterGrid) =>
+  request<PropertyMapClusters>({ url: '/properties/map-clusters', params: { ...filter, ...bbox, ...grid } });
 
 /**
  * 목록 조회 응답 항목 — 명세 1.6. 좌표 조건 없이 조회했을 때의 형태이며 마커 응답(1.4)과 필드가 다르다.

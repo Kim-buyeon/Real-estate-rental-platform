@@ -8,6 +8,9 @@ export {
   BBOX_LAT_TILE_UNITS_BY_LEVEL,
   BBOX_LNG_TILE_UNITS_BY_LEVEL,
   DISTRICT_LEVEL,
+  GRID_CELLS_PER_LAT_TILE,
+  GRID_CELLS_PER_LNG_TILE,
+  GRID_MAX_DIVISIONS,
   OVERLAY_Z_FRONT,
   SEOUL_BOUNDS,
   SEOUL_INITIAL_LEVEL,
@@ -20,14 +23,15 @@ export {
   createMap,
   fitBoundingBox,
   fitSeoul,
+  gridSize,
   lockSeoulView,
   moveToPoint,
-  readBoundingBox,
+  readMapArea,
   relayoutMap,
   roundOutward,
   searchDistrictPoint,
 } from './map';
-export type { BboxTileUnits, MapPoint, RawBoundingBox } from './map';
+export type { BboxTileUnits, MapArea, MapPoint, RawBoundingBox } from './map';
 
 export { isMapSdkReady, loadKakaoMaps } from './loader';
 

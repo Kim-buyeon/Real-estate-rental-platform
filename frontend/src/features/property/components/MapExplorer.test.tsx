@@ -288,6 +288,10 @@ describe('MapExplorer SDK가 렌더 뒤에 준비될 때', () => {
     for (const name of ['minLat', 'maxLat', 'minLng', 'maxLng']) {
       expect(params.has(name)).toBe(true);
     }
+    // 격자 행 · 열은 맞춘 영역과 레벨이 정한다 — 가짜 지도(레벨 8, 37.4 ~ 37.7 · 126.7 ~ 127.2)를 맞추면
+    // 위도 37.376 ~ 37.7856(4타일) · 경도 126.5664 ~ 127.3856(4타일) → 4 × 6 = 24행 · 4 × 5 = 20열
+    expect(params.get('rows')).toBe('24');
+    expect(params.get('cols')).toBe('20');
 
     // 묶음 하나 + 개별 마커 하나. 서버가 묶은 것을 다시 묶지 않는다
     const contents = createdOverlays.map((overlay) => overlay.getContent());

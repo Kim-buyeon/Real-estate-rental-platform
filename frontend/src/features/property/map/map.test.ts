@@ -5,8 +5,11 @@ import {
   BBOX_LNG_TILE_UNITS_BY_LEVEL,
   BBOX_PRECISION,
   DISTRICT_LEVEL,
+  GRID_CELLS_PER_LAT_TILE,
+  GRID_CELLS_PER_LNG_TILE,
+  GRID_MAX_DIVISIONS,
 } from './constants';
-import { bboxTileUnits, roundOutward } from './map';
+import { bboxTileUnits, gridSize, roundOutward } from './map';
 import type { RawBoundingBox } from './map';
 
 /**
@@ -235,5 +238,88 @@ describe('roundOutward', () => {
       minLng: 126.5664,
       maxLng: 127.3856,
     });
+  });
+});
+
+/** 레벨의 타일로 위도 latTiles장 · 경도 lngTiles장인 맞춘 영역 — 서울시청 부근 타일 경계에서 시작한다 */
+const alignedArea = (level: number, latTiles: number, lngTiles: number) => {
+  const tile = bboxTileUnits(level);
+  const minLatUnits = Math.floor(375665 / tile.lat) * tile.lat;
+  const minLngUnits = Math.floor(1269780 / tile.lng) * tile.lng;
+  return {
+    minLat: minLatUnits / UNIT,
+    maxLat: (minLatUnits + latTiles * tile.lat) / UNIT,
+    minLng: minLngUnits / UNIT,
+    maxLng: (minLngUnits + lngTiles * tile.lng) / UNIT,
+  };
+};
+
+describe('gridSize', () => {
+  it('타일 수 × 타일당 칸 수다 — 자치구 레벨 7, 위도 3타일 · 경도 3타일이면 18행 · 15열', () => {
+    expect(gridSize(alignedArea(DISTRICT_LEVEL, 3, 3), DISTRICT_LEVEL)).toEqual({ rows: 18, cols: 15 });
+    expect(gridSize(alignedArea(DISTRICT_LEVEL, 2, 4), DISTRICT_LEVEL)).toEqual({
+      rows: 2 * GRID_CELLS_PER_LAT_TILE,
+      cols: 4 * GRID_CELLS_PER_LNG_TILE,
+    });
+  });
+
+  it('실측 화면 폭(레벨 1 ~ 9)의 맞춘 영역은 어디서든 상한 안에서 타일당 칸 수를 그대로 쓴다', () => {
+    for (const [levelKey, { dLat, dLng }] of Object.entries(MEASURED_SCREEN)) {
+      const level = Number(levelKey);
+      const tile = bboxTileUnits(level);
+      for (let step = 0; step < 40; step += 1) {
+        const centerLat = 37.5665 + step * dLat * 0.037;
+        const centerLng = 126.978 + step * dLng * 0.029;
+        const aligned = roundOutward(
+          {
+            minLat: centerLat - dLat / 2,
+            maxLat: centerLat + dLat / 2,
+            minLng: centerLng - dLng / 2,
+            maxLng: centerLng + dLng / 2,
+          },
+          level,
+        );
+        const { rows, cols } = gridSize(aligned, level);
+
+        expect(rows).toBe(tileCount(aligned.minLat, aligned.maxLat, tile.lat) * GRID_CELLS_PER_LAT_TILE);
+        expect(cols).toBe(tileCount(aligned.minLng, aligned.maxLng, tile.lng) * GRID_CELLS_PER_LNG_TILE);
+      }
+    }
+  });
+
+  it('상한을 넘으면 타일당 칸 수를 줄여 칸 경계를 타일 경계에 맞춘다 — 위도 5타일은 5 × 4 = 20행, 경도 6타일은 6 × 4 = 24열', () => {
+    const { rows, cols } = gridSize(alignedArea(DISTRICT_LEVEL, 5, 6), DISTRICT_LEVEL);
+
+    expect(rows).toBe(20);
+    expect(cols).toBe(24);
+    expect(rows % 5).toBe(0);
+    expect(cols % 6).toBe(0);
+  });
+
+  it(`상한 ${GRID_MAX_DIVISIONS}을 넘지 않는다 — 타일이 상한보다 많으면 타일당 한 칸에서 상한으로 자른다`, () => {
+    expect(gridSize(alignedArea(DISTRICT_LEVEL, 24, 24), DISTRICT_LEVEL)).toEqual({ rows: 24, cols: 24 });
+    expect(gridSize(alignedArea(DISTRICT_LEVEL, 25, 40), DISTRICT_LEVEL)).toEqual({ rows: 24, cols: 24 });
+    expect(gridSize(alignedArea(DISTRICT_LEVEL, 13, 9), DISTRICT_LEVEL)).toEqual({ rows: 13, cols: 18 });
+  });
+
+  it('영역이 0이면 타일 하나로 보아 타일당 칸 수다 — 0행 · 0열이 되지 않는다', () => {
+    const point = { minLat: 37.5664, maxLat: 37.5664, minLng: 126.9776, maxLng: 126.9776 };
+
+    expect(gridSize(point, DISTRICT_LEVEL)).toEqual({ rows: GRID_CELLS_PER_LAT_TILE, cols: GRID_CELLS_PER_LNG_TILE });
+  });
+
+  it('같은 맞춘 영역이라도 레벨이 다르면 행 · 열이 다르다 — 쿼리 키에 행 · 열이 들어가야 하는 이유', () => {
+    const area = alignedArea(8, 1, 1);
+
+    expect(gridSize(area, 8)).toEqual({ rows: 6, cols: 5 });
+    expect(gridSize(area, 7)).toEqual({ rows: 12, cols: 10 });
+  });
+
+  it('표 밖 레벨은 가장 가까운 끝 레벨의 타일로 센다', () => {
+    const top = BBOX_LAT_TILE_UNITS_BY_LEVEL.length;
+
+    expect(gridSize(alignedArea(1, 2, 3), 0)).toEqual({ rows: 12, cols: 15 });
+    expect(gridSize(alignedArea(1, 2, 3), -3)).toEqual(gridSize(alignedArea(1, 2, 3), 1));
+    expect(gridSize(alignedArea(top, 1, 2), top + 5)).toEqual({ rows: 6, cols: 10 });
   });
 });

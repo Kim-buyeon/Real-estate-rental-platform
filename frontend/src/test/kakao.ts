@@ -59,8 +59,8 @@ export class FakeKakaoLatLngBounds implements KakaoLatLngBounds {
 /**
  * 표준 KakaoMap 중 구현이 실제로 쓰는 부분 전체를 흉내 낸다. 호출을 관찰할 수 있어야 하는
  * relayout을 포함해 전부 vi.fn()으로 둔다 — relayout 테스트가 호출 여부 · 횟수를 단언한다.
- * getBounds · getLevel은 읽는 쪽(readBoundingBox · lockSeoulView)이 곧바로 쓰므로 고정값을
- * 돌려준다 — 값 자체는 이 테스트가 검증할 대상이 아니다.
+ * getBounds · getLevel은 읽는 쪽(readMapArea · lockSeoulView)이 곧바로 쓰므로 고정값을 돌려준다.
+ * 자치구 단계 테스트가 이 값에서 나온 격자 행 · 열(24 · 20)을 단언하므로 바꾸면 그 테스트도 고친다.
  */
 export class FakeKakaoMap implements KakaoMap {
   /** 만들어진 인스턴스를 꺼내는 수단의 저장소. 생성될 때마다 끝에 쌓인다 */
