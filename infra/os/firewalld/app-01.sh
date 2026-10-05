@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# APP-01 호스트 방화벽 — 서버 운영 기반 설계서 3.2(NAT 인스턴스 · 마스커레이드) · 3.3(접근 통제의 둘째 겹) · 8장(firewalld 행).
+# 앱 노드 호스트 방화벽 — 서버 운영 기반 설계서 3.2(NAT 인스턴스 · 마스커레이드) · 3.3(접근 통제의 둘째 겹) · 8장(firewalld 행).
+# 처음에는 APP-01 전용이었다. **입구 이중화(#404)부터 APP-02 도 같은 규칙이다** — 두 노드 모두 공개 서브넷에서 입구(443 · 80)를 받을 수
+# 있고, 각자 자기 AZ 사설 서브넷의 NAT 를 겸한다. app-node.sh 는 이 파일을 부른다.
 # 노드 준비의 firewalld 단계(운영 절차서 9.1)에서 root 로 한 번 돌린다. 여러 번 돌려도 결과가 같다(이미 있는 것은 건너뛴다).
 #
 #   sudo bash app-01.sh
@@ -13,11 +15,14 @@
 #  - ssh · http · https. 앞단 Nginx 가 443(서비스)과 80(ACME 확인 · HTTPS 넘기기 — 보안 · 암호화 설계서 4.1)을 받는다.
 #    출발지 제한(22 는 운영자 IP)은 보안 그룹이 한다 — 1차 방어는 보안 그룹이고 firewalld 는 그것이 잘못 열렸을 때
 #    한 번 더 막는 둘째 겹이다(설계서 3.3). 노드별 허용 표는 시스템 구성서 4장.
+#  - 26379/tcp — Redis Sentinel(#404). Sentinel 은 호스트 네트워크 컨테이너라(운영 Compose 의 sentinel 주석) 게시 포트가 아니라
+#    호스트 소켓이고, 그래서 이 방화벽을 거친다. 출발지(다른 Sentinel · 슬롯)는 보안 그룹이 좁힌다.
 #  - 컨테이너 포트는 여기서 열지 않는다. Docker 가 게시한 포트는 firewalld 를 우회하므로(DNAT 이 입력 규칙보다 먼저 목적지를
 #    바꾼다) 막는 것은 루프백 게시다 — 셋째 겹, 운영 Compose 가 127.0.0.1 로만 게시한다.
 #
 # ── NAT 를 겸한다 ──
-#  사설 서브넷(DB-01 · DB-02)의 인터넷 출구다 — dnf · 이미지 수신(설계서 3.2). 사설 경로표의 0/0 이 이 노드의 ENI 를 가리킨다.
+#  사설 서브넷의 인터넷 출구다 — dnf · 이미지 수신(설계서 3.2). 사설 경로표의 0/0 이 이 노드의 ENI 를 가리킨다.
+#  #404 부터 AZ 마다 — APP-01 은 2a 사설(DB-01), APP-02 는 2c 사설(DB-02)의 출구다(경로표를 AZ 별로 나눴다 — infra/aws/entry-network.sh).
 #  NIC 이 eth0 하나라 사설 서브넷에서 들어온 패킷이 같은 NIC(같은 public 영역)로 다시 나간다. 그래서
 #   (1) 영역 안 전달(--add-forward, firewalld 1.x) — 같은 영역 안의 인터페이스 사이 전달을 허용한다. 기본은 막혀 있다.
 #   (2) 마스커레이드(--add-masquerade) — 나가는 패킷의 출발지를 이 노드 주소로 바꾼다. 켜면 firewalld 가 IPv4 포워딩
@@ -25,11 +30,14 @@
 #  영역 안 전달은 출발지를 가리지 않는다. 사설 두 서브넷 밖에서 전달 요청이 들어오지 못하게 하는 것은 보안 그룹이다
 #  (rental-app: 사설 두 서브넷에서만 전체 허용, 인터넷에서는 443 · 80 · 22 만 — 443 은 HTTPS 전환(INF-07)에서 더한다).
 #  AWS 쪽 전제 — 소스/대상 확인(source/destination check)을 꺼야 자기 주소가 아닌 패킷을 받는다. APP-01 은 이미 껐다.
+#  APP-02 는 infra/aws/entry-nat-c.sh 가 끈다(#404).
 #  S3 는 게이트웨이 엔드포인트로 나가 이 노드를 거치지 않는다(설계서 3.2).
 set -euo pipefail
 
 ZONE=public
 SERVICES=(ssh http https)
+# Redis Sentinel(#404, 위)
+PORTS=(26379/tcp)
 # 기본 public 영역에 딸려 오는 것 중 이 노드가 쓰지 않는 것. 없으면 건너뛴다.
 UNUSED=(cockpit dhcpv6-client)
 
@@ -45,6 +53,9 @@ systemctl is-active --quiet firewalld || fail "firewalld 가 활성이 아니다
 for s in "${SERVICES[@]}"; do
   firewall-cmd --permanent --zone="${ZONE}" --query-service="${s}" >/dev/null \
     || firewall-cmd --permanent --zone="${ZONE}" --add-service="${s}"
+done
+for p in "${PORTS[@]}"; do
+  firewall-cmd --permanent --zone="${ZONE}" --query-port="${p}" >/dev/null     || firewall-cmd --permanent --zone="${ZONE}" --add-port="${p}"
 done
 for s in "${UNUSED[@]}"; do
   if firewall-cmd --permanent --zone="${ZONE}" --query-service="${s}" >/dev/null; then

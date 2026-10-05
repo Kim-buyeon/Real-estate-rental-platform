@@ -2,7 +2,8 @@
 # DB 노드 호스트 방화벽 — DB-01 · DB-02 공용. 서버 운영 기반 설계서 3.3(접근 통제의 둘째 겹) · 8장(firewalld 행).
 # 노드 준비의 firewalld 단계(운영 절차서 9.1)에서 root 로 한 번 돌린다. 여러 번 돌려도 결과가 같다(이미 있는 것은 건너뛴다).
 #
-#   sudo bash db.sh
+#   sudo bash db.sh                DB-01
+#   sudo SENTINEL=1 bash db.sh     DB-02 — Redis Sentinel 26379 를 더 연다(#404)
 #
 # 전제: firewalld 가 설치 · 활성이어야 한다. Rocky 9 EC2 공식 AMI 에는 설치돼 있지 않다(2026-09-25 실측) —
 #       dnf install -y firewalld && systemctl enable --now firewalld. 설치 패키지는 APP-01(NAT)을 거쳐 받는다.
@@ -21,6 +22,10 @@ set -euo pipefail
 
 ZONE=public
 SERVICES=(ssh postgresql)
+# Redis Sentinel(#404) — DB-02 만 셋째 Sentinel 을 둔다(운영 Compose 의 sentinel 주석). DB-02 에서는 SENTINEL=1 로 부른다.
+# Sentinel 은 호스트 네트워크 컨테이너라 게시 포트가 아니고 이 방화벽을 거친다. 출발지는 보안 그룹(rental-db 26379 ← rental-app)이 좁힌다
+PORTS=()
+[[ "${SENTINEL:-0}" == 1 ]] && PORTS+=(26379/tcp)
 # 기본 public 영역에 딸려 오는 것 중 이 노드가 쓰지 않는 것. 없으면 건너뛴다.
 UNUSED=(cockpit dhcpv6-client)
 
@@ -36,6 +41,9 @@ systemctl is-active --quiet firewalld || fail "firewalld 가 활성이 아니다
 for s in "${SERVICES[@]}"; do
   firewall-cmd --permanent --zone="${ZONE}" --query-service="${s}" >/dev/null \
     || firewall-cmd --permanent --zone="${ZONE}" --add-service="${s}"
+done
+for p in "${PORTS[@]}"; do
+  firewall-cmd --permanent --zone="${ZONE}" --query-port="${p}" >/dev/null     || firewall-cmd --permanent --zone="${ZONE}" --add-port="${p}"
 done
 for s in "${UNUSED[@]}"; do
   if firewall-cmd --permanent --zone="${ZONE}" --query-service="${s}" >/dev/null; then
