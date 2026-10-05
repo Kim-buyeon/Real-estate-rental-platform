@@ -21,7 +21,7 @@ from pathlib import Path
 
 from .util import MEASURE_DIR, read_json, rnd
 
-RULES_GLOB = "infra/grafana/alerting/rules-*.json"     # 저장소의 규칙 정의(관측 설계서 5.1 의 일곱)
+RULES_GLOB = "infra/grafana/alerting/rules-*.json"     # 저장소의 규칙 정의(관측 설계서 5.1 의 열셋)
 FIRING = ("Alerting",)                                  # 「울렸다」로 세는 상태 — Pending 은 아직 대기(for 5분) 중이다
 
 
