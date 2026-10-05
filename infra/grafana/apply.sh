@@ -74,12 +74,21 @@ sys.stdout.write(json.dumps(d))
 ' | api PUT "/api/v1/provisioning/contact-points/$CONTACT_UID" > /dev/null
 echo "2/4 연락처 $CONTACT_UID 반영"
 
-# 3. 규칙 그룹 — 그룹 전체를 바꾼다(파일에 없는 규칙은 지워진다). 대기 · 평가 주기도 파일의 값이다
-"$PY" -c '
+# 3. 규칙 그룹 — alerting/rules-*.json 하나가 그룹 하나다(rental-backup — 백업 · 수집 · 인증서, rental-service — 자원 · 요청).
+#    그룹 이름은 파일의 title 이다. 그룹 전체를 바꾼다(파일에 없는 규칙은 지워진다). 대기 · 평가 주기도 파일의 값이다.
+#    파일을 지워도 그 그룹은 Grafana 에 남는다 — 그룹을 없앨 때는 화면에서 지운다
+for f in alerting/rules-*.json; do
+  GROUP=$("$PY" -c '
 import json, sys
-sys.stdout.write(json.dumps(json.load(open("alerting/rules-rental-backup.json", encoding="utf-8"))))
-' | api PUT "/api/v1/provisioning/folder/$FOLDER_UID/rule-groups/rental-backup" > /dev/null
-echo "3/4 규칙 그룹 rental-backup 반영"
+sys.stdout.write(json.load(open(sys.argv[1], encoding="utf-8"))["title"])
+' "$f")
+  # print 를 쓰지 않는다 — Windows 의 python 은 줄 끝을 \r\n 으로 써서 $( ) 뒤에 \r 이 남아 경로가 깨진다
+  "$PY" -c '
+import json, sys
+sys.stdout.write(json.dumps(json.load(open(sys.argv[1], encoding="utf-8"))))
+' "$f" | api PUT "/api/v1/provisioning/folder/$FOLDER_UID/rule-groups/$GROUP" > /dev/null
+  echo "3/4 규칙 그룹 $GROUP 반영($f)"
+done
 
 # 4. 대시보드 — dashboards/ 의 JSON 을 모두 폴더 rental 에 각자의 UID 로 덮어쓴다. 파일을 더하면 이 단계가 함께 올린다
 for f in dashboards/*.json; do

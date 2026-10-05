@@ -4,7 +4,7 @@
   연락처 bu2000kim(contact-point-email.json)의 subject · message 가 부른다 — {{ template "rental.subject" . }} · {{ template "rental.message" . }}.
   반영은 infra/grafana/apply.sh 가 한다(화면에서 고치면 저장소가 모른다 — #253).
 
-  본문의 요약 · 설명 · 할 일은 규칙의 주석 summary · description · action 이다(rules-rental-backup.json).
+  본문의 요약 · 설명 · 할 일은 규칙의 주석 summary · description · action 이다(rules-*.json — 그룹마다 한 파일).
   시각은 KST 로 적는다 — .StartsAt 는 UTC 이고, .StartsAt.Local 은 Grafana Cloud 서버의 시간대라 쓰지 않는다.
   9시간(32400000000000 나노초 — Time.Add 는 time.Duration 을 받는다)을 더해 벽시계 숫자만 옮긴다.
   없는 라벨 · 주석은 if 로 거른다 — 그대로 찍으면 「<no value>」가 나온다.
