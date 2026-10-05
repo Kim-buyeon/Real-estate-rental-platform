@@ -1,0 +1,37 @@
+앱 노드(APP-01 · APP-02)의 Docker 데몬 설정 — daemon.json 은 /etc/docker/daemon.json 자리(root 소유 644)에 둔다.
+JSON 은 주석을 담지 못해 이유와 설치를 여기에 적는다. 이유가 있는 곳은 「서버 운영 기반 설계서」 8장 「Docker 전달 정책」 행,
+반영 순서는 「운영 절차서」 9.1 · 9.6 이다.
+
+── 왜 ──
+ Docker 는 시작할 때 net.ipv4.ip_forward 가 아직 꺼져 있으면 켜고, 그때 FORWARD 기본 정책을 drop 으로 둔다 —
+ Docker 공식 문서 Packet filtering and firewalls(https://docs.docker.com/engine/network/packet-filtering-firewalls/) 「Docker on a router」:
+   "When it does that, it also configures the firewall to drop forwarded packets unless they are explicitly accepted."
+   "To stop Docker from setting the forwarding policy to "drop", include "ip-forward-no-drop": true in /etc/docker/daemon.json,
+    or add option --ip-forward-no-drop to the dockerd command line."
+ 앱 노드는 자기 AZ 사설 서브넷의 NAT 를 겸한다. firewalld 영구 마스커레이드(firewalld/app-01.sh)가 ip_forward 를 먼저 켜면 Docker 는
+ 정책을 건드리지 않고, Docker 가 먼저 켜면 FORWARD 가 DROP 이 된다 — NAT 가 되느냐가 기동 순서에 달려 있었다.
+
+── 실측 ──
+ 2026-10-05 운영 절차서 9.6 4단계 — 새 APP-02 의 iptables FORWARD 기본 정책이 DROP 이라 2c 사설(DB-02)의 출구가 APP-02 NAT 를
+ 지나지 못했다. 13:48:25 손으로 iptables -P FORWARD ACCEPT 를 건 뒤 DB-02 에서 docker.com 200. APP-01 은 ACCEPT 였다.
+ 재부팅 뒤 APP-02 는 ACCEPT 로 떴다(15:10) — firewalld 가 먼저 ip_forward 를 켠 것으로 추정한다. 기동 순서에 기댄 결과다.
+ 노드의 Docker 29.8.1 은 dockerd --help 에 --ip-forward-no-drop 이 있다(확인함).
+
+── firewalld 스크립트와의 관계 ──
+ firewalld/app-01.sh · app-node.sh 는 영역 안 전달 · 마스커레이드로 NAT 를 연다. 이 파일은 Docker 가 그 전달을 기본 정책으로 막지
+ 못하게 한다. 둘 다 있어야 NAT 가 기동 순서와 상관없이 된다.
+ ACCEPT 정책이 전달을 아무 출발지에나 여는 것은 아니다 — 영역 안 전달 · 출발지 제한은 여전히 firewalld · 보안 그룹이 한다. 이 노드의
+ FORWARD 로 들어오는 것을 사설 두 서브넷으로 좁히는 것은 보안 그룹이다(firewalld/app-01.sh 의 「NAT 를 겸한다」 주석 — rental-app 규칙).
+
+── 설치 ──
+ sudo install -D -m 644 -o root -g root /home/deploy/rental/infra/os/docker/daemon.json /etc/docker/daemon.json
+ /etc/docker/daemon.json 이 이미 있으면 덮지 않고 키를 합친다(2026-10-05 두 노드에는 없다).
+ 적용은 다음 dockerd 시작부터다. 설치만으로 재시작하지 않는다 — 재시작하면 컨테이너가 내려간다. 다음 계획 재부팅에 걸린다.
+ 이미 떠 있는 노드가 DROP 이면 sudo iptables -P FORWARD ACCEPT 를 함께 건다(재부팅 전까지 유지된다).
+
+── 확인 ──
+ sudo iptables -S FORWARD | head -1                     → -P FORWARD ACCEPT
+ 그 AZ 사설 노드에서 curl -sS -o /dev/null -w '%{http_code}\n' https://download.docker.com/   → 200
+
+DB 노드에는 두지 않는다 — NAT 를 겸하지 않는다.
+다른 키(로그 드라이버 등)는 넣지 않는다 — 컨테이너 로그 상한은 운영 Compose 가 갖는다(서버 운영 기반 설계서 8장 컨테이너 로그 행).
