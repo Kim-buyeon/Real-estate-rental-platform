@@ -91,6 +91,20 @@ class PasswordResetTokenStoreTest {
     }
 
     @Test
+    @DisplayName("조회는 토큰을 소비하지 않는다 — 조회 뒤에도 소비할 수 있고, 소비한 뒤에는 조회도 비어 있다")
+    void findDoesNotConsume() {
+        String token = store.issue(USER_ID);
+
+        assertThat(store.find(token)).contains(USER_ID);
+        assertThat(store.find(token)).contains(USER_ID);
+        assertThat(store.consume(token)).contains(USER_ID);
+        assertThat(store.find(token)).isEmpty();
+        assertThat(store.find("never-issued-token")).isEmpty();
+        assertThat(store.find(null)).isEmpty();
+        assertThat(store.find("   ")).isEmpty();
+    }
+
+    @Test
     @DisplayName("새로 발급하면 같은 회원의 이전 토큰은 무효가 되고 새 토큰만 쓰인다")
     void newIssueInvalidatesPreviousToken() {
         String first = store.issue(USER_ID);
