@@ -187,11 +187,12 @@ instance.interceptors.response.use(undefined, async (error: AxiosError<ApiRespon
 // api/property.ts
 export interface PropertyFilter { district?: string; contractType?: ContractType; depositMin?: number; /* 명세 1.1 */ }
 export interface BoundingBox { minLat: number; maxLat: number; minLng: number; maxLng: number }
+export interface MapClusterGrid { rows: number; cols: number /* 명세 1.12 — 맞춘 표시 영역과 레벨에서 정한 값 */ }
 export interface PropertyMarker { propertyId: number; latitude: number; longitude: number; deposit: number; riskGrade: RiskGrade | null; debtRatio: number | null; /* 명세 1.4 — 분석 이력이 없으면 null */ }
 export interface PropertyMapClusters { total: number; clustered: boolean; clusters: PropertyMapCluster[]; markers: PropertyMarker[] /* 명세 1.12 */ }
 
-export const fetchPropertyMapClusters = (filter: PropertyFilter, bbox: BoundingBox) =>
-  request<PropertyMapClusters>({ url: '/properties/map-clusters', params: { ...filter, ...bbox } });
+export const fetchPropertyMapClusters = (filter: PropertyFilter, bbox: BoundingBox, grid: MapClusterGrid) =>
+  request<PropertyMapClusters>({ url: '/properties/map-clusters', params: { ...filter, ...bbox, ...grid } });
 
 export const fetchPropertyDetail = (propertyId: number) =>
   request<PropertyDetail>({ url: `/properties/${propertyId}` });
@@ -218,10 +219,10 @@ TanStack Query v5의 `queryOptions()`로 **엔드포인트마다 정의를 하�
 // queries/property.ts
 export const propertyQueries = {
   all: () => ['property'] as const,
-  mapClusters: (filter: PropertyFilter, bbox: BoundingBox) =>
+  mapClusters: (filter: PropertyFilter, bbox: BoundingBox, grid: MapClusterGrid) =>
     queryOptions({
-      queryKey: [...propertyQueries.all(), 'mapClusters', filter, bbox] as const,
-      queryFn: () => fetchPropertyMapClusters(filter, bbox),
+      queryKey: [...propertyQueries.all(), 'mapClusters', filter, bbox, grid] as const,
+      queryFn: () => fetchPropertyMapClusters(filter, bbox, grid),
       placeholderData: keepPreviousData,
     }),
   detail: (propertyId: number) =>
