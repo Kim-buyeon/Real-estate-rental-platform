@@ -477,13 +477,67 @@ class DistrictCountCacheTest {
     // ---------- 키 정규화 ----------
 
     @Test
-    @DisplayName("등급 배열의 순서 · 중복 · 면적의 끝자리 0 · 자치구 앞뒤 공백이 달라도 같은 필터 키다")
+    @DisplayName("등급 배열의 순서 · 중복 · null 원소 · 면적의 끝자리 0 이 달라도 같은 필터 키다")
     void filterKeyIsNormalized() {
-        DistrictCountRequest a = new DistrictCountRequest(" 강남구 ", null, null, null, null, null,
-                List.of(RiskGrade.DANGER, RiskGrade.SAFE, RiskGrade.SAFE), new BigDecimal("40.0"), null);
+        List<RiskGrade> gradesWithNull = new ArrayList<>(List.of(RiskGrade.DANGER, RiskGrade.SAFE, RiskGrade.SAFE));
+        gradesWithNull.add(null);
+        DistrictCountRequest a = new DistrictCountRequest("강남구", null, null, null, null, null,
+                gradesWithNull, new BigDecimal("40.0"), null);
         DistrictCountRequest b = new DistrictCountRequest("강남구", null, null, null, null, null,
                 List.of(RiskGrade.SAFE, RiskGrade.DANGER), new BigDecimal("40"), null);
 
         assertThat(DistrictCountCacheStore.filterKey(a)).isEqualTo(DistrictCountCacheStore.filterKey(b));
+    }
+
+    @Test
+    @DisplayName("자치구 앞뒤 공백은 다른 필터 키다 — 조회 조건이 공백을 자르지 않아 결과(0건)가 다르다")
+    void districtWhitespaceIsDifferentKey() {
+        DistrictCountRequest padded = new DistrictCountRequest(" 강남구 ", null, null, null, null, null, null, null, null);
+        DistrictCountRequest exact = new DistrictCountRequest("강남구", null, null, null, null, null, null, null, null);
+        DistrictCountRequest blank = new DistrictCountRequest("  ", null, null, null, null, null, null, null, null);
+        DistrictCountRequest none = new DistrictCountRequest(null, null, null, null, null, null, null, null, null);
+
+        assertThat(DistrictCountCacheStore.filterKey(padded)).isNotEqualTo(DistrictCountCacheStore.filterKey(exact));
+        assertThat(DistrictCountCacheStore.filterKey(blank)).isNotEqualTo(DistrictCountCacheStore.filterKey(none));
+    }
+
+    @Test
+    @DisplayName("빈 문자열 자치구 · 빈 등급 배열은 필터 없음과 같은 키이고, null 원소뿐인 등급 배열은 다른 키다")
+    void emptyValuesMatchNoFilterButNullOnlyGradesDoNot() {
+        DistrictCountRequest none = new DistrictCountRequest(null, null, null, null, null, null, null, null, null);
+        DistrictCountRequest empty = new DistrictCountRequest("", null, null, null, null, null, List.of(), null, null);
+        List<RiskGrade> nullOnly = new ArrayList<>();
+        nullOnly.add(null);
+        DistrictCountRequest nullGrades = new DistrictCountRequest(null, null, null, null, null, null, nullOnly, null, null);
+
+        assertThat(DistrictCountCacheStore.filterKey(empty)).isEqualTo(DistrictCountCacheStore.filterKey(none));
+        assertThat(DistrictCountCacheStore.filterKey(nullGrades)).isNotEqualTo(DistrictCountCacheStore.filterKey(none));
+    }
+
+    // ---------- 세대를 함께 쓰는 캐시 ----------
+
+    @Test
+    @DisplayName("세대가 바뀌거나 올리면 등록한 비우기를 함께 부른다 — 세대가 같으면 부르지 않는다")
+    void invalidationListenerRunsOnGenerationChangeAndBump() {
+        AtomicInteger cleared = new AtomicInteger();
+        cache.addInvalidationListener(cleared::incrementAndGet);
+
+        cache.refreshGeneration();
+        assertThat(cleared).hasValue(1);
+        cache.refreshGeneration();
+        assertThat(cleared).hasValue(1);
+
+        when(ops.increment(DistrictCountCacheStore.GENERATION_KEY)).thenReturn(4L);
+        cache.bumpGeneration();
+        assertThat(cleared).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("요청 경로의 세대는 아는 세대를 Redis 없이 돌려주고, 모르면 확인 간격에 한 번만 읽는다")
+    void generationForRequest() {
+        assertThat(cache.generationForRequest()).isEqualTo("3");
+        assertThat(cache.generationForRequest()).isEqualTo("3");
+
+        verify(ops, times(1)).get(DistrictCountCacheStore.GENERATION_KEY);
     }
 }

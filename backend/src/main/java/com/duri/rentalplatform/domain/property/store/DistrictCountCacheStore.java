@@ -40,6 +40,9 @@ public class DistrictCountCacheStore {
 
     private static final String KEY_PREFIX = "property:district-counts:";
 
+    /** 등급 배열이 null 원소뿐일 때의 키 칸. 등급 상수명과 겹치지 않는다. */
+    private static final String NULL_GRADES = "(null)";
+
     private final StringRedisTemplate redis;
     private final JsonMapper jsonMapper;
     private final Duration ttl;
@@ -106,10 +109,20 @@ public class DistrictCountCacheStore {
         return KEY_PREFIX + "g" + generation + ":" + filterKey(filter);
     }
 
-    /** 필터를 고정 순서의 문자열로 정규화한다. 빈 값은 비어 있는 칸으로 둔다. */
+    /**
+     * 필터를 고정 순서의 문자열로 정규화한다. 빈 값은 비어 있는 칸으로 둔다. <b>조회 결과가 같은 요청만 같은 키가 되게 한다</b> — 키가
+     * 같으면 한 요청의 응답을 다른 요청이 받는다.
+     * <ul>
+     *   <li>자치구는 받은 그대로 둔다 — 조회 조건(매퍼 XML)이 앞뒤 공백을 자르지 않아 {@code " 강남구"} 는 0건이다. 잘라서 키를
+     *       만들면 {@code "강남구"} 와 응답을 나눠 갖는다. 빈 문자열은 조회 조건에서도 필터 없음이라 null 과 같은 칸이다</li>
+     *   <li>등급은 정렬 · 중복 제거하고 null 원소를 뺀다 — 조회 조건 {@code IN (...)} 에서 NULL 은 아무것과도 맞지 않는다. 단 원소가
+     *       모두 null 이면 조회 조건은 {@code IN (NULL)}(0건)이라 필터 없음(빈 칸)과 다른 {@value #NULL_GRADES} 로 둔다</li>
+     *   <li>면적은 끝자리 0 을 뗀다 — 40 과 40.0 은 같은 조건이다</li>
+     * </ul>
+     */
     public static String filterKey(DistrictCountRequest f) {
         StringJoiner joiner = new StringJoiner("|");
-        joiner.add("district=" + blankToEmpty(f.district()));
+        joiner.add("district=" + str(f.district()));
         joiner.add("contractType=" + str(f.contractType()));
         joiner.add("depositMin=" + str(f.depositMin()));
         joiner.add("depositMax=" + str(f.depositMax()));
@@ -122,18 +135,17 @@ public class DistrictCountCacheStore {
     }
 
     private static String grades(List<RiskGrade> grades) {
-        if (grades == null) {
+        if (grades == null || grades.isEmpty()) {
             return "";
         }
         TreeSet<RiskGrade> sorted = new TreeSet<>();
         grades.stream().filter(Objects::nonNull).forEach(sorted::add);
+        if (sorted.isEmpty()) {
+            return NULL_GRADES;
+        }
         StringJoiner joiner = new StringJoiner(",");
         sorted.forEach(g -> joiner.add(g.name()));
         return joiner.toString();
-    }
-
-    private static String blankToEmpty(String value) {
-        return value == null ? "" : value.strip();
     }
 
     private static String str(Object value) {
