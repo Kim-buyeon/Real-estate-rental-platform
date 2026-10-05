@@ -23,6 +23,7 @@ import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.DynamicUpdate;
 
 /**
  * 매물. 국토교통부 전월세 실거래가에서 적재하며, 사용자나 관리자가 등록하는 경로는 없다 —
@@ -41,8 +42,16 @@ import lombok.NoArgsConstructor;
  * {@code ddl-auto: validate} 에서 타입이 어긋난다. 스키마를 따르고 <b>문서와의 어긋남은 그대로
  * 둔다</b> — 이미 알려진 미해결 문서 이슈이며 이 변경에서 고치지 않는다. 원 단위 정수라 Long 으로
  * 정확히 표현된다. 나눗셈과 이율이 들어가는 판정 · 한도 계산은 BigDecimal 로 한다.
+ *
+ * <p><b>{@code @DynamicUpdate} — 바뀐 열만 UPDATE 한다.</b> Hibernate 의 기본 UPDATE 는 매핑된 모든 열을 그 트랜잭션이 읽어 둔
+ * 값으로 다시 쓴다. 매물은 여러 쓰기가 다른 열을 따로 고친다 — 갱신 배치의 시세(변경 감지), 조회 키 보강(변경 감지), 등기 · 대장
+ * 쓰기와 판정 기록의 재분석 대기 표시(벌크 UPDATE, #399). 기본 UPDATE 면 시세 기준일만 고치는 쓰기나 조회 키 보강이 읽어 둔
+ * {@code is_reanalysis_pending} 을 다시 써서, 그 사이 다른 트랜잭션이 세운 대기를 지우거나 내린 대기를 되살린다. 바뀐 열만 쓰면
+ * 각 쓰기가 자기 열만 건드린다. 대가는 UPDATE 문을 매번 만드는 비용(문장 캐시를 못 씀)이고, 매물 쓰기는 배치 위주라 작다. 같은
+ * 열을 두 쓰기가 동시에 고치는 경합은 이것으로 막히지 않는다 — 그 경우는 조건부 벌크 UPDATE({@code PropertyRepository})가 맡는다.
  */
 @Entity
+@DynamicUpdate
 @Getter
 @Table(name = "property")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

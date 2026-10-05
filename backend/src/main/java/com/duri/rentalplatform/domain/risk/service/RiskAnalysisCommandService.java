@@ -308,7 +308,7 @@ public class RiskAnalysisCommandService {
         LocalDateTime analyzedAt = record(propertyId, registry, ledger, negativeEquity, guarantee, grade,
                 criteria, judgement);
         // 판정 기록과 한 트랜잭션에서 재분석 대기를 내린다 — 판정이 실패해 롤백되면 표시가 남는다(클래스 주석). 엔티티로 내리지
-        // 않는다 — 변경 감지가 매물의 모든 열을 이 트랜잭션이 읽은 값으로 다시 쓴다(PropertyRepository#markReanalysisPending).
+        // 않는다 — 판정하는 사이 다른 쓰기가 세운 표시까지 지운다. 조건부 벌크 UPDATE 다(PropertyRepository#clearReanalysisPending).
         propertyRepository.clearReanalysisPending(propertyId, marketPrice);
 
         return RiskResponse.of(judgement, property.getMarketPrice(), property.getPriceType(),

@@ -33,9 +33,9 @@ public interface PropertyRepository extends JpaRepository<Property, Long> {
      * 판정 입력(등기 · 대장)이 바뀌었다 — 재분석 대기 표시(V18)를 세운다. 등기 · 대장을 바꾸는 쓰기와 같은 트랜잭션에서 부른다. 바꾼
      * 행 수(이미 서 있으면 0).
      *
-     * <p><b>벌크 UPDATE 인 이유</b> — 이 열 하나만 바꾼다. 엔티티의 변경 감지로 바꾸면 {@code Property} 에 {@code @DynamicUpdate}
-     * 가 없어 모든 열을 읽은 값으로 다시 쓴다 — 그 사이 갱신 배치가 바꾼 시세를 옛 값으로 덮는다. 영속성 컨텍스트를 우회하므로 같은
-     * 트랜잭션에서 이미 읽은 매물 엔티티의 표시 값은 갱신되지 않는다.
+     * <p><b>벌크 UPDATE 인 이유</b> — 조건(지금 값)을 걸어 한 문장으로 바꾼다. 엔티티로 바꾸면 읽은 뒤 커밋까지 사이에 다른
+     * 트랜잭션이 같은 열을 바꾼 것을 모른 채 덮는다({@code @DynamicUpdate} 는 다른 열을 덮지 않게 할 뿐, 같은 열의 경합은 막지
+     * 않는다). 영속성 컨텍스트를 우회하므로 같은 트랜잭션에서 이미 읽은 매물 엔티티의 표시 값은 갱신되지 않는다.
      */
     @Modifying
     @Query("UPDATE Property p SET p.reanalysisPending = true WHERE p.propertyId = :propertyId AND p.reanalysisPending = false")

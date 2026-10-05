@@ -107,6 +107,7 @@ class RiskAnalysisCommandServiceTest {
     private RiskAnalysisCommandService service;
     private JudgementCriteriaCache criteriaCache;
     private CriteriaVersionWatcher criteriaVersionWatcher;
+    private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void setUp() {
@@ -126,6 +127,7 @@ class RiskAnalysisCommandServiceTest {
         riskAnalysisRepository = mock(RiskAnalysisRepository.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
         criteriaVersionWatcher = mock(CriteriaVersionWatcher.class);
+        transactionManager = mock(PlatformTransactionManager.class);
         service = serviceWithLedgerMode("mock");
     }
 
@@ -139,7 +141,7 @@ class RiskAnalysisCommandServiceTest {
                 buildingRegistryRepository, ownershipHistoryRepository, mortgageHistoryRepository,
                 buildingLedgerRepository, riskAnalysisRepository, criteriaCache, criteriaVersionWatcher,
                 JsonMapper.builder().build(),
-                eventPublisher, mock(PlatformTransactionManager.class), buildingLedgerMode);
+                eventPublisher, transactionManager, buildingLedgerMode);
     }
 
     @Test
@@ -516,6 +518,7 @@ class RiskAnalysisCommandServiceTest {
         assertThat(response.analyzedAt()).isEqualTo(OffsetDateTime.of(EARLIER, ZoneOffset.ofHours(9)));
         verifyNoInteractions(registryCommandService, ledgerCommandService, buildingRegistryRepository,
                 ownershipHistoryRepository, mortgageHistoryRepository, buildingLedgerRepository, eventPublisher);
+        verifyNoInteractions(transactionManager);
         verify(propertyRepository, times(1)).findById(PROPERTY_ID);
         verify(riskAnalysisRepository, times(1)).findByPropertyIdAndLatestTrue(PROPERTY_ID);
         verify(riskAnalysisRepository, never()).save(any());
@@ -722,6 +725,8 @@ class RiskAnalysisCommandServiceTest {
         service.analyze(PROPERTY_ID);
 
         verify(propertyRepository).clearReanalysisPending(PROPERTY_ID, 300_000_000L);
+        // 대조 — 판정 경로는 쓰기 트랜잭션을 연다(적중 경로 테스트가 열지 않음을 검증하는 것과 짝).
+        verify(transactionManager, times(1)).getTransaction(any());
     }
 
     @Test
@@ -815,6 +820,7 @@ class RiskAnalysisCommandServiceTest {
         verifyNoInteractions(registryCommandService, ledgerCommandService, buildingRegistryRepository);
         verify(riskAnalysisRepository, never()).save(any());
         verify(propertyRepository, never()).clearReanalysisPending(any(), any());
+        verifyNoInteractions(transactionManager);
     }
 
     @Test
@@ -877,7 +883,7 @@ class RiskAnalysisCommandServiceTest {
     private void clearInteractions() {
         clearInvocations(registryCommandService, ledgerCommandService, propertyRepository,
                 buildingRegistryRepository, ownershipHistoryRepository, mortgageHistoryRepository,
-                buildingLedgerRepository, riskAnalysisRepository, eventPublisher);
+                buildingLedgerRepository, riskAnalysisRepository, eventPublisher, transactionManager);
     }
 
     private static RiskResponse.Judgement readSnapshot(RiskAnalysis analysis) {
