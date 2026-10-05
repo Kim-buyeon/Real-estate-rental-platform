@@ -79,7 +79,7 @@ feat(be): 보증보험 3사 가입 판정 로직 추가 (RISK-05)
 | `infra/nginx/` | Nginx 설정, upstream |
 | `infra/aws/` | 계정 수준 설정 스크립트 — EC2 상태 검사 경보(노드 자동 복구), 입구 이중화의 서브넷 · 경로표 · S3 엔드포인트 · 보안 그룹 · 고정 IP(Elastic IP) · 그 IAM 권한. 백업 전용 S3 · IAM 정책은 `infra/backup/aws/` |
 | `infra/backup/` | 데이터 백업 작업 — 스크립트와 그것을 거는 systemd 유닛, 오프사이트 저장소(S3 버킷 · IAM 역할) 정책 정의(`aws/`) |
-| `infra/os/` | 노드 설정 — firewalld · NFS 공유 · 노드 정기 작업 · sshd · journald · `dnf-automatic` · sysctl · THP · 입구 고정 IP 감시기(`entry/` — 스크립트와 systemd 서비스) |
+| `infra/os/` | 노드 설정 — firewalld · NFS 공유 · 노드 정기 작업 · sshd · journald · `dnf-automatic` · sysctl · THP · Docker 데몬 설정(`docker/` — 앱 노드 전달 정책) · 입구 고정 IP 감시기(`entry/` — 스크립트와 systemd 서비스) |
 | `infra/prometheus/` · `infra/vector/` | 관측 수집기 설정 — 지표 스크레이프 · 전송, 로그 전송 |
 | `infra/otel/` | 추적 — 앱 슬롯의 OpenTelemetry 에이전트 설정(샘플링 · 내보내기) |
 | `infra/tls/` | 입구 HTTPS 인증서 발급 · 갱신 — 스크립트와 systemd 유닛 |

@@ -1,7 +1,8 @@
 import type { BoundingBox } from '../../../api/property';
 import {
   BBOX_PRECISION,
-  BBOX_TILE_UNITS_BY_LEVEL,
+  BBOX_LAT_TILE_UNITS_BY_LEVEL,
+  BBOX_LNG_TILE_UNITS_BY_LEVEL,
   DISTRICT_LEVEL,
   SEOUL_BOUNDS,
   SEOUL_INITIAL_LEVEL,
@@ -38,27 +39,36 @@ const BBOX_FACTOR = 10 ** BBOX_PRECISION;
 /** 부동소수 오차로 이미 자릿수에 맞는 값이 한 칸 밖으로 밀리는 것을 막는다 */
 const scale = (value: number) => Number((value * BBOX_FACTOR).toFixed(6));
 
-/** 지도 레벨의 타일 크기(10^-BBOX_PRECISION 도 단위). 표 밖 레벨은 가장 가까운 끝 값 — constants 「타일 크기」 */
-export function bboxTileUnits(level: number): number {
-  const last = BBOX_TILE_UNITS_BY_LEVEL.length;
-  const index = Math.min(Math.max(Math.round(level), 1), last) - 1;
-  // index는 위에서 0 ~ length − 1로 잘렸고 표는 비어 있지 않은 상수라 undefined가 될 수 없다
-  return BBOX_TILE_UNITS_BY_LEVEL[index]!;
+/** 축별 타일 크기(10^-BBOX_PRECISION 도 단위) */
+export interface BboxTileUnits {
+  lat: number;
+  lng: number;
+}
+
+/** 지도 레벨의 축별 타일 크기. 표 밖 레벨은 가장 가까운 끝 값 — constants 「타일 크기」 */
+export function bboxTileUnits(level: number): BboxTileUnits {
+  const pick = (table: readonly number[]) => {
+    const index = Math.min(Math.max(Math.round(level), 1), table.length) - 1;
+    // index는 위에서 0 ~ length − 1로 잘렸고 표는 비어 있지 않은 상수라 undefined가 될 수 없다
+    return table[index]!;
+  };
+  return { lat: pick(BBOX_LAT_TILE_UNITS_BY_LEVEL), lng: pick(BBOX_LNG_TILE_UNITS_BY_LEVEL) };
 }
 
 /**
  * 표시 영역을 지도 레벨의 타일 배수로 밖으로 넓힌다 — min은 내림, max는 올림 (kakao-map 4장).
+ * 위도 값은 위도 타일, 경도 값은 경도 타일에 맞춘다.
  * 안으로 맞추면 가장자리 마커가 빠진다. 같은 지역 · 같은 레벨이면 같은 영역이 되어 서버 캐시가 적중한다.
  */
 export function roundOutward(bbox: RawBoundingBox, level: number): BoundingBox {
   const tile = bboxTileUnits(level);
-  const down = (value: number) => (Math.floor(scale(value) / tile) * tile) / BBOX_FACTOR;
-  const up = (value: number) => (Math.ceil(scale(value) / tile) * tile) / BBOX_FACTOR;
+  const down = (value: number, unit: number) => (Math.floor(scale(value) / unit) * unit) / BBOX_FACTOR;
+  const up = (value: number, unit: number) => (Math.ceil(scale(value) / unit) * unit) / BBOX_FACTOR;
   return {
-    minLat: down(bbox.minLat),
-    maxLat: up(bbox.maxLat),
-    minLng: down(bbox.minLng),
-    maxLng: up(bbox.maxLng),
+    minLat: down(bbox.minLat, tile.lat),
+    maxLat: up(bbox.maxLat, tile.lat),
+    minLng: down(bbox.minLng, tile.lng),
+    maxLng: up(bbox.maxLng, tile.lng),
   };
 }
 
