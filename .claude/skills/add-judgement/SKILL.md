@@ -78,6 +78,7 @@ description: 판정·계산 로직(위험 등급, 깡통전세, 보증보험 3�
 | 결과와 함께 근거(위배 조건 · 적용 규제 · 사용 시세)를 돌려준다 | `docs/api/risk.md` 1.1 · `docs/api/loan.md` 1.1 |
 | 계산기는 저장하지 않는다. 이력 적재 · 최신 표시 · 이전 등급 보존은 CommandService | `database.md` RISK_ANALYSIS |
 | 판정을 관점으로 옮기지 않는다 | `docs/architecture/spring-aop.md` 1.2 |
+| **판정 계산 규칙 · 근거 응답 모양을 바꾸면 `CriteriaFingerprintCalculator.FORMAT_VERSION` 을 올린다.** 안 올리면 기준이 그대로인 매물은 옛 규칙으로 낸 근거를 계속 돌려준다 — 조회는 기준 지문이 같으면 다시 판정하지 않는다 | `docs/architecture/data-loading.md` 1.2 「저장된 판정」 |
 
 ## 5. 케이스 테스트
 
