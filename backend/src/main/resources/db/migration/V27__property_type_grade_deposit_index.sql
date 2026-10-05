@@ -45,7 +45,8 @@
 --
 -- 트랜잭션 밖에서 도는 근거 · 파일에 CONCURRENTLY 문장만 두는 이유 · SET LOCAL lock_timeout 을 넣지 않는 이유는 V24 주석과 같다.
 -- spring.flyway.postgresql.transactional-lock: false(application.yml, #403)도 V24 때 넣은 그대로다.
--- Flyway 파서의 판별 정규식 ^(CREATE|DROP)( UNIQUE)? INDEX CONCURRENTLY 는 앞부분만 보므로 뒤에 IF NOT EXISTS 가 붙어도 맞는다.
+-- Flyway 파서는 키워드를 하나씩 이어 붙이며 ^(CREATE|DROP)( UNIQUE)? INDEX CONCURRENTLY 를 맞춰 보고 세 번째 키워드에서
+-- 판정을 끝내므로, 뒤에 IF NOT EXISTS 가 붙어도 판정이 같다(flyway-database-postgresql 12.4.0 PostgreSQLParser).
 --
 -- 잠금 — SHARE UPDATE EXCLUSIVE. 매물 읽기 · 쓰기를 막지 않는다. 표를 두 번 훑고, 시작 시점에 열린 트랜잭션이 끝나기를 기다린다.
 --
