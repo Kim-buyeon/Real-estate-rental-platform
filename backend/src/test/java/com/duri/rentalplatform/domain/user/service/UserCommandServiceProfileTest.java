@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.common.security.BoundedPasswordEncoder;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.domain.user.dto.request.ProfileUpdateRequest;
 import com.duri.rentalplatform.domain.user.entity.User;
@@ -19,7 +20,6 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /** {@link UserCommandService#updateProfile} — 수정 가능 필드 반영, null 의 미입력 치환, 없는 사용자 처리. */
@@ -34,7 +34,7 @@ class UserCommandServiceProfileTest {
     void setUp() {
         userRepository = mock(UserRepository.class);
         service = new UserCommandService(userRepository, mock(UserAuthRepository.class),
-                mock(PasswordEncoder.class), mock(JwtTokenProvider.class), mock(RefreshTokenStore.class),
+                mock(BoundedPasswordEncoder.class), mock(JwtTokenProvider.class), mock(RefreshTokenStore.class),
                 mock(PasswordResetTokenStore.class), mock(PasswordResetMailSender.class),
                 mock(PlatformTransactionManager.class));
     }

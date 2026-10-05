@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.common.security.BoundedPasswordEncoder;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.domain.user.dto.request.LoginRequest;
 import com.duri.rentalplatform.domain.user.dto.response.TokenResponse;
@@ -30,7 +32,6 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
@@ -53,7 +54,7 @@ class UserCommandServiceLoginTest {
     private static final String HASH = "stored-hash";
 
     private UserAuthRepository userAuthRepository;
-    private PasswordEncoder passwordEncoder;
+    private BoundedPasswordEncoder passwordEncoder;
     private RefreshTokenStore refreshTokenStore;
     private BoundaryRecordingTransactionManager transactionManager;
     private UserCommandService service;
@@ -61,7 +62,7 @@ class UserCommandServiceLoginTest {
     @BeforeEach
     void setUp() {
         userAuthRepository = mock(UserAuthRepository.class);
-        passwordEncoder = mock(PasswordEncoder.class);
+        passwordEncoder = mock(BoundedPasswordEncoder.class);
         JwtTokenProvider jwtTokenProvider = mock(JwtTokenProvider.class);
         refreshTokenStore = mock(RefreshTokenStore.class);
         transactionManager = new BoundaryRecordingTransactionManager();
@@ -71,6 +72,21 @@ class UserCommandServiceLoginTest {
         when(jwtTokenProvider.createAccessToken(USER_ID, "USER")).thenReturn("access");
         when(jwtTokenProvider.createRefreshToken(USER_ID)).thenReturn("refresh");
         when(jwtTokenProvider.getAccessTokenValiditySeconds()).thenReturn(1800L);
+    }
+
+    @Test
+    @DisplayName("가입되지 않은 이메일도 해시 상한이 차 있으면 가입된 이메일과 같은 503 SERVICE_BUSY 다 — 상태 코드로 가입 여부가 갈리지 않는다")
+    void unknownEmailGetsServiceBusyWhenHashingSaturated() {
+        when(userAuthRepository.findByAuthTypeAndProviderId(AuthType.EMAIL, EMAIL)).thenReturn(Optional.empty());
+        doThrow(new BusinessException(ErrorCode.SERVICE_BUSY)).when(passwordEncoder).awaitCapacity();
+
+        assertThatThrownBy(() -> service.login(new LoginRequest(EMAIL, PASSWORD)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.SERVICE_BUSY));
+
+        verify(passwordEncoder, never()).matches(any(), any());
+        verifyNoInteractions(refreshTokenStore);
+        assertThat(transactionManager.writeBoundaries).isZero();
     }
 
     @Test
@@ -90,7 +106,7 @@ class UserCommandServiceLoginTest {
     }
 
     @Test
-    @DisplayName("가입되지 않은 이메일 — AUTH_INVALID_CREDENTIAL, 대조 · 쓰기 · 보관 모두 없다")
+    @DisplayName("가입되지 않은 이메일 — AUTH_INVALID_CREDENTIAL, 허가만 얻고 대조 · 쓰기 · 보관은 없다")
     void unknownEmailIsRejectedWithoutMatchingOrWriting() {
         when(userAuthRepository.findByAuthTypeAndProviderId(AuthType.EMAIL, EMAIL)).thenReturn(Optional.empty());
 
@@ -98,7 +114,9 @@ class UserCommandServiceLoginTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.AUTH_INVALID_CREDENTIAL));
 
-        verifyNoInteractions(passwordEncoder, refreshTokenStore);
+        verify(passwordEncoder).awaitCapacity();
+        verify(passwordEncoder, never()).matches(any(), any());
+        verifyNoInteractions(refreshTokenStore);
         verify(userAuthRepository, never()).findById(any());
         assertThat(transactionManager.writeBoundaries).isZero();
     }

@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.common.security.BoundedPasswordEncoder;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.domain.user.dto.request.PasswordResetConfirmRequest;
 import com.duri.rentalplatform.domain.user.dto.request.PasswordResetRequest;
@@ -29,7 +30,6 @@ import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -50,7 +50,7 @@ class UserCommandServicePasswordResetTest {
     private static final String NEW_PASSWORD = "N3wP@ssw0rd!";
 
     private UserAuthRepository userAuthRepository;
-    private PasswordEncoder passwordEncoder;
+    private BoundedPasswordEncoder passwordEncoder;
     private RefreshTokenStore refreshTokenStore;
     private PasswordResetTokenStore tokenStore;
     private PasswordResetMailSender mailSender;
@@ -59,7 +59,7 @@ class UserCommandServicePasswordResetTest {
     @BeforeEach
     void setUp() {
         userAuthRepository = mock(UserAuthRepository.class);
-        passwordEncoder = mock(PasswordEncoder.class);
+        passwordEncoder = mock(BoundedPasswordEncoder.class);
         refreshTokenStore = mock(RefreshTokenStore.class);
         tokenStore = mock(PasswordResetTokenStore.class);
         mailSender = mock(PasswordResetMailSender.class);
