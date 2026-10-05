@@ -2,6 +2,7 @@ package com.duri.rentalplatform.domain.user.service;
 
 import com.duri.rentalplatform.common.BusinessException;
 import com.duri.rentalplatform.common.ErrorCode;
+import com.duri.rentalplatform.common.security.BoundedPasswordEncoder;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.domain.user.dto.request.LoginRequest;
 import com.duri.rentalplatform.domain.user.dto.request.PasswordResetConfirmRequest;
@@ -22,7 +23,6 @@ import com.duri.rentalplatform.domain.user.store.RefreshTokenStore;
 import java.time.LocalDateTime;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,7 +37,8 @@ public class UserCommandService {
 
     private final UserRepository userRepository;
     private final UserAuthRepository userAuthRepository;
-    private final PasswordEncoder passwordEncoder;
+    /** 동시 실행 상한이 있는 인코더(SecurityConfig). 로그인의 사용자 없음 분기가 {@link BoundedPasswordEncoder#awaitCapacity()} 를 부르므로 구현 타입으로 받는다. */
+    private final BoundedPasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenStore refreshTokenStore;
     private final PasswordResetTokenStore passwordResetTokenStore;
@@ -48,7 +49,7 @@ public class UserCommandService {
     public UserCommandService(
             UserRepository userRepository,
             UserAuthRepository userAuthRepository,
-            PasswordEncoder passwordEncoder,
+            BoundedPasswordEncoder passwordEncoder,
             JwtTokenProvider jwtTokenProvider,
             RefreshTokenStore refreshTokenStore,
             PasswordResetTokenStore passwordResetTokenStore,
@@ -115,6 +116,9 @@ public class UserCommandService {
         // 가입되지 않은 이메일과 비밀번호 불일치에 같은 코드를 주는 이유: 둘을 구분해 응답하면 응답만 보고
         // 어떤 이메일이 가입돼 있는지 하나씩 확인할 수 있다. 가입 여부는 그 자체로 알려 줄 정보가 아니다.
         if (credential == null) {
+            // 대조할 해시가 없어도 대조 경로와 같은 동시 실행 상한의 허가를 얻는다(해시는 계산하지 않는다, #408). 상한이 찼을 때 가입된
+            // 이메일만 503 을 받으면 상태 코드로 가입 여부가 드러난다. 응답 시간 차이(대조가 없어 빠르다)는 이것으로 없어지지 않는다 — 기존 그대로다.
+            passwordEncoder.awaitCapacity();
             throw new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIAL);
         }
         if (!passwordEncoder.matches(request.password(), credential.passwordHash())) {

@@ -1,12 +1,15 @@
 package com.duri.rentalplatform.config;
 
+import com.duri.rentalplatform.common.security.BoundedPasswordEncoder;
 import com.duri.rentalplatform.common.security.JwtAccessDeniedHandler;
 import com.duri.rentalplatform.common.security.JwtAuthenticationEntryPoint;
 import com.duri.rentalplatform.common.security.JwtAuthenticationFilter;
 import com.duri.rentalplatform.common.security.JwtTokenProvider;
 import com.duri.rentalplatform.common.security.StreamTicketStore;
 import jakarta.servlet.DispatcherType;
+import java.time.Duration;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -15,7 +18,6 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import tools.jackson.databind.json.JsonMapper;
@@ -104,8 +106,17 @@ public class SecurityConfig {
                 .build();
     }
 
+    /**
+     * BCrypt(강도는 라이브러리 기본값)를 동시 실행 상한으로 감싼다 — {@link BoundedPasswordEncoder}. 이 빈 하나를 가입 · 로그인 ·
+     * 비밀번호 재설정이 함께 쓰므로 상한도 셋에 함께 걸린다. 값과 근거는 {@code application.yml} 의 {@code auth.password-hashing}.
+     *
+     * <p>반환 타입을 구현 클래스로 둔다 — 지표 바인더({@code MeterBinder})로도 찾히게 하려는 것이다. 인터페이스로 두면 빈 생성 전에
+     * 타입을 예측할 때 바인더로 보이지 않는다.
+     */
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+    public BoundedPasswordEncoder passwordEncoder(
+            @Value("${auth.password-hashing.max-concurrent}") int maxConcurrent,
+            @Value("${auth.password-hashing.max-wait}") Duration maxWait) {
+        return new BoundedPasswordEncoder(new BCryptPasswordEncoder(), maxConcurrent, maxWait);
     }
 }
