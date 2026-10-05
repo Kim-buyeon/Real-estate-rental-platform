@@ -242,7 +242,7 @@ class ReplicaRoutingIntegrationTest {
                 .hasRootCauseInstanceOf(SQLException.class);
 
         PropertyMapClustersRequest clusters = new PropertyMapClustersRequest(null, null, null, null, null, null, null,
-                null, null, 37.4, 37.7, 126.8, 127.2);
+                null, null, 37.4, 37.7, 126.8, 127.2, null, null);
         assertThatThrownBy(() -> propertyQueryService.getMapClusters(clusters))
                 .hasRootCauseInstanceOf(SQLException.class);
     }

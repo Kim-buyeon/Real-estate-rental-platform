@@ -325,8 +325,13 @@ class PropertyMapperTest {
     private static final double CELL = 0.0625;
 
     private static PropertySearchCondition clusters(DistrictCountRequest f, BoundingBox box) {
-        return PropertySearchCondition.ofClusters(f, box, (box.maxLat() - box.minLat()) / 12,
-                (box.maxLng() - box.minLng()) / 12, 11);
+        return clusters(f, box, 12, 12);
+    }
+
+    /** 서비스와 같은 계산 — 칸 높이 = 높이 ÷ 행, 칸 너비 = 폭 ÷ 열, 마지막 번호는 축별(명세 1.12). */
+    private static PropertySearchCondition clusters(DistrictCountRequest f, BoundingBox box, int rows, int cols) {
+        return PropertySearchCondition.ofClusters(f, box, (box.maxLat() - box.minLat()) / rows,
+                (box.maxLng() - box.minLng()) / cols, rows - 1, cols - 1);
     }
 
     @Test
@@ -406,6 +411,24 @@ class PropertyMapperTest {
                 .extracting(MapClusterCellRow::count, MapClusterCellRow::safeCount,
                         MapClusterCellRow::unanalyzedCount)
                 .containsExactly(tuple(1L, 1L, 0L));
+    }
+
+    @Test
+    @DisplayName("지도 묶음: 2행 × 3열 격자에서 행은 위도 칸 높이 · 0 ~ 1, 열은 경도 칸 너비 · 0 ~ 2 로 따로 자른다")
+    void clusterRowsAndColsAreClampedPerAxis() {
+        // 높이 0.5 ÷ 2행 = 0.25, 폭 0.75 ÷ 3열 = 0.25 — 칸 경계가 double 로 정확하다.
+        BoundingBox box = new BoundingBox(37.0, 37.5, 127.0, 127.75);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.0, 127.0, T0);   // 최소 경계 → (0, 0)
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.1, 127.6, T0);   // 0.4 · 2.4 → (0, 2)
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.49, 127.1, T0);  // 1.96 · 0.4 → (1, 0)
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.25, 127.5, T0);  // 경계 위 1 · 2 → (1, 2)
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5, 127.75, T0);  // 최대 경계 2 · 3 → 잘려 (1, 2)
+
+        List<MapClusterCellRow> cells = propertyMapper.selectClusterCells(clusters(filter(D1), box, 2, 3));
+
+        // 행 · 열의 상한이 바뀌면(행에 열 상한 2) 최대 경계가 (2, 2) 로, (열에 행 상한 1) (0, 2) · (1, 2) 가 열 1 로 간다.
+        assertThat(cells).extracting(MapClusterCellRow::rowIndex, MapClusterCellRow::colIndex, MapClusterCellRow::count)
+                .containsExactly(tuple(0, 0, 1L), tuple(0, 2, 1L), tuple(1, 0, 1L), tuple(1, 2, 2L));
     }
 
     @Test

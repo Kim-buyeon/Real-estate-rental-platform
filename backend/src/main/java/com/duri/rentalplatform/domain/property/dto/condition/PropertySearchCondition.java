@@ -21,7 +21,8 @@ import java.util.List;
  * @param limit         조회 건수. 목록은 요청 크기 + 1, 그 외는 null(제한 없음)
  * @param cellLat       지도 묶음의 칸 높이(위도). 지도 묶음 외 조회는 null
  * @param cellLng       지도 묶음의 칸 너비(경도). 지도 묶음 외 조회는 null
- * @param maxCellIndex  지도 묶음의 마지막 칸 번호(칸 수 − 1). 지도 묶음 외 조회는 null
+ * @param maxRowIndex   지도 묶음의 마지막 행 번호(행 수 − 1, 위도 방향). 지도 묶음 외 조회는 null
+ * @param maxColIndex   지도 묶음의 마지막 열 번호(열 수 − 1, 경도 방향). 지도 묶음 외 조회는 null
  */
 public record PropertySearchCondition(
         String district,
@@ -47,7 +48,8 @@ public record PropertySearchCondition(
         Integer limit,
         Double cellLat,
         Double cellLng,
-        Integer maxCellIndex
+        Integer maxRowIndex,
+        Integer maxColIndex
 ) {
 
     /** 공통 필터만 있는 조건 — 자치구 집계. */
@@ -55,7 +57,7 @@ public record PropertySearchCondition(
         return new PropertySearchCondition(f.district(), f.contractType(), f.depositMin(),
                 f.depositMax(), f.monthlyRentMax(), f.propertyType(), f.riskGrade(), f.areaMin(),
                 f.areaMax(), null, null, null, null, null, false, null, null, null, null, null, null,
-                null, null, null);
+                null, null, null, null);
     }
 
     /** 공통 필터 + 바운딩 박스 — 마커. */
@@ -63,7 +65,7 @@ public record PropertySearchCondition(
         return new PropertySearchCondition(f.district(), f.contractType(), f.depositMin(),
                 f.depositMax(), f.monthlyRentMax(), f.propertyType(), f.riskGrade(), f.areaMin(),
                 f.areaMax(), box.minLat(), box.maxLat(), box.minLng(), box.maxLng(),
-                null, false, null, null, null, null, null, null, null, null, null);
+                null, false, null, null, null, null, null, null, null, null, null, null);
     }
 
     /** 공통 필터 + 정렬 · 키셋 — 목록. */
@@ -73,15 +75,15 @@ public record PropertySearchCondition(
         return new PropertySearchCondition(f.district(), f.contractType(), f.depositMin(),
                 f.depositMax(), f.monthlyRentMax(), f.propertyType(), f.riskGrade(), f.areaMin(),
                 f.areaMax(), null, null, null, null, sortKey, ascending, nullDebtRatio, lastDeposit,
-                lastDebtRatio, lastRegisteredAt, lastId, limit, null, null, null);
+                lastDebtRatio, lastRegisteredAt, lastId, limit, null, null, null, null);
     }
 
-    /** 공통 필터 + 바운딩 박스 + 격자 칸 크기 — 지도 묶음(명세 1.12). */
+    /** 공통 필터 + 바운딩 박스 + 격자 칸 크기 · 마지막 행 · 열 번호 — 지도 묶음(명세 1.12). */
     public static PropertySearchCondition ofClusters(DistrictCountRequest f, BoundingBox box,
-            double cellLat, double cellLng, int maxCellIndex) {
+            double cellLat, double cellLng, int maxRowIndex, int maxColIndex) {
         return new PropertySearchCondition(f.district(), f.contractType(), f.depositMin(),
                 f.depositMax(), f.monthlyRentMax(), f.propertyType(), f.riskGrade(), f.areaMin(),
                 f.areaMax(), box.minLat(), box.maxLat(), box.minLng(), box.maxLng(),
-                null, false, null, null, null, null, null, null, cellLat, cellLng, maxCellIndex);
+                null, false, null, null, null, null, null, null, cellLat, cellLng, maxRowIndex, maxColIndex);
     }
 }

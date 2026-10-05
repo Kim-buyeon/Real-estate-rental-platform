@@ -1,0 +1,60 @@
+-- 유형 · 등급 필터가 있는 보증금순 목록 인덱스(PROP-01 · #430) — ix_property_type_grade_deposit
+-- (property_type_code_id, risk_grade, deposit, property_id). CREATE INDEX CONCURRENTLY IF NOT EXISTS, 트랜잭션 밖.
+--
+-- 자치구 없는 보증금순 목록에 유형 · 등급 필터가 있으면 플래너가 V26 의 ix_property_deposit 를 정렬 순서대로 읽다가 거의 전부를
+-- 걸렀다. 원인은 얽힌 조건의 과대 추정이다 — 운영 「오피스텔 · 주의 · 면적 ≥ 140 내림」은 추정 68 ~ 119행 · 실제 1행,
+-- Rows Removed by Filter 312,660, 버퍼 적중 195,740 · 읽기 49,885. 오피스텔 88,483건 중 면적 ≥ 140 은 55건(0.06 %)인데
+-- 플래너는 전체 비율 1.6 % 를 유형 비율과 독립으로 곱한다. 코드 ID 를 리터럴로 줘도 추정은 68 그대로다.
+--
+-- 열 순서 — 유형은 등치(매퍼 filter 의 코드 하위 질의, InitPlan)이고, 등급은 IN 이지만 하나일 때는 등치와 같다. 두 등치 열 뒤의
+-- (deposit, property_id) 가 정렬 키 · 커서 키(V26 과 같은 행 비교)와 같은 순서라, 그 묶음 안에서 정렬 순서로 읽고 LIMIT 에서
+-- 멈춘다. 등급이 여럿이면 이 인덱스로는 보증금 순서가 나오지 않는다(PostgreSQL 17 에는 B-tree skip scan 이 없다 — 18 부터).
+-- 그 경우는 V26 이 맡는다.
+--
+-- 측정 근거 —
+--   운영 DB-02(standby, PostgreSQL 17.11, 매물 312,661건) selectList 보증금순 LIMIT 21, 읽기 전용 EXPLAIN (ANALYZE, BUFFERS),
+--   데우기 1 + 3회 중앙값, 2026-10-05. 후보 셋을 운영 DB-01 에 CONCURRENTLY 로 만들어 재고 이 인덱스 하나만 남겼다.
+--   열: V26 전(enable_indexscan=off 로 흉내 낸 순차) | V26 만 | V26 + 후보 셋 다 | V26 + 이 인덱스 (ms)
+--     오피스텔 · 주의 · 면적 ≥ 140 내림(맞는 행 1)   107 | 467  | 5.1                | 5.8
+--     오피스텔 · 위험 · 면적 ≥ 100 오름              —   | 140  | 17.8               | 18.9
+--     전세 · 위험 오름(86,611건)                     183 | 68   | 29.7(등급 인덱스)  | 66.5
+--     월세 ≤ 30만 · 면적 ≥ 85 오름(19,977건)         125 | 123  | 120                | 122.5
+--     오피스텔 · 안전 · 주의 내림                    —   | 20.8 | 0.76(유형 인덱스)  | 20.7
+--     오피스텔만 오름                                —   | 1.5  | 0.32(유형 인덱스)  | 1.5
+--     주의 등급만 내림                               118 | 0.96 | 0.35(등급 인덱스)  | 0.98
+--     아파트 · 위험 · 면적 ≥ 100 내림                127 | 0.37 | 0.30               | 0.34
+--     면적 ≥ 200 내림                                95  | 0.32 | 0.33               | 0.33
+--     안전 · 주의(등급 여럿) 내림                    —   | 0.56 | 0.58               | 0.55
+--     필터 없음 내림                                 417 | 0.38 | 0.39               | 0.38
+--   인덱스 크기 15 MB, 운영 DB-01 생성 2026-10-05 CONCURRENTLY 1,017 ms, standby 복제 확인.
+--
+-- 배제한 후보 — ix_property_type_deposit (property_type_code_id, deposit, property_id) 12 MB ·
+-- ix_property_grade_deposit (risk_grade, deposit, property_id) 12 MB. 만들었다가 DROP INDEX CONCURRENTLY 로 지웠다. 이 인덱스만으로
+-- V26 전보다 느린 조합이 0 이 되고, 둘은 이미 V26 전보다 빠른 두 조합(전세 · 위험 66 → 30 ms, 오피스텔 · 안전 · 주의 21 → 0.8 ms)만
+-- 더 줄여 인덱스 둘(24 MB) · 쓰기 비용 대비 이득이 작다. 확장 통계(CREATE STATISTICS)는 이 인덱스로 문제 조합이 풀려 넣지 않았다.
+--
+-- 남는 것 — 월세 · 면적만으로 걸러지는 조합(월세 ≤ 30만 · 면적 ≥ 85 오름 ≈ 120 ms)은 이 인덱스와 무관하다 — V26 전과 같은 수준.
+-- 등급 없이 계약 유형 + 유형만 거는 조합도 이 인덱스로 좁혀지지 않는다(#430 로컬 재현 — 운영 결합 분포를 따른 합성 312,661건에서
+-- 월세 · 오피스텔 내림이 버퍼 약 95,000 그대로. 운영 미측정).
+--
+-- IF NOT EXISTS 를 쓰는 이유(V24 · V26 과 다른 점) — 운영에는 측정 때 이미 만들어 두었으므로, 배포 때 이 문장은 건너뛰고 Flyway
+-- 이력만 남는다. V24 가 IF NOT EXISTS 를 피한 이유(INVALID 인덱스가 남아 있으면 조용히 건너뜀)는 그대로 유효하다 — 그래서 운영의
+-- 이 인덱스가 유효한지 배포 전에 확인한다:
+--   SELECT indisvalid FROM pg_index WHERE indexrelid = 'ix_property_type_grade_deposit'::regclass;  -- true 여야 한다
+-- 새 환경(로컬 · CI)에서는 그냥 만든다.
+--
+-- 트랜잭션 밖에서 도는 근거 · 파일에 CONCURRENTLY 문장만 두는 이유 · SET LOCAL lock_timeout 을 넣지 않는 이유는 V24 주석과 같다.
+-- spring.flyway.postgresql.transactional-lock: false(application.yml, #403)도 V24 때 넣은 그대로다.
+-- Flyway 파서는 키워드를 하나씩 이어 붙이며 ^(CREATE|DROP)( UNIQUE)? INDEX CONCURRENTLY 를 맞춰 보고 세 번째 키워드에서
+-- 판정을 끝내므로, 뒤에 IF NOT EXISTS 가 붙어도 판정이 같다(flyway-database-postgresql 12.4.0 PostgreSQLParser).
+--
+-- 잠금 — SHARE UPDATE EXCLUSIVE. 매물 읽기 · 쓰기를 막지 않는다. 표를 두 번 훑고, 시작 시점에 열린 트랜잭션이 끝나기를 기다린다.
+--
+-- 중간에 실패하면 — 트랜잭션 밖이라 되돌려지지 않고 INVALID 인덱스가 남으며, 다음 기동은 「failed migration」으로 멈춘다(V24 주석).
+-- 복구 — DROP INDEX IF EXISTS ix_property_type_grade_deposit 로 남은 것을 지우고, flyway_schema_history 의 V27 실패 행을 지운 뒤
+-- 다시 기동한다.
+--
+-- 대가 — 유형 · 등급 · 보증금이 인덱스 열이 된다. 보증금은 이미 V26, 등급은 ix_property_lease_ratio 의 INCLUDE · V24 커버링 열이라
+-- HOT 을 새로 잃는 갱신이 없고, 유형은 사실상 바뀌지 않는다. 매물 적재 · 갱신 배치의 인덱스 유지 비용은 인덱스 하나만큼 는다.
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_property_type_grade_deposit ON property (property_type_code_id, risk_grade, deposit, property_id);

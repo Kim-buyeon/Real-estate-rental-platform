@@ -229,7 +229,7 @@
     </select>
 
     <!--
-      지도 묶음 격자 칸 번호(명세 1.12). floor((좌표 - 최소) / 칸 크기) 를 0 ~ maxCellIndex 로 자른다 —
+      지도 묶음 격자 칸 번호(명세 1.12). floor((좌표 - 최소) / 칸 크기) 를 행은 0 ~ maxRowIndex, 열은 0 ~ maxColIndex 로 자른다 —
       최대 경계 위 좌표는 마지막 칸에 든다. 칸 크기가 0(최소 = 최대)이면 나눌 수 없어 모두 0번 칸이다.
     -->
     <sql id="cellRow">
@@ -237,7 +237,7 @@
             <when test="cellLat == 0">0</when>
             <otherwise>
                 CASE WHEN FLOOR((p.latitude - #{minLat}) / #{cellLat}) &lt; 0 THEN 0
-                     WHEN FLOOR((p.latitude - #{minLat}) / #{cellLat}) &gt; #{maxCellIndex} THEN #{maxCellIndex}
+                     WHEN FLOOR((p.latitude - #{minLat}) / #{cellLat}) &gt; #{maxRowIndex} THEN #{maxRowIndex}
                      ELSE CAST(FLOOR((p.latitude - #{minLat}) / #{cellLat}) AS INTEGER) END
             </otherwise>
         </choose>
@@ -248,7 +248,7 @@
             <when test="cellLng == 0">0</when>
             <otherwise>
                 CASE WHEN FLOOR((p.longitude - #{minLng}) / #{cellLng}) &lt; 0 THEN 0
-                     WHEN FLOOR((p.longitude - #{minLng}) / #{cellLng}) &gt; #{maxCellIndex} THEN #{maxCellIndex}
+                     WHEN FLOOR((p.longitude - #{minLng}) / #{cellLng}) &gt; #{maxColIndex} THEN #{maxColIndex}
                      ELSE CAST(FLOOR((p.longitude - #{minLng}) / #{cellLng}) AS INTEGER) END
             </otherwise>
         </choose>
