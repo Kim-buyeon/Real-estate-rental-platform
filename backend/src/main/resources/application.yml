@@ -10,21 +10,26 @@ spring:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${POSTGRES_DB:rental}
     username: ${POSTGRES_USER:rental}
     password: ${POSTGRES_PASSWORD:rental}
-    # 커넥션 풀. 아래 값은 전부 미확정 잠정치다 — 부하 시험이 차기 범위라 실측 근거가 없다.
-    # 부하 시험이 들어오면 그때 확정하고, 확정값은 설계 문서에 먼저 적는다.
+    # 커넥션 풀. 크기는 2026-10-04 부하 시험 R04(#390 — 엔드포인트 9개 혼합 계단, 단계당 2분, 읽기 분산 켬, 슬롯 넷)의 Hikari 지표를
+    # 근거로 정했다(#402). 세션 시간 제한은 아래 data-source-properties 주석. 나머지 값(minimum-idle · connection-timeout ·
+    # validation-timeout · max-lifetime · keepalive-time)은 그 시험에서 따로 보지 않았다 — 근거는 각 항목 주석이다.
     hikari:
-      # 2 vCPU 노드에 앱 슬롯이 둘이므로 노드 합계는 16, 앱 노드가 둘(APP-01 · APP-02)이라 전체는 32 다. PostgreSQL 의 최대 커넥션은 그 위에
-      # 운영자 psql · 관리 접속 여유를 얹어 잡혀 있다 — 값은 운영 Compose 가 갖는다. 이 풀을 키우면
-      # 그쪽도 함께 본다. Flyway · 배치는 이 풀에서 빌리므로 따로 세지 않는다.
-      # 풀을 키운다고 처리량이 늘지 않는다 — vCPU 가 둘이라 DB 쪽 경합만 커진다.
-      maximum-pool-size: 8
+      # 슬롯당 5. R04 에서 기본 풀은 동시 사용 최대 1 / 8 · 대여 대기 최대 19 ms 였다 — 지도 · 목록 · 구별 집계가 읽기용 풀로 빠진 뒤
+      # 기본 풀에 남는 것은 짧은 기본 키 조회와 쓰기다. 줄인 몫을 읽기용 풀(아래 app.datasource.replica)에 준다 — 거기는 2 / 2 를 다
+      # 쓰고 대기 2 · 대여 대기 최대 558 ms 였다.
+      # PostgreSQL 최대 커넥션(운영 Compose 의 max_connections 48)과의 산정 — 슬롯 넷 × (기본 5 + 읽기 4) = 36. DB 가 한 대로 몰려도
+      # (DB-02 장애 · 페일오버) 36 이라 exporter · 백업 · 운영자 접속 여유가 12 다(전에는 32 + 8 = 40 · 여유 8). 이 풀이나 읽기용 풀을
+      # 키우면 그쪽도 함께 본다. 배치는 이 풀에서 빌리므로 따로 세지 않는다. Flyway 는 풀 밖의 자기 커넥션을 쓴다(아래 spring.flyway).
+      # 풀을 키운다고 처리량이 늘지 않는다 — DB 노드가 vCPU 둘이라 DB 쪽 경합만 커진다(#342 — 동시 2 부터 CPU 100 %).
+      maximum-pool-size: 5
       # 유휴 시 유지할 최소 커넥션. 0 으로 두면 유휴 뒤 첫 요청이 접속 비용을 문다.
       minimum-idle: 2
       # 밀리초. 풀에서 커넥션을 얻기까지 기다리는 상한. Boot(HikariCP) 기본 30초는 DB 가 느려질 때
       # 사용자 요청이 30초를 기다린 뒤에야 실패한다는 뜻이고, 그동안 Tomcat 스레드가 차서 전면 정지로 번진다.
       # 빨리 실패해야 스레드 점유가 짧아지고 사용자가 30초를 기다리지 않는다.
-      # 앞단이 다른 슬롯으로 넘겨 주지는 않는다 — 풀 고갈은 500 으로 나가고 운영 절차서 4.2 의
-      # proxy_next_upstream 은 502 · 503 · 연결 오류만 재시도한다.
+      # 넘기면 503 SERVICE_BUSY 로 나간다(전역 예외 처리기, API 공통 명세 2장). 앞단(운영 절차서 4.2)의 proxy_next_upstream 이
+      # 503 을 다른 슬롯으로 다시 보낸다 — 단 멱등 메서드만(Nginx 기본)이고, 첫 시도부터 10초(proxy_next_upstream_timeout) 안일 때만이다.
+      # 5초는 그 안에 든다.
       connection-timeout: 5000
       # 밀리초. 빌려주기 전 커넥션 생존 확인의 상한. connection-timeout 보다 짧아야 한다.
       validation-timeout: 3000
@@ -40,6 +45,15 @@ spring:
       # 채운다(ProxyLeakTask.java:59). 누수가 없어도 모든 대여가 이 값을 치른다 — 2026-09-29 프로파일에서 지도 2단계 요청
       # 표본의 13.3 % 가 여기였다(JIT 컴파일이 섞인 프로파일이라 비중은 참고치다). 운영에서 반납 누락은 스택 대신 Hikari 대기 지표로 드러난다.
       leak-detection-threshold: ${HIKARI_LEAK_DETECTION_THRESHOLD:30000}
+      # 세션 시간 제한(#402). 값과 그 근거는 아키텍처 설계서(성능 및 확장성) 1.4 — statement_timeout 30s(앞단 proxy_read_timeout 과
+      # 같다) · idle_in_transaction_session_timeout 60s. 넘어 취소된 질의(SQLSTATE 57014)는 503 SERVICE_BUSY 로 나간다.
+      # pgJDBC 의 접속 시작 파라미터(options)로 준다 — 커넥션을 맺을 때 서버가 세션 기본값으로 받으므로 문장을 따로 보내지 않고,
+      # RESET 해도 이 값으로 돌아간다. 이 자리(data-source-properties)에 두는 이유 셋 —
+      #   읽기용 풀이 그대로 입는다 — 읽기용 풀은 이 spring.datasource.hikari 를 먼저 입힌다(ReplicaDataSourceConfig).
+      #   Flyway 에는 가지 않는다 — Flyway 의 커넥션은 url · 계정만으로 만든다(아래 spring.flyway 주석). url 에 붙이면 따라간다.
+      #   서버 전역(-c) · ALTER ROLE 이 아니다 — 같은 계정의 운영자 수작업 · pg_basebackup 에 걸리지 않는다.
+      data-source-properties:
+        options: "-c statement_timeout=30s -c idle_in_transaction_session_timeout=60s"
       # 풀 이름 — Hikari 지표의 pool 태그다. 읽기 분산(app.datasource.replica)을 켜면 읽기용 풀이 replica 로 따로 나온다.
       # 이름을 주지 않으면 HikariPool-1 처럼 생성 순서로 붙는다.
       pool-name: primary
@@ -59,6 +73,23 @@ spring:
           time_zone: Asia/Seoul
   flyway:
     enabled: true
+    # Flyway 는 앱 풀 밖의 자기 커넥션으로 돈다(#402). url 을 주면 Boot 가 이 url · 계정으로 풀 없는 데이터 소스(SimpleDriverDataSource)를
+    # 따로 만든다(spring-boot-flyway 4.1.1 FlywayAutoConfiguration.getMigrationDataSource). 그 커넥션은 마이그레이션이 끝나면 닫힌다.
+    # 앱 풀을 빌리면 두 가지가 꼬인다 —
+    #   위 세션 시간 제한(30s)이 마이그레이션에도 걸린다. 대량 표의 인덱스 · 열 변경은 30초를 넘을 수 있고, 넘으면 기동이 실패한다.
+    #   그렇다고 init-sqls 로 0 을 SET 하면 그 커넥션이 풀로 돌아가 앱 요청이 시간 제한 없는 세션을 받는다 — SET 은 세션에 남는다.
+    # 값은 앱 풀과 같은 곳을 가리킨다(쓰기 노드). 테스트의 @ServiceConnection 은 이 값 대신 컨테이너 접속 정보를 준다.
+    # 읽기 분산을 켜도 같다 — ReplicaDataSourceConfig 는 Flyway 전용 데이터 소스를 지정하지 않는다.
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username}
+    password: ${spring.datasource.password}
+    # 자기 커넥션이라 SET 이 풀로 새지 않는다. 0 은 서버 기본값과 같지만 적어 둔다 — 나중에 DB · 계정 수준 기본값(ALTER DATABASE ·
+    # ALTER ROLE)이 생겨도 마이그레이션은 끊기지 않는다. 실측 최장 마이그레이션은 V19 916 ms(#402 계획).
+    # 끝의 세미콜론은 필수다 — Boot 가 목록을 줄바꿈으로 이어 한 스크립트로 넘기고(FlywayAutoConfiguration), Flyway 는 그것을 구분자(;)로
+    # 나눈다(FlywayExecutor 의 연결 초기화). 빠지면 두 줄이 한 문장이 되어 문법 오류로 기동이 멈춘다.
+    init-sqls:
+      - SET statement_timeout = 0;
+      - SET idle_in_transaction_session_timeout = 0;
   lifecycle:
     # graceful 종료의 대기 상한. 넘으면 남은 요청을 끊고 내려간다. 배포 drain(30초)과 같게 둔다 — 운영 절차서 3.2.
     timeout-per-shutdown-phase: 30s
@@ -132,12 +163,12 @@ app:
         #   읽기 전용이 강제되고 autocommit 문장에는 걸리지 않는다. 표시한 조회 셋은 QueryService 클래스 수준 readOnly 트랜잭션
         #   안에서 돌므로, DB-02 가 없어 DB-01 에 붙어도 지금은 쓰기가 거절된다 — 트랜잭션 밖에서 이 풀을 쓰면 막히지 않는다.
         read-only: true
-        # 슬롯당 2 — DB 가 한 대만 남으면(DB-02 장애 · 페일오버) 이 풀도 남은 노드로 붙어 기본 풀 32(4슬롯 × 8)와 더해진다.
-        # 슬롯당 4 였을 때는 32 + 16 = 48 = max_connections(운영 Compose)라 exporter · 백업 · 운영자 접속이 거절될 수 있었고,
-        # 앱 계정이 superuser 라 예약 연결도 막지 못한다. 2 면 최악 40 · 여유 8 이다(#349).
-        # 처리량 영향이 없다고 본 근거 — #342 운영 측정에서 DB 한 대는 동시 2 부터 CPU 100% 였고 그 이상은 대기만 늘었다.
-        # 줄인 뒤에도 DB-02 동시 연결은 슬롯 수 × 2(지금 2슬롯 4 · 4슬롯 8)로 그 포화점 이상이다.
-        maximum-pool-size: 2
+        # 슬롯당 4(#402). R04(#390)에서 슬롯당 2 를 다 쓰고 대기 2 · 대여 대기 최대 558 ms 였다 — 기본 풀은 1 / 8 만 썼다. 기본 풀을
+        # 8 → 5 로 줄인 몫으로 늘린다. DB 가 한 대만 남으면(DB-02 장애 · 페일오버) 이 풀도 남은 노드로 붙어 기본 풀과 더해진다 —
+        # 슬롯 넷 × (5 + 4) = 36 ≤ max_connections 48(운영 Compose), 여유 12. 앱 계정이 superuser 라 예약 연결로 막지 못하므로
+        # 여유는 앱 풀이 상한을 지킨다는 전제의 값이다(#349 — 슬롯당 4 · 기본 8 이었을 때 48 로 여유 0 이라 2 로 줄였었다).
+        # 늘린 뒤에도 DB 한 대는 동시 2 부터 CPU 100 % 였으므로(#342) 늘린 몫은 처리량이 아니라 대여 대기를 줄인다.
+        maximum-pool-size: 4
 
 server:
   # 종료 신호를 받으면 새 요청을 받지 않고 처리 중인 요청을 끝낸 뒤 내려간다. 슬롯 교체 배포(운영 절차서 3장)가 drain 뒤에
@@ -148,9 +179,9 @@ server:
   # 내장 Tomcat. 아래 값은 전부 미확정 잠정치다 — 부하 시험이 차기 범위라 실측 근거가 없다.
   tomcat:
     threads:
-      # 요청 처리 스레드 상한. 기본 200 은 2 vCPU · DB 풀 8 인 노드에서 의미가 없다. 동시에 일할 수 있는
-      # 것은 vCPU 둘이고 DB 를 쓰는 요청은 어차피 8 개에서 막히므로, 스레드를 늘리면 컨텍스트 전환만 늘고
-      # 스레드마다 스택 메모리를 문다(노드가 2 GiB 이고 앱 슬롯이 둘이다).
+      # 요청 처리 스레드 상한. 기본 200 은 2 vCPU · DB 풀(기본 5 + 읽기 4) 인 슬롯에서 의미가 없다. 동시에 일할 수 있는
+      # 것은 vCPU 둘이고 DB 를 쓰는 요청은 어차피 풀 크기에서 막히므로, 스레드를 늘리면 컨텍스트 전환만 늘고
+      # 스레드마다 스택 메모리를 문다(노드에 앱 슬롯이 둘이고 슬롯마다 메모리 상한이 있다 — 배분은 운영 Compose 머리 주석).
       # SSE 는 Spring MVC 비동기라 요청 스레드를 붙들지 않는다 — 이 값이 동시 SSE 연결 수를 제한하지 않는다.
       max: 50
       # 유휴 시 유지할 스레드. 갑작스러운 요청에 스레드 생성 비용을 물지 않게 한다.

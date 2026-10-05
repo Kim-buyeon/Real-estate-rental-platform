@@ -1,5 +1,7 @@
 package com.duri.rentalplatform.common;
 
+import java.sql.SQLException;
+import java.sql.SQLTransientConnectionException;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -84,11 +86,68 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(ErrorCode.AUTH_FORBIDDEN, null));
     }
 
-    /** 예상하지 못한 예외. 내부 메시지를 응답에 노출하지 않고 500으로 변환한다. */
+    /**
+     * 위 처리기가 받지 않은 모든 예외. DB 가 바쁜 경우({@link #databaseBusyCause})는 503 {@code SERVICE_BUSY}, 나머지는 예상하지
+     * 못한 예외로 보고 내부 메시지를 노출하지 않은 채 500 으로 변환한다.
+     *
+     * <p>DB 가 바쁜 경우를 별도 처리기로 가르지 않고 여기서 보는 이유 — 같은 원인이 경로마다 다른 Spring 예외로 감싸여 올라온다.
+     * 최상위 타입으로 처리기를 고르면 빠지는 경로가 생긴다. 원인 체인 맨 아래의 JDBC 예외는 경로와 무관하게 같으므로 그것으로
+     * 판정하고, 그러려면 모든 예외가 오는 이 자리여야 한다.
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnexpected(Exception e) {
+        SQLException busy = databaseBusyCause(e);
+        if (busy != null) {
+            // 풀 고갈 · 질의 취소는 운영 신호라 warn. 부하에서 한꺼번에 쏟아지므로 스택은 남기지 않는다 — Hikari 메시지에 풀 상태
+            // (total · active · idle · waiting)가, PostgreSQL 메시지에 취소 사유가 들어 있다.
+            log.warn("Database busy ({}, SQLState {}): {}", e.getClass().getName(), busy.getSQLState(), busy.getMessage());
+            return ResponseEntity.status(ErrorCode.SERVICE_BUSY.getStatus())
+                    .body(ApiResponse.fail(ErrorCode.SERVICE_BUSY, null));
+        }
         log.error("Unhandled exception", e);
         return ResponseEntity.status(ErrorCode.INTERNAL_ERROR.getStatus())
                 .body(ApiResponse.fail(ErrorCode.INTERNAL_ERROR, null));
+    }
+
+    /** PostgreSQL 의 질의 취소 SQLSTATE — statement_timeout(30s, 설정 파일) 초과 또는 운영자의 취소. */
+    static final String QUERY_CANCELED = "57014";
+
+    /** 원인 체인을 몇 단계까지 따라갈지. 정상 체인은 서너 단계다 — 순환하는 체인에서 멈추기 위한 상한이다. */
+    private static final int MAX_CAUSE_DEPTH = 16;
+
+    /**
+     * 원인 체인에서 「DB 가 바쁘다」를 뜻하는 JDBC 예외를 찾는다. 없으면 null.
+     *
+     * <ul>
+     *   <li>{@link SQLTransientConnectionException} — 풀에서 커넥션을 얻지 못했다. HikariCP 는 대여 대기
+     *       ({@code connection-timeout})가 넘으면 이 타입을 던진다(HikariCP 7.0.2 {@code HikariPool.createTimeoutException}).
+     *       DB 에 접속하지 못해 풀이 채워지지 않은 경우도 같은 타입이다 — 그때 원인은 드라이버의 접속 실패다. pgJDBC 는 이 타입을
+     *       던지지 않는다.</li>
+     *   <li>SQLSTATE {@value #QUERY_CANCELED} — 질의가 취소됐다. pgJDBC 의 {@code PSQLException} 이다.</li>
+     * </ul>
+     *
+     * <p>감싸는 모양은 경로마다 다르다(Spring 7.0 · Hibernate 7.4 · mybatis-spring 4.1 소스, 단위 테스트가 고정한다).
+     * <ul>
+     *   <li>JPA 트랜잭션 시작에서 커넥션을 잡을 때 — {@code CannotCreateTransactionException} ← Hibernate
+     *       {@code JDBCConnectionException} ← 풀 예외({@code JpaTransactionManager.doBegin}).</li>
+     *   <li>읽기 분산을 켜 커넥션을 첫 문장까지 미룰 때 · MyBatis — Hibernate 변환을 거친 Spring 예외 또는
+     *       {@code TransientDataAccessResourceException}({@code SQLExceptionSubclassTranslator}).</li>
+     *   <li>트랜잭션 밖에서 커넥션을 얻을 때 — {@code CannotGetJdbcConnectionException}({@code DataSourceUtils}).</li>
+     *   <li>질의 취소 — Spring {@code QueryTimeoutException}. Hibernate 는 PostgreSQL 방언이 57014 를
+     *       {@code org.hibernate.QueryTimeoutException} 으로 바꾼 뒤 Spring 이 다시 감싼다.</li>
+     * </ul>
+     * 어느 경우든 원래의 JDBC 예외가 원인으로 남는다.
+     */
+    static SQLException databaseBusyCause(Throwable e) {
+        Throwable t = e;
+        for (int depth = 0; t != null && depth < MAX_CAUSE_DEPTH; depth++, t = t.getCause()) {
+            if (t instanceof SQLTransientConnectionException connection) {
+                return connection;
+            }
+            if (t instanceof SQLException sql && QUERY_CANCELED.equals(sql.getSQLState())) {
+                return sql;
+            }
+        }
+        return null;
     }
 }
