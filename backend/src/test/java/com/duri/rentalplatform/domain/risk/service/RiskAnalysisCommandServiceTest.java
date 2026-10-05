@@ -130,6 +130,10 @@ class RiskAnalysisCommandServiceTest {
         criteriaVersionWatcher = mock(CriteriaVersionWatcher.class);
         transactionManager = mock(PlatformTransactionManager.class);
         service = serviceWithLedgerMode("mock");
+        // 판정 기록은 최신 행을 잠금 조회(findLatestForUpdate)로 읽는다. 각 테스트는 잠그지 않는 조회에 최신 행을 스텁하므로, 잠금
+        // 조회가 그 스텁을 그대로 따르게 한다 — 스텁 순서(thenReturn 연쇄)도 두 조회가 호출 순서대로 함께 소비한다.
+        when(riskAnalysisRepository.findLatestForUpdate(any())).thenAnswer(
+                invocation -> riskAnalysisRepository.findByPropertyIdAndLatestTrue(invocation.getArgument(0)));
     }
 
     private RiskAnalysisCommandService serviceWithLedgerMode(String buildingLedgerMode) {
@@ -811,6 +815,26 @@ class RiskAnalysisCommandServiceTest {
         verify(propertyRepository).applyLatestJudgement(eq(PROPERTY_ID), eq(RiskGrade.SAFE), ratio.capture());
         assertThat(ratio.getValue()).isEqualByComparingTo("50.00");
         assertThat(ratio.getValue().scale()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("판정 기록은 최신 행을 잠금 조회로 읽고, 저장된 판정 적중 조회는 잠금 조회를 쓰지 않는다")
+    void recordReadsLatestRowWithLockButStoredHitDoesNot() {
+        givenSafeProperty();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID))
+                .thenReturn(Optional.of(analysis(RiskGrade.SAFE, true, "50.0")));
+
+        service.analyze(PROPERTY_ID);
+
+        verify(riskAnalysisRepository).findLatestForUpdate(PROPERTY_ID);
+
+        clearInvocations(riskAnalysisRepository);
+        RiskAnalysis stored = storedLatest();
+        when(riskAnalysisRepository.findByPropertyIdAndLatestTrue(PROPERTY_ID)).thenReturn(Optional.of(stored));
+
+        service.findLatestOrAnalyze(PROPERTY_ID);
+
+        verify(riskAnalysisRepository, never()).findLatestForUpdate(any());
     }
 
     @Test

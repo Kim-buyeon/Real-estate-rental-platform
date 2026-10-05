@@ -61,8 +61,9 @@ public interface PropertyRepository extends JpaRepository<Property, Long> {
      * 판정 행과 함께 커밋되거나 함께 롤백된다. 바꾼 행 수(이미 같으면 0).
      *
      * <p>값이 이미 같으면 쓰지 않는다 — 행의 새 판과 WAL 을 만들지 않는다. 벌크 UPDATE 인 이유는 {@link #markReanalysisPending}
-     * 과 같고, 엔티티는 이 열을 바꾸지 않는다({@code Property} 주석). 같은 매물의 판정 기록 둘은 최신 판정 행을 내리는 UPDATE ·
-     * 최신 행 유일 인덱스에서 줄을 서므로, 나중에 커밋한 판정이 마지막에 쓴다 — 판정 표의 최신 행과 같은 순서다.
+     * 과 같고, 엔티티는 이 열을 바꾸지 않는다({@code Property} 주석). 같은 매물의 판정 기록 둘은 최신 판정 행의 행 잠금
+     * ({@code RiskAnalysisRepository#findLatestForUpdate})에서 줄을 서고, 최신 행이 없으면 최신 행 유일 인덱스와 재시도가 가른다. 그래서
+     * 나중에 기록하는 쪽은 먼저 쪽이 커밋한 최신 행을 보고 쓴다 — 매물 열이 판정 표의 최신 행과 같은 순서로 바뀐다.
      *
      * @param leaseRatio 저장한 판정 행의 전세가율. 열이 NUMERIC(5,2) 로 판정 표와 같아 같은 값으로 반올림된다
      */

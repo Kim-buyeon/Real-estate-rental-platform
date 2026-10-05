@@ -281,7 +281,7 @@ class SchemaMigrationTest {
     }
 
     @Test
-    @DisplayName("V22: 매물에 최신 판정 등급 · 전세가율 열이 NULL 허용으로 있고, 전세가율 목록 · 지도 커버링 인덱스가 정의대로 있다")
+    @DisplayName("V22 ~ V25: 매물에 최신 판정 등급 · 전세가율 열이 NULL 허용으로 있고, 전세가율 목록 · 지도 커버링 인덱스가 유효한 정의로 있다")
     void propertyLatestRiskColumnsAndIndexes() {
         Map<String, String> columns = jdbcTemplate.queryForList(
                         """
@@ -314,6 +314,16 @@ class SchemaMigrationTest {
                         "lease_ratio IS NOT NULL");
         assertThat(indexDefs.get("idx_property_district_lat_lng"))
                 .contains("property", "(district, latitude, longitude)", "INCLUDE (property_id, risk_grade)");
+        // V24 는 CONCURRENTLY(트랜잭션 밖)다 — 실패하면 INVALID 인덱스가 남으므로 유효 여부까지 본다.
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname IN ('ix_property_lease_ratio', 'idx_property_district_lat_lng') AND i.indisvalid
+                """, Integer.class)).isEqualTo(2);
+        // 네 파일이 각자 성공으로 이력에 있다 — 파일마다 따로 적용된다.
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT version FROM flyway_schema_history WHERE version IN ('22', '23', '24', '25') AND success "
+                        + "ORDER BY installed_rank", String.class))
+                .containsExactly("22", "23", "24", "25");
     }
 
     @Test

@@ -99,7 +99,9 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p><b>동시 분석</b> — 두 인스턴스가 같은 매물을 동시에 처음 분석하면 한쪽이 최신 분석 유일 인덱스
  * ({@code uq_risk_analysis_latest}, V9 · V19 커버링 교체)에 걸린다. 그때는 한 번 다시 판정한다 — 다른 쪽이 같은 입력으로 저장했으므로
- * 「결론 같음 — 저장 안 함」으로 끝난다.
+ * 「결론 같음 — 저장 안 함」으로 끝난다. 최신 행이 있는 매물의 동시 판정은 기록 단계가 최신 행을 행 잠금으로 읽어 줄을 선다
+ * ({@code RiskAnalysisRepository#findLatestForUpdate}) — 기다린 쪽이 먼저 쪽이 내린 행을 보면 빈 결과를 받아 새 행 INSERT 가 유일
+ * 인덱스에 걸리고, 같은 재시도가 다시 판정한다. 저장된 판정을 돌려주는 조회는 잠그지 않는다.
  *
  * <p><b>Mock 대장</b> — 대장 연동이 real({@code external.building-ledger.mode=real})이면 {@code data_source = MOCK} 인 대장은
  * 판정 입력에서 「대장 없음」으로 본다. 대장 항목 셋(주소 · 면적 · 위반건축물)은 확인 불가이고 분석 행의 대장 참조는 null 이다 —
@@ -332,7 +334,9 @@ public class RiskAnalysisCommandService {
         // 근거를 적지 못했으면 지문도 비운다 — 근거 없는 지문은 뜻이 없고, 다음 조회가 다시 판정해 채운다.
         String fingerprint = snapshot == null ? null : criteria.fingerprint();
 
-        Optional<RiskAnalysis> latest = riskAnalysisRepository.findByPropertyIdAndLatestTrue(propertyId);
+        // 최신 행을 잠가 읽는다 — 같은 매물의 판정 기록이 여기서 줄을 선다(RiskAnalysisRepository#findLatestForUpdate). 잠그지 않으면
+        // 동시 판정 둘 중 「결론 같음」 쪽이 먼저 커밋된 새 등급을 못 본 채 옛 최신 행 값으로 매물 열을 덮을 수 있다.
+        Optional<RiskAnalysis> latest = riskAnalysisRepository.findLatestForUpdate(propertyId);
         if (latest.isPresent()
                 && latest.get().sameConclusion(grade.riskGrade(), hug, hf, sgi, negativeEquity.debtRatio())) {
             RiskAnalysis kept = latest.get();

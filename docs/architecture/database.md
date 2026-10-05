@@ -149,19 +149,23 @@
 | Risk Grade | risk_grade |  |  | VARCHAR | 10 | — | — | 최신 판정의 위험 등급 — 비정규화(V22). NULL = 최신 판정 없음(미분석). 정본은 RISK_ANALYSIS 의 최신 행 |
 | Lease Ratio | lease_ratio |  |  | NUMERIC | 5 | 2 | — | 최신 판정의 전세가율 (%) — 비정규화(V22). 등급과 함께 차 있거나 함께 NULL 이다 |
 
-최신 판정 비정규화(V22) — 지도 묶음 · 반경 · 목록 · 자치구 집계 · 상세가 RISK_ANALYSIS 의 최신 행을 조인하지 않고 `risk_grade` · `lease_ratio` 를 읽는다. 지도 · 집계 질의 버퍼의 대부분이 매물 행마다 최신 판정을 찾는 조인이었다(V22 주석 — #390 실제 값 EXPLAIN).
+최신 판정 비정규화(V22 ~ V25) — 지도 묶음 · 반경 · 목록 · 자치구 집계 · 상세가 RISK_ANALYSIS 의 최신 행을 조인하지 않고 `risk_grade` · `lease_ratio` 를 읽는다. 지도 · 집계 질의 버퍼의 대부분이 매물 행마다 최신 판정을 찾는 조인이었다(V22 주석 — #390 실제 값 EXPLAIN). 마이그레이션은 잠금을 짧게 쥐도록 넷으로 나눴다 — V22 열 추가 · V23 채우기 · V24 인덱스(CONCURRENTLY) · V25 옛 인덱스 교체. 파일마다 잠금과 실패 시 재기동 동작은 각 파일 주석.
 
 - **갱신 지점은 하나다.** 판정 기록이 같은 쓰기 트랜잭션에서 조건부 벌크 UPDATE 로 옮긴다(`PropertyRepository#applyLatestJudgement`). 판정 행과 함께 커밋되거나 함께 롤백된다. 결론이 같아 새 행을 남기지 않는 판정도 최신 행 값으로 같은 UPDATE 를 부른다 — 어긋난 열이 판정 때 고쳐지고, 값이 같으면 조건이 걸러 쓰지 않는다. 엔티티의 변경 감지로는 쓰지 않는다 — 매물은 `@DynamicUpdate` 라 다른 쓰기가 이 열을 덮지 않는다.
+- **동시 판정은 줄을 선다.** 판정 기록은 최신 판정 행을 행 잠금(SELECT … FOR UPDATE, `RiskAnalysisRepository#findLatestForUpdate`)으로 읽는다. 같은 매물의 두 번째 기록은 첫 번째가 커밋할 때까지 기다린 뒤 그 결과를 보고 매물 열을 쓴다 — 잠그지 않으면 「결론 같음」 쪽이 먼저 커밋된 새 등급을 못 본 채 옛 값으로 덮을 수 있다. 첫 번째가 최신 행을 이력으로 내렸으면 기다린 쪽은 다시 확인한 조건(is_latest)에 빈 결과를 받아 새 행을 넣다가 최신 행 유일 인덱스에 걸리고, 판정의 기존 재시도가 다시 판정한다. 최신 행이 없는 첫 분석의 경합은 유일 인덱스와 재시도가 맡는다. 저장된 판정을 돌려주는 조회는 잠그지 않는다. 잠금 대기는 앱 커넥션의 statement_timeout(30s, #405) 안에 든다 — 판정 기록 트랜잭션은 외부 수집을 밖에 두어 짧다.
 - **RISK_ANALYSIS 를 바꾸는 다른 쓰기** — 대장 떼기(`RiskAnalysisRepository#detachLedger`)는 대장 참조만 바꿔 두 값과 무관하다. 판정 행을 지우는 경로는 없다.
-- **어긋날 수 있는 경우와 맞추는 법** — 앱을 거치지 않고 RISK_ANALYSIS 에 넣은 행(부하 데이터 스크립트 등), 배포 중 옛 앱 슬롯이 남긴 판정. V22 의 채우기 UPDATE 는 값이 다른 행만 고치므로 그대로 다시 돌린다.
-- 일관성 확인 질의 — 최신 판정 행과 매물 열이 다른 매물 수. 0 이어야 한다.
+- **배포 뒤 운영 작업** — 한자리에 모은다.
+  1. `VACUUM (ANALYZE) property;` — V23 채우기가 31만 행을 고쳐 써 가시성 맵이 지워졌다. 커버링 인덱스(V24)의 인덱스 전용 스캔은 가시성 맵이 차 있어야 힙을 읽지 않는다. 트랜잭션 안에서 돌 수 없어 마이그레이션에 넣지 않았다.
+  2. 일관성 확인 — 최신 판정 행과 매물 열이 다른 매물 수. 0 이어야 한다.
 
-  ```sql
-  SELECT count(*) FROM property p LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest
-   WHERE (p.risk_grade, p.lease_ratio) IS DISTINCT FROM (ra.risk_grade, ra.lease_ratio);
-  ```
+     ```sql
+     SELECT count(*) FROM property p LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest
+      WHERE (p.risk_grade, p.lease_ratio) IS DISTINCT FROM (ra.risk_grade, ra.lease_ratio);
+     ```
 
-인덱스 — (latitude, longitude): 좌표 범위 조회(V3). (district, latitude, longitude) INCLUDE (property_id, risk_grade): 자치구 + 좌표 범위인 지도 묶음 · 마커 조회(V15). V22 에서 같은 이름의 커버링으로 교체 — 필터 없는 지도 묶음이 읽는 열을 담아 매물 힙도 읽지 않게 한다. 자치구 집계(자치구 · 등급)도 이 인덱스를 쓸 수 있어 집계용 인덱스를 따로 두지 않는다. 대가로 등급이 바뀌는 판정 기록의 매물 UPDATE 가 HOT 이 되지 않는다. (district, registered_at DESC, property_id DESC): 목록 기본 정렬을 인덱스 순서로 읽고 LIMIT 에서 멈춘다(V15). (registered_at DESC, property_id DESC): 자치구 없는 목록의 기본 정렬 — 같은 이유(V19). (lease_ratio, property_id) INCLUDE (risk_grade) WHERE lease_ratio IS NOT NULL: 자치구 · 매물 조건 필터가 없는 전세가율순 목록이 이 순서로 읽고 LIMIT 에서 멈춘다 — V20 의 판정 표 인덱스가 하던 역할을 옮겼다(V22). 질의에 전세가율 범위 조건(미분석 대체값 경계)이 있어야 플래너가 이 부분 인덱스를 정렬에 쓰는 것, 매물 조건 필터가 있으면 쓰지 않는 것은 V20 과 같다. 근거는 부하 시험의 질의 통계(용량 산정 리포트, #270)와 운영 측정(V19 · V20 · V22 주석).
+  3. 0 이 아니면 다시 채운다 — V23 의 UPDATE 를 그대로 돌린다(값이 다른 행만 고친다). 어긋나는 경우: 배포 중 옛 앱 슬롯이 남긴 판정, 앱을 거치지 않고 RISK_ANALYSIS 에 넣은 행(부하 데이터 스크립트 등). 남은 행도 그 매물의 다음 판정이 고친다(위 「갱신 지점」).
+
+인덱스 — (latitude, longitude): 좌표 범위 조회(V3). (district, latitude, longitude) INCLUDE (property_id, risk_grade): 자치구 + 좌표 범위인 지도 묶음 · 마커 조회(V15). V24 · V25 에서 같은 이름의 커버링으로 교체 — 필터 없는 지도 묶음이 읽는 열을 담아 매물 힙도 읽지 않게 한다. 자치구 집계(자치구 · 등급)도 이 인덱스를 쓸 수 있어 집계용 인덱스를 따로 두지 않는다. 대가로 등급이 바뀌는 판정 기록의 매물 UPDATE 가 HOT 이 되지 않는다. (district, registered_at DESC, property_id DESC): 목록 기본 정렬을 인덱스 순서로 읽고 LIMIT 에서 멈춘다(V15). (registered_at DESC, property_id DESC): 자치구 없는 목록의 기본 정렬 — 같은 이유(V19). (lease_ratio, property_id) INCLUDE (risk_grade) WHERE lease_ratio IS NOT NULL: 자치구 · 매물 조건 필터가 없는 전세가율순 목록이 이 순서로 읽고 LIMIT 에서 멈춘다 — V20 의 판정 표 인덱스가 하던 역할을 옮겼다(V24). 질의에 전세가율 범위 조건(미분석 대체값 경계)이 있어야 플래너가 이 부분 인덱스를 정렬에 쓰는 것, 매물 조건 필터가 있으면 쓰지 않는 것은 V20 과 같다. 근거는 부하 시험의 질의 통계(용량 산정 리포트, #270)와 운영 측정(V19 · V20 · V22 · V24 주석).
 
 ### 5. SEARCH_HISTORY — 검색 이력
 
@@ -353,7 +357,7 @@
 
 근거 · 지문(V21) — 최신 행에 적는다. 결론이 같아 새 행을 남기지 않는 판정도 최신 행의 근거 · 지문을 새 값으로 고친다(셋이 모두 같으면 쓰지 않는다). 저장된 근거를 언제 돌려주고 언제 다시 판정하는지는 데이터 적재 설계서 1.2 가 정한다. JSONB 가 아니라 TEXT 인 이유는 V21 주석에 있다.
 
-인덱스 — (property_id) INCLUDE (risk_id, risk_grade, lease_ratio, registry_id) WHERE is_latest UNIQUE: 매물마다 최신 분석은 하나다. 두 인스턴스의 동시 첫 분석을 DB 가 막고, 최신 분석 조인(위험도 조회 · 관심 목록 · 마커의 등기 참조 · 상세의 보증 가입 여부)을 겸한다. INCLUDE 열은 V19 에서 지도가 읽던 판정 열이라 지도의 조인이 인덱스 전용 스캔이 되게 했다(V9 → V19 교체, 이름 `uq_risk_analysis_latest` 유지). V22 뒤 지도 묶음 · 집계 · 목록은 매물의 비정규화 열을 읽어 이 조인을 쓰지 않는다. / (ledger_id): 대장을 떼거나 지울 때 참조하는 분석 행을 찾는다. FK 는 인덱스를 만들지 않는다(V19). / (lease_ratio, property_id) INCLUDE (risk_grade) WHERE is_latest AND lease_ratio IS NOT NULL: 자치구 · 매물 조건 필터가 없는 전세가율순 목록이 이 순서로 읽고 LIMIT 에서 멈춘다 — 운영 측정 필터 없음 오름 693.5 → 0.3ms(V20 주석, #347). 질의에 전세가율 범위 조건(미분석 대체값 경계)이 있어야 플래너가 이 부분 인덱스를 정렬에 쓰므로, 그 경계 밖(판정 없는 매물)은 지금 정렬로 이어 읽는다. 매물 조건 필터가 있으면 오히려 느려져(93.9 → 313.3ms) 쓰지 않는다(V20). V22 에서 이 역할을 매물의 (lease_ratio, property_id) 인덱스로 옮겨 지금 이 인덱스를 쓰는 질의는 코드에 없다 — 운영 `pg_stat_user_indexes` 의 idx_scan 이 늘지 않는 것을 배포 뒤 확인하고 지운다.
+인덱스 — (property_id) INCLUDE (risk_id, risk_grade, lease_ratio, registry_id) WHERE is_latest UNIQUE: 매물마다 최신 분석은 하나다. 두 인스턴스의 동시 첫 분석을 DB 가 막고, 최신 분석 조인(위험도 조회 · 관심 목록 · 마커의 등기 참조 · 상세의 보증 가입 여부)을 겸한다. INCLUDE 열은 V19 에서 지도가 읽던 판정 열이라 지도의 조인이 인덱스 전용 스캔이 되게 했다(V9 → V19 교체, 이름 `uq_risk_analysis_latest` 유지). V22 뒤 지도 묶음 · 집계 · 목록은 매물의 비정규화 열을 읽어 이 조인을 쓰지 않는다. / (ledger_id): 대장을 떼거나 지울 때 참조하는 분석 행을 찾는다. FK 는 인덱스를 만들지 않는다(V19). / (lease_ratio, property_id) INCLUDE (risk_grade) WHERE is_latest AND lease_ratio IS NOT NULL: 자치구 · 매물 조건 필터가 없는 전세가율순 목록이 이 순서로 읽고 LIMIT 에서 멈춘다 — 운영 측정 필터 없음 오름 693.5 → 0.3ms(V20 주석, #347). 질의에 전세가율 범위 조건(미분석 대체값 경계)이 있어야 플래너가 이 부분 인덱스를 정렬에 쓰므로, 그 경계 밖(판정 없는 매물)은 지금 정렬로 이어 읽는다. 매물 조건 필터가 있으면 오히려 느려져(93.9 → 313.3ms) 쓰지 않는다(V20). V24 에서 이 역할을 매물의 (lease_ratio, property_id) 인덱스로 옮겨 지금 이 인덱스를 쓰는 질의는 코드에 없다 — 운영 `pg_stat_user_indexes` 의 idx_scan 이 늘지 않는 것을 배포 뒤 확인하고 지운다.
 
 ### 17. LOAN_REGULATION — 대출 규제
 
