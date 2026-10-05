@@ -9,9 +9,16 @@ import com.duri.rentalplatform.domain.property.dto.request.DistrictCountRequest;
 import com.duri.rentalplatform.domain.property.dto.request.PropertyMapClustersRequest;
 import com.duri.rentalplatform.domain.property.dto.request.PropertySearchRequest;
 import com.duri.rentalplatform.domain.property.service.PropertyQueryService;
+import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.callback.Callback;
+import org.flywaydb.core.api.callback.Context;
+import org.flywaydb.core.api.callback.Event;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -36,6 +43,10 @@ import org.testcontainers.utility.DockerImageName;
  *
  * <p>어느 서버인지는 {@code current_database()} 로 가른다 — primary 는 primarydb, replica 는 replicadb. replica 는 별도 서버라
  * 스키마가 없다(Flyway 는 primary 에만 돈다). 그래서 표시된 실제 서비스 메서드가 replica 로 가면 테이블이 없다는 오류가 난다.
+ *
+ * <p>세션 시간 제한(#402)도 여기서 본다. 접속 정보를 {@code @ServiceConnection} 이 아니라 설정 값({@code spring.datasource.url})으로
+ * 주므로 Flyway 가 운영과 같은 경로({@code spring.flyway.url})로 커넥션을 얻는다 — 공유 컨테이너 구성은 Flyway 접속 정보를 따로
+ * 주어 이 경로를 지나지 않는다.
  */
 @Tag("integration")
 @SpringBootTest
@@ -87,6 +98,51 @@ class ReplicaRoutingIntegrationTest {
         public String plainDb() {
             return jdbc.queryForObject("select current_database()", String.class);
         }
+
+        @ReplicaRead
+        @Transactional(readOnly = true)
+        public String markedSetting(String name) {
+            return jdbc.queryForObject("select current_setting(?)", String.class, name);
+        }
+
+        @Transactional(readOnly = true)
+        public String plainSetting(String name) {
+            return jdbc.queryForObject("select current_setting(?)", String.class, name);
+        }
+    }
+
+    /** 마이그레이션이 끝난 시점에 Flyway 자기 커넥션의 세션 값을 적어 둔다. Boot 가 {@link Callback} 빈을 Flyway 에 붙인다. */
+    static class FlywaySessionProbe implements Callback {
+        final Map<String, String> settings = new ConcurrentHashMap<>();
+
+        @Override
+        public boolean supports(Event event, Context context) {
+            return event == Event.AFTER_MIGRATE;
+        }
+
+        @Override
+        public boolean canHandleInTransaction(Event event, Context context) {
+            return true;
+        }
+
+        @Override
+        public void handle(Event event, Context context) {
+            try (Statement s = context.getConnection().createStatement()) {
+                for (String name : new String[] {"statement_timeout", "idle_in_transaction_session_timeout"}) {
+                    try (ResultSet rs = s.executeQuery("select current_setting('" + name + "')")) {
+                        rs.next();
+                        settings.put(name, rs.getString(1));
+                    }
+                }
+            } catch (SQLException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+
+        @Override
+        public String getCallbackName() {
+            return "flywaySessionProbe";
+        }
     }
 
     static class ProbeWriter {
@@ -130,6 +186,11 @@ class ReplicaRoutingIntegrationTest {
         ProbeWriter probeWriter(JdbcTemplate jdbc, ProbeReader reader) {
             return new ProbeWriter(jdbc, reader);
         }
+
+        @Bean
+        FlywaySessionProbe flywaySessionProbe() {
+            return new FlywaySessionProbe();
+        }
     }
 
     @Autowired
@@ -138,6 +199,10 @@ class ReplicaRoutingIntegrationTest {
     ProbeWriter writer;
     @Autowired
     PropertyQueryService propertyQueryService;
+    @Autowired
+    FlywaySessionProbe flywaySessionProbe;
+    @Autowired
+    Flyway flyway;
 
     @Test
     @DisplayName("표시한 메서드는 replica 로 간다")
@@ -195,6 +260,24 @@ class ReplicaRoutingIntegrationTest {
     void flywayRanOnPrimaryOnly() throws Exception {
         assertThat(regclass(PRIMARY)).isNotNull();
         assertThat(regclass(REPLICA)).isNull();
+    }
+
+    @Test
+    @DisplayName("쓰기 노드 풀 · 읽기용 풀 모두 세션 시간 제한이 30s · 1min 이다 - 읽기용 풀은 기본 풀 설정을 입는다")
+    void bothPoolsHaveSessionTimeouts() {
+        assertThat(reader.plainSetting("statement_timeout")).isEqualTo("30s");
+        assertThat(reader.plainSetting("idle_in_transaction_session_timeout")).isEqualTo("1min");
+        assertThat(reader.markedSetting("statement_timeout")).isEqualTo("30s");
+        assertThat(reader.markedSetting("idle_in_transaction_session_timeout")).isEqualTo("1min");
+    }
+
+    @Test
+    @DisplayName("Flyway 마이그레이션 세션은 시간 제한이 0 이다 - 앱 풀을 빌리지 않고 init-sqls 가 걸린 자기 커넥션이다")
+    void flywaySessionHasNoTimeouts() {
+        assertThat(flyway.getConfiguration().getDataSource()).isNotInstanceOf(HikariDataSource.class);
+        assertThat(flywaySessionProbe.settings)
+                .containsEntry("statement_timeout", "0")
+                .containsEntry("idle_in_transaction_session_timeout", "0");
     }
 
     private static String regclass(PostgreSQLContainer<?> container) throws Exception {

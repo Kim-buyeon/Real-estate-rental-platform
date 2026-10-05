@@ -110,8 +110,29 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.error.field").doesNotExist());
     }
 
+    @Test
+    @DisplayName("풀 대여 시간 초과는 디스패처를 거쳐 503 SERVICE_BUSY 봉투가 되고 풀 상태 메시지를 노출하지 않는다")
+    void databaseBusy() throws Exception {
+        mockMvc.perform(get("/test/pool-timeout"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error.code").value("SERVICE_BUSY"))
+                .andExpect(jsonPath("$.error.message").value(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("Connection is not available"))))
+                .andExpect(jsonPath("$.error.retryAfter").doesNotExist());
+    }
+
     @RestController
     static class TestController {
+
+        /** 경로별 감싼 모양은 {@code DatabaseBusyMappingTest} 가 본다. 여기서는 처리기 선택과 봉투만 본다. */
+        @GetMapping("/test/pool-timeout")
+        void poolTimeout() {
+            throw new org.springframework.transaction.CannotCreateTransactionException(
+                    "Could not open JPA EntityManager for transaction",
+                    new java.sql.SQLTransientConnectionException(
+                            "primary - Connection is not available, request timed out after 5001ms"));
+        }
 
         @GetMapping("/test/denied")
         void denied() {

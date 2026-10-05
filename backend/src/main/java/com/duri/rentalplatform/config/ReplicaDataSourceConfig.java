@@ -11,7 +11,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
-import org.springframework.boot.flyway.autoconfigure.FlywayDataSource;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.boot.jdbc.autoconfigure.DataSourceProperties;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
@@ -42,9 +41,11 @@ import org.springframework.jdbc.datasource.LazyConnectionDataSourceProxy;
  * {@code DataSourcePoolMetricsAutoConfiguration} 이 {@code ObjectProvider.UNFILTERED} 로 고른다) {@code pool} 태그
  * primary · replica 로 나뉘어 나온다.
  *
- * <p><b>Flyway 는 기본 풀을 직접 쓴다</b>({@link FlywayDataSource}). 라우팅을 거쳐도 표시가 없으면 기본 풀이지만, 마이그레이션이
- * 쓰기 가능한 노드에서 도는 것을 「표시가 없다」는 간접 조건에 걸지 않는다. 지연 프록시를 거치지 않으므로 Flyway 의 커넥션
- * 다루기와 프록시의 지연 동작이 엮이지 않는다.
+ * <p><b>Flyway 는 어느 풀도 쓰지 않는다</b>(#402). {@code spring.flyway.url} 이 기본 풀과 같은 주소(쓰기 노드)를 가리키고, Boot 가
+ * 그 주소로 풀 없는 데이터 소스를 따로 만든다 — 그래서 여기서 Flyway 전용 데이터 소스를 지정하지 않는다. 지정하면 Boot 는 그것을
+ * 먼저 쓰므로({@code FlywayAutoConfiguration.getMigrationDataSource}) Flyway 가 기본 풀을 빌린다. 그러면 풀의 세션 시간 제한
+ * ({@code spring.datasource.hikari.data-source-properties})이 마이그레이션에 걸리고, 그것을 풀려고 SET 한 세션은 풀로 돌아간다.
+ * 마이그레이션이 라우팅을 거치지 않는 것(쓰기 노드에서 돈다는 것을 「표시가 없다」는 간접 조건에 걸지 않는 것)은 그대로다.
  */
 @Configuration(proxyBeanMethods = false)
 @Conditional(ReplicaRoutingCondition.class)
@@ -58,7 +59,6 @@ public class ReplicaDataSourceConfig {
      */
     @Bean(defaultCandidate = false)
     @Qualifier(ReplicaRoutingDataSource.PRIMARY)
-    @FlywayDataSource
     @ConfigurationProperties(PRIMARY_HIKARI)
     HikariDataSource primaryDataSource(DataSourceProperties properties,
             ObjectProvider<JdbcConnectionDetails> connectionDetailsProvider) {
@@ -80,8 +80,8 @@ public class ReplicaDataSourceConfig {
     }
 
     /**
-     * 읽기용 풀. 기본 풀 설정을 먼저 입힌다 — 접속 옵션(기본 풀에 {@code data-source-properties} 가 생기면 그것도) · 시간 상한 ·
-     * 누수 감지를 따로 적지 않아도 같게 간다. 그 뒤 {@code app.datasource.replica.hikari.*} 가 풀 이름 · 읽기 전용 · 크기를
+     * 읽기용 풀. 기본 풀 설정을 먼저 입힌다 — 접속 옵션({@code data-source-properties} — 세션 시간 제한(#402)이 여기 있다) ·
+     * 대여 시간 상한 · 누수 감지를 따로 적지 않아도 같게 간다. 그 뒤 {@code app.datasource.replica.hikari.*} 가 풀 이름 · 읽기 전용 · 크기를
      * 덮는다(메서드가 돌고 난 뒤 {@link ConfigurationProperties} 바인딩이 적용된다).
      */
     @Bean(defaultCandidate = false)
