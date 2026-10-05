@@ -29,7 +29,6 @@ spring:
       # 빨리 실패해야 스레드 점유가 짧아지고 사용자가 30초를 기다리지 않는다.
       # 넘기면 503 SERVICE_BUSY 로 나간다(전역 예외 처리기, API 공통 명세 2장). 앞단은 503 을 다른 슬롯으로 다시 보내지 않는다 —
       # 503 을 슬롯 실패로 세면 DB 가 바쁠 때 슬롯 넷이 함께 빠진다(default.conf /api/ 블록 주석). 클라이언트가 다시 시도한다.
-      # 5초는 그 안에 든다.
       connection-timeout: 5000
       # 밀리초. 빌려주기 전 커넥션 생존 확인의 상한. connection-timeout 보다 짧아야 한다.
       validation-timeout: 3000
