@@ -5,7 +5,8 @@
 
 export {
   BBOX_PRECISION,
-  BBOX_TILE_UNITS_BY_LEVEL,
+  BBOX_LAT_TILE_UNITS_BY_LEVEL,
+  BBOX_LNG_TILE_UNITS_BY_LEVEL,
   DISTRICT_LEVEL,
   OVERLAY_Z_FRONT,
   SEOUL_BOUNDS,
@@ -26,7 +27,7 @@ export {
   roundOutward,
   searchDistrictPoint,
 } from './map';
-export type { MapPoint, RawBoundingBox } from './map';
+export type { BboxTileUnits, MapPoint, RawBoundingBox } from './map';
 
 export { isMapSdkReady, loadKakaoMaps } from './loader';
 
