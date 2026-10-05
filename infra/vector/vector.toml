@@ -31,7 +31,7 @@ source = '''
 # (nginx.org ngx_core_module error_log — json 인자는 상용 구독 전용). 수준을 crit 로 올리면 그 줄은 빠지지만
 # 슬롯 연결 실패 같은 진단 줄도 함께 사라진다 — 그래서 Nginx 를 고치지 않고 내보내는 쪽에서 가린다.
 # 덮는 것 — 쿼리의 ticket · token · access_token · refresh_token · id_token 값([?&] 바로 뒤의 그 키만 — mytoken= 은 그대로),
-# JWT 모양(eyJ… 세 조각), Bearer 뒤의 값. 정규식의 시험은 vector.test.toml(vector test).
+# JWT 모양(eyJ… 세 조각), Bearer 뒤의 값(인증 방식 이름 그대로 대문자 B 만 — 낱말 bearer 는 남긴다). 정규식의 시험은 vector.test.toml(vector test).
 # $$ 는 $ 하나다 — Vector 가 설정을 읽기 전에 ${이름} · $이름 을 환경 변수로 풀어서, 캡처 참조는 $$ 로 적는다.
 # 가리지 못하는 것 — 같은 노드의 Docker json 로그 파일(/var/lib/docker/containers/<id>/<id>-json.log)에는 원문이 남는다.
 # 읽을 수 있는 것은 root 와 docker 그룹뿐이고 파일은 운영 Compose 의 logging(max-size · max-file)으로 회전된다.
@@ -43,7 +43,7 @@ if is_string(.message) {
   msg = string!(.message)
   msg = replace(msg, r'(?i)(?P<k>[?&](?:ticket|token|access_token|refresh_token|id_token)=)[^&\s"]+', "$${k}[REDACTED]")
   msg = replace(msg, r'\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', "[REDACTED_JWT]")
-  msg = replace(msg, r'(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+', "Bearer [REDACTED]")
+  msg = replace(msg, r'\bBearer\s+[A-Za-z0-9._~+/=-]+', "Bearer [REDACTED]")
   .message = msg
 }
 '''
