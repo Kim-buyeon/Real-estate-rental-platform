@@ -22,7 +22,7 @@
 #   annotations   GET /api/annotations?type=alert&from=<ms>&to=<ms>&limit=<n> — 공식 HTTP API(Annotations)의 알림 주석.
 #                 상태 이력 백엔드가 주석일 때의 원천. history 가 비거나 실패할 때만 집계가 쓴다
 #   rules         GET /api/v1/provisioning/alert-rules — 공식 Alerting provisioning HTTP API. 지금 걸린 규칙 목록(제목 · UID).
-#                 집계가 저장소 정의(infra/grafana/alerting/rules-*.json, 관측 설계서 5.1 의 일곱)와 대조한다
+#                 집계가 저장소 정의(infra/grafana/alerting/rules-*.json, 관측 설계서 5.1 의 열셋)와 대조한다
 # 실패한 요청은 그 칸을 null 로 두고 <칸>_error 에 HTTP 코드만 남긴다(응답 본문에 비밀이 없어도 남기지 않는다).
 #
 #   ALERT_TAIL_MIN   꼬리(분, 기본 10)

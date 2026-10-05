@@ -1,0 +1,541 @@
+{
+  "title": "rental-service",
+  "folderUid": "fq8pjr",
+  "interval": 60,
+  "rules": [
+    {
+      "uid": "rentalmemwarn01",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-service",
+      "title": "가용 메모리 부족",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "node_memory_MemAvailable_bytes{job=\"node\"}",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    157286400
+                  ],
+                  "type": "lt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "5m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "warning"
+      },
+      "annotations": {
+        "summary": "{{ $labels.node }} 가용 메모리 {{ humanize1024 $values.A.Value }}B — 150 MiB 아래로 5분",
+        "description": "노드의 가용 메모리(MemAvailable)가 150 MiB 아래에서 5분 넘게 머문다. 네 노드 모두 스왑이 없어 더 내려가면 커널이 프로세스를 강제 종료(OOM)하거나 노드가 응답을 멈춘다 — 부하 시험(#390)에서 APP-01 은 가용 58 ~ 73 MiB 에서 무응답 · 재부팅됐다. 기준은 그 포화 시점과 운영 요약의 노랑 경계이고, 평소 범위로는 아직 보정하지 않았다(관측 설계서 5.3).",
+        "action": "{{ $labels.node }} 에서 free -m · docker stats --no-stream 으로 무엇이 메모리를 쓰는지 본다 — 앱 슬롯 힙 · 힙 밖, DB 공유 버퍼 · 작업 메모리, 페이지 캐시. 부하가 원인이면 운영 요약의 요청률과 대조한다. 60 MiB 아래로 가면 「가용 메모리 고갈」이 이어서 울린다. 운영 절차서 2장 경보별 조치."
+      }
+    },
+    {
+      "uid": "rentalmemcrit01",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-service",
+      "title": "가용 메모리 고갈",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "node_memory_MemAvailable_bytes{job=\"node\"}",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    62914560
+                  ],
+                  "type": "lt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "2m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "{{ $labels.node }} 가용 메모리 {{ humanize1024 $values.A.Value }}B — 60 MiB 아래로 2분",
+        "description": "노드의 가용 메모리가 60 MiB 아래에서 2분 넘게 머문다. 부하 시험(#390)에서 APP-01 이 무응답 · 재부팅된 범위(가용 58 ~ 73 MiB)다 — 곧 OOM 강제 종료나 노드 멈춤이 온다. 멈추면 EC2 자동 복구 경보가 재부팅하고 수집 끊김이 뒤따른다.",
+        "action": "곧바로 {{ $labels.node }} 에 접속해 free -m · docker stats --no-stream 으로 가장 큰 소비자를 찾는다. OOM 강제 종료 경보가 함께 왔는지 본다. 접속이 안 되면 EC2 자동 복구 경보(재부팅)가 도는지 본다 — 운영 절차서 2장 「노드 자동 복구」 · 경보별 조치."
+      }
+    },
+    {
+      "uid": "rentaloomkill01",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-service",
+      "title": "OOM 강제 종료",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "increase(node_vmstat_oom_kill{job=\"node\"}[5m])",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    0
+                  ],
+                  "type": "gt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "0s",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "{{ $labels.node }} 에서 최근 5분 동안 커널이 프로세스를 강제 종료했다(OOM)",
+        "description": "커널 OOM killer 가 메모리가 모자라 프로세스를 죽였다. 네 노드 모두 스왑이 없어 메모리가 모자라면 바로 강제 종료다 — 앱 슬롯 · DB · 수집기 중 무엇이든 죽을 수 있다. 한 번이 곧 사건이라 대기 없이 울린다(5분 창의 증가분이라 대기를 두면 창이 지나 놓친다). 노드가 재부팅되면 카운터가 0 부터 다시 세어 재부팅 전의 OOM 은 이 경보로 오지 않는다 — EC2 자동 복구 경보와 부팅 시각으로 본다.",
+        "action": "{{ $labels.node }} 에서 journalctl -k --since -30min | grep -i -E 'out of memory|killed process' 로 무엇이 죽었는지 본다. docker compose ps 로 재시작된 컨테이너(앱 슬롯이면 readiness, DB 면 복제 상태)를 확인한다. 가용 메모리 경보가 함께 왔는지 보고, 원인(부하 · 메모리 상한)을 장애 보고서로 잇는다. 운영 절차서 2장 경보별 조치 · 7장."
+      }
+    },
+    {
+      "uid": "rental5xxratio01",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-service",
+      "title": "5xx 비율 초과",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "(sum(rate(http_server_requests_seconds_count{job=\"app\",uri!~\"/actuator.*|/api/notifications/stream|UNKNOWN\",status=~\"5..\"}[5m])) or vector(0))\n/ sum(rate(http_server_requests_seconds_count{job=\"app\",uri!~\"/actuator.*|/api/notifications/stream|UNKNOWN\"}[5m]))",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    0.01
+                  ],
+                  "type": "gt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "10m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "앱 API 5xx 비율 {{ humanizePercentage $values.A.Value }} — 1% 넘게 10분",
+        "description": "앱 슬롯 넷이 낸 API 응답 중 5xx 가 1% 를 넘은 채 10분 넘게 이어진다. 기준은 배포 판정(smoke.sh, 운영 절차서 3.3)의 실패 1% 와 같다 — 그보다 엄격하면 배포는 통과했는데 직후에 울린다(관측 설계서 5.3). 앱이 낸 응답만 센다 — 앞단 Nginx 가 직접 낸 502 · 504 와 연결 실패는 이 식에 없다(앞단 접근 로그로 본다).",
+        "action": "운영 요약에서 어느 경로 · 슬롯인지 좁히고(병목 지도), 앱 로그(Loki — {service=~\"app-.+\"} 의 ERROR)에서 예외를 본다. 커넥션 풀 대기 초과 · 가용 메모리 경보가 함께 왔으면 그쪽이 원인이다. 배포 직후면 이전 태그로 롤백한다(운영 절차서 3.4). 운영 절차서 2장 경보별 조치."
+      }
+    },
+    {
+      "uid": "rentalp95slow01",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-service",
+      "title": "응답 p95 초과",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job=\"app\",method=\"GET\",uri=~\"/api/properties|/api/properties/district-counts\"}[5m])))",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    1
+                  ],
+                  "type": "gt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "10m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "warning"
+      },
+      "annotations": {
+        "summary": "대표 조회 경로 응답 p95 {{ humanizeDuration $values.A.Value }} — 1초 넘게 10분",
+        "description": "배포 판정(smoke.sh)과 같은 대표 조회 경로 둘(/api/properties/district-counts · /api/properties)의 응답 p95 가 1초를 넘은 채 10분 넘게 이어진다. 기준은 smoke.sh 의 p95 1초와 같다. 1초가 앱이 내는 구간 경계라 「요청의 5% 넘게가 1초를 넘었다」와 같은 뜻이다. 3초를 넘는 요청은 구간 밖이라 p95 가 3초로 찍힌다.",
+        "action": "병목 지도에서 구간(Nginx → 슬롯 → JVM → 커넥션 풀 → DB → 디스크 → Redis → OS) 순서로 어디서 늘었는지 본다. 운영 요약의 요청률이 포화점(150 RPS)에 가까우면 부하, 아니면 DB(질의 통계 상위 10) · 커넥션 풀 대기부터 본다. 운영 절차서 2장 경보별 조치."
+      }
+    },
+    {
+      "uid": "rentalhikaritmo01",
+      "orgID": 1,
+      "folderUID": "fq8pjr",
+      "ruleGroup": "rental-service",
+      "title": "커넥션 풀 대기 초과",
+      "condition": "C",
+      "data": [
+        {
+          "refId": "A",
+          "queryType": "",
+          "relativeTimeRange": {
+            "from": 600,
+            "to": 0
+          },
+          "datasourceUid": "grafanacloud-prom",
+          "model": {
+            "editorMode": "code",
+            "expr": "sum by (node, instance, pool) (increase(hikaricp_connections_timeout_total{job=\"app\"}[5m]))",
+            "instant": true,
+            "intervalMs": 1000,
+            "legendFormat": "__auto",
+            "maxDataPoints": 43200,
+            "range": false,
+            "refId": "A"
+          }
+        },
+        {
+          "refId": "C",
+          "queryType": "expression",
+          "relativeTimeRange": {
+            "from": 0,
+            "to": 0
+          },
+          "datasourceUid": "__expr__",
+          "model": {
+            "conditions": [
+              {
+                "evaluator": {
+                  "params": [
+                    0
+                  ],
+                  "type": "gt"
+                },
+                "operator": {
+                  "type": "and"
+                },
+                "query": {
+                  "params": [
+                    "C"
+                  ]
+                },
+                "reducer": {
+                  "params": [],
+                  "type": "last"
+                },
+                "type": "query"
+              }
+            ],
+            "datasource": {
+              "type": "__expr__",
+              "uid": "__expr__"
+            },
+            "expression": "A",
+            "intervalMs": 1000,
+            "maxDataPoints": 43200,
+            "refId": "C",
+            "type": "threshold"
+          }
+        }
+      ],
+      "noDataState": "OK",
+      "execErrState": "Error",
+      "for": "5m",
+      "keep_firing_for": "0s",
+      "isPaused": false,
+      "notification_settings": {
+        "receiver": "bu2000kim"
+      },
+      "record": null,
+      "labels": {
+        "severity": "warning"
+      },
+      "annotations": {
+        "summary": "{{ $labels.node }} {{ $labels.instance }} 커넥션 풀({{ $labels.pool }})에서 커넥션을 받지 못하고 시간 초과가 이어진다",
+        "description": "앱 슬롯의 커넥션 풀에서 커넥션을 기다리다 시간 초과(풀 대기 5초 — connection-timeout)로 실패한 요청이 5분 넘게 이어서 나온다. 그 요청은 503 SERVICE_BUSY 로 나가고 앞단은 503 을 다른 슬롯으로 재시도하지 않는다 — 사용자가 그대로 오류를 받고, 5xx 비율에도 잡힌다. 이 경보가 그 원인을 가리킨다(부하 시험 #390 · #402). 풀이 모자라거나 DB 가 느려 커넥션이 늦게 돌아오는 것이다 — pool 은 primary(쓰기, 슬롯당 최대 5) · replica(읽기, 슬롯당 최대 4).",
+        "action": "병목 지도의 커넥션 풀 대기 수 · 획득 시간과 DB 구간(연결 수 · 막힌 세션 · 질의 통계 상위 10)을 본다 — 대기가 0보다 크면 DB 쪽부터(관측 설계서 4.2). replica 풀이면 standby 상태 · 복제 지연도 본다. 운영 절차서 2장 경보별 조치."
+      }
+    }
+  ]
+}
