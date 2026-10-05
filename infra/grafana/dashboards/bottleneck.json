@@ -449,7 +449,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "커넥션 풀 대기 — 쓰기(primary)",
-      "description": "무엇: 슬롯마다 쓰기용 풀(pool=\"primary\")에서 커넥션을 기다리는 요청 수(hikaricp_connections_pending). 풀 최대는 쓰기 8 · 읽기 2(관측 설계서 3.1 W3).\n\n위험: 노랑 1 이상 — 관측 설계서 4.2 읽는 순서의 갈림길(0보다 크면 DB 쪽부터 본다). 알림 기준은 미확정(5.3).\n\n할 일: 0보다 크면 ⑤ DB 의 대기 종류를 본다. 0이면 ② · ③(앱 자체).",
+      "description": "무엇: 슬롯마다 쓰기용 풀(pool=\"primary\")에서 커넥션을 기다리는 요청 수(hikaricp_connections_pending). 풀 최대는 쓰기 5 · 읽기 4(관측 설계서 3.1 W3).\n\n위험: 노랑 1 이상 — 관측 설계서 4.2 읽는 순서의 갈림길(0보다 크면 DB 쪽부터 본다). 알림 기준은 미확정(5.3).\n\n할 일: 0보다 크면 ⑤ DB 의 대기 종류를 본다. 0이면 ② · ③(앱 자체).",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -529,7 +529,7 @@
       "id": 11,
       "type": "timeseries",
       "title": "커넥션 획득 시간 — 쓰기(primary)",
-      "description": "무엇: 슬롯마다 쓰기용 풀에서 커넥션 하나를 얻는 데 걸린 평균 시간(5분 — hikaricp_connections_acquire_seconds 합 ÷ 횟수).\n\n위험: 기준값 미확정 — 색 없음. 대기 수와 함께 오르면 풀이 모자라거나 DB 가 커넥션을 오래 쥐고 있다.\n\n할 일: ⑤ DB 의 활성 세션 · 연결 수 비율을 본다. 풀 크기의 근거는 #349(DB 한 대일 때 최악 40 · 여유 8).",
+      "description": "무엇: 슬롯마다 쓰기용 풀에서 커넥션 하나를 얻는 데 걸린 평균 시간(5분 — hikaricp_connections_acquire_seconds 합 ÷ 횟수).\n\n위험: 기준값 미확정 — 색 없음. 대기 수와 함께 오르면 풀이 모자라거나 DB 가 커넥션을 오래 쥐고 있다.\n\n할 일: ⑤ DB 의 활성 세션 · 연결 수 비율을 본다. 풀 크기의 근거는 #402(DB 한 대일 때 최악 36 · 여유 12).",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -605,7 +605,7 @@
       "id": 12,
       "type": "timeseries",
       "title": "커넥션 풀 대기 — 읽기(replica)",
-      "description": "무엇: 슬롯마다 읽기용 풀(pool=\"replica\")에서 커넥션을 기다리는 요청 수(hikaricp_connections_pending). 풀 최대는 쓰기 8 · 읽기 2(관측 설계서 3.1 W3).\n\n위험: 노랑 1 이상 — 관측 설계서 4.2 읽는 순서의 갈림길(0보다 크면 DB 쪽부터 본다). 알림 기준은 미확정(5.3).\n\n할 일: 0보다 크면 ⑤ DB 의 대기 종류를 본다. 0이면 ② · ③(앱 자체).",
+      "description": "무엇: 슬롯마다 읽기용 풀(pool=\"replica\")에서 커넥션을 기다리는 요청 수(hikaricp_connections_pending). 풀 최대는 쓰기 5 · 읽기 4(관측 설계서 3.1 W3).\n\n위험: 노랑 1 이상 — 관측 설계서 4.2 읽는 순서의 갈림길(0보다 크면 DB 쪽부터 본다). 알림 기준은 미확정(5.3).\n\n할 일: 0보다 크면 ⑤ DB 의 대기 종류를 본다. 0이면 ② · ③(앱 자체).",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -685,7 +685,7 @@
       "id": 13,
       "type": "timeseries",
       "title": "커넥션 획득 시간 — 읽기(replica)",
-      "description": "무엇: 슬롯마다 읽기용 풀에서 커넥션 하나를 얻는 데 걸린 평균 시간(5분 — hikaricp_connections_acquire_seconds 합 ÷ 횟수).\n\n위험: 기준값 미확정 — 색 없음. 대기 수와 함께 오르면 풀이 모자라거나 DB 가 커넥션을 오래 쥐고 있다.\n\n할 일: ⑤ DB 의 활성 세션 · 연결 수 비율을 본다. 풀 크기의 근거는 #349(DB 한 대일 때 최악 40 · 여유 8).",
+      "description": "무엇: 슬롯마다 읽기용 풀에서 커넥션 하나를 얻는 데 걸린 평균 시간(5분 — hikaricp_connections_acquire_seconds 합 ÷ 횟수).\n\n위험: 기준값 미확정 — 색 없음. 대기 수와 함께 오르면 풀이 모자라거나 DB 가 커넥션을 오래 쥐고 있다.\n\n할 일: ⑤ DB 의 활성 세션 · 연결 수 비율을 본다. 풀 크기의 근거는 #402(DB 한 대일 때 최악 36 · 여유 12).",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
@@ -926,7 +926,7 @@
       "id": 17,
       "type": "timeseries",
       "title": "연결 수 ÷ max_connections",
-      "description": "무엇: DB 노드마다 클라이언트 연결 수(상태 무관)를 max_connections(48)로 나눈 값(관측 설계서 3.3 D2). 앱 풀의 설계상 최악은 DB 한 대일 때 40 · 여유 8(#349).\n\n위험: 기준값 미확정 — 색 없음. 100% 에 닿으면 새 연결이 거부된다.\n\n할 일: 어느 상태가 많은지는 Explore 에서 sum by (state) (rental_pg_sessions_count) 로 본다 — idle in transaction 이 많으면 트랜잭션을 오래 여는 코드다.",
+      "description": "무엇: DB 노드마다 클라이언트 연결 수(상태 무관)를 max_connections(48)로 나눈 값(관측 설계서 3.3 D2). 앱 풀의 설계상 최악은 DB 한 대일 때 36 · 여유 12(#402).\n\n위험: 기준값 미확정 — 색 없음. 100% 에 닿으면 새 연결이 거부된다.\n\n할 일: 어느 상태가 많은지는 Explore 에서 sum by (state) (rental_pg_sessions_count) 로 본다 — idle in transaction 이 많으면 트랜잭션을 오래 여는 코드다.",
       "datasource": {
         "type": "prometheus",
         "uid": "grafanacloud-prom"
