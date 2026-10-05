@@ -6,6 +6,7 @@ import com.duri.rentalplatform.common.CursorPage;
 import com.duri.rentalplatform.common.ErrorCode;
 import com.duri.rentalplatform.common.datasource.ReplicaRead;
 import com.duri.rentalplatform.domain.property.cache.DistrictCountCache;
+import com.duri.rentalplatform.domain.property.cache.MapClusterCache;
 import com.duri.rentalplatform.domain.property.calculator.GeoDistanceCalculator;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyDetailCondition;
 import com.duri.rentalplatform.domain.property.dto.condition.PropertyIdsCondition;
@@ -72,6 +73,7 @@ public class PropertyQueryService {
 
     private final PropertyMapper propertyMapper;
     private final DistrictCountCache districtCountCache;
+    private final MapClusterCache mapClusterCache;
 
     /**
      * 자치구 집계. 같은 필터 조합은 캐시(슬롯 로컬 → Redis)에서 돌려준다 — {@link DistrictCountCache}. 둘 다 빗나가면 이
@@ -119,11 +121,18 @@ public class PropertyQueryService {
     /**
      * 지도 묶음. 격자 칸 집계를 먼저 하고, 합계가 임계 이하면 영역 전량을 마커로, 넘으면 두 건 이상인 칸은
      * 묶음 · 한 건뿐인 칸은 마커로 돌려준다. API 명세서(매물) 1.12. 읽기 분산이 켜지면 읽기용 풀에서 읽는다(#343).
+     *
+     * <p>같은 필터 · 표시 영역 · 격자는 슬롯 로컬 캐시에서 돌려준다 — {@link MapClusterCache}. 빗나가면 이 스레드에서 조회한다.
+     * 검증은 캐시보다 먼저 한다 — 잘못된 영역은 키를 만들지 않는다.
      */
     @ReplicaRead
     public PropertyMapClustersResponse getMapClusters(PropertyMapClustersRequest request) {
         BoundingBox box = validBox(request);
         DistrictCountRequest filter = request.toFilter();
+        return mapClusterCache.getOrLoad(filter, box, GRID_DIVISIONS, () -> loadMapClusters(filter, box));
+    }
+
+    private PropertyMapClustersResponse loadMapClusters(DistrictCountRequest filter, BoundingBox box) {
         double cellLat = (box.maxLat() - box.minLat()) / GRID_DIVISIONS;
         double cellLng = (box.maxLng() - box.minLng()) / GRID_DIVISIONS;
 

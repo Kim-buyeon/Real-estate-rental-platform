@@ -56,17 +56,97 @@ DRAIN=${DRAIN:-30}                       # 제외 뒤 진행 중인 요청이 �
 WARMUP=${WARMUP:-60}                     # 첫 슬롯 복귀 뒤 JIT 워밍업 — 3.3
 # 복귀 전 예열 — 슬롯마다 upstream 에 넣기 전에 주요 조회를 직접 보낸다(#273). 부하 중 배포(T6, 2026-09-27)에서 새로 뜬 JVM 이
 # 받은 첫 요청들이 최대 4 ~ 6초 걸렸다(p99 는 그대로). readiness 는 앱이 떴다는 것만 보고 JIT · 커넥션 풀은 차갑다.
-# 결과는 보지 않는다 — 판정은 readiness · 첫 슬롯 관찰(smoke.sh)이 한다. 0 이면 끈다. 요청마다 상한 3초(readiness 와 같다) —
-# 최악(응답이 매달림) 20회 × 3경로 × 3초 ≈ 180초, 패킷이 버려지면 × 2초 ≈ 120초
-WARM_ROUNDS=${WARM_ROUNDS:-20}
+# 결과는 보지 않는다 — 판정은 readiness · 첫 슬롯 관찰(smoke.sh)이 한다. 0 이면 끈다. 요청마다 상한 3초(readiness 와 같다).
+# 경로는 공개 조회 열 개다(#416) — 아래 세 개에 더해 배포 시작 때 pick_warm_paths 가 목록 정렬 둘 · 반경 · 매물 하나의
+# 상세 · 위험도 · 등기 · 대장을 붙인다. 매물 경로는 #273 의 세 경로가 닿지 않아 슬롯 교체 뒤 첫 호출이 이후의 2 ~ 6배였다
+# (상세 49 → 9 ms · 등기 100 → 18 · 대장 33 → 17, #416).
+# 횟수는 20 → 10 이다 — 첫 호출만 차갑고 둘째부터 이후 값이다(위 측정). 10회 × 10경로 = 100건으로 전(20 × 3 = 60건, 슬롯당 5 ~ 9초,
+# 운영 절차서 3.4)과 비슷한 양이다. 최악(응답이 매달림) 10회 × 10경로 × 3초 = 300초/슬롯, 패킷이 버려지면 × 2초 = 200초/슬롯 —
+# 20회 그대로면 600초/슬롯이었다. 대장 경로를 빼면 9경로 · 270초, 매물을 고르지 못하면 6경로 · 180초/슬롯. 슬롯 넷이면 × 4
+# (최악 1,200초 = 20분 — 모든 요청이 상한까지 매달릴 때다. 그 슬롯은 readiness 를 통과한 뒤다)
+WARM_ROUNDS=${WARM_ROUNDS:-10}
+GANGSEO=%EA%B0%95%EC%84%9C%EA%B5%AC     # 「강서구」 — 고정 경로의 자치구(map-clusters · 대체 반경 · 보증금순 목록)
 WARM_PATHS=("/api/properties/district-counts" "/api/properties?size=20"
-  "/api/properties/map-clusters?district=%EA%B0%95%EC%84%9C%EA%B5%AC&minLat=37.41&maxLat=37.72&minLng=126.73&maxLng=127.27")
+  "/api/properties/map-clusters?district=$GANGSEO&minLat=37.41&maxLat=37.72&minLng=126.73&maxLng=127.27")
+WARM_PICK_TRIES=5                        # 예열 매물 후보 — 대장이 있는 매물을 찾아 위험도를 읽어 보는 최대 수(pick_warm_paths)
 
 log() { printf '%s >>> %s\n' "$(date '+%F %T')" "$*"; }
 
 reload() { docker compose exec -T nginx nginx -t && docker compose exec -T nginx nginx -s reload; }
 # sed · grep 정규식에 넣을 주소 — 점을 글자 그대로
 addr_re() { printf '%s' "$1" | sed 's/[.]/\\./g'; }
+# 퍼센트 인코딩 — 바이트마다 %XX(자치구 이름). 노드에 jq 가 없고 스크립트가 python 에 기대지 않는다
+urlenc() { printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n' | sed 's/../%&/g'; }
+# 예열 매물 고르기용 조회 — 상한은 예열 요청과 같다. 실패(연결 · 시간 · 4xx · 5xx)면 빈 값 · 비0
+warm_get() { curl -fs --connect-timeout 2 -m 3 "$1" 2>/dev/null; }
+
+# 예열 경로를 채운다(#416) — 배포 시작 때 한 번, 아직 서비스 중인(교체 전) 슬롯 하나에 공개 조회를 보낸다. DB 에 직접 붙지 않는다.
+#   1) 목록 전세가율 오름차순 첫 페이지 — 전세가율이 없는(판정 없는) 매물은 방향과 무관하게 맨 뒤라(API 명세서 매물 1.3 · 매퍼)
+#      앞쪽 항목은 판정이 있다. 그래도 riskGrade · debtRatio 가 채워진 항목만 후보로 본다
+#   2) 후보마다 위험도를 읽어 consistency.addressMatched 가 true/false 인 매물(대장이 있다 — 위험도 명세 1.1, null 은 확인 불가)을
+#      고른다. 대장 조회(GET)는 대장이 없으면 그 자리에서 건축HUB 에 떼러 간다(LedgerCommandService.collectIfAbsent) — 예열이
+#      외부 호출 · 일일 상한 · 쓰기를 만들지 않게, 대장이 있다고 확인된 매물에만 대장 경로를 붙인다. 없으면 대장 경로만 뺀다
+#   3) 상세에서 좌표를 읽어 그 자리 반경 1 km. 못 읽으면 고정 좌표(강서구 — 명세 1.4 예시)
+# 쓰기 — 판정이 있는 매물의 위험도 · 등기 · 대장 조회는 읽기만 한다. 예외는 판정 입력이 바뀐 매물(재분석 대기 · 기준이나 규칙을
+# 바꾼 배포 — 위험도 명세 1.1)로, 첫 위험도 조회가 판정해 저장한다. 판정은 등기 · 대장이 없으면 먼저 수집하므로
+# (RiskAnalysisCommandService.analyze) 대장이 없는 매물이면 그 자리에서 건축HUB 외부 호출 · 일일 상한 소모 · 쓰기가 생긴다 —
+# 고르기 후보(WARM_PICK_TRIES) 와 첫 위험도 예열을 합쳐 배포당 최대 약 6건. 그 매물을 처음 조회한 사용자가 만들 것과 같고 한 번뿐이다.
+# 고르기 최악 — 목록 요청 슬롯마다 3초, 답한 슬롯에서 위험도 5 × 3초 + 상세 3초. 셋이 매달리고 넷째가 답하면 9 + 3 + 15 + 3 = 30초.
+# 못 고르면 매물 경로(상세 · 위험도 · 등기 · 대장)만 빠지고 나머지는 그대로 예열한다. set -e 아래라 실패할 수 있는 줄은 || 로 받는다
+pick_warm_paths() {
+  local i addr port where base list cands line id risk detail lat lng
+  local pick="" dist="" ledger=0 src="" d_enc=$GANGSEO
+  for ((i = ${#SLOTS[@]} - 1; i >= 0; i--)); do    # 마지막에 바뀌는 슬롯부터 — 이 노드 app-1
+    read -r _ addr port where <<< "${SLOTS[$i]}"
+    if [ "$where" = remote ] && [ -z "$APP_NODE_SSH" ]; then continue; fi
+    base="http://$addr:$port"
+    list=$(warm_get "$base/api/properties?size=20&sort=debtRatio,asc") || continue
+    src="$addr:$port"
+    # 목록 항목은 중첩 없는 객체다(명세 1.6)
+    cands=$(grep -o '{[^{}]*"propertyId":[0-9][^{}]*}' <<< "$list" | grep '"riskGrade":"' | grep '"debtRatio":[0-9]' \
+      | head -n "$WARM_PICK_TRIES") || true
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      id=$(sed -n 's/.*"propertyId":\([0-9][0-9]*\).*/\1/p' <<< "$line")
+      risk=$(warm_get "$base/api/properties/$id/risk") || continue
+      if [ -z "$pick" ]; then               # 대장 있는 후보가 없을 때 쓸 첫 후보
+        pick=$id
+        dist=$(sed -n 's/.*"district":"\([^"]*\)".*/\1/p' <<< "$line")
+      fi
+      if grep -Eq '"addressMatched":(true|false)' <<< "$risk"; then
+        pick=$id
+        dist=$(sed -n 's/.*"district":"\([^"]*\)".*/\1/p' <<< "$line")
+        ledger=1
+        break
+      fi
+    done <<< "$cands"
+    break                                  # 목록에 답한 슬롯에서 끝낸다 — 후보가 없어도 다른 슬롯은 같은 DB 를 본다
+  done
+
+  WARM_PATHS+=("/api/properties?size=20&sort=debtRatio,asc")
+  if [ -z "$pick" ]; then
+    WARM_PATHS+=("/api/properties?district=$GANGSEO&size=20&sort=deposit,asc"
+      "/api/properties?district=$GANGSEO&lat=37.55&lng=126.85&radiusKm=1")
+    log "예열 매물을 고르지 못했다(${src:-목록에 답한 슬롯 없음}) — 매물 경로 없이 ${#WARM_PATHS[@]}경로"
+    return 0
+  fi
+  [ -n "$dist" ] && d_enc=$(urlenc "$dist")
+  detail=$(warm_get "http://$src/api/properties/$pick") || true
+  lat=$(sed -n 's/.*"latitude":\(-\{0,1\}[0-9][0-9.]*\).*/\1/p' <<< "$detail")
+  lng=$(sed -n 's/.*"longitude":\(-\{0,1\}[0-9][0-9.]*\).*/\1/p' <<< "$detail")
+  if [ -z "$lat" ] || [ -z "$lng" ]; then lat=37.55; lng=126.85; d_enc=$GANGSEO; fi
+  # 보증금순은 자치구를 붙인다 — 보증금 인덱스가 없어 자치구 없이는 전 매물을 정렬한다(전세가율순만 인덱스로 끊는다 — 매퍼)
+  WARM_PATHS+=("/api/properties?district=$d_enc&size=20&sort=deposit,asc"
+    "/api/properties?district=$d_enc&lat=$lat&lng=$lng&radiusKm=1"
+    "/api/properties/$pick" "/api/properties/$pick/risk" "/api/properties/$pick/registry")
+  if [ "$ledger" -eq 1 ]; then
+    WARM_PATHS+=("/api/properties/$pick/ledger")
+    log "예열 매물 $pick(대장 있음, $src에서 고름) — ${#WARM_PATHS[@]}경로"
+  else
+    log "예열 매물 $pick(대장 확인 못 함 — 대장 경로 뺌, $src에서 고름) — ${#WARM_PATHS[@]}경로"
+  fi
+}
+
 # 상대 노드에서 명령을 돈다. 인자가 원격 셸의 한 줄이 된다 — 값은 부르는 쪽이 printf %q 로 감싼다
 # ServerAlive — 연결이 선 뒤 사설망에서 패킷이 버려지면 ssh 가 끝없이 매달린다. 15초 × 4 = 약 60초 무응답이면 끊고 실패한다
 remote() {
@@ -264,6 +344,10 @@ if [ -n "$APP_NODE_SSH" ]; then
     log "!!! 상대 노드에서 이미지를 확인 · 수신하지 못했다. 아무것도 바꾸지 않고 배포를 중단한다"
     exit 1
   fi
+fi
+
+if [ "$WARM_ROUNDS" -gt 0 ]; then
+  pick_warm_paths
 fi
 
 FIRST=1
