@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +38,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
 import org.springframework.beans.BeanUtils;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -56,6 +58,7 @@ class CriteriaCommandServiceTest {
     private RiskCriteriaRepository riskRepository;
     private LoanRegulationRepository loanRegulationRepository;
     private CriteriaChangeHistoryRepository historyRepository;
+    private JudgementCriteriaCache criteriaCache;
     private CriteriaCommandService service;
 
     private GuaranteeCriteria hug;
@@ -71,8 +74,9 @@ class CriteriaCommandServiceTest {
         riskRepository = mock(RiskCriteriaRepository.class);
         loanRegulationRepository = mock(LoanRegulationRepository.class);
         historyRepository = mock(CriteriaChangeHistoryRepository.class);
-        service = new CriteriaCommandService(guaranteeRepository, hfRepository, premiumRateRepository,
-                riskRepository, loanRegulationRepository, historyRepository);
+        criteriaCache = mock(JudgementCriteriaCache.class);
+        service =new CriteriaCommandService(guaranteeRepository, hfRepository, premiumRateRepository,
+                riskRepository, loanRegulationRepository, historyRepository, criteriaCache);
 
         hug = guarantee(1L, GuaranteeProvider.HUG, "90.00", 700_000_000L, "60.00");
         hf = guarantee(2L, GuaranteeProvider.HF, "90.00", 700_000_000L, null);
@@ -254,6 +258,76 @@ class CriteriaCommandServiceTest {
                         new BigDecimal("40"), new BigDecimal("3.0"), new BigDecimal("40"))), REASON));
 
         verify(historyRepository, never()).saveAll(any());
+    }
+
+    // ---------- 기준표 캐시 무효화 — 값이 바뀐 요청만 커밋 뒤 무효화를 건다 ----------
+
+    @Test
+    @DisplayName("기관 기준이 바뀌면 기준표 캐시 무효화를 건다")
+    void guaranteeChangeInvalidatesCache() {
+        service.updateGuarantee(ADMIN_ID, GuaranteeProvider.HUG, new GuaranteeCriteriaUpdateRequest(
+                new BigDecimal("90.0"), 500_000_000L, null, false, REASON));
+
+        verify(criteriaCache, times(1)).invalidateAfterCommit();
+    }
+
+    @Test
+    @DisplayName("기관 기준이 바뀌지 않았으면 기준표 캐시를 무효화하지 않는다")
+    void guaranteeNoChangeDoesNotInvalidateCache() {
+        service.updateGuarantee(ADMIN_ID, GuaranteeProvider.HUG, new GuaranteeCriteriaUpdateRequest(
+                new BigDecimal("90"), 700_000_000L, new BigDecimal("60.0"), true, REASON));
+
+        verify(criteriaCache, never()).invalidateAfterCommit();
+    }
+
+    @Test
+    @DisplayName("검증에 걸려 400 이면 기준표 캐시를 무효화하지 않는다")
+    void rejectedUpdateDoesNotInvalidateCache() {
+        assertInvalid(() -> service.updateGuarantee(ADMIN_ID, GuaranteeProvider.HUG,
+                new GuaranteeCriteriaUpdateRequest(new BigDecimal("80.00"), 1L, null, false, REASON)),
+                "collateralRatio");
+
+        verify(criteriaCache, never()).invalidateAfterCommit();
+    }
+
+    @Test
+    @DisplayName("위험 기준이 바뀌면 기준표 캐시 무효화를 걸고, 같은 값이면 걸지 않는다")
+    void riskThresholdInvalidatesCacheOnlyOnChange() {
+        service.updateRiskThreshold(ADMIN_ID,
+                new RiskThresholdUpdateRequest(new BigDecimal("80"), new BigDecimal("70.0"), REASON));
+        verify(criteriaCache, never()).invalidateAfterCommit();
+
+        service.updateRiskThreshold(ADMIN_ID,
+                new RiskThresholdUpdateRequest(new BigDecimal("80"), new BigDecimal("65.5"), REASON));
+        verify(criteriaCache, times(1)).invalidateAfterCommit();
+    }
+
+    @Test
+    @DisplayName("보증료율이 바뀌면 기준표 캐시 무효화를 건다")
+    void premiumRateChangeInvalidatesCache() {
+        GuaranteePremiumRate rate = premiumRate(5L, 1L, "0.097");
+        when(premiumRateRepository.findAllById(Set.of(5L))).thenReturn(List.of(rate));
+
+        service.updatePremiumRates(ADMIN_ID, new PremiumRateUpdateRequest(
+                List.of(new PremiumRateUpdateRequest.Rate(5L, new BigDecimal("0.115"))), REASON));
+
+        verify(criteriaCache, times(1)).invalidateAfterCommit();
+    }
+
+    @Test
+    @DisplayName("대출 규제가 바뀌면 기준표 캐시 무효화를 걸고, 같은 값이면 걸지 않는다")
+    void loanRegulationInvalidatesCacheOnlyOnChange() {
+        when(loanRegulationRepository.findAllById(Set.of(1L))).thenReturn(List.of(loanRegulation(1L)));
+
+        service.updateLoanRegulations(ADMIN_ID, new LoanRegulationUpdateRequest(List.of(
+                new LoanRegulationUpdateRequest.Regulation(1L, new BigDecimal("80"), 400_000_000L, 180_000_000L,
+                        new BigDecimal("40"), new BigDecimal("3.0"), new BigDecimal("40"))), REASON));
+        verify(criteriaCache, never()).invalidateAfterCommit();
+
+        service.updateLoanRegulations(ADMIN_ID, new LoanRegulationUpdateRequest(List.of(
+                new LoanRegulationUpdateRequest.Regulation(1L, new BigDecimal("70.5"), 400_000_000L, 180_000_000L,
+                        new BigDecimal("40"), new BigDecimal("3.0"), new BigDecimal("40"))), REASON));
+        verify(criteriaCache, times(1)).invalidateAfterCommit();
     }
 
     @Test

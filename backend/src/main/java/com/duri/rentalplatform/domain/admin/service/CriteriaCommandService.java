@@ -11,6 +11,7 @@ import com.duri.rentalplatform.domain.admin.enums.CriteriaTarget;
 import com.duri.rentalplatform.domain.admin.repository.CriteriaChangeHistoryRepository;
 import com.duri.rentalplatform.domain.loan.entity.LoanRegulation;
 import com.duri.rentalplatform.domain.loan.repository.LoanRegulationRepository;
+import com.duri.rentalplatform.domain.risk.cache.JudgementCriteriaCache;
 import com.duri.rentalplatform.domain.risk.entity.GuaranteeCriteria;
 import com.duri.rentalplatform.domain.risk.entity.GuaranteePremiumRate;
 import com.duri.rentalplatform.domain.risk.entity.HfCriteria;
@@ -43,6 +44,10 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>세 선 단조 {@code cautionLeaseRatio < negativeEquityRatio < min(collateralRatio)} 를 양쪽 수정에서 지킨다.
  * 위반은 400 {@code INVALID_REQUEST}.
+ *
+ * <p><b>기준표 캐시 무효화</b> — 값이 하나라도 바뀐 요청은 커밋 뒤 판정 기준표 슬롯 캐시를 비우고 버전 키를 올린다
+ * ({@link JudgementCriteriaCache#invalidateAfterCommit()}). 이력 행이 곧 「바뀐 값」이라 이력을 저장하는 자리에서 함께 건다.
+ * Redis 가 실패해도 수정 요청은 성공한다 — 다른 슬롯은 캐시의 안전망 주기 안에 따라온다.
  */
 @Service
 @RequiredArgsConstructor
@@ -58,6 +63,7 @@ public class CriteriaCommandService {
     private final RiskCriteriaRepository riskCriteriaRepository;
     private final LoanRegulationRepository loanRegulationRepository;
     private final CriteriaChangeHistoryRepository historyRepository;
+    private final JudgementCriteriaCache judgementCriteriaCache;
 
     /** 기관별 기준 수정. {@code requiresLoanLink} 는 HF 만 저장한다. */
     @Transactional
@@ -258,9 +264,11 @@ public class CriteriaCommandService {
             return !rows.isEmpty();
         }
 
+        /** 바뀐 필드가 있으면 이력을 저장하고, 커밋 뒤 기준표 캐시를 무효화하도록 건다. */
         void save() {
             if (!rows.isEmpty()) {
                 historyRepository.saveAll(rows);
+                judgementCriteriaCache.invalidateAfterCommit();
             }
         }
     }
