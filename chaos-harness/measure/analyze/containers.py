@@ -2,7 +2,7 @@
 
 입력: results/<회차>/containers/<노드>.jsonl.gz (node-sampler.sh cloop — 간격마다 한 줄, gzip 멤버 하나)
     {"ts": <유닉스 초>, "c": [{"svc": <Compose 서비스>, "id": <앞 12자>, "cur": <바이트>, "max": <바이트|null>, "oom": <누적|null>}, …]}
-슬롯 메모리 상한(운영 Compose mem_limit 680m)과 OOM 이 이 시험의 핵심 위험이라 cAdvisor 없이 cgroup 을 직접 읽은 값이다.
+슬롯 메모리 상한(운영 Compose mem_limit 768m)과 OOM 이 이 시험의 핵심 위험이라 cAdvisor 없이 cgroup 을 직접 읽은 값이다.
 """
 from __future__ import annotations
 

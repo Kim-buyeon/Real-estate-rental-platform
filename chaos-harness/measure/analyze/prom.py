@@ -40,6 +40,25 @@ KEEP_BUCKETS = ("hikaricp_connections_acquire_seconds_bucket", "http_server_requ
 
 APP_VCPU = 2
 DB_VCPU = 2
+# 인스턴스 쪽 EBS 기준선(IOPS · 바이트/초 · 유형) — aws ec2 describe-instance-types(ap-northeast-2, 2026-10-05 조회)의
+# BaselineIops · BaselineThroughputInMBps. 볼륨(gp3 3,000 IOPS · 125 MB/s)보다 낮아 먼저 닿는다
+EBS_BASELINE = {"t3.small": (1000.0, 21.75e6), "t3.medium": (2000.0, 43.375e6)}
+DB_TYPE = "t3.small"
+APP_TYPE_NOW = "t3.medium"          # 현재 앱 노드 구성(#394) — 회차에 MemTotal 이 없을 때 쓴다
+# 앱 노드 유형은 회차의 실측 MemTotal 로 고른다(#394 전 회차는 t3.small). 문턱은 AWS 사양 MemoryInfo 2,048 · 4,096 MiB 의
+# 가운데 — 새 유형이 생기면 표에 더한다
+APP_TYPE_BY_MEM = ((3072 * 2**20, "t3.small"), (None, "t3.medium"))
+
+
+def ebs_type(is_db, mem_total_bytes):
+    """노드의 인스턴스 유형과 추정 여부 — (유형, 추정?). DB 노드는 t3.small 고정."""
+    if is_db:
+        return DB_TYPE, False
+    if not mem_total_bytes:
+        return APP_TYPE_NOW, True
+    for upper, t in APP_TYPE_BY_MEM:
+        if upper is None or mem_total_bytes < upper:
+            return t, False
 PG_MAX_CONN_DEFAULT = 48
 CONNTRACK_DEFAULT = 65536
 _DISK_DEV = re.compile(r"^(nvme\d+n\d+|xvd[a-z]+|sd[a-z]+|vd[a-z]+)$")
@@ -1019,8 +1038,11 @@ def headroom(out):
         if o.get("mem_total_bytes") and o.get("mem_available_min_bytes") is not None:
             add("OS", f"{node} 메모리 사용", o["mem_total_bytes"], o["mem_total_bytes"] - o["mem_available_min_bytes"], "B")
         add("OS", f"{node} 디스크 util", 100.0, o.get("disk_util_pct_max"), "%")
-        add("OS", f"{node} 디스크 IOPS", 1000.0, (o.get("disk_iops") or {}).get("max"), "IOPS", "t3.small EBS 기준선")
-        add("OS", f"{node} 디스크 처리량", 21.75e6, (o.get("disk_bps") or {}).get("max"), "B/s", "t3.small EBS 기준선")
+        e_type, guess = ebs_type(is_db, o.get("mem_total_bytes"))
+        e_iops, e_bps = EBS_BASELINE[e_type]
+        e_note = f"{e_type}{' (추정)' if guess else ''} EBS 기준선"
+        add("OS", f"{node} 디스크 IOPS", e_iops, (o.get("disk_iops") or {}).get("max"), "IOPS", e_note)
+        add("OS", f"{node} 디스크 처리량", e_bps, (o.get("disk_bps") or {}).get("max"), "B/s", e_note)
         if o.get("conntrack"):
             add("OS", f"{node} conntrack", o["conntrack"].get("limit") or CONNTRACK_DEFAULT, o["conntrack"]["max"])
         add("OS", f"{node} TCP 대기열 넘침", 0, o.get("listen_overflows_delta"), "회")
