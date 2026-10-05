@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 입구 HTTPS 인증서 발급 · 갱신 — 보안 · 암호화 설계서 4.1 · 4.5 · 5장(INF-07, 이슈 #288). 정기 작업(rental-tls.service)이 APP-01 에서 root 로 부른다.
+# 입구 HTTPS 인증서 발급 · 갱신 — 보안 · 암호화 설계서 4.1 · 4.5 · 5장(INF-07, 이슈 #288). 정기 작업(rental-tls.service)이 앱 노드에서 root 로 부른다.
 #
 #   bash issue-cert.sh                  필요할 때만 발급한다. 두 번 연달아 돌리면 두 번째는 확인만 하고 끝난다
 #   LE_STAGING=1 bash issue-cert.sh     Let's Encrypt 시험 서버로 발급한다(신뢰되지 않는 인증서 — 절차 확인용, 발급 한도를 쓰지 않는다)
@@ -11,7 +11,22 @@
 # 사람 손에 맡기면 만료가 곧 입구 전면 장애다(설계서 5장). 발급 · 갱신 · 만료 감시(지표 → Grafana 경보)를 한 작업에 둔다.
 #
 # 순서: 공인 IP(IMDSv2) → 인증서가 없으면 임시 자체 서명 → 발급이 필요한가(아니면 여기서 끝) → 앞단 80 이 ACME 경로를 내보내는지 대기 →
-#       certbot(컨테이너) 발급 → /etc/rental/tls/ 로 복사 → nginx -t · reload → 지표.
+#       certbot(컨테이너) 발급 → /etc/rental/tls/ 로 복사 → nginx -t · reload → 지표 → (입구 이중화) 상대 노드에 사본.
+#
+# ── 입구 이중화(#404) — 두 앱 노드 ──
+#  ENTRY_IP(입구 고정 IP — Elastic IP)가 있으면(/etc/rental/entry.env — 유닛의 EnvironmentFile) 인증서는 그 IP 로 발급한다.
+#  발급은 **그 IP 를 지금 가진 노드만** 한다 — IMDS 의 public-ipv4 가 ENTRY_IP 와 같은 노드다. Let's Encrypt 의 http-01 확인이 그 IP 로
+#  오므로 다른 노드는 발급할 수 없고, 해 봐야 검증 실패 한도만 쓴다.
+#   - 가진 노드(활성): 지금처럼 확인 · 발급하고, 끝나면 지금 인증서 쌍을 상대 노드에 넘긴다(PEER_SSH — 이 노드의 deploy 계정 키로
+#     상대 deploy 의 ~/rental-tls-inbox/ 에. 배포 스크립트가 쓰는 노드 간 신뢰 경로와 같다 — 서버 운영 기반 설계서 6.2).
+#     넘기기에 실패해도 이 작업은 실패로 만들지 않는다 — 지표 rental_job_last_success_timestamp_seconds{task="tls_cert_copy"} 가 멈춘다.
+#   - 대기 노드: 발급하지 않는다. 넘겨받은 쌍이 쓸 만하면(CA 발급 · SAN 에 ENTRY_IP · 키가 짝 · 지금 것보다 늦게 만료) 바꿔 끼우고 reload.
+#     그래서 고정 IP 가 옮겨 오면(infra/os/entry/entry-watch.sh) 이 노드의 Nginx 는 이미 같은 IP 의 유효한 인증서를 내보낸다.
+#     넘겨받은 것이 없으면 임시 자체 서명(SAN ENTRY_IP)인 채로 기다린다 — 옮겨 온 뒤 이 작업이 그 노드를 「가진 노드」로 보고 발급한다.
+#  넘겨받는 주기는 이 작업의 주기(부팅 20초 뒤 · 12시간마다)다 — 활성 노드가 새로 발급한 뒤 최대 12시간 늦게 대기 노드에 들어간다.
+#  갱신 기준이 72시간 전이라 그 사이 대기 노드의 사본은 60시간 넘게 유효하다.
+#  S3 를 거치지 않는 이유 — 앱 노드 역할은 쓰기만 갖는다(infra/backup/aws/README.md). 개인키를 읽을 권한을 역할에 더하지 않는다.
+#  ENTRY_IP 가 비어 있으면 예전과 같다 — 이 노드의 공인 IP 로 발급하고 넘기지 않는다.
 # 실패하면 0 이 아닌 코드로 끝난다 — journalctl -u rental-tls 로 본다. 유닛이 5분 뒤 다시 부른다(rental-tls.service 주석).
 #
 # ── 자리 ──
@@ -21,6 +36,7 @@
 #  /var/lib/rental-acme                      ACME http-01 웹루트. certbot 이 .well-known/acme-challenge/<토큰> 을 쓰고 앞단 Nginx 가 80 에서 내보낸다.
 #                                            root 0755 — Nginx 워커(nginx 계정)가 토큰 파일을 읽어야 한다
 #  /var/lib/rental-metrics/tls_cert*.prom    결과 지표(아래 「지표」)
+#  /home/deploy/rental-tls-inbox/            (입구 이중화 · 대기 노드) 상대가 넘긴 쌍. deploy 700 — 바꿔 끼운 뒤 지운다(TLS_INBOX)
 #
 # ── 왜 certbot 을 컨테이너로 ──
 #  webroot 방식의 IP 주소 발급은 certbot 5.4 부터다(certbot CHANGELOG 5.4.0 「The webroot plugin now supports IP address issuance」,
@@ -69,6 +85,13 @@ WAIT_INTERVAL=${WAIT_INTERVAL:-5}
 PREPARE_ONLY=${PREPARE_ONLY:-0}
 # 공인 IP 를 손으로 줄 때만 쓴다(IMDS 가 없는 곳에서 시험할 때). 운영에서는 비워 둔다 — 비어 있으면 IMDSv2 로 얻는다
 PUBLIC_IP=${PUBLIC_IP:-}
+# 입구 이중화(#404, 위) — 비어 있으면 예전 방식. 값은 /etc/rental/entry.env(유닛의 EnvironmentFile)
+ENTRY_IP=${ENTRY_IP:-}
+# 상대 노드에 넘길 SSH 대상(deploy@<상대 사설 IP>)과 그 SSH 를 부를 이 노드의 계정. 비우면 넘기지 않는다
+PEER_SSH=${PEER_SSH:-}
+PUSH_USER=${PUSH_USER:-deploy}
+# 넘겨받는 자리(대기 노드) — 상대가 PUSH_USER 의 홈 기준 rental-tls-inbox 에 쓴다
+TLS_INBOX=${TLS_INBOX:-/home/deploy/rental-tls-inbox}
 
 case "$KEY_TYPE" in
   ecdsa) KEY_ARGS=(--key-type ecdsa --elliptic-curve secp256r1) ;;
@@ -195,6 +218,19 @@ else
   log "공인 IP(IMDSv2): $IP"
 fi
 [[ "$IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || fail "공인 IP 모양이 아니다: $IP"
+# 입구 이중화 — 인증서의 IP 는 늘 ENTRY_IP 다. 지금 그 IP 를 가졌는가로 역할이 갈린다(머리 주석)
+ROLE=single
+if [ -n "$ENTRY_IP" ]; then
+  [[ "$ENTRY_IP" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || fail "ENTRY_IP 모양이 아니다: $ENTRY_IP"
+  if [ "$IP" = "$ENTRY_IP" ]; then
+    ROLE=active
+    log "입구 고정 IP 를 이 노드가 가졌다 — 확인 · 발급하고 상대에 넘긴다"
+  else
+    ROLE=standby
+    log "입구 고정 IP($ENTRY_IP)는 상대 노드에 있다 — 발급하지 않고 넘겨받은 것만 본다"
+  fi
+  IP=$ENTRY_IP
+fi
 
 install -d -o root -g root -m 0700 "$TLS_DIR"
 install -d -o root -g root -m 0755 "$ACME_WEBROOT"
@@ -233,6 +269,66 @@ if [ "$SELF_MADE" = 1 ] && [ "$PREPARE_ONLY" != 1 ] && nginx_running; then
 fi
 cert_state
 
+# ── 입구 이중화 — 상대에 넘기기(활성) · 넘겨받기(대기) ──
+# 키와 인증서가 짝인가 — 공개키를 견준다. 짝이 아니면 Nginx 가 설정을 싣지 못한다
+cert_key_match() {
+  [ "$(openssl x509 -in "$1" -noout -pubkey 2>/dev/null | openssl sha256)" = \
+    "$(openssl pkey -in "$2" -pubout 2>/dev/null | openssl sha256)" ]
+}
+# 지금 쌍을 상대 노드에 넘긴다. root 가 읽고(인증서 디렉터리 0700) PUSH_USER 의 SSH 로 보낸다 — 그 계정의 키 · ~/.ssh/config ·
+# known_hosts 를 쓴다(배포 스크립트의 노드 간 SSH 와 같은 것). 받는 쪽은 임시 디렉터리에 풀고 옮긴다. 비대화식이라 묻지 않고 실패한다
+push_to_peer() {
+  [ "$ROLE" = active ] && [ -n "$PEER_SSH" ] || return 0
+  if cert_self_signed "$CRT"; then log "임시 자체 서명이라 상대에 넘기지 않는다"; return 0; fi
+  # shellcheck disable=SC2016 # 작은따옴표 안은 원격 셸에서 풀 변수다
+  if tar -C "$TLS_DIR" -cf - fullchain.pem privkey.pem \
+      | runuser -u "$PUSH_USER" -- ssh -o BatchMode=yes -o ConnectTimeout=10 "$PEER_SSH" \
+          'umask 077; d=rental-tls-inbox; rm -rf "$d/.new" && mkdir -p "$d/.new" && tar -C "$d/.new" -xf - && mv -f "$d/.new/fullchain.pem" "$d/.new/privkey.pem" "$d/" && rmdir "$d/.new"'; then
+    log "상대 노드에 인증서 사본을 넘겼다 — $PEER_SSH:rental-tls-inbox/"
+    last_success tls_cert_copy
+  else
+    log "!!! 상대 노드에 인증서 사본을 넘기지 못했다($PEER_SSH) — 입구가 옮겨 가면 그 노드가 새로 발급한다(발급 한도 한 장). 작업은 실패로 두지 않는다"
+  fi
+}
+# 넘겨받은 쌍을 본다(대기 노드). 쓸 만하면 바꿔 끼우고 reload 한 뒤 받은 쌍을 지운다. 쓸 수 없으면 지우고 알린다
+import_from_inbox() {
+  local icrt="$TLS_INBOX/fullchain.pem" ikey="$TLS_INBOX/privkey.pem" cur_end new_end
+  if [ ! -r "$icrt" ] || [ ! -r "$ikey" ]; then
+    log "넘겨받은 인증서가 없다($TLS_INBOX) — 지금 것을 둔다"
+    return 0
+  fi
+  if cert_self_signed "$icrt" || { [ "$LE_STAGING" != 1 ] && cert_staging "$icrt"; } || ! cert_has_ip "$icrt" "$IP" \
+      || ! openssl x509 -in "$icrt" -noout -checkend 0 >/dev/null || ! cert_key_match "$icrt" "$ikey"; then
+    log "!!! 넘겨받은 인증서를 쓸 수 없다(자체 서명 · 시험 서버 · SAN 에 $IP 없음 · 만료 · 키 불일치 중 하나) — 지우고 다음 사본을 기다린다"
+    rm -f -- "$icrt" "$ikey"
+    return 0
+  fi
+  new_end=$(cert_end_epoch "$icrt") || { log "!!! 넘겨받은 인증서의 만료 시각을 읽지 못했다"; return 0; }
+  cur_end=0
+  if [ -r "$CRT" ] && ! cert_self_signed "$CRT" && cert_has_ip "$CRT" "$IP"; then cur_end=$(cert_end_epoch "$CRT" || echo 0); fi
+  if [ "$new_end" -le "$cur_end" ]; then
+    log "넘겨받은 인증서가 지금 것보다 늦게 만료되지 않는다 — 지우고 지금 것을 둔다"
+    rm -f -- "$icrt" "$ikey"
+    return 0
+  fi
+  cp -f -- "$CRT" "$TLS_DIR/fullchain.pem.prev"
+  cp -f -- "$KEY" "$TLS_DIR/privkey.pem.prev"
+  chmod 600 "$TLS_DIR/privkey.pem.prev"
+  install -o root -g root -m 600 "$ikey" "$TLS_DIR/.privkey.pem.tmp"
+  install -o root -g root -m 644 "$icrt" "$TLS_DIR/.fullchain.pem.tmp"
+  mv -f -- "$TLS_DIR/.privkey.pem.tmp" "$KEY"
+  mv -f -- "$TLS_DIR/.fullchain.pem.tmp" "$CRT"
+  if nginx_running && ! nginx_reload; then
+    mv -f -- "$TLS_DIR/fullchain.pem.prev" "$CRT"
+    mv -f -- "$TLS_DIR/privkey.pem.prev" "$KEY"
+    cert_state
+    fail "넘겨받은 인증서로 nginx -t · reload 실패 — 옛 인증서로 되돌렸다"
+  fi
+  rm -f -- "$TLS_DIR/fullchain.pem.prev" "$TLS_DIR/privkey.pem.prev" "$icrt" "$ikey"
+  log "넘겨받은 인증서로 바꿨다 — 만료 $(date -d "@$new_end" '+%F %T')"
+  cert_state
+}
+
 # 첫 반영 — 인증서 자리만 채우고 끝낸다. 운영 Compose 의 nginx 를 새 마운트로 다시 만들기 전에 부른다(그 서비스의 마운트 주석).
 # 이때 떠 있는 Nginx 는 옛 설정 · 옛 마운트라 reload 도 발급도 하지 않는다
 if [ "$PREPARE_ONLY" = 1 ]; then
@@ -240,10 +336,18 @@ if [ "$PREPARE_ONLY" = 1 ]; then
   exit 0
 fi
 
+# 대기 노드 — 발급하지 않는다(머리 주석 「입구 이중화」)
+if [ "$ROLE" = standby ]; then
+  import_from_inbox
+  last_success tls_cert
+  exit 0
+fi
+
 # ── 3. 발급이 필요한가 — 필요 없으면 Nginx 를 기다리지도 않고 끝낸다(두 번째 실행은 여기서 끝난다) ──
 if ! reason=$(needs_issue "$CRT"); then
   log "발급하지 않는다 — CA 발급 · SAN $IP · 만료 $(date -d "@$(cert_end_epoch "$CRT")" '+%F %T') · 기준 ${RENEW_BEFORE_HOURS}시간 전(발급 한도 보호)"
   last_success tls_cert
+  push_to_peer
   exit 0
 fi
 log "발급이 필요하다 — $reason"
@@ -333,4 +437,6 @@ rm -f -- "$TLS_DIR/fullchain.pem.prev" "$TLS_DIR/privkey.pem.prev"
 # ── 7. 지표 ──
 cert_state
 last_success tls_cert
+# ── 8. (입구 이중화) 상대 노드에 사본 ──
+push_to_peer
 log "완료"

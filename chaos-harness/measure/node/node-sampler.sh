@@ -113,14 +113,13 @@ start() {
   mkdir -p "$d"
   local targets=()
   case $node in
-    app01)
-      targets=(node=http://127.0.0.1:9100/metrics redis=http://127.0.0.1:9121/metrics nginx=http://127.0.0.1:9113/metrics
-               app-1=http://127.0.0.1:8081/actuator/prometheus app-2=http://127.0.0.1:8082/actuator/prometheus) ;;
-    app02)
-      # 이 노드의 슬롯은 사설 IP 하나에 게시된다(APP_PUBLISH_ADDR) — 루프백으로는 닿지 않는다(prometheus/agent-app-node.yml)
+    app01|app02)
+      # 두 앱 노드가 같은 몫이다(입구 이중화 #404 — APP-02 에도 redis · nginx exporter 가 있다).
+      # 슬롯은 그 노드의 사설 IP 하나에 게시된다(APP_PUBLISH_ADDR) — 루프백으로는 닿지 않는다(prometheus/agent*.yml).
+      # 비어 있으면 루프백(#404 전 APP-01 · 단일 노드)
       addr=$(grep -E '^APP_PUBLISH_ADDR=' "$cdir/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d "\"' ")
       addr=${addr:-127.0.0.1}
-      targets=(node=http://127.0.0.1:9100/metrics
+      targets=(node=http://127.0.0.1:9100/metrics redis=http://127.0.0.1:9121/metrics nginx=http://127.0.0.1:9113/metrics
                "app-1=http://$addr:8081/actuator/prometheus" "app-2=http://$addr:8082/actuator/prometheus") ;;
     db01|db02)
       targets=(node=http://127.0.0.1:9100/metrics postgres=http://127.0.0.1:9187/metrics) ;;

@@ -9,9 +9,11 @@
 # 프로필 — 한 파일을 노드마다 다른 몫으로 띄운다. 모든 서비스가 프로필을 가지므로 infra/.env 의 COMPOSE_PROFILES 가
 # 비어 있으면 아무것도 뜨지 않는다.
 #   app       nginx · app-1 · app-2 · web · redis · 관측 수집기(prom-agent · vector · exporter 셋 — node · redis · nginx)
-#   app-node  app-1 · app-2 · 관측 수집기(node-exporter · prom-agent-app-node · vector) — 앱 노드 APP-02(INF-01).
-#             앞단 nginx · web · redis · exporter(redis · nginx)는 APP-01 에만 있다. 요청은 APP-01 의 nginx 가
-#             사설망으로 넘기고(nginx/conf.d/upstream.conf), 슬롯은 APP-01 의 Redis 에 TLS(6380)로 붙는다(redis 서비스 주석)
+#   app-node  nginx · app-1 · app-2 · web · redis · 관측 수집기(node-exporter · prom-agent-app-node · vector · exporter 둘 —
+#             redis · nginx) — 앱 노드 APP-02(INF-01). **입구 이중화(#404)부터 APP-01 과 같은 몫을 띄운다** — 입구 고정 IP
+#             (Elastic IP)가 옮겨 오면 이 노드의 nginx 가 받고, redis 는 APP-01 Redis 의 복제본이다(redis · sentinel 주석).
+#             app 과 프로필을 나눠 둔 것은 수집기 하나(prom-agent-app-node — 노드 라벨 · 슬롯 주소를 .env 에서 받는다) 때문이다
+#   sentinel  sentinel — Redis 승격 판정(INF-01 #404). APP-01 · APP-02 · DB-02 셋에 하나씩 둔다(quorum 2/3, sentinel 주석)
 #   db        postgres · 관측 수집기(node-exporter · postgres-exporter · prom-agent-db)
 #   standby   postgres-standby · 관측 수집기(node-exporter · postgres-exporter · prom-agent-db)
 #   단일 노드(옛 APP-01)   COMPOSE_PROFILES=app,db,standby — 셋이 한 노드의 컨테이너다. standby 는 전환 절차를 검증하는
@@ -19,7 +21,11 @@
 #   3노드                  APP-01 app · DB-01 db · DB-02 standby. APP-01 의 infra/.env 는 DB_HOST 를 DB-01 사설 IP 로 둔다
 #                          (아래 app-1 의 DB_HOST 주석)
 #   4노드                  3노드 + APP-02 app-node. APP-02 의 infra/.env 는 COMPOSE_PROFILES=app-node · DB_HOST(DB-01 사설 IP) ·
-#                          APP_PUBLISH_ADDR · APP_REDIS_HOST · APP_REDIS_PORT · Redis TLS 신뢰 설정을 둔다(app-1 주석)
+#                          APP_PUBLISH_ADDR · Redis TLS 신뢰 설정을 둔다(app-1 주석)
+#   4노드 + 입구 이중화(#404)  APP-01 app,sentinel · APP-02 app-node,sentinel · DB-01 db · DB-02 standby,sentinel.
+#                          두 앱 노드 모두 APP_PUBLISH_ADDR(자기 사설 IP) · REDIS_TLS=on · REDIS_TLS_PUBLISH_ADDR · REDIS_ANNOUNCE_IP ·
+#                          REDIS_SENTINEL_MASTER_IP 를, APP-02 는 REDIS_REPLICAOF 를 더 둔다(redis · sentinel 주석). 슬롯은 Sentinel 로
+#                          지금의 primary 를 찾는다 — 그 변수는 app-1 주석
 #
 # 이미지 — 레지스트리 파이프라인(INF-02) 전에는 로컬 빌드 이미지를 쓴다(운영 절차서 3.2 전제).
 # APP_IMAGE · WEB_IMAGE 로 덮으면 레지스트리 이미지가 된다.
@@ -29,10 +35,10 @@ name: rental-prod
 # 컨테이너 로그 회전 — 서버 운영 기반 설계서 8장이 「컨테이너 로그 — 크기·개수 상한」을 요구하는데 값이 10장에서 미확정이라
 # 지금까지 상한이 없었다. json-file 기본값은 무제한이라 로그만으로 노드 디스크가 찬다
 # (볼륨 크기는 서버 운영 기반 설계서 4.2 에서 미확정이다 — 상한을 두는 근거는 크기가 아니라 증가가 멈추지 않는다는 것).
-# 서비스 15개(nginx · app-1 · app-2 · web · redis · postgres · postgres-standby + 관측 수집기 prom-agent · prom-agent-db ·
-# prom-agent-app-node · vector · node-exporter · postgres-exporter · redis-exporter · nginx-exporter) × 10m × 3개 = 약 450 MB 가
+# 서비스 16개(nginx · app-1 · app-2 · web · redis · sentinel · postgres · postgres-standby + 관측 수집기 prom-agent · prom-agent-db ·
+# prom-agent-app-node · vector · node-exporter · postgres-exporter · redis-exporter · nginx-exporter) × 10m × 3개 = 약 480 MB 가
 # 한 파일 전체의 상한이다. 한 노드에는 그 노드의 프로필에 든 서비스만 뜨므로 노드마다는 이보다 작다
-# (DB 노드는 4개 — 약 120 MB, APP-02 는 5개 — 약 150 MB).
+# (DB-01 은 4개 — 약 120 MB, DB-02 는 sentinel 을 더해 5개 — 약 150 MB, 앱 노드는 sentinel 을 더해 11개 — 약 330 MB, #404).
 # vector 가 이 json-file 로그를 Docker API 로 읽어 밖으로 보내므로, 회전은 노드 안의 사본만 줄인다.
 x-logging: &logging
   driver: json-file
@@ -46,21 +52,24 @@ x-logging: &logging
 # ── 앱 노드 배분(#394, 2026-10-05 결정) ──
 # APP-01 · APP-02 는 t3.medium(2 vCPU · 4 GiB). DB 노드(t3.small)의 배분은 postgres 서비스 주석(PG_MEM_LIMIT)이 갖는다.
 #
-#   APP-01(프로필 app)       mem_limit       APP-02(프로필 app-node)   mem_limit
+#   APP-01(app,sentinel)      mem_limit      APP-02(app-node,sentinel)  mem_limit
 #   app-1 · app-2             768m × 2       app-1 · app-2              768m × 2
-#   redis                         112m       prom-agent-app-node            150m
-#   nginx                          48m       vector                         150m
-#   web                            32m       node-exporter                   64m
-#   prom-agent                    150m
-#   vector                        150m
-#   node-exporter                  64m
-#   redis-exporter                 64m
-#   nginx-exporter                 32m
+#   redis                         112m       redis                          112m
+#   nginx                          48m       nginx                           48m
+#   web                            32m       web                             32m
+#   sentinel                       32m       sentinel                        32m
+#   prom-agent                    150m       prom-agent-app-node            150m
+#   vector                        150m       vector                         150m
+#   node-exporter                  64m       node-exporter                   64m
+#   redis-exporter                 64m       redis-exporter                  64m
+#   nginx-exporter                 32m       nginx-exporter                  32m
 #   ──────────────────────────────────       ──────────────────────────────────
-#   합계                         2188m       합계                          1900m
+#   합계                         2220m       합계                          2220m
 #
+#   입구 이중화(#404)로 두 노드가 같은 몫이 됐다 — APP-02 는 nginx · web · redis · exporter 둘 · sentinel(+352m)을, APP-01 은 sentinel(+32m)을
+#   더했다(전에는 2188m · 1900m). DB-02 는 sentinel 32m 이 더해진다 — postgres 서비스 주석의 DB 노드 배분 계산.
 #   상한의 근거 — 앱 슬롯은 x-app 주석, 수집기 · exporter 는 아래 「관측 수집기」 표, redis · nginx · web 은 아래 이력 표의 근거 열과
-#   각 서비스 주석. 수집기 · exporter 상한은 #394 에서 바꾸지 않았다 — 4 GiB 에서 아래 (가)가 이미 선다.
+#   각 서비스 주석, sentinel 은 그 서비스 주석. 수집기 · exporter 상한은 #394 에서 바꾸지 않았다 — 4 GiB 에서 아래 (가)가 이미 선다.
 #
 # **앱 노드는 상한의 합을 노드 가용 메모리 아래로 둔다 — 무너짐 기준 (가)(#394, 사용자 승인 2026-10-04).**
 #   넘치면 노드 전체가 아니라 상한을 넘은 슬롯 하나가 컨테이너 OOM 으로 끝나고 남은 슬롯이 받는다(INF-01).
@@ -77,10 +86,13 @@ x-logging: &logging
 #     MemAvailable 이 「못 쓴다」고 보는 몫(워터마크 등)     130      124    zoneinfo — 워터마크는 노드 크기 · THP 설정에 따라 달라진다
 #     ──────────────────────────────────────────────────────────────
 #     합                                                    498      475
-#     상한 합 + 위 합                                     2,686    2,375
+#     상한 합 + 위 합(#394 — 2188m · 1900m 일 때)         2,686    2,375
+#     상한 합 + 위 합(#404 — 두 노드 2220m)               2,718   (2,718)
 #
 #   4 GiB 노드의 MemTotal 은 **3,831 MiB** 다(두 노드, 2026-10-05 01:17 free -m — 유형 변경 뒤 · 이 상한 반영 전. t3.small 은 1,905 였다).
-#   3,831 − (상한 합 + 위 합) = 1,145(APP-01) · 1,456(APP-02) MiB 가 남아 (가)가 선다. #394 결정 코멘트의 가용 몫 추정은 약 3,300.
+#   3,831 − (상한 합 + 위 합) = 1,113 MiB 가 두 노드 모두 남아 (가)가 선다(#394 때는 1,145 · 1,456). #394 결정 코멘트의 가용 몫 추정은 약 3,300.
+#   APP-02 의 컨테이너 밖 몫은 컨테이너가 5개에서 11개로 늘어(shim 이 컨테이너당 하나) 475 보다 커진다 — 같은 수가 뜨는 APP-01 의 498 을
+#   빌려 (2,718) 로 셈했다. **추정이다** — #404 반영 뒤 같은 명령으로 잰다.
 #   위 셋은 2 GiB 노드의 값이라 4 GiB 에서 같다는 보장이 없다 — 반영 뒤 같은 명령으로 다시 재서(#394 10단계) 여기를 실측으로 바꾼다.
 #   그리고 498 · 475 는 측정값이지 상한이 아니다 — journald 회전 · sshd 세션 · dnf-automatic 이 돌면 는다.
 #
@@ -221,14 +233,16 @@ x-app: &app
     redis:
       condition: service_healthy
       required: false
-  # Redis TLS 신뢰 앵커(CA 인증서) 자리 — APP-02 의 슬롯이 APP-01 Redis 의 6380 에 TLS 로 붙을 때 서버 인증서를 검증한다.
-  # 앱은 코드 변경 없이 Spring Boot 속성을 환경 변수로 받는다 — APP-02 의 infra/.env(env_file)에
+  # Redis TLS 신뢰 앵커(CA 인증서) 자리 — 슬롯이 Redis(6380) · Sentinel(26379)에 TLS 로 붙을 때 서버 인증서를 검증한다.
+  # 앱은 Spring Boot 속성을 환경 변수로 받는다 — infra/.env(env_file)에
   #   SPRING_DATA_REDIS_SSL_ENABLED=true · SPRING_DATA_REDIS_SSL_BUNDLE=redis ·
   #   SPRING_SSL_BUNDLE_PEM_REDIS_TRUSTSTORE_CERTIFICATE=file:/etc/rental/redis-tls/ca.crt
-  # 을 두고, 이 마운트가 그 파일을 넣는다. APP-01 은 속성을 두지 않아 이 디렉터리를 읽지 않는다
-  # (경로가 없으면 Docker 가 빈 디렉터리를 만든다 — postgres 의 PG_TLS_DIR 마운트와 같다).
-  # 호스트 쪽을 Redis 서버의 인증서 디렉터리(REDIS_TLS_DIR)와 **나눈 이유** — APP-01 에서 그 디렉터리에는 서버 개인키가 있다.
-  # 같은 자리를 슬롯에 붙이면 앱 컨테이너가 Redis 서버 키를 읽는다. 슬롯에는 CA 하나만 든 디렉터리를 붙인다.
+  # 을 두고, 이 마운트가 그 파일을 넣는다. 입구 이중화(#404) 전에는 APP-02 만 이 속성을 두었고 APP-01 슬롯은 같은 노드의
+  # 평문 6379 였다. **#404 부터는 두 노드 모두 둔다** — 슬롯이 Sentinel 에게 지금의 primary 를 묻고 그 주소(어느 노드든 사설 IP:6380,
+  # TLS)로 붙는다. Sentinel 접속 변수(SPRING_DATA_REDIS_SENTINEL_*)도 같은 .env 에 둔다 — 앱 쪽 변경(#404 7단계)이 받는다.
+  # 경로가 없으면 Docker 가 빈 디렉터리를 만든다 — postgres 의 PG_TLS_DIR 마운트와 같다.
+  # 호스트 쪽을 Redis 서버의 인증서 디렉터리(REDIS_TLS_DIR)와 **나눈 이유** — 앱 노드의 그 디렉터리에는 서버 개인키가 있다(#404 부터 두 노드 모두).
+  # 같은 자리를 슬롯에 붙이면 앱 컨테이너가 Redis 서버 키를 읽는다. 슬롯에는 CA 하나만 든 디렉터리(기본 /etc/rental/redis-tls-ca)를 붙인다.
   volumes:
     - ${REDIS_TLS_CA_DIR:-/etc/rental/redis-tls-ca}:/etc/rental/redis-tls:ro
     # 추적 에이전트 설정(위 JAVA_TOOL_OPTIONS 의 -Dotel.config.file). 스위치가 꺼져 있으면 읽지 않는다.
@@ -422,8 +436,9 @@ x-postgres-command: &postgres-command
 
 services:
   # 앞단 — 요청 분산 · SSE 전달 · 정적 화면 전달. 호스트 네트워크여야 upstream 의 127.0.0.1 이 호스트를 가리킨다(운영 절차서 4.1).
+  # 두 앱 노드에 하나씩(#404) — 입구 고정 IP 를 가진 노드의 것이 요청을 받고, 다른 노드의 것은 같은 설정으로 대기한다(upstream.conf 머리 주석).
   nginx:
-    profiles: ["app"]
+    profiles: ["app", "app-node"]
     # 현재 stable 계열. 프론트 이미지(frontend/Dockerfile)와 같은 계열로 둔다
     image: nginx:1.30-alpine
     network_mode: host
@@ -464,14 +479,19 @@ services:
       - web
 
   # 슬롯 둘 — 액티브-액티브(INF-01). 노드마다 둘이고 APP-01 · APP-02 를 합쳐 넷이 앞단 nginx 뒤에 선다(upstream.conf).
-  # 포트는 호스트 루프백에만 연다(시스템 구성서 4장) — **다른 노드가 붙어야 하는 APP-02 만 예외다.**
-  # 게시 주소 APP_PUBLISH_ADDR — APP-01 은 비워 둔다(루프백, 기본값). APP-02 는 그 노드의 사설 IP 하나다(10.20.20.30) —
-  # APP-01 의 nginx 와 배포 스크립트의 readiness 확인이 사설망으로 닿는다. 0.0.0.0 은 쓰지 않는다. 게시 포트는 firewalld 를
-  # 우회하므로(서버 운영 기반 설계서 3.3) 이 포트의 방어는 보안 그룹(rental-app-node 가 rental-app 에서만 받는다) · 사설 서브넷이다.
-  # 앱은 /actuator 를 인증 없이 연다(prom-agent 의 app 잡 주석) — 그 경로도 이 두 겹 안에서만 닿는다.
+  # 포트는 호스트 루프백에만 연다(시스템 구성서 4장) — **다른 노드가 붙어야 하는 앱 노드의 슬롯은 예외다.**
+  # 게시 주소 APP_PUBLISH_ADDR — 그 노드의 사설 IP 하나다(APP-01 10.20.0.10 · APP-02 10.20.1.10). 입구 이중화(#404)부터 두 노드의
+  # nginx 가 네 슬롯을 모두 사설 IP 로 보므로(upstream.conf) APP-01 도 비워 두지 않는다 — 비우면 루프백(기본값, 단일 노드 구성)이다.
+  # 배포 스크립트의 readiness 확인도 사설망으로 닿는다. 0.0.0.0 은 쓰지 않는다. 게시 포트는 firewalld 를
+  # 우회하므로(서버 운영 기반 설계서 3.3) 이 포트의 방어는 보안 그룹 · 사설 IP 게시다. 보안 그룹은 rental-app-node 가 rental-app 에서
+  # 받는데, **「rental-app 에서만」이 아니다** — 두 앱 노드가 rental-app 도 달고(#404) rental-app 은 NAT 때문에 사설 두 서브넷의 모든 포트를
+  # 받아(서버 운영 기반 설계서 3.2) DB 노드에서 이 포트에 닿는다. 앱은 /actuator 를 인증 없이 열고(prom-agent 의 app 잡 주석) 그것을 막는
+  # 것은 입구 Nginx 뿐이라, DB 노드에서 슬롯 포트로 직접 오면 /actuator 도 열려 있다. 좁히는 것은 후속이다(시스템 구성서 4장 슬롯 행).
   #
-  # Redis 접속 자리 APP_REDIS_HOST · APP_REDIS_PORT — APP-01 은 비워 둔다(같은 노드의 redis:6379, Compose 네트워크 평문).
-  # APP-02 는 APP-01 사설 IP 와 TLS 포트(10.20.0.10 · 6380)에 x-app 의 CA 로 검증하며 붙는다(redis 서비스 주석).
+  # Redis 접속 자리 APP_REDIS_HOST · APP_REDIS_PORT — 단독 접속(host · port) 자리다. 비우면 같은 노드의 redis:6379(Compose 네트워크 평문).
+  # 4노드(#255)의 APP-02 는 APP-01 사설 IP 와 TLS 포트(10.20.0.10 · 6380)였다. **#404 부터는 Sentinel 접속(.env 의
+  # SPRING_DATA_REDIS_SENTINEL_*)이 primary 를 정한다** — Spring Boot 는 sentinel 설정이 있으면 host · port 를 쓰지 않는다. 그래서 두 앱 노드
+  # 모두 이 둘을 비워 둔다(남아 있어도 쓰이지 않는다).
   # **REDIS_HOST · REDIS_PORT 로 받지 않는 이유** — 그 두 이름은 앱이 env_file(.env)로 직접 읽는 키이고 운영 .env 에 로컬 구성의
   # 값(localhost · 6379)이 남아 있을 수 있다. 같은 이름으로 치환하면 그 값이 APP-01 슬롯의 redis 를 덮는다. 여기서 environment 가
   # env_file 을 이기므로 .env 의 REDIS_HOST · REDIS_PORT 는 지금처럼 쓰이지 않는다.
@@ -524,8 +544,9 @@ services:
       retries: 4
       start_period: 90s
 
+  # 노드마다 하나 — 그 노드의 nginx 가 루프백으로 쓴다(#404 부터 APP-02 에도)
   web:
-    profiles: ["app"]
+    profiles: ["app", "app-node"]
     image: ${WEB_IMAGE:-rental-frontend:local}
     restart: unless-stopped
     logging: *logging
@@ -543,7 +564,7 @@ services:
       start_period: 10s
 
   redis:
-    profiles: ["app"]
+    profiles: ["app", "app-node"]
     image: redis:7-alpine
     restart: unless-stopped
     logging: *logging
@@ -565,14 +586,34 @@ services:
     # 데이터도 사라진다는 방침은 그대로다(볼륨은 이 노드 안에 있고 백업 대상이 아니다).
     # everysec 은 최대 1초치 손실을 받아들이는 대신 요청 경로에 fsync 를 두지 않는다.
     #
-    # 노드 간 접속(INF-01, 2026-09-26 사용자 결정) — APP-02 의 슬롯이 이 Redis 를 사설망으로 쓴다. 리프레시 토큰이 노드 사이를
-    # 오가므로 비밀번호만이 아니라 TLS 도 건다(서버 운영 기반 설계서 3.6). REDIS_TLS=on 이면
-    #   - 평문 6379 는 그대로 둔다 — APP-01 슬롯 · redis-exporter · healthcheck 는 같은 노드 Compose 네트워크 안이라 바꾸지 않는다.
+    # 노드 간 접속(INF-01, 2026-09-26 사용자 결정) — 다른 노드의 슬롯 · Redis · Sentinel 이 이 Redis 를 사설망으로 쓴다. 리프레시 토큰이
+    # 노드 사이를 오가므로 비밀번호만이 아니라 TLS 도 건다(서버 운영 기반 설계서 3.6). REDIS_TLS=on 이면
+    #   - 평문 6379 는 그대로 둔다 — redis-exporter · healthcheck 는 같은 노드 Compose 네트워크 안이라 바꾸지 않는다.
     #     6379 는 여전히 호스트에 게시하지 않는다(아래 ports)
-    #   - TLS 6380 을 더 연다. 서버 인증서는 자체 서명 인증서 하나이고(ca.crt 는 그 사본 — 클라이언트의 신뢰 기준) SAN 은 APP-01 사설 IP(10.20.0.10)다 — 만드는 절차는 운영 절차서.
+    #   - TLS 6380 을 더 연다. 서버 인증서의 SAN 은 그 노드의 사설 IP 다. **#404 부터 인증서는 한 사설 CA 가 노드마다 발급한다** — 복제본이
+    #     primary 의 인증서를, Sentinel 이 두 노드의 인증서를, 슬롯이 어느 노드든 primary 의 인증서를 같은 ca.crt 하나로 검증해야 해서다
+    #     (전에는 APP-01 의 자체 서명 하나 — ca.crt 가 그 사본이었다). 만드는 절차는 운영 절차서.
     #     클라이언트 인증서는 요구하지 않는다(--tls-auth-clients no) — 접속 자격은 비밀번호가 맡고, CA 는 서버 검증에만 쓴다
     #   - REDIS_PASSWORD 가 비어 있으면 기동을 실패시킨다 — 노드 밖에 여는 포트를 인증 없이 띄우지 않는다
-    # 단일 노드 · APP-02 가 없는 구성은 REDIS_TLS 를 비워 둔다 — 지금과 같은 평문 6379 하나다.
+    #   - 복제 접속도 TLS 다(--tls-replication yes). 복제본이 primary 에 낼 비밀번호(masterauth)는 같은 REDIS_PASSWORD 다
+    # 단일 노드 · 다른 노드가 붙지 않는 구성은 REDIS_TLS 를 비워 둔다 — 평문 6379 하나다.
+    #
+    # 복제 · 승격(입구 이중화, #404) — APP-02 의 redis 는 APP-01 redis 의 복제본으로 시작하고, primary 가 멈추면 Sentinel(아래 sentinel
+    # 서비스)이 복제본을 승격한다. 시스템 구성서 3장의 「Redis 에는 복제를 두지 않는다」를 바꾼 것이다 — 입구가 두 노드가 되면 Redis 가
+    # 한 노드에만 있을 때 그 노드와 함께 로그인 유지가 멈춘다. 복제는 비동기라 승격 직전 최대 수 초의 쓰기(토큰 회전)를 잃을 수 있다.
+    #   **2a ↔ 2c 사설망만 끊기면 더 잃는다** — 과반(APP-02 · DB-02 Sentinel)이 APP-02 를 승격하는데 입구는 APP-01 에 남아(감시가 고정 IP 로도
+    #   확인한다) APP-01 슬롯이 옛 primary 에 계속 쓴다. 복구 때 옛 primary 는 복제본으로 돌아가며 자기 데이터를 버린다 — 그 사이 쓰기
+    #   (토큰 회전 · 티켓 · 락)가 사라지고 그 사용자는 재로그인한다. min-replicas-to-write 로 막지 않는다 — 복제본 없이는 쓰기를 거절하게 되어
+    #   APP-02 를 꺼 두고 APP-01 만 켠 운영(운영 절차서 9.1 · 9.6)에서 로그인이 멈춘다(시스템 구성서 3장 Redis 문단).
+    #   **역할은 처음 기동 때만 환경 변수로 정한다.** 설정 파일(/data/redis.conf — 데이터 볼륨 안)이 없을 때만 만들고, REDIS_REPLICAOF
+    #   (「주소 포트」 — APP-02 는 10.20.0.10 6380)가 있으면 replicaof 줄을 넣는다. 그 뒤 역할은 Sentinel 이 바꾸고 CONFIG REWRITE 로 이 파일에
+    #   남긴다 — 재기동해도 승격된 쪽이 primary 로 돌아온다. 기동할 때마다 replicaof 를 명령 인자로 주면 승격된 primary 가 재기동하며
+    #   옛 primary 의 복제본으로 돌아가 두 노드가 서로의 복제본이 될 수 있다(Sentinel 이 설정 파일 쓰기를 전제하는 이유).
+    #   그래서 REDIS_REPLICAOF 를 바꿔도 이미 있는 파일에는 반영되지 않는다 — 역할을 처음으로 되돌리려면 파일을 지우고 재생성한다(운영 절차서).
+    #   CONFIG REWRITE 는 명령 인자로 준 값(비밀번호 포함)도 그 파일에 쓴다 — 파일은 Docker 볼륨 안(root 전용 디렉터리, 암호화된 데이터
+    #   볼륨)에 있고, 같은 볼륨의 AOF 에 리프레시 토큰이 이미 있다. 저장소에는 남지 않는다.
+    #   REDIS_ANNOUNCE_IP — 이 노드의 사설 IP. 복제본이 primary 에게 「나는 이 주소의 6380 이다」라고 알린다(replica-announce-*).
+    #   브리지 네트워크라 알리지 않으면 컨테이너 안 포트(6379)가 알려져 Sentinel 이 그 주소로 승격 · 재구성을 시도한다.
     # 비밀번호는 지금처럼 명령 인자로 넘긴다(컨테이너 안 ps 에 보인다 — 이 변경 전과 같다).
     # 실행 사용자 — 명령이 sh 로 시작해 이미지 진입점(docker-entrypoint.sh)의 권한 내리기(첫 인자가 redis-server 일 때만)를 타지
     # 않는다. 진입점 스크립트로 읽은 추정이고 노드에서 확인하지 않았다 — 키 파일 권한을 정할 때 docker compose exec redis id 로 본다.
@@ -582,38 +623,126 @@ services:
       - -c
       - |
         set -eu
-        set -- redis-server --maxmemory 64mb --maxmemory-policy volatile-lru --appendonly yes --appendfsync everysec
-        if [ -n "$${REDIS_PASSWORD:-}" ]; then set -- "$$@" --requirepass "$$REDIS_PASSWORD"; fi
+        CONF=/data/redis.conf
+        if [ ! -s "$$CONF" ]; then
+          ( umask 077; : > "$$CONF.tmp" )
+          if [ -n "$${REDIS_REPLICAOF:-}" ]; then echo "replicaof $$REDIS_REPLICAOF" >> "$$CONF.tmp"; fi
+          mv -f "$$CONF.tmp" "$$CONF"
+          echo "redis: $$CONF 를 처음 만들었다 — replicaof [$${REDIS_REPLICAOF:-} ] (비었으면 primary)"
+        fi
+        set -- redis-server "$$CONF" --maxmemory 64mb --maxmemory-policy volatile-lru --appendonly yes --appendfsync everysec
+        if [ -n "$${REDIS_PASSWORD:-}" ]; then set -- "$$@" --requirepass "$$REDIS_PASSWORD" --masterauth "$$REDIS_PASSWORD"; fi
         case "$${REDIS_TLS:-}" in
           on)
             [ -n "$${REDIS_PASSWORD:-}" ] || { echo "redis: REDIS_TLS=on 인데 REDIS_PASSWORD 가 비어 있다 — infra/.env" >&2; exit 1; }
-            set -- "$$@" --tls-port 6380 --tls-cert-file /tls/server.crt --tls-key-file /tls/server.key --tls-ca-cert-file /tls/ca.crt --tls-auth-clients no ;;
+            set -- "$$@" --tls-port 6380 --tls-cert-file /tls/server.crt --tls-key-file /tls/server.key --tls-ca-cert-file /tls/ca.crt --tls-auth-clients no --tls-replication yes ;;
           "") ;;
           *) echo "redis: REDIS_TLS 는 on 이거나 비어 있어야 한다 — infra/.env" >&2; exit 1 ;;
         esac
+        if [ -n "$${REDIS_ANNOUNCE_IP:-}" ]; then set -- "$$@" --replica-announce-ip "$$REDIS_ANNOUNCE_IP" --replica-announce-port 6380; fi
         exec "$$@"
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      # on 이면 TLS 6380 을 연다(위). APP-01 에 APP-02 가 붙는 구성만 on
+      # on 이면 TLS 6380 을 연다(위). 다른 노드가 붙는 구성(4노드 이상)만 on
       REDIS_TLS: ${REDIS_TLS:-}
+      # 처음 기동 때의 역할(위). APP-01 은 비워 둔다(primary), APP-02 는 「10.20.0.10 6380」
+      REDIS_REPLICAOF: ${REDIS_REPLICAOF:-}
+      # 이 노드의 사설 IP(위). 단일 노드 · 3노드는 비워 둔다
+      REDIS_ANNOUNCE_IP: ${REDIS_ANNOUNCE_IP:-}
       TZ: Asia/Seoul
     volumes:
       - redisdata:/data
       # 서버 인증서 · 키 · CA — REDIS_TLS 가 비어 있으면 읽지 않는다(경로가 없으면 Docker 가 빈 디렉터리를 만든다 —
       # postgres 의 PG_TLS_DIR 마운트와 같다). 앱 슬롯에는 이 디렉터리를 붙이지 않는다(x-app 의 volumes 주석)
       - ${REDIS_TLS_DIR:-/etc/rental/redis-tls}:/tls:ro
-    # 평문 6379 는 게시하지 않는다 — APP-01 슬롯은 Compose 네트워크로 닿는다.
+    # 평문 6379 는 게시하지 않는다.
     # TLS 6380 만 게시한다. 게시 주소 REDIS_TLS_PUBLISH_ADDR — 단일 노드는 비워 둔다(루프백, 기본값. REDIS_TLS 가 비어 있으면 받는
-    # 쪽이 없어 연결이 거절된다). APP-01 은 자기 사설 IP 하나(10.20.0.10) — APP-02 가 붙어야 하는 포트라서다(0.0.0.0 금지).
-    # 게시 포트는 firewalld 를 우회하므로(서버 운영 기반 설계서 3.3) 방어는 보안 그룹(rental-app 이 rental-app-node 에서만 6380 을
-    # 받는다) · TLS · 비밀번호다.
+    # 쪽이 없어 연결이 거절된다). 앱 노드는 자기 사설 IP 하나(APP-01 10.20.0.10 · APP-02 10.20.1.10) — 다른 노드의 슬롯 · 복제본 ·
+    # Sentinel 이 붙어야 하는 포트라서다(0.0.0.0 금지). 같은 노드의 슬롯도 Sentinel 이 알려 준 이 주소로 붙는다(#404).
+    # 게시 포트는 firewalld 를 우회하므로(서버 운영 기반 설계서 3.3) 방어는 보안 그룹 · TLS · 비밀번호다. 보안 그룹은 rental-app-node 가
+    # rental-app · rental-db 에서 6380 을 받고, rental-app(두 앱 노드가 함께 단다, #404)이 NAT 때문에 사설 두 서브넷 전체를 받아 DB-01 에서도
+    # 닿는다 — 그래서 TLS · 비밀번호가 실제로 지키는 겹이다(시스템 구성서 4장).
     ports:
       - "${REDIS_TLS_PUBLISH_ADDR:-127.0.0.1}:6380:6380"
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli $${REDIS_PASSWORD:+-a $$REDIS_PASSWORD} ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli $${REDIS_PASSWORD:+-a $$REDIS_PASSWORD} --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Redis 승격 판정(INF-01, #404) — Redis Sentinel. primary 가 멈추면 과반이 동의해 복제본을 승격하고, 옛 primary 가 돌아오면 복제본으로
+  # 되돌린다. 슬롯은 Sentinel 에게 지금의 primary 주소를 묻는다(x-app 의 volumes 주석). Redis 에 들어 있는 기능이라 이미지가 같다.
+  # **셋을 둔다 — APP-01 · APP-02 · DB-02(프로필 sentinel), quorum 2.** 둘이면 한 노드가 멈출 때 남은 하나로는 과반이 안 된다.
+  # 셋째를 DB-02 에 두는 이유 — APP-01 과 다른 AZ(2c)다. DB-01(2a)에 두면 2a 가 통째로 끊길 때 APP-01 과 함께 둘을 잃어 과반을 잃는다.
+  # APP-02 와 DB-02 가 같은 2c 라 2c 가 통째로 끊기면 APP-01 혼자 남아 승격하지 못한다 — 평시 primary 는 APP-01 이라 승격할 일이 없다.
+  #   - 호스트 네트워크 · 그 노드의 사설 IP 하나에만 묶는다(bind). 브리지에 두면 Sentinel 이 서로에게 알리는 주소가 컨테이너 주소가 되어
+  #     announce 값을 게시 포트와 따로 맞춰야 한다(Redis Sentinel 문서 「Sentinel, Docker, NAT, and possible issues」). 호스트 네트워크라
+  #     게시가 아니라 호스트 소켓이므로 firewalld 도 거친다 — 그 노드의 firewalld 가 26379 를 연다(infra/os/firewalld/).
+  #   - TLS 만 받는다(port 0 · tls-port 26379). Redis · 다른 Sentinel 에 붙는 나가는 연결도 TLS 다(tls-replication yes).
+  #     인증서는 그 노드의 Redis 서버 인증서와 같은 디렉터리(REDIS_TLS_DIR) — DB-02 에도 같은 CA 로 발급한 것을 둔다(운영 절차서).
+  #   - 비밀번호(requirepass)는 REDIS_PASSWORD 와 같다. 같은 값이 Sentinel 끼리의 접속에도 쓰인다(Redis 문서 「Configuring Sentinel
+  #     instances with authentication」 — 모든 Sentinel 이 같은 값이어야 한다). 슬롯도 이 값으로 Sentinel 에 붙는다.
+  #   - **설정 파일은 처음 기동 때만 만든다**(/data/sentinel.conf — 이름 볼륨). Sentinel 은 지금의 primary · 알게 된 다른 Sentinel · 복제본을
+  #     이 파일에 다시 쓴다. 기동마다 다시 만들면 승격 뒤 재기동한 Sentinel 이 옛 primary 를 지켜보기 시작한다. 처음 지켜볼 primary 는
+  #     REDIS_SENTINEL_MASTER_IP(10.20.0.10 — APP-01). 비밀번호를 바꾸면 이 파일을 지우고 재생성한다(그때의 primary 주소로 — 운영 절차서).
+  #     redis 와 같은 이유로 이 파일에도 비밀번호가 들어간다(볼륨 안 · 저장소 밖).
+  #   - 판정 값 — down-after-milliseconds 5000 · failover-timeout 60000 은 **잠정**이다(Redis 기본은 30000 · 180000). 입구 감시(5초 × 3회 —
+  #     infra/os/entry/)와 비슷한 크기로 두었고, 전환 리허설에서 승격 시간과 오판(사설망 지연) 여부를 보고 확정한다.
+  # 상한 32m — Sentinel 은 키를 담지 않고 상태 몇 KB 만 갖는다. web(32m)과 같은 크기로 두었다. 반영 뒤 docker stats 로 본다(미측정).
+  sentinel:
+    profiles: ["sentinel"]
+    image: redis:7-alpine
+    network_mode: host
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 32m
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        : "$${REDIS_PASSWORD:?sentinel: REDIS_PASSWORD 가 비어 있다 — infra/.env}"
+        : "$${REDIS_ANNOUNCE_IP:?sentinel: REDIS_ANNOUNCE_IP(이 노드의 사설 IP)가 비어 있다 — infra/.env}"
+        : "$${REDIS_SENTINEL_MASTER_IP:?sentinel: REDIS_SENTINEL_MASTER_IP(처음 지켜볼 primary)가 비어 있다 — infra/.env}"
+        CONF=/data/sentinel.conf
+        if [ ! -s "$$CONF" ]; then
+          umask 077
+          printf '%s\n' \
+            'port 0' \
+            'tls-port 26379' \
+            "bind $$REDIS_ANNOUNCE_IP" \
+            'tls-cert-file /tls/server.crt' \
+            'tls-key-file /tls/server.key' \
+            'tls-ca-cert-file /tls/ca.crt' \
+            'tls-auth-clients no' \
+            'tls-replication yes' \
+            "requirepass $$REDIS_PASSWORD" \
+            "sentinel announce-ip $$REDIS_ANNOUNCE_IP" \
+            'sentinel announce-port 26379' \
+            "sentinel monitor rental $$REDIS_SENTINEL_MASTER_IP 6380 2" \
+            "sentinel auth-pass rental $$REDIS_PASSWORD" \
+            'sentinel down-after-milliseconds rental 5000' \
+            'sentinel failover-timeout rental 60000' \
+            'sentinel parallel-syncs rental 1' > "$$CONF.tmp"
+          mv -f "$$CONF.tmp" "$$CONF"
+          echo "sentinel: $$CONF 를 처음 만들었다 — primary $$REDIS_SENTINEL_MASTER_IP:6380 을 지켜본다"
+        fi
+        exec redis-sentinel "$$CONF"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      # 이 노드의 사설 IP — 묶는 주소이자 다른 Sentinel 에게 알리는 주소(APP-01 10.20.0.10 · APP-02 10.20.1.10 · DB-02 10.20.20.10)
+      REDIS_ANNOUNCE_IP: ${REDIS_ANNOUNCE_IP:-}
+      # 처음 지켜볼 primary(위). 세 노드 모두 10.20.0.10
+      REDIS_SENTINEL_MASTER_IP: ${REDIS_SENTINEL_MASTER_IP:-}
+      TZ: Asia/Seoul
+    volumes:
+      - sentineldata:/data
+      - ${REDIS_TLS_DIR:-/etc/rental/redis-tls}:/tls:ro
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --tls --cacert /tls/ca.crt -h $$REDIS_ANNOUNCE_IP -p 26379 -a $$REDIS_PASSWORD --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
 
   postgres:
     profiles: ["db"]
@@ -625,6 +754,7 @@ services:
     # 샘플 최대 250.8 MiB, 여덟 회차 중 일곱이 240 MiB 이상(OOM 은 없었다). 파일 캐시가 이 상한에 과금되므로(머리 주석)
     # 상한에 닿으면 회수에 몰린다. 768m 은 DB 노드 가용(1905 − OS 약 264 − 수집기 상한 278 ≈ 1363 — 수집기는 node exporter 64 · postgres exporter 64(#357 에서 DB 노드로 옮겼다) · prom-agent-db 150. 1905 · 264 는 APP-01 에서 잰 값을 옮겨 쓴 것이다. DB-01 의 free -m 총량도 1,905 MiB 였다 — 2026-10-01. OS 몫은 따로 재지 않았다)의 절반을 조금 넘는다(#357 전 수집기 214 일 때는 1427 의 약 절반) — 나머지는
     # 커널 page cache · 백업 스크립트 몫이다. standby 도 같은 값이다(승격 뒤 primary)
+    # DB-02 에는 sentinel(32m, #404)이 더 뜬다 — 수집기 278 + 32 = 310 이라 가용 약 1331 의 절반을 조금 넘는 그대로다(768m 을 바꾸지 않는다)
     mem_limit: ${PG_MEM_LIMIT:-256m}
     # 저장소 자원 상한 — 시스템 구성서 3장. 이미지 기본값(shared_buffers 128MB · max_connections 100)은
     # 이 노드에 들어오지 않는다.
@@ -842,10 +972,13 @@ services:
         exec /bin/prometheus --agent --config.file=/tmp/agent.yml --storage.agent.path=/prometheus --web.listen-address=127.0.0.1:9090
     environment:
       # 틀(agent.yml)의 자리표시자 이름 — 기동 셸이 이 목록만 채운다
-      PROM_AGENT_KEYS: GRAFANA_CLOUD_PROM_URL GRAFANA_CLOUD_PROM_USER GRAFANA_CLOUD_PROM_TOKEN
+      PROM_AGENT_KEYS: GRAFANA_CLOUD_PROM_URL GRAFANA_CLOUD_PROM_USER GRAFANA_CLOUD_PROM_TOKEN APP_PUBLISH_ADDR
       GRAFANA_CLOUD_PROM_URL: ${GRAFANA_CLOUD_PROM_URL:-}
       GRAFANA_CLOUD_PROM_USER: ${GRAFANA_CLOUD_PROM_USER:-}
       GRAFANA_CLOUD_PROM_TOKEN: ${GRAFANA_CLOUD_PROM_TOKEN:-}
+      # 슬롯을 긁는 주소 — 슬롯의 게시 주소와 같은 값(app-1 주석). #404 부터 APP-01 슬롯도 사설 IP 에만 게시된다.
+      # 비우면 루프백(단일 노드 · 3노드 — 슬롯이 루프백에 게시된다)
+      APP_PUBLISH_ADDR: ${APP_PUBLISH_ADDR:-127.0.0.1}
       TZ: Asia/Seoul
     volumes:
       - ./prometheus/agent.yml:/etc/prometheus/agent.yml:ro
@@ -1037,12 +1170,13 @@ services:
 
   # Redis 지표
   redis-exporter:
-    profiles: ["app"]
+    profiles: ["app", "app-node"]
     image: oliver006/redis_exporter:v1.78.0
     restart: unless-stopped
     logging: *logging
     mem_limit: 64m
-    # 같은 노드의 평문 6379 로 붙는다 — TLS 6380 은 APP-02 몫이다(redis 서비스 주석). 비밀번호는 redis 와 같은 값을 받으므로
+    # 같은 노드의 평문 6379 로 붙는다 — TLS 6380 은 다른 노드 · Sentinel 몫이다(redis 서비스 주석). 두 앱 노드에 하나씩(#404) —
+    # primary · 복제본 어느 쪽인지는 redis_instance_info 의 role 라벨 · redis_connected_slaves 로 본다. 비밀번호는 redis 와 같은 값을 받으므로
     # REDIS_PASSWORD 를 켜도 따로 맞출 것이 없다
     environment:
       REDIS_ADDR: redis://redis:6379
@@ -1057,7 +1191,7 @@ services:
   # nginx 가 호스트 네트워크이고 stub_status 를 루프백에만 열었으므로 이 서비스도 호스트 네트워크여야 거기 닿는다.
   # 호스트 네트워크라 바인딩 주소가 곧 노출 범위다. 루프백에만 연다(시스템 구성서 4장, 셋째 겹)
   nginx-exporter:
-    profiles: ["app"]
+    profiles: ["app", "app-node"]
     image: nginx/nginx-prometheus-exporter:1.5.3
     network_mode: host
     restart: unless-stopped
@@ -1077,8 +1211,10 @@ volumes:
   pgdata:
   # standby 의 데이터 디렉터리. 비어 있으면 기동 때 primary 에서 받는다 — 지우면 재구축이다(postgres-standby 주석)
   pgdata-standby:
-  # Redis 재시작 생존용 AOF 자리. 백업 대상이 아니다 — 위 redis 서비스 주석 참고
+  # Redis 재시작 생존용 AOF 자리 · 처음 만든 설정 파일(역할). 백업 대상이 아니다 — 위 redis 서비스 주석 참고
   redisdata:
+  # Sentinel 의 설정 · 상태 파일 — 지금의 primary 를 기억한다. 백업 대상이 아니다 — sentinel 서비스 주석
+  sentineldata:
   # prom-agent 의 WAL. 전송이 끊긴 동안의 표본 자리 — 백업 대상이 아니다
   promagent:
   # prom-agent-db 의 WAL(DB 노드) — 백업 대상이 아니다

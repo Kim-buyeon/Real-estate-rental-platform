@@ -8,8 +8,9 @@
 # 값은 저장소에도 노드 디스크에도 남지 않는다.
 # 자리표시자는 작은따옴표 안에 둔다 — 값에 : · # 이 들어가도 YAML 이 깨지지 않는다(값 안의 ' 는 기동 셸이 '' 로 바꾼다).
 #
-# APP-01 의 틀(agent.yml)과 나눈 이유 — 앱 노드에는 nginx · redis 가 없다(postgres exporter 는 DB 노드마다 있다 — #357).
-# 뜨는 것은 node exporter 와 앱 슬롯 둘뿐이다.
+# APP-01 의 틀(agent.yml)과 나눈 이유 — 처음(#255)에는 앱 노드에 nginx · redis 가 없었다. 입구 이중화(#404)부터 이 노드에도 nginx · redis 와
+# 그 exporter 가 떠서 대상이 agent.yml 과 같아졌다 — 남은 차이는 node 라벨을 .env 에서 받는 것뿐이다. 두 틀을 합치는 일은 따로 한다
+# (agent.yml 의 node 라벨도 자리표시자로 바꾸면 하나로 된다 — 이번 변경에서는 반영 위험을 줄이려고 APP-01 쪽 라벨을 건드리지 않았다).
 
 global:
   scrape_interval: 15s
@@ -29,12 +30,21 @@ scrape_configs:
         regex: 'node_systemd_unit_state;(active|activating|deactivating|inactive)'
         action: drop
 
-  # 앱 두 슬롯(app-1 · app-2). **대상 주소가 루프백이 아니다** — 이 노드의 슬롯은 APP-01 의 nginx 가 닿도록 노드 사설 IP
+  # Redis · Nginx — exporter 가 호스트 루프백에 게시(redis)하거나 루프백에 바인딩(nginx)한다(#404 — agent.yml 의 같은 잡)
+  - job_name: redis
+    static_configs:
+      - targets: ["127.0.0.1:9121"]
+
+  - job_name: nginx
+    static_configs:
+      - targets: ["127.0.0.1:9113"]
+
+  # 앱 두 슬롯(app-1 · app-2). **대상 주소가 루프백이 아니다** — 이 노드의 슬롯은 상대 노드의 nginx 가 닿도록 노드 사설 IP
   # 하나에만 게시된다(APP_PUBLISH_ADDR, docker-compose.yml 의 app-1 주석). 게시가 그 주소에만 걸리므로 127.0.0.1 로는 닿지 않는다.
   # 게시 주소와 같은 값을 받아 긁는다 — 두 곳에 IP 를 적지 않는다.
-  # instance 라벨이 <사설 IP>:8081 · :8082 가 되어 APP-01 슬롯(127.0.0.1:…)과도 갈린다. node 라벨이 함께 붙는다.
+  # instance 라벨이 <사설 IP>:8081 · :8082 가 되어 APP-01 슬롯(10.20.0.10:…)과도 갈린다. node 라벨이 함께 붙는다.
   # 앱은 이 경로를 인증 없이 연다(agent.yml 의 app 잡 주석). 이 노드에서는 그 경로가 사설망에 게시된 포트 위에 있어
-  # 보안 그룹(rental-app-node 가 rental-app 에서만 받는다)이 막는다.
+  # 보안 그룹이 막는다 — 다만 두 앱 노드가 단 rental-app 이 NAT 때문에 사설 두 서브넷 전체를 받아 DB 노드에서는 닿는다(시스템 구성서 4장, 후속으로 좁힌다).
   # 배포 중 내려간 슬롯은 그동안 down 으로 보인다
   - job_name: app
     metrics_path: /actuator/prometheus

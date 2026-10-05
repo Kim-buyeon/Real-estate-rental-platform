@@ -41,8 +41,8 @@
 ├── infra/                운영 구성. 서버에 반영되는 Compose · 설정 · 배포 스크립트
 │   ├── nginx/              요청 분산 · 점검 모드. local/ 은 로컬 구성의 앞단 서버 블록
 │   ├── backup/             데이터 백업 작업 — 스크립트와 그것을 거는 systemd 유닛, S3 · IAM 정책 정의(aws/)
-│   ├── aws/                계정 수준 설정 스크립트 — 노드 자동 복구 경보. 백업 전용 정책은 backup/aws/
-│   ├── os/                 노드 설정 조각 — sshd · journald · firewalld · NFS 공유 · dnf-automatic · sysctl(DB 노드 쓰기 상한) · THP(앱 노드 systemd 유닛). 노드 정기 작업은 미작성
+│   ├── aws/                계정 수준 설정 스크립트 — 노드 자동 복구 경보 · 입구 이중화(서브넷 · 경로 · 보안 그룹 · 고정 IP · 그 IAM). 백업 전용 정책은 backup/aws/
+│   ├── os/                 노드 설정 조각 — sshd · journald · firewalld · NFS 공유 · dnf-automatic · sysctl(DB 노드 쓰기 상한) · THP(앱 노드 systemd 유닛) · entry/(입구 고정 IP 감시기 — 앱 노드 systemd 서비스). 노드 정기 작업은 미작성
 │   ├── prometheus/ · vector/   관측 수집기 — 지표 · 로그를 노드 밖으로 보낸다. exporter는 Compose 서비스다
 │   ├── otel/               추적 — 앱 슬롯의 OpenTelemetry 에이전트 설정(무엇을 남기고 어디로 보내는가). jar 는 이미지 안
 │   ├── tls/                입구 HTTPS 인증서 — Let's Encrypt IP 인증서 발급 · 갱신 스크립트와 systemd 유닛(APP-01)
