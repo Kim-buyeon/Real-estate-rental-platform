@@ -24,9 +24,33 @@ source = '''
 .service = .label."com.docker.compose.service" || .container_name
 '''
 
+# 티켓 · 토큰 가리기 — 노드 밖(Loki)으로 나가기 전에 메시지 안의 비밀 모양을 고정 문자열로 바꾼다.
+# 왜 여기서인가 — 입구 Nginx 는 실시간 수신 경로의 접근 로그를 쿼리 없는 형식(no_query)으로 남기지만,
+# 오류 로그(upstream prematurely closed · recv() failed 등)는 요청 줄 전체 「GET /api/notifications/stream?ticket=<값>」을
+# 그대로 찍는다(2026-10-04 부하 시험 중 5건). error_log 지시어는 파일과 수준만 받고 형식을 바꿀 수단이 없다
+# (nginx.org ngx_core_module error_log — json 인자는 상용 구독 전용). 수준을 crit 로 올리면 그 줄은 빠지지만
+# 슬롯 연결 실패 같은 진단 줄도 함께 사라진다 — 그래서 Nginx 를 고치지 않고 내보내는 쪽에서 가린다.
+# 덮는 것 — 쿼리의 ticket · token · access_token · refresh_token · id_token 값([?&] 바로 뒤의 그 키만 — mytoken= 은 그대로),
+# JWT 모양(eyJ… 세 조각), Bearer 뒤의 값. 정규식의 시험은 vector.test.toml(vector test).
+# $$ 는 $ 하나다 — Vector 가 설정을 읽기 전에 ${이름} · $이름 을 환경 변수로 풀어서, 캡처 참조는 $$ 로 적는다.
+# 가리지 못하는 것 — 같은 노드의 Docker json 로그 파일(/var/lib/docker/containers/<id>/<id>-json.log)에는 원문이 남는다.
+# 읽을 수 있는 것은 root 와 docker 그룹뿐이고 파일은 운영 Compose 의 logging(max-size · max-file)으로 회전된다.
+[transforms.redacted]
+type = "remap"
+inputs = ["labelled"]
+source = '''
+if is_string(.message) {
+  msg = string!(.message)
+  msg = replace(msg, r'(?i)(?P<k>[?&](?:ticket|token|access_token|refresh_token|id_token)=)[^&\s"]+', "$${k}[REDACTED]")
+  msg = replace(msg, r'\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', "[REDACTED_JWT]")
+  msg = replace(msg, r'(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+', "Bearer [REDACTED]")
+  .message = msg
+}
+'''
+
 [sinks.loki]
 type = "loki"
-inputs = ["labelled"]
+inputs = ["redacted"]
 endpoint = "${GRAFANA_CLOUD_LOKI_URL:?GRAFANA_CLOUD_LOKI_URL 가 비어 있다 — infra/.env}"
 out_of_order_action = "accept"
 
