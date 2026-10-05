@@ -23,6 +23,7 @@ import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
 import com.duri.rentalplatform.domain.property.vo.BoundingBox;
 import com.duri.rentalplatform.domain.property.vo.MapClusterCellRow;
+import com.duri.rentalplatform.domain.property.vo.MarkerCandidateRow;
 import com.duri.rentalplatform.domain.property.vo.PropertyDetailRow;
 import java.math.BigDecimal;
 import java.time.DateTimeException;
@@ -31,6 +32,10 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -58,6 +63,12 @@ public class PropertyQueryService {
 
     /** 지도 묶음 임계 — 영역의 매물이 이 수 이하면 묶지 않고 전부 마커로 보낸다. API 명세서(매물) 1.12. */
     static final int CLUSTER_THRESHOLD = 40;
+
+    /**
+     * 반경 조회의 상한 — 가까운 순으로 이 수만 돌려준다. API 명세서(매물) 1.3. 지도 화면이 한 번에 그리는 최대 표시 수(격자 칸
+     * 수 — 칸마다 묶음 하나나 마커 하나)와 같다. 상한 전에는 1 km 반경 한 번이 후보 1,842행 · 응답 약 590 KB 였다(#390).
+     */
+    static final int RADIUS_MARKER_LIMIT = GRID_DIVISIONS * GRID_DIVISIONS;
 
     private final PropertyMapper propertyMapper;
     private final DistrictCountCacheStore districtCountCacheStore;
@@ -166,27 +177,46 @@ public class PropertyQueryService {
         return PropertyDetailResponse.from(row);
     }
 
-    /** 바운딩 박스로 1차 조회 → Haversine 으로 반경 밖 제거 → 거리순. 명세 1.3. */
+    /**
+     * 바운딩 박스로 후보(식별자 · 좌표) 조회 → Haversine 으로 반경 밖 제거 → 거리순(같으면 식별자 순) → 상한 건수로 자름 → 남은
+     * 식별자만 마커 컬럼 조회 → 거리순으로 다시 늘어놓기. 명세 1.3.
+     *
+     * <p>마커 컬럼(선순위 채무 여부의 행마다 하위 질의 · 코드 · 판정 조인)은 잘린 뒤의 행에만 읽는다 — 후보 전부에 읽으면 반경
+     * 1 km 에서 1,842행마다 근저당 하위 질의가 돌았다(#390 E01). 후보 조회와 마커 조회 사이에 매물이 바뀌어 마커 조회에서 빠진
+     * 식별자는 응답에서도 빠진다 — 읽기 전용 트랜잭션의 기본 격리 수준이라 두 조회가 각자의 스냅숏을 본다.
+     */
     private PropertyMarkersResponse searchMarkersInRadius(PropertySearchRequest request) {
         double lat = request.lat();
         double lng = request.lng();
         double radiusKm = request.radiusKm();
         BoundingBox box = GeoDistanceCalculator.boundingBox(lat, lng, radiusKm);
-        List<PropertyMarkerResponse> candidates =
-                propertyMapper.selectMarkers(PropertySearchCondition.ofMarkers(request.toFilter(), box));
+        List<MarkerCandidateRow> candidates =
+                propertyMapper.selectMarkerCandidates(PropertySearchCondition.ofMarkers(request.toFilter(), box));
 
-        record Ranked(PropertyMarkerResponse marker, double distanceKm) {
+        record Ranked(Long propertyId, double distanceKm) {
         }
-        List<PropertyMarkerResponse> items = candidates.stream()
-                .filter(m -> m.latitude() != null && m.longitude() != null)
-                .map(m -> new Ranked(m, GeoDistanceCalculator.haversineKm(
-                        lat, lng, m.latitude().doubleValue(), m.longitude().doubleValue())))
+        List<Long> inRadius = candidates.stream()
+                .filter(c -> c.latitude() != null && c.longitude() != null)
+                .map(c -> new Ranked(c.propertyId(), GeoDistanceCalculator.haversineKm(
+                        lat, lng, c.latitude().doubleValue(), c.longitude().doubleValue())))
                 .filter(r -> r.distanceKm() <= radiusKm)
-                .sorted(Comparator.comparingDouble(Ranked::distanceKm)
-                        .thenComparing(r -> r.marker().propertyId()))
-                .map(Ranked::marker)
+                .sorted(Comparator.comparingDouble(Ranked::distanceKm).thenComparing(Ranked::propertyId))
+                .map(Ranked::propertyId)
                 .toList();
-        return PropertyMarkersResponse.of(items);
+        boolean truncated = inRadius.size() > RADIUS_MARKER_LIMIT;
+        List<Long> ids = truncated ? inRadius.subList(0, RADIUS_MARKER_LIMIT) : inRadius;
+        if (ids.isEmpty()) {
+            return PropertyMarkersResponse.of(List.of(), false);
+        }
+
+        Map<Long, PropertyMarkerResponse> byId = propertyMapper.selectMarkersByIds(new PropertyIdsCondition(ids))
+                .stream()
+                .collect(Collectors.toMap(PropertyMarkerResponse::propertyId, Function.identity()));
+        List<PropertyMarkerResponse> items = ids.stream()
+                .map(byId::get)
+                .filter(Objects::nonNull)
+                .toList();
+        return PropertyMarkersResponse.of(items, truncated);
     }
 
     private CursorPage<PropertyListResponse> searchList(PropertySearchRequest request) {
@@ -251,9 +281,10 @@ public class PropertyQueryService {
     }
 
     /**
-     * 판정 표의 전세가율 인덱스(V20)에서 출발할 목록인가 — 자치구가 없고, 전세가율순이고, 매물 조건 필터(계약 · 유형 · 보증금 ·
-     * 월세 · 면적 · 좌표)가 모두 없을 때만. 매물 조건 필터가 있으면 걸러지는 만큼 인덱스를 더 읽어 오름에서 93.9 → 313.3ms 로
-     * 나빠졌다(#347 운영 측정). 등급 필터는 인덱스에 담긴 판정 열이라 허용한다. 자치구가 있으면 selectList 의 LATERAL 분기가 맡는다.
+     * 매물 전세가율 열의 부분 인덱스(V24 — V20 판정 표 인덱스의 역할을 옮김)에서 출발할 목록인가 — 자치구가 없고, 전세가율순이고,
+     * 매물 조건 필터(계약 · 유형 · 보증금 · 월세 · 면적 · 좌표)가 모두 없을 때만. 매물 조건 필터가 있으면 걸러지는 만큼 인덱스를 더
+     * 읽어 오름에서 93.9 → 313.3ms 로 나빠졌다(#347 운영 측정, V20 인덱스). 등급 필터는 인덱스에 담긴 열이라 허용한다. 자치구가
+     * 있으면 selectList 가 자치구 인덱스로 좁힌다.
      */
     private static boolean usesLeaseRatioIndex(PropertySearchCondition c) {
         return c.sortKey() == PropertySortKey.DEBT_RATIO
@@ -270,7 +301,7 @@ public class PropertyQueryService {
      * <p>selectList 는 COALESCE(전세가율, 대체값) 으로 정렬해 판정이 없는 매물을 대체값 자리(방향과 무관하게 맨 뒤)에 둔다. 이
      * 순서를 대체값 경계에서 둘로 자른다.
      * <ul>
-     *   <li>앞부분 — 전세가율이 대체값보다 앞(오름 &lt; 1000 · 내림 &gt; -1000). 판정 표의 인덱스에서 출발하는
+     *   <li>앞부분 — 전세가율이 대체값보다 앞(오름 &lt; 1000 · 내림 &gt; -1000). 매물 전세가율 인덱스에서 출발하는
      *       selectListByLeaseRatioIndex 가 읽는다. 정렬 값이 전세가율 그대로라 selectList 의 정렬 값과 같다.</li>
      *   <li>끝부분 — 정렬 값이 대체값이거나 그 너머(판정 없음, 전세가율이 경계 바깥). selectList 가 읽는다. lease_ratio 가
      *       NUMERIC(5,2) NOT NULL 이라 지금은 판정 없는 매물뿐이고, 등급 필터가 있으면 비어 있다.</li>

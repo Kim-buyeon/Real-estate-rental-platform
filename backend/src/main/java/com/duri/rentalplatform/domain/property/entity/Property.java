@@ -2,6 +2,7 @@ package com.duri.rentalplatform.domain.property.entity;
 
 import com.duri.rentalplatform.common.CreatedAtEntity;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
+import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
 import com.duri.rentalplatform.domain.property.vo.PropertyRegistration;
@@ -117,6 +118,24 @@ public class Property extends CreatedAtEntity {
      */
     @Column(name = "is_reanalysis_pending", nullable = false)
     private boolean reanalysisPending;
+
+    /**
+     * 최신 판정의 등급 · 전세가율 비정규화(V22). NULL 이면 최신 판정이 없다(미분석). 지도 · 목록 · 집계 · 상세가 판정 표를 조인하지
+     * 않고 이 두 열을 읽는다. 정본은 {@code risk_analysis} 의 최신 행이다.
+     * <ul>
+     *   <li>쓰는 쪽 — 판정 기록이(새 최신 행을 남기든 결론이 같아 남기지 않든) 같은 쓰기 트랜잭션에서
+     *       {@code PropertyRepository#applyLatestJudgement} 로만 쓴다. 엔티티는 이 값을 바꾸지 않는다 — {@code @DynamicUpdate}
+     *       라 엔티티 저장이 이 열을 덮지 않는다</li>
+     *   <li>새 매물 — 판정 전이라 NULL 로 들어간다</li>
+     * </ul>
+     * 일관성 규칙은 데이터베이스 설계서 매물 절.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 10)
+    private RiskGrade riskGrade;
+
+    @Column(precision = 5, scale = 2)
+    private BigDecimal leaseRatio;
 
     @Column(nullable = false, precision = 7, scale = 2)
     private BigDecimal areaSqm;

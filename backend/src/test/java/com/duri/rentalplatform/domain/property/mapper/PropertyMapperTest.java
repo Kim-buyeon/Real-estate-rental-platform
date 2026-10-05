@@ -20,6 +20,7 @@ import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import com.duri.rentalplatform.domain.property.vo.BoundingBox;
 import com.duri.rentalplatform.domain.property.vo.DistrictCountRow;
 import com.duri.rentalplatform.domain.property.vo.MapClusterCellRow;
+import com.duri.rentalplatform.domain.property.vo.MarkerCandidateRow;
 import com.duri.rentalplatform.domain.property.vo.PropertyDetailRow;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -223,6 +224,93 @@ class PropertyMapperTest {
         assertThat(none.riskGrade()).isNull();
         assertThat(none.debtRatio()).isNull();
         assertThat(none.hasSeniorDebt()).isNull();
+    }
+
+    // ---------- 반경 후보(명세 1.3 반경 상한) ----------
+
+    @Test
+    @DisplayName("반경 후보: 바운딩 박스 경계 위 좌표는 포함되고 바깥 좌표는 빠지며, 식별자 · 좌표가 매핑된다")
+    void markerCandidatesBoundingBoxIsInclusiveAndMapsFields() {
+        long inside = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5501234, 126.8497561, T0);
+        long onEdge = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.58, 126.88, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.5800001, 126.85, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.55, 126.7999999, T0);
+
+        List<MarkerCandidateRow> rows = propertyMapper.selectMarkerCandidates(PropertySearchCondition.ofMarkers(
+                filter(D1), new BoundingBox(37.53, 37.58, 126.80, 126.88)));
+
+        assertThat(rows).extracting(MarkerCandidateRow::propertyId).containsExactlyInAnyOrder(inside, onEdge);
+        MarkerCandidateRow first = rows.stream().filter(r -> r.propertyId() == inside).findFirst().orElseThrow();
+        assertThat(first.latitude()).isEqualByComparingTo("37.5501234");
+        assertThat(first.longitude()).isEqualByComparingTo("126.8497561");
+    }
+
+    @Test
+    @DisplayName("반경 후보: 계약 유형 · 등급 필터가 적용되고 미분석은 등급 필터에 걸리지 않는다")
+    void markerCandidatesApplyContractTypeAndGradeFilter() {
+        long safeRent = insertProperty(D1, "MONTHLY_RENT", "APARTMENT", 1L, 500_000L, 37.55, 126.85, T0);
+        long dangerRent = insertProperty(D1, "MONTHLY_RENT", "APARTMENT", 1L, 500_000L, 37.55, 126.85, T0);
+        long safeDeposit = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.55, 126.85, T0);
+        insertProperty(D1, "MONTHLY_RENT", "APARTMENT", 1L, 500_000L, 37.55, 126.85, T0); // 미분석
+        insertRisk(safeRent, "SAFE", "60.00", true, false);
+        insertRisk(dangerRent, "DANGER", "95.00", true, false);
+        insertRisk(safeDeposit, "SAFE", "60.00", true, false);
+
+        DistrictCountRequest f = new DistrictCountRequest(D1, ContractType.MONTHLY_RENT, null, null, null, null,
+                List.of(RiskGrade.SAFE), null, null);
+        List<MarkerCandidateRow> rows = propertyMapper.selectMarkerCandidates(
+                PropertySearchCondition.ofMarkers(f, new BoundingBox(37.0, 38.0, 126.0, 127.0)));
+
+        assertThat(rows).extracting(MarkerCandidateRow::propertyId).containsExactly(safeRent);
+    }
+
+    // ---------- 최신 판정 비정규화 열(V22) ----------
+
+    @Test
+    @DisplayName("비정규화: 지도 · 목록 · 집계 · 상세의 등급 · 전세가율은 판정 표가 아니라 매물 열에서 온다")
+    void riskColumnsComeFromProperty() {
+        long id = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 37.30, 127.30, T0);
+        insertRisk(id, "SAFE", "60.00", true, false);
+        // 판정 표는 SAFE · 60.00 그대로 두고 매물 열만 다르게 — 매퍼가 매물 열을 읽으면 DANGER · 91.50 이 나온다.
+        setPropertyRisk(id, "DANGER", "91.50");
+        BoundingBox box = new BoundingBox(37.0, 38.0, 126.0, 128.0);
+        DistrictCountRequest dangerOnly = new DistrictCountRequest(D1, null, null, null, null, null,
+                List.of(RiskGrade.DANGER), null, null);
+
+        assertThat(propertyMapper.selectDistrictCounts(PropertySearchCondition.ofFilter(filter(D1))))
+                .extracting(DistrictCountRow::safeCount, DistrictCountRow::dangerCount)
+                .containsExactly(tuple(0L, 1L));
+        assertThat(propertyMapper.selectClusterCells(clusters(filter(D1), GRID_BOX)))
+                .extracting(MapClusterCellRow::safeCount, MapClusterCellRow::dangerCount)
+                .containsExactly(tuple(0L, 1L));
+        assertThat(propertyMapper.selectMarkers(PropertySearchCondition.ofMarkers(filter(D1), box)))
+                .extracting(PropertyMarkerResponse::riskGrade, PropertyMarkerResponse::debtRatio)
+                .containsExactly(tuple(RiskGrade.DANGER, new BigDecimal("91.50")));
+        assertThat(propertyMapper.selectMarkersByIds(new PropertyIdsCondition(List.of(id))))
+                .extracting(PropertyMarkerResponse::riskGrade).containsExactly(RiskGrade.DANGER);
+        assertThat(propertyMapper.selectMarkerCandidates(PropertySearchCondition.ofMarkers(dangerOnly, box)))
+                .extracting(MarkerCandidateRow::propertyId).containsExactly(id);
+        assertThat(propertyMapper.selectList(listBy(dangerOnly, PropertySortKey.DEBT_RATIO, true, null, null, 10)))
+                .extracting(PropertyListResponse::riskGrade, PropertyListResponse::debtRatio)
+                .containsExactly(tuple(RiskGrade.DANGER, new BigDecimal("91.50")));
+        PropertyDetailRow detail = propertyMapper.selectDetail(new PropertyDetailCondition(id, null));
+        assertThat(detail.riskGrade()).isEqualTo(RiskGrade.DANGER);
+        assertThat(detail.debtRatio()).isEqualByComparingTo("91.50");
+        // 보증 가입 여부는 판정 표에만 있어 최신 판정 행에서 읽는다.
+        assertThat(detail.insuranceEligible()).isTrue();
+    }
+
+    @Test
+    @DisplayName("비정규화: 자치구 없는 전세가율 인덱스 목록도 매물 열의 전세가율 · 등급으로 정렬 · 거른다")
+    void leaseRatioIndexListReadsPropertyColumns() {
+        long[] fixture = insertLeaseRatioFixture();
+        // 판정 표 순서와 반대가 되게 매물 열만 바꾼다 — low 를 가장 높게.
+        setPropertyRisk(fixture[3], "DANGER", "99.00");
+
+        List<Long> rows = mineOf(propertyMapper.selectListByLeaseRatioIndex(
+                listBy(filter(null), PropertySortKey.DEBT_RATIO, false, null, null, 1000)), fixture);
+
+        assertThat(rows.get(0)).isEqualTo(fixture[3]);
     }
 
     // ---------- 지도 묶음 ----------
@@ -442,7 +530,7 @@ class PropertyMapperTest {
                 null, new BigDecimal("50.00"), null, low, 10)))).containsExactly(none);
     }
 
-    // ---------- 목록: 자치구 없는 전세가율 정렬(평범한 조인 갈래)과 LATERAL 갈래 ----------
+    // ---------- 목록: 자치구 없는 전세가율 정렬과 자치구 있는 전세가율 정렬 ----------
 
     @Test
     @DisplayName("목록: 자치구 없이 전세가율 정렬하면 미분석은 맨 뒤, 같은 전세가율은 식별자 순이다")
@@ -699,7 +787,7 @@ class PropertyMapperTest {
     }
 
     @Test
-    @DisplayName("목록: 계약 유형 필터는 자치구 · 전세가율 정렬(LATERAL 갈래)에서 적용된다")
+    @DisplayName("목록: 계약 유형 필터는 자치구 · 전세가율 정렬에서 적용된다")
     void listContractTypeFilterOnLateralBranch() {
         long[] ids = insertTypeMatrix();
 
@@ -710,7 +798,7 @@ class PropertyMapperTest {
     }
 
     @Test
-    @DisplayName("목록: 계약 유형 필터는 다른 정렬(평범한 조인 갈래)에서도 적용된다")
+    @DisplayName("목록: 계약 유형 필터는 다른 정렬에서도 적용된다")
     void listContractTypeFilterOnPlainBranch() {
         long[] ids = insertTypeMatrix();
 
@@ -721,7 +809,7 @@ class PropertyMapperTest {
     }
 
     @Test
-    @DisplayName("목록: 매물 유형 필터는 자치구 · 전세가율 정렬(LATERAL 갈래)에서 적용된다")
+    @DisplayName("목록: 매물 유형 필터는 자치구 · 전세가율 정렬에서 적용된다")
     void listPropertyTypeFilterOnLateralBranch() {
         long[] ids = insertTypeMatrix();
 
@@ -732,7 +820,7 @@ class PropertyMapperTest {
     }
 
     @Test
-    @DisplayName("목록: 매물 유형 필터는 다른 정렬(평범한 조인 갈래)에서도 적용된다")
+    @DisplayName("목록: 매물 유형 필터는 다른 정렬에서도 적용된다")
     void listPropertyTypeFilterOnPlainBranch() {
         long[] ids = insertTypeMatrix();
 
@@ -1032,7 +1120,7 @@ class PropertyMapperTest {
     }
 
     /**
-     * 최신 분석 한 건. FK 가 요구하는 표제부 · 건축물대장 최소 행을 함께 넣는다.
+     * 분석 한 건. FK 가 요구하는 표제부 · 건축물대장 최소 행을 함께 넣는다. 최신이면 매물의 최신 판정 열(V22)도 같은 값으로 맞춘다.
      *
      * <p>표제부 · 대장은 매물당 하나다(property_id UNIQUE — V4 · V5). 한 매물에 분석을 두 번 넣는 테스트가 있어 이미
      * 있으면 그 행을 쓴다.
@@ -1055,6 +1143,10 @@ class PropertyMapperTest {
                     is_latest, insurance_eligible_yn)
                 VALUES (?, ?, ?, ?, ?, ?, TRUE)
                 """, propertyId, registryId, ledgerId, new BigDecimal(leaseRatio), grade, latest);
+        // 최신 판정은 판정 기록이 같은 트랜잭션에서 매물의 비정규화 열(V22)에도 옮긴다 — 그 쓰기를 흉내 낸다. 매퍼는 이 열을 읽는다.
+        if (latest) {
+            setPropertyRisk(propertyId, grade, leaseRatio);
+        }
         // 비활성 선순위 이력은 늘 넣는다 — is_active 조건이 빠지면 seniorDebt=false 인 매물도 true 가 된다.
         jdbc.update("""
                 INSERT INTO mortgage_history (registry_id, priority_no, right_type, senior_debt_yn, is_active)
@@ -1066,6 +1158,12 @@ class PropertyMapperTest {
                     VALUES (?, 2, 'MORTGAGE', TRUE, TRUE)
                     """, registryId);
         }
+    }
+
+    /** 매물의 최신 판정 비정규화 열(V22)만 바꾼다. 판정 표와 일부러 다르게 두어 매퍼가 어느 쪽을 읽는지 가를 때도 쓴다. */
+    private void setPropertyRisk(long propertyId, String grade, String leaseRatio) {
+        jdbc.update("UPDATE property SET risk_grade = ?, lease_ratio = ? WHERE property_id = ?",
+                grade, leaseRatio == null ? null : new BigDecimal(leaseRatio), propertyId);
     }
 
     private long insertUser() {

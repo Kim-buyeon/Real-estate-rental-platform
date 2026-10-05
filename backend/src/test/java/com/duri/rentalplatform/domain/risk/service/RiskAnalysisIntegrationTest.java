@@ -86,6 +86,36 @@ class RiskAnalysisIntegrationTest {
                 .isEqualTo(first.riskGrade().name());
     }
 
+    @Test
+    @DisplayName("매물의 최신 판정 열(V22)은 첫 판정과 결론이 바뀐 판정 뒤에 판정 표의 최신 행과 같다")
+    void propertyLatestRiskColumnsFollowLatestRow() {
+        long propertyId = insertProperty(340_000_000L);
+        assertThat(propertyRiskColumns(propertyId)).containsEntry("risk_grade", null).containsEntry("lease_ratio", null);
+
+        service.analyze(propertyId);
+        entityManager.flush();
+        assertThat(propertyRiskColumns(propertyId)).isEqualTo(latestRowRiskColumns(propertyId));
+
+        entityManager.flush();
+        jdbc.update("UPDATE property SET market_price = 100000000 WHERE property_id = ?", propertyId);
+        entityManager.clear();
+        service.analyze(propertyId);
+        entityManager.flush();
+
+        Map<String, Object> latest = latestRowRiskColumns(propertyId);
+        assertThat(propertyRiskColumns(propertyId)).isEqualTo(latest);
+        assertThat(latest.get("risk_grade")).isEqualTo("DANGER");
+    }
+
+    private Map<String, Object> propertyRiskColumns(long propertyId) {
+        return jdbc.queryForMap("SELECT risk_grade, lease_ratio FROM property WHERE property_id = ?", propertyId);
+    }
+
+    private Map<String, Object> latestRowRiskColumns(long propertyId) {
+        return jdbc.queryForMap(
+                "SELECT risk_grade, lease_ratio FROM risk_analysis WHERE property_id = ? AND is_latest", propertyId);
+    }
+
     private int countRows(long propertyId) {
         return jdbc.queryForObject("SELECT count(*) FROM risk_analysis WHERE property_id = ?", Integer.class,
                 propertyId);
