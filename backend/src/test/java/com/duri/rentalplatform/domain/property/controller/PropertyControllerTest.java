@@ -163,12 +163,13 @@ class PropertyControllerTest {
     @DisplayName("radiusKm 2는 상한 안이라 200이다")
     void radiusAtMaxReturns200() throws Exception {
         when(queryService.search(any(PropertySearchRequest.class)))
-                .thenReturn(PropertyMarkersResponse.of(List.of()));
+                .thenReturn(PropertyMarkersResponse.of(List.of(), false));
 
         mockMvc.perform(get("/api/properties")
                         .param("lat", "37.55").param("lng", "126.85").param("radiusKm", "2"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.count").value(0));
+                .andExpect(jsonPath("$.data.count").value(0))
+                .andExpect(jsonPath("$.data.truncated").value(false));
     }
 
     // ---------- 지도 묶음 (명세 1.12) ----------

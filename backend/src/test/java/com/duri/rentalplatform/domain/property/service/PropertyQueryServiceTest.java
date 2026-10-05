@@ -34,6 +34,7 @@ import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.vo.BoundingBox;
 import com.duri.rentalplatform.domain.property.vo.MapClusterCellRow;
+import com.duri.rentalplatform.domain.property.vo.MarkerCandidateRow;
 import com.duri.rentalplatform.domain.property.vo.PropertyDetailRow;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -148,32 +149,119 @@ class PropertyQueryServiceTest {
         assertThat(page.nextCursor()).isNull();
     }
 
+    private static MarkerCandidateRow candidate(long propertyId, String lat, String lng) {
+        return new MarkerCandidateRow(propertyId, new BigDecimal(lat), new BigDecimal(lng));
+    }
+
+    /** 식별자 목록 그대로 마커를 돌려주는 매퍼 스텁 — 매퍼처럼 식별자 순으로 돌려준다. */
+    private void stubMarkersByIds() {
+        when(propertyMapper.selectMarkersByIds(any())).thenAnswer(invocation -> {
+            PropertyIdsCondition condition = invocation.getArgument(0);
+            return condition.propertyIds().stream().sorted().map(id -> marker(id, "37.5", "127.0")).toList();
+        });
+    }
+
     @Test
-    @DisplayName("반경 조건은 바운딩 박스로 1차 조회하고 반경 밖을 제거해 거리순으로 반환한다")
+    @DisplayName("반경 조건은 바운딩 박스로 후보를 조회하고 반경 밖을 제거해 거리순으로, 남은 식별자만 마커로 읽는다")
     void searchMarkersInRadiusFiltersAndSortsByDistance() {
         double lat = 37.5;
         double lng = 127.0;
         double radiusKm = 1.0;
         // near: 중심에서 약 0.03km. far: 중심에서 약 0.08km. outside: 바운딩 박스 모서리 근처, 반경(1km) 밖.
-        PropertyMarkerResponse near = marker(1L, "37.5003", "127.0000");
-        PropertyMarkerResponse far = marker(2L, "37.5007", "127.0000");
-        PropertyMarkerResponse outside = marker(3L, "37.5100", "127.0100");
-        // 매퍼가 이미 정렬돼 있지 않은 순서로 돌려줘도 서비스가 거리순으로 다시 정렬해야 한다.
-        when(propertyMapper.selectMarkers(any())).thenReturn(List.of(far, outside, near));
+        // 매퍼가 거리순이 아닌 순서로 돌려줘도 서비스가 거리순으로 다시 정렬해야 한다.
+        when(propertyMapper.selectMarkerCandidates(any())).thenReturn(List.of(
+                candidate(2L, "37.5007", "127.0000"), candidate(3L, "37.5100", "127.0100"),
+                candidate(1L, "37.5003", "127.0000")));
+        stubMarkersByIds();
 
         Object result = service.search(radiusRequest(lat, lng, radiusKm));
 
         PropertyMarkersResponse response = (PropertyMarkersResponse) result;
-        assertThat(response.items()).extracting(PropertyMarkerResponse::propertyId)
-                .containsExactly(1L, 2L);
+        // 마커 조회는 식별자 순(1, 2)으로 돌려주지만 응답은 거리순이다 — 여기서는 우연히 같아 아래 테스트가 다른 순서를 본다.
+        assertThat(response.items()).extracting(PropertyMarkerResponse::propertyId).containsExactly(1L, 2L);
+        assertThat(response.count()).isEqualTo(2);
+        assertThat(response.truncated()).isFalse();
 
         BoundingBox expectedBox = GeoDistanceCalculator.boundingBox(lat, lng, radiusKm);
         ArgumentCaptor<PropertySearchCondition> captor = ArgumentCaptor.forClass(PropertySearchCondition.class);
-        verify(propertyMapper).selectMarkers(captor.capture());
+        verify(propertyMapper).selectMarkerCandidates(captor.capture());
         assertThat(captor.getValue().minLat()).isEqualTo(expectedBox.minLat());
         assertThat(captor.getValue().maxLat()).isEqualTo(expectedBox.maxLat());
         assertThat(captor.getValue().minLng()).isEqualTo(expectedBox.minLng());
         assertThat(captor.getValue().maxLng()).isEqualTo(expectedBox.maxLng());
+        ArgumentCaptor<PropertyIdsCondition> ids = ArgumentCaptor.forClass(PropertyIdsCondition.class);
+        verify(propertyMapper).selectMarkersByIds(ids.capture());
+        assertThat(ids.getValue().propertyIds()).containsExactly(1L, 2L);
+        verify(propertyMapper, never()).selectMarkers(any());
+    }
+
+    @Test
+    @DisplayName("반경: 마커 조회가 식별자 순으로 돌려줘도 응답은 거리순이고, 같은 거리는 식별자 순이다")
+    void searchMarkersInRadiusKeepsDistanceOrderOverIdOrder() {
+        // 30(가까움) · 10(멀음) · 20 과 21(같은 좌표 — 같은 거리)
+        when(propertyMapper.selectMarkerCandidates(any())).thenReturn(List.of(
+                candidate(10L, "37.5050", "127.0000"), candidate(21L, "37.5020", "127.0000"),
+                candidate(30L, "37.5001", "127.0000"), candidate(20L, "37.5020", "127.0000")));
+        stubMarkersByIds();
+
+        PropertyMarkersResponse response = (PropertyMarkersResponse) service.search(radiusRequest(37.5, 127.0, 1.0));
+
+        assertThat(response.items()).extracting(PropertyMarkerResponse::propertyId)
+                .containsExactly(30L, 20L, 21L, 10L);
+    }
+
+    @Test
+    @DisplayName("반경: 반경 안이 상한(144)보다 많으면 가까운 144건만 마커로 읽고 truncated=true")
+    void searchMarkersInRadiusTruncatesAtLimit() {
+        int limit = PropertyQueryService.RADIUS_MARKER_LIMIT;
+        // 식별자가 클수록 멀다(위도 0.00001 ≈ 1.1 m 씩). 섞어서 돌려준다.
+        List<MarkerCandidateRow> candidates = new java.util.ArrayList<>();
+        for (long id = limit + 5; id >= 1; id--) {
+            candidates.add(candidate(id, new BigDecimal("37.5").add(new BigDecimal("0.00001").multiply(BigDecimal.valueOf(id)))
+                    .toPlainString(), "127.0"));
+        }
+        java.util.Collections.shuffle(candidates, new java.util.Random(7));
+        when(propertyMapper.selectMarkerCandidates(any())).thenReturn(candidates);
+        stubMarkersByIds();
+
+        PropertyMarkersResponse response = (PropertyMarkersResponse) service.search(radiusRequest(37.5, 127.0, 1.0));
+
+        assertThat(limit).isEqualTo(144);
+        assertThat(response.truncated()).isTrue();
+        assertThat(response.count()).isEqualTo(limit);
+        assertThat(response.items()).extracting(PropertyMarkerResponse::propertyId)
+                .containsExactlyElementsOf(java.util.stream.LongStream.rangeClosed(1, limit).boxed().toList());
+        ArgumentCaptor<PropertyIdsCondition> ids = ArgumentCaptor.forClass(PropertyIdsCondition.class);
+        verify(propertyMapper).selectMarkersByIds(ids.capture());
+        assertThat(ids.getValue().propertyIds()).hasSize(limit);
+    }
+
+    @Test
+    @DisplayName("반경: 반경 안이 상한과 같으면 자르지 않는다 — truncated=false")
+    void searchMarkersInRadiusAtLimitIsNotTruncated() {
+        int limit = PropertyQueryService.RADIUS_MARKER_LIMIT;
+        List<MarkerCandidateRow> candidates = java.util.stream.LongStream.rangeClosed(1, limit)
+                .mapToObj(id -> candidate(id, "37.5001", "127.0")).toList();
+        when(propertyMapper.selectMarkerCandidates(any())).thenReturn(candidates);
+        stubMarkersByIds();
+
+        PropertyMarkersResponse response = (PropertyMarkersResponse) service.search(radiusRequest(37.5, 127.0, 1.0));
+
+        assertThat(response.truncated()).isFalse();
+        assertThat(response.count()).isEqualTo(limit);
+    }
+
+    @Test
+    @DisplayName("반경: 반경 안에 매물이 없으면 마커 조회를 하지 않고 빈 목록이다")
+    void searchMarkersInRadiusEmptySkipsMarkerQuery() {
+        when(propertyMapper.selectMarkerCandidates(any())).thenReturn(List.of(candidate(3L, "37.5100", "127.0100")));
+
+        PropertyMarkersResponse response = (PropertyMarkersResponse) service.search(radiusRequest(37.5, 127.0, 1.0));
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.count()).isZero();
+        assertThat(response.truncated()).isFalse();
+        verify(propertyMapper, never()).selectMarkersByIds(any());
     }
 
     @Test
@@ -211,6 +299,7 @@ class PropertyQueryServiceTest {
                     assertThat(be.getField()).isEqualTo(expectedField);
                 });
         verify(propertyMapper, never()).selectMarkers(any());
+        verify(propertyMapper, never()).selectMarkerCandidates(any());
         verify(propertyMapper, never()).selectList(any());
     }
 

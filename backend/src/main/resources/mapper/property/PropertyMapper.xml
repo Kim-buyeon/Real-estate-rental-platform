@@ -3,38 +3,35 @@
 <!--
   매물 조회. API 명세서(매물) 1.4 ~ 1.7 · 1.12.
 
-  위험 정보는 최신 분석(is_latest = TRUE)을 LEFT JOIN 한다. 분석 이력이 없는 매물도 조회되며
-  risk_grade · lease_ratio 가 NULL 로 나온다.
+  위험 등급 · 전세가율은 매물의 비정규화 열 p.risk_grade · p.lease_ratio(V22)에서 읽는다 — 최신 판정(risk_analysis 의
+  is_latest 행)을 판정 기록이 같은 트랜잭션에서 옮겨 둔 값이다(PropertyRepository#applyLatestJudgement). 분석 이력이 없는 매물은
+  두 열이 NULL 이다. 판정 표는 그 표에만 있는 열(마커의 등기 참조 · 상세의 보증 가입 여부)이 필요한 조회만 조인한다.
+  지도 · 집계가 매물 행마다 판정 표를 찾던 조인이 버퍼의 대부분이었다(#390 E01 — 지도 묶음 79,081 중 71,488, V22 주석).
   계약 유형 · 매물 유형은 property_code.code_value 가 열거 상수명과 같다.
   registered_at 은 서울 벽시계 시각으로 저장되어 있어 AT TIME ZONE 으로 시각(timestamptz)을 확정해 넘긴다.
 -->
 <mapper namespace="com.duri.rentalplatform.domain.property.mapper.PropertyMapper">
 
     <!--
-      FROM 조각은 조회가 쓰는 코드 조인만 붙이도록 셋으로 나눈다. PostgreSQL 은 INNER JOIN 을 스스로 떼지 못해, 코드 값을
+      FROM 조각은 조회가 쓰는 코드 조인만 붙이도록 나눈다(코드 조인이 없는 조회는 FROM property p 를 직접 쓴다). PostgreSQL 은 INNER JOIN 을 스스로 떼지 못해, 코드 값을
       고르지도 거르지도 않는 조회도 조인 비용을 낸다. contract_type_code_id · property_type_code_id 는 property_code 를 가리키는
       NOT NULL 외래 키(V1)라 조인을 떼도 행이 바뀌지 않는다. 코드 필터는 아래 filter 가 식별자 비교로 건다.
       운영 측정(298k 매물, 5회 중앙값, #326): 자치구 집계 412.8 → 362.4ms, 지도 묶음 131.1 → 126.6ms, 지도 마커 8.0 → 7.5ms.
       읽은 버퍼 수는 같다.
     -->
+    <!-- 판정 표에만 있는 열이 필요한 조회만 쓴다 — 마커의 등기 참조(registry_id) · 상세의 보증 가입 여부 -->
     <sql id="latestRiskJoin">
         LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE
     </sql>
 
-    <!-- 코드 값을 쓰지 않는 조회 — 자치구 집계 · 지도 묶음 -->
-    <sql id="fromPropertyRisk">
-        FROM property p
-        <include refid="latestRiskJoin"/>
-    </sql>
-
-    <!-- 계약 유형만 고르는 조회 — 지도 마커 -->
+    <!-- 계약 유형만 고르는 조회 — 지도 마커. 선순위 채무 확인에 판정 행의 등기 참조가 필요해 최신 판정을 조인한다 -->
     <sql id="fromPropertyRiskContractType">
         FROM property p
         JOIN property_code ct ON ct.code_id = p.contract_type_code_id
         <include refid="latestRiskJoin"/>
     </sql>
 
-    <!-- 계약 유형 · 매물 유형을 모두 고르는 조회 — 목록 · 상세. 목록은 최신 분석 조인을 따로 고르므로 코드 조인만 둔다. -->
+    <!-- 계약 유형 · 매물 유형을 모두 고르는 조회 — 목록 · 상세. 상세는 최신 분석 조인을 따로 붙인다. -->
     <sql id="fromPropertyCodes">
         FROM property p
         JOIN property_code ct ON ct.code_id = p.contract_type_code_id
@@ -82,7 +79,7 @@
             </if>
             <!-- 등급을 지정하면 분석된 매물만 대상이다. NULL 은 IN 에 걸리지 않는다. -->
             <if test="riskGrades != null and !riskGrades.isEmpty()">
-                AND ra.risk_grade IN
+                AND p.risk_grade IN
                 <foreach collection="riskGrades" item="grade" open="(" separator="," close=")">
                     #{grade}
                 </foreach>
@@ -123,10 +120,10 @@
     <select id="selectDistrictCounts" resultMap="districtCountRow">
         SELECT p.district AS name,
                COUNT(*) AS total_count,
-               SUM(CASE WHEN ra.risk_grade = 'SAFE' THEN 1 ELSE 0 END) AS safe_count,
-               SUM(CASE WHEN ra.risk_grade = 'CAUTION' THEN 1 ELSE 0 END) AS caution_count,
-               SUM(CASE WHEN ra.risk_grade = 'DANGER' THEN 1 ELSE 0 END) AS danger_count
-        <include refid="fromPropertyRisk"/>
+               SUM(CASE WHEN p.risk_grade = 'SAFE' THEN 1 ELSE 0 END) AS safe_count,
+               SUM(CASE WHEN p.risk_grade = 'CAUTION' THEN 1 ELSE 0 END) AS caution_count,
+               SUM(CASE WHEN p.risk_grade = 'DANGER' THEN 1 ELSE 0 END) AS danger_count
+          FROM property p
         <include refid="filter"/>
         GROUP BY p.district
         ORDER BY p.district
@@ -137,18 +134,25 @@
       선순위 채무 EXISTS 는 senior_debt_yn 을 보지 않는다 — 계약 전 조회자에게 등기상 유효 항목은 전부 선순위라 수집 경로가 늘 참으로
       저장한다(MortgageHistory.record). 조건을 빼면 부분 인덱스 idx_mortgage_history_registry_active (registry_id) WHERE is_active
       (V19)만으로 인덱스 전용 스캔이 된다. 선순위가 아닌 항목을 저장하는 경로가 생기면 조건과 인덱스를 함께 다시 본다.
+      이 EXISTS 는 행마다 한 번 도는 하위 질의(SubPlan)다 — 행 하나에 인덱스 전용 탐색 하나(버퍼 3)라 행당 비용은 조인과 같다. 비용을
+      키운 것은 행 수였다(#390 E01 반경 1 km 1,842회). 그래서 조인 · 집계로 바꾸지 않고 이 컬럼을 고르는 조회의 행 수를 묶는다 — 반경은
+      후보(selectMarkerCandidates)를 거리로 자른 뒤 상한 건수만 selectMarkersByIds 로, 지도 묶음은 임계 이하(selectMarkers) · 한 건
+      칸(selectMarkersByIds)만 이 컬럼을 읽는다. 조인 · 집계(mortgage_history 를 registry_id 로 묶은 하위 질의와 해시 조인)는 PostgreSQL
+      이 집계 하위 질의에 바깥 조인 조건을 밀어 넣지 못해 활성 근저당 전체(V19 주석의 26.8만 건 중 말소 13% 를 뺀 약 23만 건)를
+      요청마다 읽게 된다.
+      미분석(등급 NULL)은 NULL 이다 — 등급과 같은 기준으로 가른다.
     -->
     <sql id="markerColumns">
         SELECT p.property_id,
                p.latitude,
                p.longitude,
                p.deposit,
-               ra.risk_grade,
+               p.risk_grade,
                ct.code_value AS contract_type,
                COALESCE(p.monthly_rent, 0) AS monthly_rent,
                p.district,
-               ra.lease_ratio AS debt_ratio,
-               CASE WHEN ra.risk_id IS NULL THEN NULL
+               p.lease_ratio AS debt_ratio,
+               CASE WHEN p.risk_grade IS NULL THEN NULL
                     ELSE EXISTS (SELECT 1
                                    FROM mortgage_history mh
                                   WHERE mh.registry_id = ra.registry_id
@@ -177,6 +181,28 @@
         <include refid="fromPropertyRiskContractType"/>
         <include refid="filter"/>
         ORDER BY p.property_id
+    </select>
+
+    <!--
+      반경 조회의 후보 — 바운딩 박스 안 매물의 식별자 · 좌표만. 서비스가 거리로 걸러 거리순으로 자르고 남은 식별자만
+      selectMarkersByIds 로 마커 컬럼을 읽는다(명세 1.3 반경 상한). 판정 표 · 코드 표를 조인하지 않는다 — 등급 필터는 매물 열이다.
+      필터가 없으면 자치구 + 좌표 커버링 인덱스(V24 · V25)만으로 끝난다(인덱스 전용 스캔, 운영 EXPLAIN 으로 확인 — 미검증).
+      순서는 서비스가 거리로 정하므로 ORDER BY 를 두지 않는다.
+    -->
+    <resultMap id="markerCandidateRow" type="com.duri.rentalplatform.domain.property.vo.MarkerCandidateRow">
+        <constructor>
+            <arg column="property_id" name="propertyId" javaType="Long"/>
+            <arg column="latitude" name="latitude" javaType="java.math.BigDecimal"/>
+            <arg column="longitude" name="longitude" javaType="java.math.BigDecimal"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectMarkerCandidates" resultMap="markerCandidateRow">
+        SELECT p.property_id,
+               p.latitude,
+               p.longitude
+          FROM property p
+        <include refid="filter"/>
     </select>
 
     <select id="selectMarkersByIds" resultMap="propertyMarker">
@@ -231,7 +257,11 @@
         </constructor>
     </resultMap>
 
-    <!-- 미분석은 최신 분석이 없는 매물이다. risk_grade 는 NOT NULL 이라 NULL 이면 LEFT JOIN 에서 빠진 것이다. -->
+    <!--
+      미분석은 최신 분석이 없는 매물이다 — 매물의 등급 열(V22)이 NULL 이다.
+      필터가 없으면 자치구 + 좌표 커버링 인덱스 idx_property_district_lat_lng (district, latitude, longitude)
+      INCLUDE (property_id, risk_grade)(V24 · V25)만 읽는다 — 읽는 열이 모두 인덱스에 있다(운영 EXPLAIN 으로 확인 — 미검증).
+    -->
     <select id="selectClusterCells" resultMap="mapClusterCellRow">
         SELECT g.row_index,
                g.col_index,
@@ -246,10 +276,10 @@
           FROM (SELECT p.property_id,
                        p.latitude,
                        p.longitude,
-                       ra.risk_grade,
+                       p.risk_grade,
                        <include refid="cellRow"/> AS row_index,
                        <include refid="cellCol"/> AS col_index
-                <include refid="fromPropertyRisk"/>
+                  FROM property p
                 <include refid="filter"/>) g
          GROUP BY g.row_index, g.col_index
          ORDER BY g.row_index, g.col_index
@@ -259,7 +289,7 @@
     <sql id="sortExpr">
         <choose>
             <when test="sortKey.name() == 'DEPOSIT'">p.deposit</when>
-            <when test="sortKey.name() == 'DEBT_RATIO'">COALESCE(ra.lease_ratio, #{nullDebtRatio})</when>
+            <when test="sortKey.name() == 'DEBT_RATIO'">COALESCE(p.lease_ratio, #{nullDebtRatio})</when>
             <otherwise>p.registered_at</otherwise>
         </choose>
     </sql>
@@ -305,16 +335,9 @@
     </resultMap>
 
     <!--
-      자치구를 지정하고 전세가율로 정렬하는 목록만 최신 분석을 매물 한 건씩 찾는다. 평범한 LEFT JOIN 이면 플래너가 최신 분석 전부를
-      해시 조인한다 — risk_analysis 를 이력 행까지(약 300k) 병렬 순차 읽기한다. 매물마다 커버링 부분 유일 인덱스
-      uq_risk_analysis_latest (property_id) INCLUDE (risk_id, risk_grade, lease_ratio, registry_id) WHERE is_latest(V19)를
-      찾게 하면 운영 측정(5회 중앙값, #326) 강남구 142.6 → 64.0ms, 도봉구 80.9 → 17.1ms 다.
-      자치구가 없으면(서울 전체) 같은 방식이 오히려 느려(457 → 835ms) 조건을 둘 다 걸 때만 쓴다.
-      OFFSET 0 은 최적화 울타리다 — 없으면 PostgreSQL 이 하위 질의를 평범한 조인으로 펼쳐 다시 해시 조인을 고를 수 있다.
-      별칭을 ra 로 두어 filter(ra.risk_grade) · sortExpr(ra.lease_ratio) · SELECT 목록이 그대로 쓴다. 하위 질의의 SELECT 에
-      없는 ra 열을 새로 참조하면 여기에 더해야 한다.
-      random_page_cost 를 1.1 로 낮추면 플래너가 스스로 이 계획을 고르는 것을 확인했지만(#326) 서버 설정이라 DB 설정 단계로
-      미룬다. 그때까지 매퍼가 계획을 정한다.
+      목록. 등급 · 전세가율이 매물 열(V22)이라 판정 표를 조인하지 않는다. V22 전에는 자치구 + 전세가율순 목록이 판정 표 해시
+      조인을 피하려고 LATERAL 로 매물 한 건씩 최신 분석을 찾았다(#326) — 조인이 없어져 그 갈래도 없앴다. 자치구가 있으면 자치구
+      인덱스로 좁힌 매물을 정렬한다.
     -->
     <select id="selectList" resultMap="propertyListRow">
         SELECT p.property_id,
@@ -326,40 +349,30 @@
                COALESCE(p.monthly_rent, 0) AS monthly_rent,
                p.area_sqm,
                p.floor,
-               ra.risk_grade,
-               ra.lease_ratio AS debt_ratio,
+               p.risk_grade,
+               p.lease_ratio AS debt_ratio,
                p.registered_at AT TIME ZONE 'Asia/Seoul' AS registered_at
         <include refid="fromPropertyCodes"/>
-        <choose>
-            <when test="district != null and district != '' and sortKey.name() == 'DEBT_RATIO'">
-                LEFT JOIN LATERAL (SELECT r.risk_grade, r.lease_ratio
-                                     FROM risk_analysis r
-                                    WHERE r.property_id = p.property_id AND r.is_latest = TRUE
-                                   OFFSET 0) ra ON TRUE
-            </when>
-            <otherwise>
-                <include refid="latestRiskJoin"/>
-            </otherwise>
-        </choose>
         <include refid="filter"/>
         ORDER BY <include refid="sortExpr"/> <include refid="sortDir"/>, p.property_id <include refid="sortDir"/>
         LIMIT #{limit}
     </select>
 
     <!--
-      자치구 없는 전세가율순 목록의 앞부분 — 판정이 있는 매물만, 판정 표의 부분 인덱스
-      ix_risk_analysis_latest_lease_ratio (lease_ratio, property_id) INCLUDE (risk_grade) WHERE is_latest AND lease_ratio IS NOT NULL
-      (V20)을 정렬 순서대로 읽고 LIMIT 에서 멈춘다. 운영 측정(#347, 8회 중앙값) 필터 없음 오름 693.5 → 0.3ms, 내림 816.1 → 0.3ms,
-      등급 오름 370.1 → 0.3ms, 커서 오름 517.6 → 0.4ms.
+      자치구 없는 전세가율순 목록의 앞부분 — 판정이 있는 매물만, 매물의 부분 인덱스
+      ix_property_lease_ratio (lease_ratio, property_id) INCLUDE (risk_grade) WHERE lease_ratio IS NOT NULL(V24)을 정렬 순서대로 읽고
+      LIMIT 에서 멈춘다. V20 의 판정 표 인덱스 ix_risk_analysis_latest_lease_ratio 가 하던 역할을 옮겼다 — 그때 운영 측정(#347, 8회
+      중앙값) 필터 없음 오름 693.5 → 0.3ms, 내림 816.1 → 0.3ms, 등급 오름 370.1 → 0.3ms, 커서 오름 517.6 → 0.4ms. 매물 쪽 인덱스로
+      같은 계획이 나오는지는 운영 EXPLAIN 으로 확인한다(미검증).
       서비스(PropertyQueryService)가 자치구 · 매물 조건 필터(계약 · 유형 · 보증금 · 월세 · 면적 · 좌표)가 모두 없을 때만 부른다 —
-      매물 조건 필터가 있으면 걸러지는 비율만큼 인덱스를 더 읽어 오름에서 93.9 → 313.3ms 로 나빠졌다(#347). 등급 필터는 INCLUDE
-      열이라 허용한다. 커서는 앞부분 안(오름 < 1000 · 내림 > -1000)일 때만 넘어온다.
+      매물 조건 필터가 있으면 걸러지는 비율만큼 인덱스를 더 읽어 오름에서 93.9 → 313.3ms 로 나빠졌다(#347, V20 인덱스 측정). 등급
+      필터는 INCLUDE 열이라 허용한다. 커서는 앞부분 안(오름 < 1000 · 내림 > -1000)일 때만 넘어온다.
 
-      범위 조건(오름 r.lease_ratio < 대체값 1000 · 내림 > -1000)을 빼지 않는다 — lease_ratio IS NOT NULL 만 있으면 플래너가
-      이 부분 인덱스를 정렬 경로로 쓰지 않는다(정렬을 금지해도, #347 측정). 범위 조건은 selectList 의 COALESCE 정렬에서 대체값보다
+      범위 조건(오름 p.lease_ratio < 대체값 1000 · 내림 > -1000)을 빼지 않는다 — V20 측정에서 lease_ratio IS NOT NULL 만 있으면
+      플래너가 부분 인덱스를 정렬 경로로 쓰지 않았다(정렬을 금지해도, #347). 범위 조건은 selectList 의 COALESCE 정렬에서 대체값보다
       앞에 오는 행만 고르는 조건이기도 하다 — 판정 · 전세가율이 없는 매물과 대체값 경계 바깥 값은 맨 뒤(끝부분)라 여기서 빠지고,
       서비스가 이 조회가 limit 보다 적게 돌려줄 때 selectList 로 이어 읽는다.
-      앞부분의 정렬 값은 lease_ratio 그대로라 selectList 의 COALESCE(ra.lease_ratio, 대체값)와 같고, 행 비교
+      앞부분의 정렬 값은 lease_ratio 그대로라 selectList 의 COALESCE(p.lease_ratio, 대체값)와 같고, 행 비교
       (lease_ratio, property_id) > (값, ID) 는 selectList 의 키셋 조건(값 > 또는 값 = 이고 ID >)과 같다.
     -->
     <select id="selectListByLeaseRatioIndex" resultMap="propertyListRow">
@@ -372,29 +385,27 @@
                COALESCE(p.monthly_rent, 0) AS monthly_rent,
                p.area_sqm,
                p.floor,
-               r.risk_grade,
-               r.lease_ratio AS debt_ratio,
+               p.risk_grade,
+               p.lease_ratio AS debt_ratio,
                p.registered_at AT TIME ZONE 'Asia/Seoul' AS registered_at
-          FROM risk_analysis r
-          JOIN property p ON p.property_id = r.property_id
+          FROM property p
           JOIN property_code ct ON ct.code_id = p.contract_type_code_id
           JOIN property_code pt ON pt.code_id = p.property_type_code_id
-         WHERE r.is_latest
-           AND r.lease_ratio IS NOT NULL
+         WHERE p.lease_ratio IS NOT NULL
            <choose>
-               <when test="ascending">AND r.lease_ratio &lt; #{nullDebtRatio}</when>
-               <otherwise>AND r.lease_ratio &gt; #{nullDebtRatio}</otherwise>
+               <when test="ascending">AND p.lease_ratio &lt; #{nullDebtRatio}</when>
+               <otherwise>AND p.lease_ratio &gt; #{nullDebtRatio}</otherwise>
            </choose>
         <if test="riskGrades != null and !riskGrades.isEmpty()">
-           AND r.risk_grade IN
+           AND p.risk_grade IN
             <foreach collection="riskGrades" item="grade" open="(" separator="," close=")">
                 #{grade}
             </foreach>
         </if>
         <if test="lastId != null">
-           AND (r.lease_ratio, r.property_id) <include refid="keysetOp"/> (#{lastDebtRatio}, #{lastId})
+           AND (p.lease_ratio, p.property_id) <include refid="keysetOp"/> (#{lastDebtRatio}, #{lastId})
         </if>
-         ORDER BY r.lease_ratio <include refid="sortDir"/>, r.property_id <include refid="sortDir"/>
+         ORDER BY p.lease_ratio <include refid="sortDir"/>, p.property_id <include refid="sortDir"/>
          LIMIT #{limit}
     </select>
 
@@ -424,6 +435,7 @@
         </constructor>
     </resultMap>
 
+    <!-- 등급 · 전세가율은 매물 열(V22), 보증 가입 여부는 판정 표에만 있어 최신 판정을 조인한다(매물 한 건, 유일 인덱스 탐색 하나). -->
     <select id="selectDetail" resultMap="propertyDetailRow">
         SELECT p.property_id,
                p.district,
@@ -440,8 +452,8 @@
                p.market_price,
                p.price_type,
                p.price_date,
-               ra.risk_grade,
-               ra.lease_ratio AS debt_ratio,
+               p.risk_grade,
+               p.lease_ratio AS debt_ratio,
                ra.insurance_eligible_yn AS insurance_eligible,
                <choose>
                    <when test="userId != null">
