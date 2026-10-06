@@ -2,7 +2,13 @@ package com.duri.rentalplatform.domain.property.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.duri.rentalplatform.domain.property.dto.request.DistrictCountRequest;
@@ -10,13 +16,19 @@ import com.duri.rentalplatform.domain.property.dto.response.PropertyMapClustersR
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore;
+import com.duri.rentalplatform.domain.property.store.MapClusterCacheStore;
 import com.duri.rentalplatform.domain.property.vo.BoundingBox;
+import com.duri.rentalplatform.domain.property.vo.MapClusterCacheEntry;
 import com.github.benmanes.caffeine.cache.Ticker;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,14 +40,16 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * {@link MapClusterCache} 검증 — 적중 · 키 · 세대 공유 · 만료 · 무게 상한 · 같은 키 동시 빗나감 · 실패. 세대는 실제
- * {@link DistrictCountCache} 에 목 Redis 를 끼우고, 시간은 테스트가 움직인다. 컨테이너를 쓰지 않는다.
+ * {@link MapClusterCache} 검증 — 적중 · 키 · 세대 공유 · 만료 · 무게 상한 · 같은 키 동시 빗나감 · 실패 · Redis 층(로컬 → Redis →
+ * DB 순서 · 수명 상한). 세대는 실제 {@link DistrictCountCache} 에 목 Redis 를 끼우고, Redis 층은 {@link MapClusterCacheStore}
+ * 목으로 확인한다(실패 흡수는 예외를 던지는 목 Redis 를 실제 보관소에 끼워 확인). 시간은 테스트가 움직인다. 컨테이너를 쓰지 않는다.
  */
 class MapClusterCacheTest {
 
@@ -49,8 +63,28 @@ class MapClusterCacheTest {
 
     private final AtomicLong elapsedNanos = new AtomicLong();
     private final Ticker ticker = elapsedNanos::get;
+    private static final Instant START = Instant.parse("2026-10-07T00:00:00Z");
+    private static final Duration REDIS_TTL = Duration.ofMinutes(1);
+    /** 티커와 함께 움직이는 시계 — 항목 수명 계산이 보는 「지금」. */
+    private final Clock clock = new Clock() {
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return START.plusNanos(elapsedNanos.get());
+        }
+    };
 
     private ValueOperations<String, String> ops;
+    private MapClusterCacheStore store;
     private DistrictCountCache generationSource;
     private MapClusterCache cache;
     private AtomicInteger loads;
@@ -65,12 +99,23 @@ class MapClusterCacheTest {
         generationSource = new DistrictCountCache(
                 new DistrictCountCacheStore(redis, JsonMapper.builder().build(), Duration.ofMinutes(10)),
                 Duration.ofMinutes(1), 500, CHECK_INTERVAL, ticker, Clock.systemUTC(), Runnable::run);
+        store = mock(MapClusterCacheStore.class);
+        when(store.ttl()).thenReturn(REDIS_TTL);
+        when(store.find(any(), any())).thenReturn(Optional.empty());
         cache = newCache(20_000);
         loads = new AtomicInteger();
     }
 
     private MapClusterCache newCache(long maxWeight) {
-        return new MapClusterCache(generationSource, LOCAL_TTL, maxWeight, ticker, Runnable::run);
+        return newCache(store, maxWeight);
+    }
+
+    private MapClusterCache newCache(MapClusterCacheStore redisLayer, long maxWeight) {
+        return new MapClusterCache(generationSource, redisLayer, LOCAL_TTL, maxWeight, ticker, clock, Runnable::run);
+    }
+
+    private static MapClusterCacheEntry entry(Instant savedAt, long total) {
+        return new MapClusterCacheEntry(savedAt, PropertyMapClustersResponse.unclustered(total, List.of()));
     }
 
     /** 부를 때마다 세는 DB 조회 대역. total 로 어느 읽기의 응답인지 가린다. */
@@ -317,6 +362,199 @@ class MapClusterCacheTest {
         });
 
         assertThat(loadThread).containsExactly(caller);
+    }
+
+    // ---------- Redis 층 ----------
+
+    @Test
+    @DisplayName("로컬이 빗나가고 Redis 가 적중하면 DB 를 부르지 않고 Redis 에 쓰지도 않는다")
+    void redisHitSkipsLoaderAndSave() {
+        when(store.find("3", MapClusterCache.key(FILTER, BOX, GRID, GRID))).thenReturn(Optional.of(entry(START, 5)));
+
+        PropertyMapClustersResponse response = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99));
+
+        assertThat(response.total()).isEqualTo(5);
+        assertThat(loads).hasValue(0);
+        verify(store, never()).save(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Redis 에서 찾은 값은 로컬에 담겨 다음 요청은 Redis 도 DB 도 부르지 않는다")
+    void redisHitIsKeptLocally() {
+        when(store.find(eq("3"), any())).thenReturn(Optional.of(entry(START, 5)));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99));
+
+        PropertyMapClustersResponse second = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99));
+
+        assertThat(second.total()).isEqualTo(5);
+        assertThat(loads).hasValue(0);
+        verify(store, times(1)).find(eq("3"), any());
+    }
+
+    @Test
+    @DisplayName("로컬 적중이면 Redis 를 다시 부르지 않는다")
+    void localHitSkipsRedis() {
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
+
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(8));
+
+        verify(store, times(1)).find(any(), any());
+        verify(store, times(1)).save(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Redis 도 빗나가면 DB 에서 읽고, 세대 · 캐시 키 · 읽은 시각과 함께 Redis 에 쓴다")
+    void dbLoadIsSavedToRedis() {
+        PropertyMapClustersResponse response = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
+
+        ArgumentCaptor<MapClusterCacheEntry> saved = ArgumentCaptor.forClass(MapClusterCacheEntry.class);
+        verify(store).save(eq("3"), eq(MapClusterCache.key(FILTER, BOX, GRID, GRID)), saved.capture());
+        assertThat(saved.getValue().response()).isEqualTo(response);
+        assertThat(saved.getValue().savedAt()).isEqualTo(START);
+        assertThat(response.total()).isEqualTo(7);
+        assertThat(loads).hasValue(1);
+    }
+
+    @Test
+    @DisplayName("Redis 읽기가 빈 값을 주면 DB 로 가서 정상 응답한다")
+    void redisFindEmptyFallsBackToDb() {
+        PropertyMapClustersResponse response = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
+
+        assertThat(response.total()).isEqualTo(7);
+        assertThat(loads).hasValue(1);
+    }
+
+    @Test
+    @DisplayName("Redis 읽기 · 쓰기가 예외를 던져도 DB 에서 읽어 정상 응답하고 로컬에는 담긴다")
+    @SuppressWarnings("unchecked")
+    void redisExceptionsAreAbsorbed() {
+        StringRedisTemplate failing = mock(StringRedisTemplate.class);
+        ValueOperations<String, String> failingOps = mock(ValueOperations.class);
+        when(failing.opsForValue()).thenReturn(failingOps);
+        when(failingOps.get(any())).thenThrow(new RedisConnectionFailureException("down"));
+        doThrow(new RedisConnectionFailureException("down")).when(failingOps).set(any(), any(), any(Duration.class));
+        cache = newCache(new MapClusterCacheStore(failing, JsonMapper.builder().build(), REDIS_TTL), 20_000);
+
+        PropertyMapClustersResponse first = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
+        PropertyMapClustersResponse second = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(8));
+
+        assertThat(first.total()).isEqualTo(7);
+        assertThat(second.total()).isEqualTo(7);
+        assertThat(loads).hasValue(1);
+        verify(failingOps).get(MapClusterCacheStore.key("3", MapClusterCache.key(FILTER, BOX, GRID, GRID)));
+    }
+
+    @Test
+    @DisplayName("Redis 에서 묵은 값을 가져오면 로컬 수명이 savedAt + Redis TTL 까지로 깎인다")
+    void localLifetimeIsCappedBySavedAtPlusRedisTtl() {
+        // 50초 전에 DB 에서 읽힌 값 — Redis TTL 1분까지 10초 남았다(로컬 만료 1분보다 짧다).
+        when(store.find(eq("3"), any())).thenReturn(Optional.of(entry(START.minusSeconds(50), 5)));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99));
+
+        advance(Duration.ofSeconds(9));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99));
+        verify(store, times(1)).find(any(), any());
+
+        advance(Duration.ofSeconds(1));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99));
+        verify(store, times(2)).find(any(), any());
+    }
+
+    @Test
+    @DisplayName("수명이 깎여 만료된 뒤 Redis 도 비었으면 DB 로 간다")
+    void afterCappedLifetimeFallsThroughToDb() {
+        when(store.find(eq("3"), any())).thenReturn(Optional.of(entry(START.minusSeconds(50), 5)));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99));
+
+        advance(Duration.ofSeconds(10));
+        when(store.find(eq("3"), any())).thenReturn(Optional.empty());
+        PropertyMapClustersResponse after = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(8));
+
+        assertThat(after.total()).isEqualTo(8);
+        assertThat(loads).hasValue(1);
+    }
+
+    @Test
+    @DisplayName("Redis TTL 이 이미 지난 savedAt 의 값은 로컬에 남지 않는다")
+    void expiredSavedAtIsNotKeptLocally() {
+        when(store.find(eq("3"), any())).thenReturn(Optional.of(entry(START.minus(REDIS_TTL).minusSeconds(1), 5)));
+
+        PropertyMapClustersResponse first = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99));
+
+        assertThat(first.total()).isEqualTo(5);
+        verify(store, times(2)).find(any(), any());
+    }
+
+    @Test
+    @DisplayName("방금 DB 에서 읽은 값의 로컬 수명은 로컬 만료다 — Redis TTL 이 더 길어도 로컬 만료를 넘지 않는다")
+    void freshValueLivesForLocalTtl() {
+        when(store.ttl()).thenReturn(Duration.ofMinutes(10));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
+
+        advance(LOCAL_TTL.minusSeconds(1));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(8));
+        verify(store, times(1)).find(any(), any());
+
+        advance(Duration.ofSeconds(1));
+        cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(9));
+        verify(store, times(2)).find(any(), any());
+    }
+
+    @Test
+    @DisplayName("세대를 모르면 Redis 도 부르지 않고 DB 로 간다")
+    void unknownGenerationSkipsRedis() {
+        when(ops.get(DistrictCountCacheStore.GENERATION_KEY)).thenThrow(new RedisConnectionFailureException("down"));
+
+        PropertyMapClustersResponse response = cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(7));
+
+        assertThat(response.total()).isEqualTo(7);
+        assertThat(loads).hasValue(1);
+        verify(store, never()).find(any(), any());
+        verify(store, never()).save(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("같은 키의 동시 빗나감은 Redis 읽기 · DB 읽기 · Redis 쓰기를 각 한 번만 한다")
+    void concurrentMissesHitRedisAndDbOnce() throws Exception {
+        int threads = 8;
+        CountDownLatch loading = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        try {
+            Future<PropertyMapClustersResponse> first = pool.submit(() -> cache.getOrLoad(FILTER, BOX, GRID, GRID, () -> {
+                loads.incrementAndGet();
+                loading.countDown();
+                await(release);
+                return PropertyMapClustersResponse.unclustered(7, List.of());
+            }));
+            assertThat(loading.await(5, TimeUnit.SECONDS)).isTrue();
+            List<Future<PropertyMapClustersResponse>> waiters = new ArrayList<>();
+            for (int i = 1; i < threads; i++) {
+                waiters.add(pool.submit(() -> cache.getOrLoad(FILTER, BOX, GRID, GRID, loader(99))));
+            }
+            release.countDown();
+
+            assertThat(first.get(5, TimeUnit.SECONDS).total()).isEqualTo(7);
+            for (Future<PropertyMapClustersResponse> waiter : waiters) {
+                assertThat(waiter.get(5, TimeUnit.SECONDS).total()).isEqualTo(7);
+            }
+            assertThat(loads).hasValue(1);
+            verify(store, times(1)).find(any(), any());
+            verify(store, times(1)).save(any(), any(), any());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("DB 읽기가 실패하면 Redis 에 쓰지 않는다")
+    void failedLoadIsNotSavedToRedis() {
+        assertThatThrownBy(() -> cache.getOrLoad(FILTER, BOX, GRID, GRID, () -> {
+            throw new IllegalStateException("db down");
+        })).isInstanceOf(IllegalStateException.class);
+
+        verify(store, never()).save(any(), any(), any());
     }
 
     private static void await(CountDownLatch latch) {
