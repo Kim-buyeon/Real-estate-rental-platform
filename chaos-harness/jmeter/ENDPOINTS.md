@@ -33,7 +33,7 @@ INF-06(#390) 매물 100만 시험의 엔드포인트 22개(로그인 포함)와 
 | target | 요청 | 레이블 | DB 에 남기는 것 |
 | --- | --- | --- | --- |
 | `district-counts` | GET `/api/properties/district-counts`(필터 없음 — 서울 단계 첫 화면) | `properties/district-counts` | 없음(Redis 캐시 키 하나, TTL 10분) |
-| `map-clusters` | GET `/api/properties/map-clusters?district&minLat&maxLat&minLng&maxLng&rows&cols` — 아래 「지도 묶음의 모양」 | `properties/map-clusters` | 없음(슬롯 로컬 캐시) |
+| `map-clusters` | GET `/api/properties/map-clusters?district&minLat&maxLat&minLng&maxLng&rows&cols` — 아래 「지도 묶음의 모양」 | `properties/map-clusters` | 없음(Redis 캐시 키 하나, TTL 1분 — 슬롯 로컬 캐시 뒤) |
 | `properties-radius` | GET `/api/properties?district&lat&lng&radiusKm=1`(중심 = 표본 매물 좌표). 화면은 부르지 않는다 — 혼합 0 % | `properties radius` | 없음 |
 | `properties-list` | GET `/api/properties?…` — 아래 「목록의 모양」 | `properties list` | 없음 |
 | `property-detail` | GET `/api/properties/{id}` | `properties/{id}` | 없음 |
