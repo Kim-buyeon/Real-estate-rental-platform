@@ -155,19 +155,24 @@ app:
   datasource:
     replica:
       enabled: ${DB_REPLICA_ENABLED:false}
-      # 쉼표로 이은 host:port 목록. 비면 꺼진 것과 같다. standby 를 먼저 고르는 것은 순서가 아니라 아래 preferSecondary 다.
+      # 쉼표로 이은 host:port 목록. 비면 꺼진 것과 같다. 어느 노드를 먼저 고르는지는 아래 targetServerType 이 정한다.
       hosts: ${DB_REPLICA_HOSTS:}
       # targetServerType=preferSecondary — 목록에서 standby 를 먼저 고르고, 없으면(DB-02 정지 · 승격으로 standby 가 사라짐) 아무
       #   노드나 받는다(DB-01). 노드 상태는 드라이버가 기억해 두고 hostRecheckSeconds(기본 10초 — pgJDBC 42.7.13 PGProperty)마다
       #   다시 본다. 그래서 DB-02 장애에 앱 코드 · 운영 절차가 할 일이 없다.
       #   대가: DB-02 가 돌아와도 그사이 DB-01 에 맺은 읽기 커넥션은 아래 max-lifetime(30분)이 지나 새로 맺을 때까지 DB-01 에 남는다.
+      # 운영(#459) — DB_REPLICA_TARGET_SERVER_TYPE=any 로 두면 standby 를 따로 고르지 않고 목록 순서대로 붙는다(pgJDBC 문서 —
+      #   loadBalanceHosts 기본(끔)이면 「hosts are connected in the given order」, 붙지 못하면 다음 주소). 운영 Compose 가 app-2 에
+      #   반대 순서(DB_REPLICA_HOSTS_APP2)를 주어 app-1 둘은 DB-02, app-2 둘은 DB-01 에 읽기를 보낸다 — 앞단이 네 슬롯에 고르게 나누므로
+      #   무거운 읽기가 두 DB 에 반씩 간다(10/6 결과서 — DB-02 한 대가 혼합 한계를 정했다). loadBalanceHosts=true 는 커넥션마다 무작위라
+      #   슬롯 넷의 커넥션 16개가 한쪽으로 기울 수 있어 쓰지 않는다. 키가 없으면 preferSecondary — 지금까지와 같다.
       # connectTimeout=1 — 초. pgJDBC 기본은 10초다. 사설망의 정상 연결은 밀리초에 끝나므로, 죽은 노드에 커넥션 하나가 10초씩
       #   매달리지 않게 1초에 다음 주소로 넘긴다.
       # TLS 등 접속 옵션은 위 기본 풀과 같게 둔다 — 기본 풀 url 에 옵션이 없으므로 여기도 없다. 둘 다 pgJDBC 기본 sslmode=prefer 를
       #   따른다(서버가 TLS 를 받으면 TLS, DB 노드의 pg_hba.conf 가 VPC 평문을 거절한다 — 시스템 구성서 4장). 기본 풀에 옵션을 붙이면
       #   여기도 같이 붙인다. spring.datasource.hikari.data-source-properties 로 준 옵션은 아래 풀에도 그대로 입혀진다.
       # 주소는 위 hosts(= DB_REPLICA_HOSTS)를 읽는다 — 켜짐 판정과 접속 주소가 한 값에서 나온다.
-      url: jdbc:postgresql://${app.datasource.replica.hosts}/${POSTGRES_DB:rental}?targetServerType=preferSecondary&connectTimeout=1
+      url: jdbc:postgresql://${app.datasource.replica.hosts}/${POSTGRES_DB:rental}?targetServerType=${DB_REPLICA_TARGET_SERVER_TYPE:preferSecondary}&connectTimeout=1
       # 사용자 · 비밀번호는 기본 풀과 같은 계정이다 — standby 는 primary 의 역할을 복제로 그대로 갖는다.
       username: ${POSTGRES_USER:rental}
       password: ${POSTGRES_PASSWORD:rental}
