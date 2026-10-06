@@ -44,8 +44,8 @@ DB_VCPU = 2
 # BaselineIops · BaselineThroughputInMBps. 볼륨(gp3 3,000 IOPS · 125 MB/s)보다 낮아 먼저 닿는다
 EBS_BASELINE = {"t3.small": (1000.0, 21.75e6), "t3.medium": (2000.0, 43.375e6)}
 APP_TYPE_NOW = "t3.medium"          # 현재 앱 노드 구성(#394) — 회차에 MemTotal 이 없을 때 쓴다
-DB_TYPE_NOW = "t3.medium"           # 현재 DB 노드 구성(#447) — 회차에 MemTotal 이 없을 때 쓴다
-# 노드 유형은 회차의 실측 MemTotal 로 고른다(앱 노드 #394 · DB 노드 #447 전 회차는 t3.small). 문턱은 AWS 사양 MemoryInfo
+DB_TYPE_NOW = "t3.small"            # 현재 DB 노드 구성(#447 에서 올렸다가 #454 에서 되돌림) — 회차에 MemTotal 이 없을 때 쓴다
+# 노드 유형은 회차의 실측 MemTotal 로 고른다(앱 노드 #394 전 회차는 t3.small, DB 노드는 #447 ~ #454 사이만 t3.medium). 문턱은 AWS 사양 MemoryInfo
 # 2,048 · 4,096 MiB 의 가운데 — 새 유형이 생기면 표에 더한다
 TYPE_BY_MEM = ((3072 * 2**20, "t3.small"), (None, "t3.medium"))
 

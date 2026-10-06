@@ -425,7 +425,7 @@ def headroom_rows(s):
     add("OS", "DB노드 CPU", "2 vCPU", f_v(d_cpu, 1, " %"), hr(100, d_cpu))
     add("OS", "DB노드 steal · iowait", "-", f"steal {f_v(mx(dbs, 'cpu_modes_pct', 'steal', 'max'), 1)}% · iowait {f_v(mx(dbs, 'cpu_modes_pct', 'iowait', 'max'), 1)}%" + procs(dbs), "-")
     # EBS 기준선은 인스턴스 유형마다 다르다 — DB 노드와 앱 노드를 따로 잰다. 유형은 회차 MemTotal 로 고른다
-    # (prom.ebs_type — 두 노드 중 작은 쪽. 앱 노드 #394 · DB 노드 #447 전 회차는 t3.small)
+    # (prom.ebs_type — 두 노드 중 작은 쪽. 앱 노드 #394 전 회차는 t3.small, DB 노드는 #447 ~ #454 사이만 t3.medium)
     for keys, is_db, who in ((dbs, True, "DB노드"), (apps, False, "앱노드")):
         mts = [m for m in (_get(nodes, k, "mem_total_bytes") for k in keys) if m]
         e_type, guess = ebs_type(is_db, min(mts) if mts else None)
