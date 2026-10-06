@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Grafana Cloud 반영 — 대시보드(dashboards/*.json — 운영 요약 · 병목 지도) · 알림 규칙 그룹 · 메일 템플릿 · 연락처를 저장소의 정의대로 올린다(INF-05). 운영 절차서 2장.
+# Grafana Cloud 반영 — 대시보드(dashboards/*.json — 운영 요약 · 병목 지도 · 부하 시연) · 알림 규칙 그룹 · 메일 템플릿 · 연락처를 저장소의 정의대로 올린다(INF-05). 운영 절차서 2장.
 #
 #   read -rs GRAFANA_SA_TOKEN && export GRAFANA_SA_TOKEN      토큰은 화면에 치지 않고 받는다 — 명령줄에 두면 셸 기록에 남는다
 #   GRAFANA_STACK_URL=https://<스택>.grafana.net GRAFANA_ALERT_EMAIL=<받을 주소> bash infra/grafana/apply.sh
 #
 # 멱등이다 — 같은 정의를 다시 올리면 덮어쓸 뿐 새로 생기지 않는다(템플릿 · 연락처 · 규칙 그룹은 이름 · UID 로 PUT,
-# 대시보드는 파일마다 그 파일의 UID — rental-ops-summary · rental-bottleneck — 에 overwrite). 대시보드 판(version)은 내용이 바뀔 때만 오른다(2026-09-28 — 같은 정의를 다시 올려도 판 2 그대로).
+# 대시보드는 파일마다 그 파일의 UID — rental-ops-summary · rental-bottleneck · rental-demo-load — 에 overwrite). 대시보드 판(version)은 내용이 바뀔 때만 오른다(2026-09-28 — 같은 정의를 다시 올려도 판 2 그대로).
 #
 # 왜 저장소에 두나 — #253 에서 가져온 대시보드가 빈 화면이던 원인 셋이 모두 화면에서만 고친 것이라 저장소가 몰랐다.
 # 정의를 여기 두고 이 스크립트로만 올린다. 화면에서 고쳤으면 그 JSON 을 저장소에도 옮긴다 — 규칙 · 템플릿 · 연락처는
