@@ -3,7 +3,7 @@
 #
 #   bash credits.sh <출력 파일.json>
 #
-# 노드는 모두 unlimited 다(앱 노드 t3.medium · DB 노드 t3.small — 2026-10-05 describe-instance-credit-specifications. 2026-10-06 #447 에서 DB 노드를 t3.medium 으로 올렸다). 크레딧이 바닥나도 느려지지 않고 초과 사용(유료)으로 넘어가므로, 회차 전후 값으로
+# 노드는 모두 unlimited 다(앱 노드 t3.medium · DB 노드 t3.small — 2026-10-05 describe-instance-credit-specifications. 2026-10-06 #447 에서 DB 노드를 t3.medium 으로 올렸고 유형 변경 뒤 다시 조회해 unlimited). 크레딧이 바닥나도 느려지지 않고 초과 사용(유료)으로 넘어가므로, 회차 전후 값으로
 # 「이 회차가 버스트 위에서 돌았는가 · 초과 과금이 생겼는가」를 본다. 디스크(gp2 계열)는 BurstBalance 가 바닥나면 기본 IOPS 로 떨어진다.
 #
 #   cpu_credit_balance    CPUCreditBalance            쌓인 크레딧
