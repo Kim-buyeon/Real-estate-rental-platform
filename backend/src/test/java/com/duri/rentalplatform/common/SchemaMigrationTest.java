@@ -281,7 +281,7 @@ class SchemaMigrationTest {
     }
 
     @Test
-    @DisplayName("V22 ~ V25: 매물에 최신 판정 등급 · 전세가율 열이 NULL 허용으로 있고, 전세가율 목록 · 지도 커버링 인덱스가 유효한 정의로 있다")
+    @DisplayName("V22 ~ V29: 매물에 최신 판정 등급 · 전세가율 열이 NULL 허용으로 있고, 전세가율 필터 인덱스(V28)가 유효한 정의로 있으며 옛 전세가율 인덱스(V29 삭제)는 없다")
     void propertyLatestRiskColumnsAndIndexes() {
         Map<String, String> columns = jdbcTemplate.queryForList(
                         """
@@ -299,8 +299,8 @@ class SchemaMigrationTest {
                         """
                         SELECT indexname, indexdef FROM pg_indexes
                         WHERE schemaname = 'public'
-                          AND indexname IN ('ix_property_lease_ratio', 'idx_property_district_lat_lng',
-                                            'idx_property_district_lat_lng_cov')
+                          AND indexname IN ('ix_property_lease_ratio', 'ix_property_lease_ratio_filter',
+                                            'idx_property_district_lat_lng', 'idx_property_district_lat_lng_cov')
                         """)
                 .stream()
                 .collect(java.util.stream.Collectors.toMap(
@@ -308,22 +308,26 @@ class SchemaMigrationTest {
 
         assertThat(columns).containsEntry("risk_grade", "character varying:10:::YES")
                 .containsEntry("lease_ratio", "numeric::5:2:YES");
-        assertThat(indexDefs).hasSize(2).doesNotContainKey("idx_property_district_lat_lng_cov");
-        assertThat(indexDefs.get("ix_property_lease_ratio"))
-                .contains("property", "(lease_ratio, property_id)", "INCLUDE (risk_grade)", "WHERE",
-                        "lease_ratio IS NOT NULL");
+        // V29 가 V24 의 ix_property_lease_ratio 를 지웠고, V28 의 ix_property_lease_ratio_filter 가 그 키를 이어받는다.
+        assertThat(indexDefs).containsOnlyKeys("ix_property_lease_ratio_filter", "idx_property_district_lat_lng");
+        assertThat(indexDefs.get("ix_property_lease_ratio_filter"))
+                .contains("property", "(lease_ratio, property_id)",
+                        "INCLUDE (risk_grade, deposit, monthly_rent, area_sqm, contract_type_code_id, "
+                                + "property_type_code_id, latitude, longitude)",
+                        "WHERE", "lease_ratio IS NOT NULL")
+                .doesNotContain("UNIQUE");
         assertThat(indexDefs.get("idx_property_district_lat_lng"))
                 .contains("property", "(district, latitude, longitude)", "INCLUDE (property_id, risk_grade)");
-        // V24 는 CONCURRENTLY(트랜잭션 밖)다 — 실패하면 INVALID 인덱스가 남으므로 유효 여부까지 본다.
+        // V24 · V28 은 CONCURRENTLY(트랜잭션 밖)다 — 실패하면 INVALID 인덱스가 남으므로 유효 여부까지 본다.
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT count(*) FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-                WHERE c.relname IN ('ix_property_lease_ratio', 'idx_property_district_lat_lng') AND i.indisvalid
+                WHERE c.relname IN ('ix_property_lease_ratio_filter', 'idx_property_district_lat_lng') AND i.indisvalid
                 """, Integer.class)).isEqualTo(2);
-        // 네 파일이 각자 성공으로 이력에 있다 — 파일마다 따로 적용된다.
+        // 파일마다 따로 적용되어 각자 성공으로 이력에 있다.
         assertThat(jdbcTemplate.queryForList(
-                "SELECT version FROM flyway_schema_history WHERE version IN ('22', '23', '24', '25') AND success "
-                        + "ORDER BY installed_rank", String.class))
-                .containsExactly("22", "23", "24", "25");
+                "SELECT version FROM flyway_schema_history WHERE version IN ('22', '23', '24', '25', '28', '29') "
+                        + "AND success ORDER BY installed_rank", String.class))
+                .containsExactly("22", "23", "24", "25", "28", "29");
     }
 
     @Test

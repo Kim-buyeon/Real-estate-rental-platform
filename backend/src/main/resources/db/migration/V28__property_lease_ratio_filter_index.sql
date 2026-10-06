@@ -1,0 +1,56 @@
+-- 매물 조건 필터가 있는 자치구 없는 전세가율순 목록 인덱스(PROP-01 · #453) — ix_property_lease_ratio_filter
+-- (lease_ratio, property_id) INCLUDE (필터 열) WHERE lease_ratio IS NOT NULL. CREATE INDEX CONCURRENTLY IF NOT EXISTS, 트랜잭션 밖.
+-- 질의 쪽 변경(매물 매퍼 selectListByLeaseRatioIndex 두 단계 · 서비스 usesLeaseRatioIndex)과 짝이다. 옛 인덱스 삭제는 V29.
+--
+-- V24 의 ix_property_lease_ratio 는 INCLUDE 가 등급뿐이라, 매물 조건 필터(계약 · 유형 · 보증금 · 월세 · 면적 · 좌표)가 있으면 행마다
+-- 표를 읽어야 했다. 그래서 서비스가 필터가 있는 전세가율순을 selectList(COALESCE 정렬 — 정렬 전에 맞는 행을 전부 읽음)로 보냈고,
+-- 운영 매물 100만에서 보증금 ≤ 3억 내림이 779 ~ 791 ms · 버퍼 42,419 였다. 키는 V24 와 같고 필터 조각(PropertyMapper.xml filter)이
+-- 보는 열을 INCLUDE 에 담아, 매퍼 안쪽 단계가 표를 읽지 않고(Index Only Scan · Heap Fetches 0) 정렬 순서대로 거르며 LIMIT 까지
+-- 식별자를 고르게 한다. 바깥 단계는 고른 행(LIMIT 만큼)만 표 · 코드와 잇는다.
+--
+-- 측정 근거 —
+--   운영 DB-02(standby, PostgreSQL 17, 매물 1,000,000건) LIMIT 21, 읽기 전용 EXPLAIN (ANALYZE, BUFFERS), 같은 조합 2회 · 데워진
+--   2회차, 결과 행 비교(전부 같음), 2026-10-06. 열: 지금(selectList, 등급만이면 옛 인덱스 갈래) | 두 단계 + 이 인덱스 (ms) | 버퍼
+--     등급 안전 · 주의 내림                    322 ~ 336 | 47 ~ 59        | 296,744 → 20,664
+--     보증금 ≤ 3억 내림                        779 ~ 791 | 0.35           | 42,419 → 104
+--     같은 조건 다음 쪽 커서                   840 ~ 874 | 0.39           | 42,419 → 105
+--     오피스텔 · 면적 ≥ 140 내림               204       | 30             | 185,713 → 14,694
+--     월세 ≤ 30만 · 면적 ≥ 85 오름             328 ~ 360 | 1.1            | 42,419 → 402
+--     전세 · 위험 오름                         538 ~ 542 | 2.1            | 42,420 → 694
+--     면적 ≥ 200 내림                          232 ~ 235 | 4.8            | 42,419 → 2,709
+--     강남 영역(좌표) 내림                     125       | 1.1            | 38,364 → 279
+--     (최악) 오피스텔 · 면적 ≥ 200 · 월세 ≤ 10만(10건)  193 ~ 215 | 181 ~ 191 | 185,708 → 53,209
+--     (최악) 면적 ≥ 1000(0건)                  225 ~ 226 | 180            | 42,417 → 53,166
+--   맞는 행이 드물면 인덱스를 끝까지 훑지만 표를 읽지 않아 지금보다 느려지는 조합은 없었다.
+--   인덱스 크기 108 MB(옛 ix_property_lease_ratio 52 MB 는 V29 가 지운다), 운영 DB-01 생성 2026-10-06 CONCURRENTLY 4.8 s.
+--
+-- 배제한 대안 — 등급을 앞 열로 둔 (risk_grade, lease_ratio, …) + 등급별 UNION ALL 병합: 등급 여럿 · 다른 필터 조합마다 질의가
+-- 갈린다. 한 단계 질의(표에서 필터를 봄): 등급 안전 · 주의 내림이 표 29만 행을 읽었다.
+--
+-- 대가 — 필터 조각에 매물 열이 늘면 이 INCLUDE 도 함께 늘려야 index-only 가 유지된다(빠지면 결과는 같고 안쪽이 행마다 표를 읽어
+-- 느려진다). 자치구(district)는 담지 않는다 — 자치구가 있으면 서비스가 이 갈래를 쓰지 않는다. 필터 열이 이 인덱스에도 들어가 매물
+-- 적재 · 갱신 배치의 인덱스 유지 비용이 이 인덱스만큼 는다. 등급 · 보증금 · 유형 · 좌표는 이미 다른 인덱스 열(V24 · V26 · V27)이라
+-- HOT 을 새로 잃는 갱신은 월세 · 면적 · 계약 유형 변경뿐이고, 매물 갱신은 이미 재분석 대기 부분 인덱스(V18) 때문에 HOT 이
+-- 아니다(V19 주석).
+--
+-- IF NOT EXISTS 를 쓰는 이유(V27 과 같다) — 운영 DB-01 에는 측정하려고 같은 이름 · 정의로 이미 만들었으므로, 배포 때 이 문장은
+-- 건너뛰고 Flyway 이력만 남는다. V24 가 IF NOT EXISTS 를 피한 이유(INVALID 인덱스가 남아 있으면 조용히 건너뜀)는 그대로 유효하다 —
+-- 그래서 운영의 이 인덱스가 유효한지 배포 전에 확인한다:
+--   SELECT indisvalid FROM pg_index WHERE indexrelid = 'ix_property_lease_ratio_filter'::regclass;  -- true 여야 한다
+-- 새 환경(로컬 · CI)에서는 그냥 만든다.
+--
+-- 트랜잭션 밖에서 도는 근거 — flyway-database-postgresql 12.4.0 PostgreSQLParser 가 ^(CREATE|DROP)( UNIQUE)? INDEX CONCURRENTLY 로
+-- 시작하는 문장을 「트랜잭션 안에서 실행 불가」로 판정하고(detectCanExecuteInTransaction), flyway-core 12.4.0 ParserSqlScript 가 그런
+-- 문장이 있는 파일을 트랜잭션 없이 실행한다(executeInTransaction). 세 번째 키워드에서 판정을 끝내므로 뒤에 IF NOT EXISTS 가 붙어도
+-- 같다. 파일에 CONCURRENTLY 문장만 두는 이유 · SET LOCAL lock_timeout 을 넣지 않는 이유는 V24 주석과 같다.
+-- spring.flyway.postgresql.transactional-lock: false(application.yml, #403)도 V24 때 넣은 그대로다.
+--
+-- 잠금 — SHARE UPDATE EXCLUSIVE. 매물 읽기 · 쓰기를 막지 않는다. 표를 두 번 훑고, 시작 시점에 열린 트랜잭션이 끝나기를 기다린다.
+--
+-- 중간에 실패하면 — 트랜잭션 밖이라 되돌려지지 않고 INVALID 인덱스가 남으며, 다음 기동은 「failed migration」으로 멈춘다(V24 주석).
+-- 복구 — DROP INDEX IF EXISTS ix_property_lease_ratio_filter 로 남은 것을 지우고, flyway_schema_history 의 V28 실패 행을 지운 뒤
+-- 다시 기동한다.
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_property_lease_ratio_filter ON property (lease_ratio, property_id)
+    INCLUDE (risk_grade, deposit, monthly_rent, area_sqm, contract_type_code_id, property_type_code_id, latitude, longitude)
+    WHERE lease_ratio IS NOT NULL;
