@@ -59,6 +59,43 @@ class Units(unittest.TestCase):
             self.assertEqual(sorted(m2.agg("app-1", "node_load1").get(None).items()), [(1.0, 1.0)])
             self.assertEqual(sorted(m2.agg("node", "node_load1").get(None).items()), [(2.0, 2.0)])
 
+    def _pg_wal(self, rows):
+        """rows = [(ts, 본문)] → postgres 대상 긁기 gz 를 읽은 NodeMetrics 로 prom.postgres 결과."""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "db01.prom.gz"
+            with open(p, "wb") as f:
+                for ts, body in rows:
+                    f.write(gzip.compress(f"# SCRAPE {ts} postgres\n{body}".encode()))
+            m = prom.NodeMetrics.load(p, "db-01")
+        return prom.postgres(m, Window(100.0, 120.0), [])
+
+    def test_wal_bytes_from_lsn_not_gauges(self):
+        # #445 — 오르내리는 게이지(슬롯 여유 · WAL 디렉터리 크기)가 함께 있어도 늘기만 하는 LSN 의 차를 쓴다.
+        # 대기 노드 줄 둘은 합치지 않는다(앞선 줄의 차 40,000 이 답, 합이면 70,000)
+        safe = (1000, 500, 900, 300, 800)
+        size = (1e6, 2e6, 1.5e6, 3e6, 1e6)
+        rows = []
+        for i in range(5):
+            lsn = 1_000_000 + 10_000 * i
+            rows.append((100.0 + 5 * i,
+                         f'pg_replication_slot_safe_wal_size_bytes{{slot_name="s1"}} {safe[i]}\n'
+                         f'pg_wal_size_bytes {size[i]}\n'
+                         f'pg_stat_replication_pg_current_wal_lsn_bytes{{application_name="db-02"}} {lsn}\n'
+                         f'pg_stat_replication_pg_current_wal_lsn_bytes{{application_name="old"}} {lsn - 7_500 * i}\n'))
+        res = self._pg_wal(rows)
+        self.assertEqual(res["wal_bytes_delta"], 40_000)
+        self.assertEqual(res["wal_metric"], "pg_stat_replication_pg_current_wal_lsn_bytes")
+
+    def test_wal_bytes_none_without_counter(self):
+        # 늘기만 하는 이름이 없으면 게이지로 메우지 않고 None
+        none = self._pg_wal([(100.0 + 5 * i, "pg_up 1\n") for i in range(5)])
+        self.assertIsNone(none["wal_bytes_delta"])
+        self.assertIsNone(none["wal_metric"])
+        gauges = self._pg_wal([(100.0 + 5 * i, f"pg_replication_slot_safe_wal_size_bytes {1000 - 300 * (i % 2)}\n"
+                                               f"pg_wal_size_bytes {1e6 * (1 + i % 2)}\n") for i in range(5)])
+        self.assertIsNone(gauges["wal_bytes_delta"])
+        self.assertIsNone(gauges["wal_metric"])
+
     def test_timeseries_partial_window(self):
         from analyze import jtl
         rows = [{"ts": 100.0 + i * 0.5, "elapsed": 10.0, "success": True, "threads": 2.0} for i in range(26)]  # 100 ~ 112.5
