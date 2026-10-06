@@ -292,18 +292,17 @@ public class PropertyQueryService {
     }
 
     /**
-     * 매물 전세가율 열의 부분 인덱스(V24 — V20 판정 표 인덱스의 역할을 옮김)에서 출발할 목록인가 — 자치구가 없고, 전세가율순이고,
-     * 매물 조건 필터(계약 · 유형 · 보증금 · 월세 · 면적 · 좌표)가 모두 없을 때만. 매물 조건 필터가 있으면 걸러지는 만큼 인덱스를 더
-     * 읽어 오름에서 93.9 → 313.3ms 로 나빠졌다(#347 운영 측정, V20 인덱스). 등급 필터는 인덱스에 담긴 열이라 허용한다. 자치구가
-     * 있으면 selectList 가 자치구 인덱스로 좁힌다.
+     * 매물 전세가율 열의 부분 인덱스(V28)에서 출발할 목록인가 — 전세가율순이고 자치구가 없을 때. 매물 조건 필터(계약 · 유형 ·
+     * 보증금 · 월세 · 면적 · 좌표) · 등급 필터가 있어도 쓴다. 자치구가 있으면 selectList 가 자치구 인덱스로 좁힌다.
+     *
+     * <p>#347 은 매물 조건 필터가 있으면 오름에서 93.9 → 313.3ms 로 나빠진다고 해 이 갈래에서 뺐다 — 표를 읽어 필터를 보던 V20
+     * 인덱스 때의 측정이다. #453 에서 필터 열을 인덱스(V28 INCLUDE)에 담고 매퍼가 인덱스만으로 식별자를 고르게 해(두 단계), 운영
+     * 매물 1,000,000 측정의 모든 조합에서 selectList 보다 같거나 빨랐다 — 보증금 ≤ 3억 내림 779 ~ 791 → 0.35ms, 맞는 행이 드문
+     * 최악(면적 ≥ 1000, 0건) 225 → 180ms(매퍼 주석 · V28 주석).
      */
     private static boolean usesLeaseRatioIndex(PropertySearchCondition c) {
         return c.sortKey() == PropertySortKey.DEBT_RATIO
-                && (c.district() == null || c.district().isEmpty())
-                && c.contractType() == null && c.propertyType() == null
-                && c.depositMin() == null && c.depositMax() == null && c.monthlyRentMax() == null
-                && c.areaMin() == null && c.areaMax() == null
-                && c.minLat() == null && c.maxLat() == null && c.minLng() == null && c.maxLng() == null;
+                && (c.district() == null || c.district().isEmpty());
     }
 
     /**
@@ -312,10 +311,11 @@ public class PropertyQueryService {
      * <p>selectList 는 COALESCE(전세가율, 대체값) 으로 정렬해 판정이 없는 매물을 대체값 자리(방향과 무관하게 맨 뒤)에 둔다. 이
      * 순서를 대체값 경계에서 둘로 자른다.
      * <ul>
-     *   <li>앞부분 — 전세가율이 대체값보다 앞(오름 &lt; 1000 · 내림 &gt; -1000). 매물 전세가율 인덱스에서 출발하는
-     *       selectListByLeaseRatioIndex 가 읽는다. 정렬 값이 전세가율 그대로라 selectList 의 정렬 값과 같다.</li>
+     *   <li>앞부분 — 전세가율이 대체값보다 앞(오름 &lt; 1000 · 내림 &gt; -1000). 매물 전세가율 인덱스(V28)만으로 필터를 거르는
+     *       selectListByLeaseRatioIndex 가 읽는다. 정렬 값이 전세가율 그대로라 selectList 의 정렬 값과 같고, 필터는 같은 조각이다.</li>
      *   <li>끝부분 — 정렬 값이 대체값이거나 그 너머(판정 없음, 전세가율이 경계 바깥). selectList 가 읽는다. lease_ratio 가
-     *       NUMERIC(5,2) NOT NULL 이라 지금은 판정 없는 매물뿐이고, 등급 필터가 있으면 비어 있다.</li>
+     *       NUMERIC(5,2) NOT NULL 이라 지금은 판정 없는 매물뿐이고, 등급 필터가 있으면 비어 있다. 매물 조건 필터는
+     *       끝부분 조회에도 그대로 넘긴다.</li>
      * </ul>
      * 두 구간의 정렬 값은 겹치지 않아(앞부분 &lt; 대체값 ≤ 끝부분, 내림은 반대) 이어 붙이면 중복 없이 정렬이 유지된다.
      *
