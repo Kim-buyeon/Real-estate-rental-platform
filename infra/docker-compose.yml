@@ -55,7 +55,7 @@ x-logging: &logging
 #   APP-01(app,sentinel)      mem_limit      APP-02(app-node,sentinel)  mem_limit
 #   app-1 · app-2             768m × 2       app-1 · app-2              768m × 2
 #   redis                         112m       redis                          112m
-#   nginx                          48m       nginx                           48m
+#   nginx                         160m       nginx                          160m
 #   web                            32m       web                             32m
 #   sentinel                       32m       sentinel                        32m
 #   prom-agent                    150m       prom-agent-app-node            150m
@@ -64,8 +64,9 @@ x-logging: &logging
 #   redis-exporter                 64m       redis-exporter                  64m
 #   nginx-exporter                 32m       nginx-exporter                  32m
 #   ──────────────────────────────────       ──────────────────────────────────
-#   합계                         2220m       합계                          2220m
+#   합계                         2332m       합계                          2332m
 #
+#   nginx 를 48m → 160m 로 올렸다(#463 — 2220m 에서 +112m). 근거는 nginx 서비스 주석. (가)는 아래 계산에서 112 MiB 줄어도 선다.
 #   입구 이중화(#404)로 두 노드가 같은 몫이 됐다 — APP-02 는 nginx · web · redis · exporter 둘 · sentinel(+352m)을, APP-01 은 sentinel(+32m)을
 #   더했다(전에는 2188m · 1900m). DB-02 는 sentinel 32m 이 더해진다 — postgres 서비스 주석의 DB 노드 배분 계산.
 #   상한의 근거 — 앱 슬롯은 x-app 주석, 수집기 · exporter 는 아래 「관측 수집기」 표, redis · nginx · web 은 아래 이력 표의 근거 열과
@@ -88,9 +89,10 @@ x-logging: &logging
 #     합                                                    498      475
 #     상한 합 + 위 합(#394 — 2188m · 1900m 일 때)         2,686    2,375
 #     상한 합 + 위 합(#404 — 두 노드 2220m)               2,718   (2,718)
+#     상한 합 + 위 합(#463 — 두 노드 2332m)               2,830   (2,830)
 #
 #   4 GiB 노드의 MemTotal 은 **3,831 MiB** 다(두 노드, 2026-10-05 01:17 free -m — 유형 변경 뒤 · 이 상한 반영 전. t3.small 은 1,905 였다).
-#   3,831 − (상한 합 + 위 합) = 1,113 MiB 가 두 노드 모두 남아 (가)가 선다(#394 때는 1,145 · 1,456). #394 결정 코멘트의 가용 몫 추정은 약 3,300.
+#   3,831 − (상한 합 + 위 합) = 1,001 MiB 가 두 노드 모두 남아 (가)가 선다(#404 때 1,113 · #394 때는 1,145 · 1,456). #394 결정 코멘트의 가용 몫 추정은 약 3,300.
 #   APP-02 의 컨테이너 밖 몫은 컨테이너가 5개에서 11개로 늘어(shim 이 컨테이너당 하나) 475 보다 커진다 — 같은 수가 뜨는 APP-01 의 498 을
 #   빌려 (2,718) 로 셈했다. **추정이다** — #404 반영 뒤 같은 명령으로 잰다.
 #   위 셋은 2 GiB 노드의 값이라 4 GiB 에서 같다는 보장이 없다 — 반영 뒤 같은 명령으로 다시 재서(#394 10단계) 여기를 실측으로 바꾼다.
@@ -120,7 +122,7 @@ x-logging: &logging
 #   app-2                —   455 MiB   423 MiB   446 MiB   위와 같음
 #   postgres          256m     89 MiB    56 MiB    87 MiB   최악값은 담지 못한다 — postgres 서비스 주석. DB 노드는 PG_MEM_LIMIT
 #   redis             112m    4.6 MiB   3.6 MiB   4.0 MiB   maxmemory 64mb + 단편화 · AOF 버퍼 · 출력 버퍼
-#   nginx              48m    3.7 MiB   3.4 MiB   3.4 MiB   SSE 는 proxy_buffering off 라 연결당 버퍼 없음
+#   nginx              48m    3.7 MiB   3.4 MiB   3.4 MiB   SSE 는 proxy_buffering off 라 연결당 버퍼 없음 — 틀렸다, 지금 160m(#463, nginx 서비스 주석)
 #   web                32m    4.2 MiB   3.4 MiB   3.4 MiB   정적 파일 서빙 nginx
 #   ──────────────────────────────────────────────────────
 #   실측 합                  1011 MiB   913 MiB   989 MiB
@@ -446,7 +448,16 @@ services:
     network_mode: host
     restart: unless-stopped
     logging: *logging
-    mem_limit: 48m
+    # 상한은 열린 연결 수가 정한다(#463). 처음 48m 은 무부하 실측 3.4 MiB 에 「SSE 는 proxy_buffering off 라 연결당 버퍼 없음」으로 잡았는데,
+    # 연결 자체가 메모리를 쓴다 — 로컬 실측(nginx 1.30.5 · 운영과 같은 TLS 설정 · worker 2, 2026-10-07): HTTPS SSE 연결 0 · 250 · 500 · 750 개에
+    # 5.9 · 20.7 · 35.0 · 50.4 MiB, 연결당 약 57 KB(Nginx 연결 · 프록시 약 28 + TLS 상태 약 29 — 평문은 750 개에 27.9 MiB). ssl_buffer_size 4k 는
+    # 변화가 없었다(750 개 49.5 MiB) — 설정으로 줄지 않는다. 48m 이면 SSE 약 700 개가 끝이고, 재시험 #462 에서 SSE 242 개(목표 부하)에
+    # 44.4 MiB(접근 로그 파일 캐시 포함) · SSE 1,000 개에 상한 도달 36,372 회 · worker OOM 종료 1 로 새 연결이 시간 초과났다.
+    # 160m = 2,000 연결 × 57 KB ≈ 111 MiB + 기본 약 8 MiB + 접근 로그 파일 캐시(컨테이너 안 파일이라 이 상한에 과금 — 운영 무부하 16.8 MiB) 여유.
+    # 로그인 사용자는 화면을 연 동안 SSE 하나를 유지하므로 동시 SSE ≈ 동시 사용자다. 노드 사양 · 비용은 그대로다(사용자 승인 2026-10-07).
+    # 연결 수 상한은 main/nginx.conf 의 worker_connections(SSE 약 4,000)다 — 이 상한(SSE 약 2,000)이 먼저 닿는다. 넘으면 새 연결이 깔끔히
+    # 거절되는 대신 worker 가 OOM 으로 끝나 거기 붙은 SSE 가 함께 끊긴다. 동시 사용자 목표가 2,000 을 넘으면 둘을 함께 다시 잰다.
+    mem_limit: 160m
     # 이 서비스에는 healthcheck 를 두지 않는다 — network_mode: host 라 컨테이너 안에서 자기를 찔러도 호스트 포트와 구분되지 않고,
     # 앞단 nginx 자신이 뒤쪽 슬롯의 생사를 판정하는 주체다. 밖에서 보는 확인은 smoke.sh 와 운영 절차서 2장 일상 점검이 맡는다.
     environment:
