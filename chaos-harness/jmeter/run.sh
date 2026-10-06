@@ -37,6 +37,7 @@
 #   MAX_THREADS · BG_MAX_THREADS   스레드 상한(기본 300 · 50)
 #   round.json 칸 — SCENARIO · KIND(mix · solo · jitter, 기본 bg_rps > 0 이면 mix 아니면 solo) · TRACING_RATIO · PROFILER ·
 #                   AUTO_EXPLAIN_MS · WARMUP_SEC(round.json 에 없을 때 기본 60 — #390 승인 계획 [11.2]) · NOTES · JMETER_VERSION(기본 5.6.3)
+#   RATE_OFFSET    load_profile 에 이미 더해 넘긴 타이머 보정(rounds-1m.sh 의 TST_OFFSET). steps.json · round.json 의 목표에서 뺀다
 #   RESULTS_DIR    결과 자리(기본 chaos-harness/measure/results — 측정 스크립트와 같다)
 #
 # 결과가 이미 있으면(jmeter/result.jtl) 덮지 않고 멈춘다. 계정 CSV 의 비밀번호는 출력하지 않는다.
@@ -162,22 +163,25 @@ def parse(profile):
     return rows
 
 profile, burst = os.environ["PROFILE"], os.environ["BURST"]
+num_off = float(os.environ.get("RATE_OFFSET") or 0)   # steps.json 에 남긴다 — 목표에서 이미 뺐다는 표시
 steps, t = [], 0
 if burst:
     n, s = (int(x) for x in burst.split(","))
     steps.append({"index": 1, "target_rps": round(n / s, 3), "from_s": 0, "to_s": s})
     t = s
 else:
+    # RATE_OFFSET — JMeter 에 넘긴 속도에 더한 타이머 보정(rounds-1m.sh). 기록하는 목표는 보정을 뺀 값이다
+    off = float(os.environ.get("RATE_OFFSET") or 0)
     for i, (a, b, d) in enumerate(parse(profile), 1):
-        st = {"index": i, "target_rps": float(b), "from_s": t, "to_s": t + d}
+        st = {"index": i, "target_rps": float(b) - off, "from_s": t, "to_s": t + d}
         if a != b:
-            st["ramp_from_rps"] = float(a)
+            st["ramp_from_rps"] = float(a) - off
         steps.append(st)
         t += d
 
 with open(os.environ["STEPS_JSON"], "w", encoding="utf-8") as f:
     json.dump({"start_epoch_ms": int(os.environ["LAUNCH_MS"]), "launch_epoch_ms": int(os.environ["LAUNCH_MS"]),
-               "start_basis": "launch", "profile": profile, "steps": steps}, f, ensure_ascii=False, indent=2)
+               "start_basis": "launch", "profile": profile, "rate_offset": num_off, "steps": steps}, f, ensure_ascii=False, indent=2)
 
 # round.json — 여기서 주는 값만 덮는다
 path = os.environ["ROUND_JSON"]
@@ -198,6 +202,8 @@ new = {
     "kind": os.environ.get("KIND") or cur.get("kind") or ("mix" if bg > 0 else "solo"),
     "target_rps": max(max(s["target_rps"], s.get("ramp_from_rps", 0)) for s in steps) + bg,
 }
+if os.environ.get("RATE_OFFSET"):
+    new["rate_offset"] = num(os.environ["RATE_OFFSET"])
 for key, env in (("scenario", "SCENARIO"), ("notes", "NOTES"), ("profiler", "PROFILER")):
     if os.environ.get(env):
         new[key] = os.environ[env]

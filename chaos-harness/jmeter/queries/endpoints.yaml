@@ -8,9 +8,10 @@
 # ⑥ 엔티티 그래프 조인의 별칭. 열 목록 · 별칭 규칙은 login.yaml 머리 주석과 같다(식별자 다음 속성 이름 순, <표 앞글자>1_0).
 #
 # **자리표시 — 이 파일을 그대로 explain.sh 에 주지 않는다.** ${...} 를 실제 값으로 바꾼 사본을 준다(ENDPOINTS.md 「E01 값 채우기」 —
-# property-ids.csv 의 top 묶음 · 가입 가능 첫 줄과 그 구의 표시 영역을 플랜과 같은 규칙으로 계산한다).
+# property-ids.csv 의 top 묶음 · 가입 가능 첫 줄과 그 좌표 중심의 레벨 7 맞춘 영역 · 행 · 열을 플랜과 같은 규칙으로 계산한다).
 #   ${PROPERTY_ID} · ${DISTRICT} · ${PROPERTY_TYPE}   표본 매물(가입 가능 · 등기 · 대장 · 판정 있음)
-#   ${MIN_LAT} ${MAX_LAT} ${MIN_LNG} ${MAX_LNG}        그 구의 표시 영역(지도 2단계) · ${CELL_LAT} ${CELL_LNG} = 영역 ÷ 12
+#   ${MIN_LAT} ${MAX_LAT} ${MIN_LNG} ${MAX_LNG}        지도 묶음의 맞춘 표시 영역(플랜과 같은 식 — 매물 좌표 중심 · 레벨 7)
+#   ${ROWS} ${COLS} → ${CELL_LAT} ${CELL_LNG} = 영역 ÷ rows · cols, ${MAX_ROW_INDEX} ${MAX_COL_INDEX} = rows − 1 · cols − 1(PropertyQueryService.loadMapClusters)
 #   ${R_MIN_LAT} ${R_MAX_LAT} ${R_MIN_LNG} ${R_MAX_LNG} 그 매물 좌표 중심 반경 1 km 의 바운딩 박스(GeoDistanceCalculator.boundingBox)
 #   ${EMAIL}                                          시험 계정(예 jmeter+001@rental.test). 사용자 식별자는 login.yaml 처럼 하위 질의로
 # 좌표 · 칸 값은 JDBC 가 float8 로 보낸다(Double) — ::float8 를 붙였다.
@@ -65,10 +66,10 @@ queries:
                      p.longitude,
                      ra.risk_grade,
                      CASE WHEN FLOOR((p.latitude - ${MIN_LAT}::float8) / ${CELL_LAT}::float8) < 0 THEN 0
-                          WHEN FLOOR((p.latitude - ${MIN_LAT}::float8) / ${CELL_LAT}::float8) > 11 THEN 11
+                          WHEN FLOOR((p.latitude - ${MIN_LAT}::float8) / ${CELL_LAT}::float8) > ${MAX_ROW_INDEX} THEN ${MAX_ROW_INDEX}
                           ELSE CAST(FLOOR((p.latitude - ${MIN_LAT}::float8) / ${CELL_LAT}::float8) AS INTEGER) END AS row_index,
                      CASE WHEN FLOOR((p.longitude - ${MIN_LNG}::float8) / ${CELL_LNG}::float8) < 0 THEN 0
-                          WHEN FLOOR((p.longitude - ${MIN_LNG}::float8) / ${CELL_LNG}::float8) > 11 THEN 11
+                          WHEN FLOOR((p.longitude - ${MIN_LNG}::float8) / ${CELL_LNG}::float8) > ${MAX_COL_INDEX} THEN ${MAX_COL_INDEX}
                           ELSE CAST(FLOOR((p.longitude - ${MIN_LNG}::float8) / ${CELL_LNG}::float8) AS INTEGER) END AS col_index
                 FROM property p
                 LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest = TRUE

@@ -300,7 +300,8 @@ def g6(summaries, sig, path):
         ax.set_ylim(bottom=0)
         ax.legend(loc="upper left", fontsize=7)
     b.set_xticks(x)
-    b.set_xticklabels(names, rotation=0)
+    many = len(names) > 12  # 회차가 많으면 이름이 겹친다
+    b.set_xticklabels(names, rotation=90 if many else 0, fontsize=7 if many else None)
     _caption(fig, "G6 — 점선: 바꾼 것이 있는 회차")
     fig.savefig(path)
     plt.close(fig)

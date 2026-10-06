@@ -1,11 +1,12 @@
 # 엔드포인트 부하 시험 — JMeter(INF-06 #390)
 
-실제로 구현된 엔드포인트 중 20개(계획 변경 3)의 부하 회차를 JMeter 로 돌린다. 로그인은 `login.jmx`, 나머지 19개는 `endpoints.jmx`(엔드포인트 · 섞는 비율 · 토큰 풀은 [ENDPOINTS.md](ENDPOINTS.md)). 회차를 재고 남기는 순서(기록 · 수집 · 집계)는 [측정 README](../measure/README.md)가 갖는다 — 여기 `run.sh` 는 그 「회차마다」의 3번이다. 양식 칸마다 어느 요소 · 회차가 채우는지는 [coverage.md](coverage.md).
+엔드포인트 부하 · 스트레스 회차를 JMeter 로 돌린다. 매물 100만 시험(#390 「최종 부하 · 스트레스 시험」)은 `endpoints.jmx` 하나로 로그인을 포함한 22개 엔드포인트와 혼합을 요청하고(엔드포인트 · 섞는 비율 · 토큰 풀은 [ENDPOINTS.md](ENDPOINTS.md)), `rounds-1m.sh` 가 회차를 이어 돌린다. `login.jmx` 는 지난 회차(10/4)의 로그인 전용 플랜이다. 회차를 재고 남기는 순서(기록 · 수집 · 집계)는 [측정 README](../measure/README.md)가 갖는다 — 여기 `run.sh` 는 그 「회차마다」의 3번이고, `rounds-1m.sh` 는 1 ~ 5 를 회차마다 부른다. 양식 칸마다 어느 요소 · 회차가 채우는지는 [coverage.md](coverage.md).
 
 ```
 jmeter/
 ├── login.jmx · endpoints.jmx     플랜(속성은 각 파일 머리 주석)
 ├── run.sh · user.properties      회차 실행 — jtl · 대시보드 · steps.json · round.json, jtl 칸 고정
+├── rounds-1m.sh                  회차 목록을 이어 돌린다 — 자동 중단 · 합격 CSV · 예상 시간
 ├── make-accounts.sh              시험 계정 · 모드별 CSV(저장소 밖 secret/)
 ├── accounts-status.sql           운영 계정 상태(읽기 전용)
 ├── queries/                      실제 값 EXPLAIN 의 질의 정의(login.yaml · endpoints.yaml)
@@ -90,20 +91,38 @@ docker compose up -d app                                                        
 
 ## 회차
 
-계획 변경 2 · 3(#390 코멘트, 2026-10-04 승인). 비율 · 계단 숫자(`<…>`)는 확인 ②(단위 측정 · 예비 회차)와 ③(흔들림)에서 정한다 — 정하기 전에는 비워 둔다. 회차 길이는 계획 변경 3 으로 줄였다(흔들림 3분 · 단독 계단 4단계 × 90초 · 혼합 계단 단계당 2분 · 워밍업 30초 · 간격 2분) — 시간 제약, 결과서 [1.3] 에 적는다. 엔드포인트 이름(`-Jtarget`)과 U02 ~ U20 의 대응은 [ENDPOINTS.md](ENDPOINTS.md).
+매물 100만 시험(#390 「최종 부하 · 스트레스 시험」, 10/5 마감 조정 — 회차 사이 30초). 회차 목록 · 길이 · 선행 조건의 정본은 `rounds-1m.sh` 의 회차 표이고, `--list` 가 표와 예상 시간을 보인다(오늘 밤 전체 약 4시간 6분 — 측정 스크립트 시간 · 스트레스 조기 중단은 빼고 셈).
 
-| 회차 | 내용 | 명령 꼴 |
-| --- | --- | --- |
-| R01 ~ R03 | 흔들림 — 트래픽 정의서 3장 비율로 섞은 낮은 고정 부하 × 3 | `KIND=jitter WARMUP_SEC=30 PLAN=chaos-harness/jmeter/endpoints.jmx bash chaos-harness/jmeter/run.sh R01 - 'const(<N>,3m)' -- -Jtarget=mix` |
-| U01 | 단독 — 로그인 계단(4단계 × 90초) + 지도 2단계 고정 부하(R01 수준) — [6.2] 「로그인 몰림 중 조회 p95」 | `bash chaos-harness/jmeter/run.sh U01 valid 'step(<a>,<b>,<s>,90s)' <R01 의 지도 RPS>` |
-| U02 ~ U09 | 단독 — 엔드포인트마다 계단(4단계 × 90초) | `PLAN=chaos-harness/jmeter/endpoints.jmx bash chaos-harness/jmeter/run.sh U02 - 'step(<a>,<b>,<s>,90s)' -- -Jtarget=<엔드포인트>` |
-| U10 ~ U20 | 단독 — 추가 11개(조회 4 · 재발급 · 쓰기 6) 고정 부하 2분. 한계는 찾지 않는다(p95 · 시간 예산 · 단가 · SQL) | `KIND=solo PLAN=chaos-harness/jmeter/endpoints.jmx bash chaos-harness/jmeter/run.sh U10 - 'const(<N>,2m)' -- -Jtarget=<엔드포인트>` |
-| R04 | S8 — 혼합 계단(단계당 2분) | `KIND=mix PLAN=chaos-harness/jmeter/endpoints.jmx bash chaos-harness/jmeter/run.sh R04 - 'step(<a>,<b>,<s>,<T>)' -- -Jtarget=mix` |
-| R05 | S4 — 로그인 몰림 100개 · 10초 | `bash chaos-harness/jmeter/run.sh R05 valid 'burst:100,10'` |
-| P01 | 프로파일 — R04 의 한계 직전 혼합 부하. 회차 도중 `node/profiler.sh`(운영 작업) | `PROFILER=<노드 슬롯 모드> KIND=mix PLAN=chaos-harness/jmeter/endpoints.jmx bash chaos-harness/jmeter/run.sh P01 - 'const(<R04 한계 직전>,6m)' -- -Jtarget=mix` |
-| E01 | 20개 엔드포인트의 SQL 실제 값 EXPLAIN — 쓰기 포함, 맨 마지막, 끝나면 VACUUM. JMeter 를 돌리지 않는다 | `bash chaos-harness/measure/node/explain.sh E01 chaos-harness/jmeter/queries/login.yaml chaos-harness/jmeter/queries/endpoints.yaml --allow-write` — **운영 작업** |
+| 묶음 | 회차 | 내용 | 도는 방법 |
+| --- | --- | --- | --- |
+| 부하 — 단독 | L-U01 ~ L-U22 | 엔드포인트마다 max(혼합 비율 × 60, 5) RPS — 30초 증가 + 2분 고정 | 자동 |
+| 부하 — 혼합 | L-R01 ~ L-R03 · L-R04 | 60 RPS × 5분 × 3 · 60 RPS × 15분 + SSE 242 | 자동 |
+| 부하 — 조건 | L-R10 · L-R11 · L-R12 | 추적 끔 · 읽기 분산 끔 · 배포 직후 — 60 RPS × 5분 + SSE 242 | 운영자가 조건을 바꾸고 `--round` |
+| 스트레스 — 단독 | S-U01 ~ S-U22 | 그 부하 회차가 합격한 것만. 부하 RPS → 10배를 3분 동안 연속 증가, 기준을 넘으면 중단 → 한계 기록 | 자동 |
+| 스트레스 — 혼합 | S8 · S2 · S3 · S4 · S7 · S-SPIKE | L-R04 합격 뒤. 계단 60 → 240(+15 / 3분, 상한 4P — 중단 조건이 먼저 끊는다) · 120 RPS × 5분 · 쏠림 60 % × 5분 · 로그인 몰림 242 / 10초 + 60 RPS × 3분(워밍업 0, L-U21 합격도) · keep-alive 없음 + SSE 1000 × 5분 · 급증 0 → 180 RPS / 10초 × 3분 | 자동 |
+| 스트레스 — 조건 | S5 · S6 | 캐시 비움 직후 60 RPS × 5분 · 배치 동시 × 10분 | 운영자가 조건을 바꾸고 `--round` |
+| 상한 확인 | S-429 | 예외가 아닌 주소에서 30 RPS × 2분 — 429 가 나오면 합격. **부하 생성기가 아닌 곳(운영자 PC)에서, `HOST=<입구 공인 IP>`** | `--round S-429` |
+| 지속 | SOAK | 30 RPS × 30분(무인) — 오늘 밤 목록에 없다 | `--soak` |
+| 혼합 한계 | S8L · S8M | 혼합 60 RPS 불합격 뒤(10/5 사용자 결정) — 20 부터 +5 · 10 부터 +2 RPS / 3분 | `--round` |
+| 안정 부하 | B-R04 · B-R12 · B-R10 · B-R11 · B-S5 · B-S6 · B-SOAK | 혼합 한계 아래 `STABLE` RPS(10/5 는 12)에서 기준(측정 모드 켬) · 배포 직후 · 추적 끔 · 읽기 분산 끔 · 캐시 비움 직후 · 배치 동시 · 지속 2시간 | 운영자가 조건을 바꾸고 `--round` |
 
-`wrong` · `enum` 모드는 계획 변경 1 로 이번 회차에서 뺐다(플랜에는 남아 있다).
+10/5 ~ 6 에 실제로 돈 것: 부하 단독 22 · 혼합 60 RPS 4 → 혼합 한계 둘 → 안정 부하 12 RPS(B-S6 배치 동시는 돌지 않았다) · 단독 스트레스(부하 합격분) · 지속 2시간. S2 · S3 · S4 · S7 · S-SPIKE · S-429 · L-R10 ~ L-R12 는 혼합 60 RPS 불합격으로 돌지 않았다. 결과와 바뀐 조건은 결과서(`부하시험-결과보고서-20261006`) [1.3] · [11.1].
+
+```bash
+J=chaos-harness/jmeter
+bash $J/rounds-1m.sh --list                         # 회차 표 · 예상 시간(돌지 않는다)
+HOST=<APP-01 사설 IP> bash $J/rounds-1m.sh --phase load      # 부하 자동 회차
+HOST=<APP-01 사설 IP> bash $J/rounds-1m.sh --round L-R10     # 운영자가 추적을 끈 뒤(L-R11 · L-R12 · S5 · S6 도 같은 꼴)
+HOST=<APP-01 사설 IP> bash $J/rounds-1m.sh --phase stress    # 합격한 것만 스트레스
+HOST=<입구 공인 IP> bash $J/rounds-1m.sh --round S-429       # 운영자 PC 에서
+```
+
+- **자동 중단** — 10초 창(setup 레이블 제외) 두 개 연속 p95 > 500 ms 또는 5xx > 1 %, 또는 앱 노드 MemAvailable < 250 MiB(메모리를 세 번 연속 못 읽어도). 그 회차만 멈추고(StopTestNow) 다음으로 간다. 회차 **시작 전** MemAvailable 이 250 MiB 미만이면 목록 전체를 멈춘다 — 슬롯 재시작은 운영 작업이다.
+- **판정 · 기록** — `results/rounds-1m.csv` 에 회차마다 한 줄(pass · fail · limit · skip, p95 · 오류 · 5xx · 처리량 · 한계 RPS). 스트레스는 선행 회차가 pass 인 것만 돈다. 재시작 0 은 여기서 보지 않는다(pre-round 기록 · 집계).
+- **이어 돌기** — 같은 명령을 다시 부르면 CSV 에 있는 회차(skip 제외)는 건너뛴다. 끝나지 않은 회차 폴더는 `<회차>.cut-<시각>` 으로 옮기고 다시 돈다. `--redo` 면 다시 돈다.
+- 회차마다 측정 README 「회차마다」의 1 ~ 5 를 부른다(`MEASURE=none` 이면 JMeter 만 — 로컬 스모크). 회차 사이 30초 안에 record stop · collect · 다음 pre-round 가 들어간다 — 그보다 길면 사이가 늘어난다.
+- **준비 구간** — `ABORT_GRACE_S`(기본 0) 초 동안의 창은 자동 중단 판정에서 뺀다. 시작 직후 계정 로그인 몰림 · 캐시 데우기가 판정을 멈추게 한 일이 있어 10/5 ~ 6 은 안정 부하 · 지속 60, 단독 스트레스 30, 캐시 비운 직후 0(첫머리 꼬리를 보려고)으로 돌렸다.
+- 길이 · 기준 · SSE 수는 환경 변수로 바꾼다(파일 머리 주석). 지난 회차(10/4, 계획 변경 3)의 명령 꼴은 git 이력에 있다.
 
 ## 단위 측정 — BCrypt 대조 한 번
 
