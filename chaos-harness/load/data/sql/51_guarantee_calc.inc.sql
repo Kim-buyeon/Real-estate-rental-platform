@@ -1,4 +1,4 @@
--- 보증 3사 · 위험 등급 판정의 SQL 재현 — 공용 계산부 (#376). 51_guarantee_check.sql · 52_guarantee_recalc.sql 이 앞에 붙여 쓴다.
+-- 보증 3사 · 위험 등급 판정의 SQL 재현 — 공용 계산부 (#376). 51_guarantee_check.sql · 52_guarantee_recalc.sql · 54_judgement.sql 이 앞에 붙여 쓴다.
 -- 혼자 실행하지 않는다. 세션 임시 함수 둘과 임시 뷰 gc_calc 를 만든다(실제 표는 읽기만 한다).
 --
 -- 변수 (psql -v)
@@ -149,7 +149,11 @@ WITH g AS (   -- 기관 기준. sgi_criteria 행이 없는 기관은 아파트 �
                 FILTER (WHERE o.is_current AND o.right_type IN ('OWNERSHIP_PRESERVATION', 'OWNERSHIP_TRANSFER')))[1]
                AS current_owner,
            bool_or(o.is_current AND o.right_type IN ('SEIZURE', 'PROVISIONAL_SEIZURE', 'AUCTION_COMMENCEMENT', 'TRUST'))
-               AS right_violation
+               AS right_violation,
+           -- 판정 근거(54_judgement.sql)용 — 말소 안 된 권리 침해 · 경고 목적. 순서는 54 가 열거형 선언 순으로 다시 편다
+           array_agg(DISTINCT o.right_type) FILTER (WHERE o.is_current AND o.right_type IN
+               ('SEIZURE', 'PROVISIONAL_SEIZURE', 'AUCTION_COMMENCEMENT', 'TRUST', 'PROVISIONAL_REGISTRATION',
+                'TENANCY_REGISTRATION_ORDER')) AS current_rights
       FROM ownership_history o
      WHERE o.registry_id IN (SELECT registry_id FROM t)
        AND o.registry_id BETWEEN (SELECT min(registry_id) FROM t) AND (SELECT max(registry_id) FROM t)   -- 구간이면 색인 범위로 끝난다
@@ -171,6 +175,7 @@ WITH g AS (   -- 기관 기준. sgi_criteria 행이 없는 기관은 아파트 �
            ow.current_owner,
            coalesce(pg_temp.gc_jstrip(ow.current_owner) = pg_temp.gc_jstrip(t.landlord_name), false) AS owner_matched,
            coalesce(ow.right_violation, false) AS right_violation,
+           coalesce(ow.current_rights, '{}') AS current_rights,
            CASE WHEN NOT t.ledger_used THEN NULL
                 WHEN t.ledger_address IS NULL OR t.registry_address IS NULL THEN FALSE
                 ELSE regexp_replace(pg_temp.gc_jstrip(t.ledger_address), E'[ \t\n\x0b\f\r]+', ' ', 'g')
@@ -214,6 +219,8 @@ SELECT property_id, district, risk_id, judgeable,
        property_type, deposit, market_price, senior_debt, risk_amount, landlord_name, current_owner, owner_matched,
        right_violation, registry_id, st_registry_id, ledger_row_id, ledger_source, ledger_used, st_ledger_id,
        address_matched, violation_building, registry_area, ledger_area,
+       -- 판정 근거(54_judgement.sql)용 입력 — 51_check · 52 는 쓰지 않는다
+       is_apartment, current_rights, CASE WHEN judgeable THEN negative_equity END AS c_negative_equity,
        -- 저장값 · 계산값 (판정 불가면 계산값 NULL)
        st_hug,          CASE WHEN judgeable THEN c_hug END          AS c_hug,
        st_hf,           CASE WHEN judgeable THEN c_hf END           AS c_hf,

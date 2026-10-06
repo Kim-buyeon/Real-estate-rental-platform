@@ -39,7 +39,7 @@ SELECT count(*) FILTER (WHERE NOT ((risk_grade = 'SAFE' AND risk_reason = 'INSUR
            AS new_history_rows
   FROM risk_analysis;
 
-\echo '③ 출처 표 한 번 — 묶음을 만든 새 매물 수가 새 매물의 최신 판정 수와 다르면 위반(최신 판정은 제약상 1건 이하)'
+\echo '③ 출처 표 한 번 (not_bundled 는 0 이어야 한다 — 판정 없는 새 매물은 위험도 조회가 등기 API 를 부른다) — 묶음을 만든 새 매물 수가 새 매물의 최신 판정 수와 다르면 위반(최신 판정은 제약상 1건 이하)'
 SELECT count(*) FILTER (WHERE bundled)
          - (SELECT count(*) FROM risk_analysis WHERE is_latest
              AND property_id > (SELECT max_property_id FROM loadtest.baseline)) AS bundled_without_latest,
@@ -100,7 +100,7 @@ SELECT (SELECT count(*) FROM wishlist_notification wn LEFT JOIN notification n O
 WITH wn AS (
     SELECT wn.property_id, wn.before_value, wn.after_value
       FROM wishlist_notification wn JOIN notification n ON n.notif_id = wn.notif_id
-     WHERE n.user_id >= 100000000
+     WHERE n.user_id >= 100000000 OR n.user_id IN (SELECT user_id FROM loadtest.test_users)
 ), changes AS (
     SELECT DISTINCT ra.property_id, ra.previous_grade, ra.risk_grade
       FROM risk_analysis ra
@@ -110,3 +110,56 @@ SELECT (SELECT count(*) FROM wn) AS notifications,
        (SELECT count(*) FROM wn LEFT JOIN changes c ON c.property_id = wn.property_id
                                       AND c.previous_grade = wn.before_value AND c.risk_grade = wn.after_value
          WHERE c.property_id IS NULL) AS violations;
+
+\echo '⑧ 매물 100만 (INF-06 #390) — 매물 · 판정 한 번씩: 비정규화 열(V22) 어긋남, 최신 판정 없음, 근거 · 지문(V21) 빔 · 다른 지문, 재분석 대기(V18)'
+-- 근거가 없거나 지문이 다르거나 재분석 대기면 위험도 · 대출 조회가 판정을 다시 돌린다(쓰기 경로). 기준선 중 결론이 앱 산식과
+-- 다른 행(54 baseline 이 비워 둔 것)은 latest_without_snapshot 에 남는다 — 그 수는 54 출력의 baseline_left_for_app_rejudge 와 같아야 한다.
+SELECT count(*)                                                                         AS properties,
+       count(*) FILTER (WHERE ra.risk_id IS NULL)                                       AS without_latest,
+       count(*) FILTER (WHERE (p.risk_grade, p.lease_ratio) IS DISTINCT FROM (ra.risk_grade, ra.lease_ratio))
+                                                                                        AS latest_columns_mismatch,
+       count(*) FILTER (WHERE ra.risk_id IS NOT NULL AND ra.judgement_snapshot IS NULL) AS latest_without_snapshot,
+       count(*) FILTER (WHERE ra.risk_id IS NOT NULL
+                          AND ra.criteria_fingerprint IS DISTINCT FROM (SELECT fingerprint FROM loadtest.criteria_fp))
+                                                                                        AS latest_other_fingerprint,
+       count(*) FILTER (WHERE p.is_reanalysis_pending)                                  AS reanalysis_pending,
+       count(*) FILTER (WHERE p.property_id > (SELECT max_property_id FROM loadtest.baseline)) AS new_properties
+  FROM property p
+  LEFT JOIN risk_analysis ra ON ra.property_id = p.property_id AND ra.is_latest;
+
+\echo '⑨ 매물당 등기 · 대장 · 갑구 · 을구 · 이력 비율 (운영 기준선 갑구 2.18 · 을구 0.90 · 이력 0.94, 대장 · 등기 1.00)'
+SELECT p.n AS properties,
+       round(r.n::numeric / p.n, 3) AS registry_per_property, p.n - r.n AS without_registry,
+       round(l.n::numeric / p.n, 3) AS ledger_per_property,   p.n - l.n AS without_ledger,
+       round(o.n::numeric / p.n, 3) AS ownership_per_property,
+       round(m.n::numeric / p.n, 3) AS mortgage_per_property,
+       round((ra.n - p.n)::numeric / p.n, 3) AS history_per_property_approx   -- 판정 행 − 매물(최신 1건씩 가정)
+  FROM (SELECT count(*) AS n FROM property) p,
+       (SELECT count(*) AS n FROM building_registry) r,
+       (SELECT count(*) AS n FROM building_ledger) l,
+       (SELECT count(*) AS n FROM ownership_history) o,
+       (SELECT count(*) AS n FROM mortgage_history) m,
+       (SELECT count(*) AS n FROM risk_analysis) ra;
+
+\echo '⑩ 사용자 축 — 30만 · 관심 평균 5 · 알림 평균 10 · 구독 30% × 5행, 시험 계정(관심 30 ~ 50 · 알림 수백)'
+SELECT (SELECT count(*) FROM users) AS users, (SELECT count(*) FROM user_auth) AS user_auth,
+       (SELECT round(count(*)::numeric / nullif((SELECT count(*) FROM users WHERE user_id >= 100000000), 0), 2)
+          FROM wishlist WHERE user_id >= 100000000) AS wishlist_per_user,
+       (SELECT round(count(*)::numeric / nullif((SELECT count(*) FROM users WHERE user_id >= 100000000), 0), 2)
+          FROM notification WHERE user_id >= 100000000) AS notification_per_user,
+       (SELECT count(*) FROM notification) - (SELECT count(*) FROM wishlist_notification) AS notification_minus_links,
+       (SELECT round(100.0 * count(DISTINCT user_id) / nullif((SELECT count(*) FROM users WHERE user_id >= 100000000), 0), 1)
+          FROM notification_subscription WHERE user_id >= 100000000) AS subscribed_pct,
+       (SELECT round(count(*)::numeric / nullif(count(DISTINCT user_id), 0), 2)
+          FROM notification_subscription WHERE user_id >= 100000000) AS subscription_rows_per_subscriber;
+SELECT t.user_id, coalesce(w.c, 0) AS wishes, coalesce(n.c, 0) AS notifications, coalesce(n.unread, 0) AS unread,
+       coalesce(s.c, 0) AS subscriptions
+  FROM loadtest.test_users t
+  LEFT JOIN (SELECT user_id, count(*) AS c FROM wishlist WHERE user_id IN (SELECT user_id FROM loadtest.test_users)
+              GROUP BY 1) w ON w.user_id = t.user_id
+  LEFT JOIN (SELECT user_id, count(*) AS c, count(*) FILTER (WHERE NOT is_read) AS unread FROM notification
+              WHERE user_id IN (SELECT user_id FROM loadtest.test_users) GROUP BY 1) n ON n.user_id = t.user_id
+  LEFT JOIN (SELECT user_id, count(*) AS c FROM notification_subscription
+              WHERE user_id IN (SELECT user_id FROM loadtest.test_users) GROUP BY 1) s ON s.user_id = t.user_id
+ ORDER BY t.user_id
+ LIMIT 10;

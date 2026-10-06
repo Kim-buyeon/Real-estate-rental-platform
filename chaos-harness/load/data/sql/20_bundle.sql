@@ -1,6 +1,9 @@
 -- 자치구 하나의 판정 묶음 (#376) — 등기 · 갑구 · 을구 · 대장 · 최신 판정.
 -- 등기 · 갑구 · 을구는 판정 원본을 복사한다. 현재 소유자만 새 매물 규칙(임대인명, 의도적 불일치 20%)으로 바꾼다.
--- 대장: 같은 건물의 건축HUB 실대장이 있으면 그것, 없으면 원본 대장을 MOCK 으로(주소는 새 매물), 원본도 없으면 넣지 않는다.
+-- 대장: 같은 건물의 건축HUB 실대장이 있으면 그것, 없으면 원본 대장을 MOCK 으로(주소는 새 매물), 원본도 없으면 매물에서 지은
+--       MOCK 대장(25_ledger_fill.sql 과 같은 규칙). 새 매물은 모두 대장을 갖는다 — 대장이 없으면 위험도 · 대출 · 대장 조회가
+--       건축HUB 를 부른다(LedgerCommandService.collectIfAbsent 는 행이 있는지만 본다). 운영 대장 모드 real 에서 MOCK 은 판정 입력이 아니다.
+-- 판정 행의 결론 · 근거(V21)는 뒤의 54_judgement.sql 이 앱 산식으로 다시 쓴다 — 여기서 넣는 값은 자리를 잡는 초벌이다.
 -- 판정: 보증 3사 결과는 원본, 전세가율 · 깡통전세 · 등급은 앱 산식(NegativeEquityCalculator · RiskGradeCalculator)으로
 --       새 매물의 보증금 · 시세와 복사한 선순위채권으로 다시 계산한다.
 -- 실행: psql -v ON_ERROR_STOP=1 -v district=종로구 -f 20_bundle.sql
@@ -41,8 +44,7 @@ UPDATE bundle_map m SET template_registry_id = ra.registry_id, template_ledger_i
   FROM risk_analysis ra WHERE ra.property_id = m.template_id AND ra.is_latest;
 UPDATE bundle_map m SET hub_ledger_id = h.ledger_id
   FROM loadtest.hub_ledger h WHERE m.has_key AND h.g2 = m.k2;
-UPDATE bundle_map SET new_ledger_id = nextval(pg_get_serial_sequence('building_ledger', 'ledger_id'))
- WHERE coalesce(hub_ledger_id, template_ledger_id) IS NOT NULL;
+UPDATE bundle_map SET new_ledger_id = nextval(pg_get_serial_sequence('building_ledger', 'ledger_id'));
 
 -- 2. 등기 표제부
 INSERT INTO building_registry (registry_id, property_id, building_purpose, building_structure, data_source,
@@ -69,18 +71,31 @@ SELECT m.new_registry_id, h.priority_no, h.right_type, h.receipt_date, h.registr
        h.tenancy_right_yn, h.senior_debt_yn, h.is_active, now()
   FROM bundle_map m JOIN mortgage_history h ON h.registry_id = m.template_registry_id;
 
--- 5. 대장
+-- 5. 대장 — 실대장 · 원본 대장이 없으면 매물에서 짓는다(MOCK). 지은 값의 규칙은 25_ledger_fill.sql 머리 주석
 INSERT INTO building_ledger (ledger_id, property_id, ledger_address, owner_name, building_purpose, building_structure,
                              building_area, violation_yn, total_floor_area, exclusive_area, approval_date, data_source,
                              created_at, updated_at)
 SELECT m.new_ledger_id, m.property_id,
        CASE WHEN m.hub_ledger_id IS NOT NULL THEN l.ledger_address ELSE m.address END,
-       l.owner_name, l.building_purpose, l.building_structure, l.building_area, l.violation_yn, l.total_floor_area,
+       CASE WHEN l.ledger_id IS NOT NULL THEN l.owner_name ELSE p.landlord_name END,
+       coalesce(l.building_purpose, CASE pc.code_value WHEN 'APARTMENT' THEN '공동주택' ELSE '업무시설' END),
+       CASE WHEN l.ledger_id IS NOT NULL THEN l.building_structure ELSE '철근콘크리트구조' END,
+       CASE WHEN l.ledger_id IS NOT NULL THEN l.building_area
+            ELSE least(round(m.area_sqm * (30 + (hashint8(m.property_id * 3 + 1) & 2147483647) % 120)
+                       * (10 + (hashint8(m.property_id * 3 + 2) & 2147483647) % 30) / 100, 2), 99999.99) END,
+       CASE WHEN l.ledger_id IS NOT NULL THEN l.violation_yn
+            ELSE (hashint8(m.property_id * 5 + 1) & 2147483647) % 100 < 5 END,
+       CASE WHEN l.ledger_id IS NOT NULL THEN l.total_floor_area
+            ELSE round(m.area_sqm * (30 + (hashint8(m.property_id * 3 + 1) & 2147483647) % 120), 2) END,
        CASE WHEN m.hub_ledger_id IS NOT NULL THEN l.exclusive_area ELSE m.area_sqm END,
-       l.approval_date, CASE WHEN m.hub_ledger_id IS NOT NULL THEN l.data_source ELSE 'MOCK' END, now(), now()
+       CASE WHEN l.ledger_id IS NOT NULL THEN l.approval_date
+            ELSE DATE '1985-01-01' + ((hashint8(m.property_id * 5 + 2) & 2147483647) % 7300)::int END,
+       CASE WHEN m.hub_ledger_id IS NOT NULL THEN l.data_source ELSE 'MOCK' END, now(), now()
   FROM bundle_map m
-  JOIN building_ledger l ON l.ledger_id = coalesce(m.hub_ledger_id, m.template_ledger_id)
- WHERE m.new_ledger_id IS NOT NULL;
+  JOIN property p ON p.property_id = m.property_id
+  JOIN property_code pc ON pc.code_id = p.property_type_code_id
+  LEFT JOIN building_ledger l ON l.ledger_id = coalesce(m.hub_ledger_id, m.template_ledger_id)
+ ORDER BY m.property_id;
 
 -- 6. 최신 판정 — 선순위채권 = 활성 · 선순위 을구의 채권최고액 + 선순위 임차보증금(NegativeEquityCalculator)
 WITH senior AS (

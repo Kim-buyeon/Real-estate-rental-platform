@@ -1,4 +1,6 @@
--- 판정 이력 (#376) — 이번에 넣은 매물마다 이전 판정 0 · 1 · 2건(35 · 40 · 25% — 평균 0.9, 설계값).
+-- 판정 이력 (#376 · INF-06 #390) — 이번에 넣은 매물마다 이전 판정 0 · 1 · 2건(33 · 40 · 27% — 평균 0.94).
+-- 0.94 는 운영 기준선의 비율이다 — 판정 605,606행 − 최신 312,661행 = 이력 292,945 ÷ 매물 312,661 = 0.937(2026-10-05 pg_stat_user_tables).
+-- 54_judgement.sql(결론 · 근거) 뒤에 돈다 — 이력 등급이 고친 최신 등급과 달라야 한다. 이력 행의 근거 · 지문은 NULL(V21 — 이력은 읽지 않는다).
 -- 이력은 최신 판정 행을 본으로 등급만 다르게 둔다. 등급 · 사유 짝은 앱의 GradeReason 과 같다.
 -- 최신 행의 previous_grade 는 마지막 이력의 등급으로 잇는다(앱 RiskAnalysis.record 의 previousGrade).
 -- 실행: psql -v ON_ERROR_STOP=1 -v district=종로구 -f 30_history.sql
@@ -13,7 +15,7 @@ WITH latest AS (
      WHERE o.district = :'district' AND o.bundled AND ra.previous_grade IS NULL
        AND NOT EXISTS (SELECT 1 FROM risk_analysis h WHERE h.property_id = o.property_id AND NOT h.is_latest)
 ), counted AS (
-    SELECT l.*, CASE WHEN draw < 35 THEN 0 WHEN draw < 75 THEN 1 ELSE 2 END AS k FROM latest l
+    SELECT l.*, CASE WHEN draw < 33 THEN 0 WHEN draw < 73 THEN 1 ELSE 2 END AS k FROM latest l
 )
 SELECT c.risk_id AS latest_risk_id, c.property_id, c.registry_id, c.ledger_id, c.eligible_guarantee_id,
        c.lease_ratio, c.hug_eligible_yn, c.hf_eligible_yn, c.sgi_eligible_yn, c.insurance_eligible_yn,
