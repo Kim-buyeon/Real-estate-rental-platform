@@ -360,6 +360,12 @@ ul { margin: 2px 0 6px 18px; padding: 0; } li { margin: 1px 0; }
 <section class="ch">
 <h2>[2] 데이터 적재 방식 <span class="tag">변경시</span></h2>
 <h3>[2.1] 적재량</h3>
+{% if nar.data_load %}
+<table>
+<tr><th>표</th><th>적재 전</th><th>적재 후</th><th>배수</th><th>비고</th></tr>
+{% for r in nar.data_load %}<tr><td>{{ r.table }}</td><td>{{ r.before }}</td><td>{{ r.after }}</td><td>{{ r.ratio }}</td><td>{{ r.note }}</td></tr>
+{% endfor %}</table>
+{% else %}
 <table>
 <tr><th>표</th><th>적재 전</th><th>적재 후</th><th>배수</th><th>비고</th></tr>
 <tr><td>property</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
@@ -374,11 +380,18 @@ ul { margin: 2px 0 6px 18px; padding: 0; } li { margin: 1px 0; }
 <tr><td>notification_subscription</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 <tr><td>DB 전체 크기</td><td class="b"></td><td class="b"></td><td class="b"></td><td class="b"></td></tr>
 </table>
+{% endif %}
 <pre>SELECT relname, n_live_tup FROM pg_stat_user_tables ORDER BY n_live_tup DESC;
 SELECT pg_size_pretty(pg_database_size(current_database()));</pre>
 <p class="small">「적재 전」을 적재 직전에 떠서 채운다. 없으면 배수가 추측이다.</p>
 
 <h3>[2.2] 생성 방법과 재현성</h3>
+{% if nar.data_gen %}
+<table>
+<tr><th>무엇</th><th>방법</th><th>시드 고정</th><th>재현 가능</th></tr>
+{% for r in nar.data_gen %}<tr><td>{{ r.what }}</td><td>{{ r.how }}</td><td>{{ r.seed }}</td><td>{{ r.repro }}</td></tr>
+{% endfor %}</table>
+{% else %}
 <table>
 <tr><th>무엇</th><th>방법</th><th>시드 고정</th><th>재현 가능</th></tr>
 <tr><td>실데이터</td><td class="b">스크립트:</td><td>-</td><td class="b"></td></tr>
@@ -387,8 +400,15 @@ SELECT pg_size_pretty(pg_database_size(current_database()));</pre>
 <tr><td>관심 매물</td><td class="b"></td><td class="b">□</td><td class="b">□</td></tr>
 <tr><td>위험 판정 이력</td><td class="b"></td><td class="b">□</td><td class="b">□</td></tr>
 </table>
+{% endif %}
 
 <h3>[2.3] 분포 검증</h3>
+{% if nar.distribution %}
+<table>
+<tr><th>검증 항목</th><th>기준</th><th>실측</th><th>판정</th></tr>
+{% for r in nar.distribution %}<tr><td>{{ r.item }}</td><td>{{ r.basis }}</td><td>{{ r.measured }}</td><td>{{ r.verdict }}</td></tr>
+{% endfor %}</table>
+{% else %}
 <table>
 <tr><th>검증 항목</th><th>기준</th><th>실측</th><th>판정</th></tr>
 <tr><td>자치구별 매물 분포</td><td>25개 구에 분산</td><td class="b">1위 ___ / 25위 ___</td><td class="b">□</td></tr>
@@ -399,6 +419,7 @@ SELECT pg_size_pretty(pg_database_size(current_database()));</pre>
 <tr><td>NULL 비율 (주요 열)</td><td>0%</td><td class="b">___%</td><td class="b">□</td></tr>
 <tr><td>중복 (유니크 제약)</td><td>0건</td><td class="b">___건</td><td class="b">□</td></tr>
 </table>
+{% endif %}
 <table><tr><th class="k">어긋난 채 측정했다면 영향</th><td class="b"></td></tr></table>
 
 <h3>[2.4] 적재 후 정리 작업</h3>
@@ -418,16 +439,16 @@ SELECT pg_size_pretty(pg_database_size(current_database()));</pre>
 <h2>[3] 시나리오 — 어떤 상황을 만든 것인가 <span class="tag">변경시</span></h2>
 <table>
 <tr><th class="k">ID</th><th>이름</th><th>상황 한 줄</th><th>빈도</th><th>계기</th><th>이번에 돌렸나</th></tr>
-<tr><td>S1</td><td>정상 부하</td><td>평일 저녁 피크 시간대의 평균 트래픽</td><td>상시</td><td>-</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S1") else "□" }}</td></tr>
-<tr><td>S2</td><td>피크</td><td>홍보 직후 평시의 2배가 들어오는 상황</td><td>간헐</td><td>SNS 공유</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S2") else "□" }}</td></tr>
-<tr><td>S3</td><td>쏠림</td><td>한 자치구에 트래픽이 몰려 같은 영역을 수십 명이 동시에 확대</td><td>잦음</td><td>지역 뉴스 · 시세 급변</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S3") else "□" }}</td></tr>
-<tr><td>S4</td><td>로그인 폭주</td><td>배포 · 토큰 저장소 재생성 뒤 전 사용자가 10초 안에 다시 로그인</td><td>배포마다</td><td>배포 · 캐시 재시작 · OOM</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S4") else "□" }}</td></tr>
-<tr><td>S5</td><td>캐시 콜드</td><td>캐시가 비워진 상태로 평시 트래픽이 들어옴</td><td>드묾</td><td>캐시 재시작</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S5") else "□" }}</td></tr>
-<tr><td>S6</td><td>배치 동시</td><td>새벽 배치가 도는 중에 야간 사용자가 조회</td><td>매일</td><td>배치 스케줄</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S6") else "□" }}</td></tr>
-<tr><td>S7</td><td>연결 폭주</td><td>앱을 새로 켠 사용자들이 연결 재사용 없이 한꺼번에</td><td>간헐</td><td>앱 업데이트</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S7") else "□" }}</td></tr>
-<tr><td>S8</td><td>한계 탐색</td><td>무너질 때까지 올려 무너지는 방식을 본다</td><td>-</td><td>시험 전용</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S8") else "□" }}</td></tr>
-<tr><td>S9</td><td>지속</td><td>평시의 절반을 2시간 유지해 시간이 지나야 나오는 결함을 본다</td><td>-</td><td>시험 전용</td><td class="b">{{ "■ " ~ R if (s.meta.scenario == "S9") else "□" }}</td></tr>
-<tr><td>U*</td><td>단독</td><td>엔드포인트 하나만 준다. 한 건당 자원 단가 → [7.11]</td><td>-</td><td>시험 전용</td><td class="b">{{ "■ " ~ R if (s.meta.scenario and s.meta.scenario[:1] == "U") else "□" }}</td></tr>
+<tr><td>S1</td><td>정상 부하</td><td>평일 저녁 피크 시간대의 평균 트래픽</td><td>상시</td><td>-</td><td class="b">{{ ("■ " ~ (nar.scenarios_run or {})["S1"]) if (nar.scenarios_run or {}).get("S1") else ("■ " ~ R if (s.meta.scenario == "S1") else "□") }}</td></tr>
+<tr><td>S2</td><td>피크</td><td>홍보 직후 평시의 2배가 들어오는 상황</td><td>간헐</td><td>SNS 공유</td><td class="b">{{ ("■ " ~ (nar.scenarios_run or {})["S2"]) if (nar.scenarios_run or {}).get("S2") else ("■ " ~ R if (s.meta.scenario == "S2") else "□") }}</td></tr>
+<tr><td>S3</td><td>쏠림</td><td>한 자치구에 트래픽이 몰려 같은 영역을 수십 명이 동시에 확대</td><td>잦음</td><td>지역 뉴스 · 시세 급변</td><td class="b">{{ ("■ " ~ (nar.scenarios_run or {})["S3"]) if (nar.scenarios_run or {}).get("S3") else ("■ " ~ R if (s.meta.scenario == "S3") else "□") }}</td></tr>
+<tr><td>S4</td><td>로그인 폭주</td><td>배포 · 토큰 저장소 재생성 뒤 전 사용자가 10초 안에 다시 로그인</td><td>배포마다</td><td>배포 · 캐시 재시작 · OOM</td><td class="b">{{ ("■ " ~ (nar.scenarios_run or {})["S4"]) if (nar.scenarios_run or {}).get("S4") else ("■ " ~ R if (s.meta.scenario == "S4") else "□") }}</td></tr>
+<tr><td>S5</td><td>캐시 콜드</td><td>캐시가 비워진 상태로 평시 트래픽이 들어옴</td><td>드묾</td><td>캐시 재시작</td><td class="b">{{ ("■ " ~ (nar.scenarios_run or {})["S5"]) if (nar.scenarios_run or {}).get("S5") else ("■ " ~ R if (s.meta.scenario == "S5") else "□") }}</td></tr>
+<tr><td>S6</td><td>배치 동시</td><td>새벽 배치가 도는 중에 야간 사용자가 조회</td><td>매일</td><td>배치 스케줄</td><td class="b">{{ ("■ " ~ (nar.scenarios_run or {})["S6"]) if (nar.scenarios_run or {}).get("S6") else ("■ " ~ R if (s.meta.scenario == "S6") else "□") }}</td></tr>
+<tr><td>S7</td><td>연결 폭주</td><td>앱을 새로 켠 사용자들이 연결 재사용 없이 한꺼번에</td><td>간헐</td><td>앱 업데이트</td><td class="b">{{ ("■ " ~ (nar.scenarios_run or {})["S7"]) if (nar.scenarios_run or {}).get("S7") else ("■ " ~ R if (s.meta.scenario == "S7") else "□") }}</td></tr>
+<tr><td>S8</td><td>한계 탐색</td><td>무너질 때까지 올려 무너지는 방식을 본다</td><td>-</td><td>시험 전용</td><td class="b">{{ ("■ " ~ (nar.scenarios_run or {})["S8"]) if (nar.scenarios_run or {}).get("S8") else ("■ " ~ R if (s.meta.scenario == "S8") else "□") }}</td></tr>
+<tr><td>S9</td><td>지속</td><td>평시의 절반을 2시간 유지해 시간이 지나야 나오는 결함을 본다</td><td>-</td><td>시험 전용</td><td class="b">{{ ("■ " ~ (nar.scenarios_run or {})["S9"]) if (nar.scenarios_run or {}).get("S9") else ("■ " ~ R if (s.meta.scenario == "S9") else "□") }}</td></tr>
+<tr><td>U*</td><td>단독</td><td>엔드포인트 하나만 준다. 한 건당 자원 단가 → [7.11]</td><td>-</td><td>시험 전용</td><td class="b">{{ ("■ " ~ (nar.scenarios_run or {})["U*"]) if (nar.scenarios_run or {}).get("U*") else ("■ " ~ R if (s.meta.kind == "solo" or (s.meta.scenario and s.meta.scenario[:1] == "U")) else "□") }}</td></tr>
 </table>
 <div class="note">「배포마다」 일어나는 S4는 평시 트래픽에 없어도 반드시 본다. 「계기」 칸이 [7.5](1)에서 <b>대표 헤드룸을 고르는 근거</b>다 — 실제로 일어나는 모양의 헤드룸을 시험용이라고 빼지 않는다.<br>
 쓰기 엔드포인트(관심 등록 · 해제 · 프로필 저장)를 넣는다 — 없으면 [4.3] 인덱스 쓰기 대가를 잴 수 없다. 인가 방식은 시험 시나리오 문서가 갖는다.</div>

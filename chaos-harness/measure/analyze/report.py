@@ -84,6 +84,11 @@ def _get(d, *path):
     return d
 
 
+def _solo(x, name=""):
+    """단독 회차 — round.json kind 가 solo 이거나 이름이 U 로 시작(10/4 이름)."""
+    return bool(x) and (_get(x, "meta", "kind") == "solo" or str(x.get("round", name)).upper().startswith("U"))
+
+
 def _delta(a, b, lower_better=True, thr=None):
     """전 → 후 변화 문자열."""
     if a is None or b is None or not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
@@ -159,7 +164,7 @@ def solo_limits(summaries):
     포화에 닿지 않았으면 마지막 단계 값에 「이상」을 붙인다(reached False)."""
     out = {}
     for name, x in summaries:
-        if not x or not str(x.get("round", name)).upper().startswith("U"):
+        if not _solo(x, name):
             continue
         st = x.get("steps") or {}
         labels = (x.get("jtl") or {}).get("labels") or {}
@@ -194,6 +199,8 @@ def signal_rows(s, nar, solo=None):
             color, cls = "초록", "lg-g"
         else:
             color, cls = "노랑", "lg-y"
+        if n.get("color") in ("빨강", "노랑", "초록"):  # 혼합 p95 밖의 근거(단독 한계 불합격 등)로 사람이 정한 색
+            color, cls = n["color"], {"빨강": "lg-r", "노랑": "lg-y", "초록": "lg-g"}[n["color"]]
         rows.append(dict(e, target=target if target is not None else "500 (단일 기준)", single_limit=n.get("single_limit_tps"),
                          single_limit_note=n.get("single_limit_note"),
                          headroom=hr, color=color, cls=cls,
@@ -545,7 +552,9 @@ def round_rows(summaries, sig):
         m = x.get("meta") or {}
         k = x.get("key") or {}
         rid = x.get("round", name)
-        if rid.upper().startswith("U"):
+        if m.get("verdict"):  # 측정자가 round.json 에 적은 판정 — 조건이 다른 앞 회차와 기계적으로 견주지 않을 때
+            verdict = m["verdict"]
+        elif _solo(x, name):
             verdict = "단가"
         elif sig and rid in (sig.get("rounds") or []):
             verdict = "흔들림"
@@ -557,7 +566,7 @@ def round_rows(summaries, sig):
         rows.append({"round": rid, "time": _get(x, "window", "start_kst"), "scenario": m.get("scenario"), "commit": m.get("commit"),
                      "migration": m.get("migration"), "changed": m.get("changed"), "p95": k.get("p95"), "tps": k.get("tps"),
                      "ebs": k.get("ebs_start_min"), "verdict": verdict})
-        if not rid.upper().startswith("U"):
+        if not _solo(x, name):
             prev = k
     return rows
 
@@ -566,7 +575,7 @@ def unit_costs(summaries):
     """[7.11](2) — 단독 회차(U*) 하나가 엔드포인트 하나의 단가 열."""
     cols = []
     for name, x in summaries:
-        if not x or not str(x.get("round", name)).upper().startswith("U"):
+        if not _solo(x, name):
             continue
         routes = _get(x, "traces", "routes") or {}
         if not routes:
@@ -756,7 +765,7 @@ def build_context(s, b, out_dir: Path):
         "alert_rows": alert_rows(s, nar),
         "budget_routes": budget_routes,
         "tr_routes": tr_routes, "btr": btr,
-        "trend": [x for _, x in summaries if x and not str(x["round"]).upper().startswith("U")][-4:],
+        "trend": [x for n, x in summaries if x and not _solo(x, n)][-4:],
         "delta": lambda a, c, lb=True: _delta(a, c, lb, thr),
     }
 

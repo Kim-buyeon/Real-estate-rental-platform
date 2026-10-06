@@ -112,7 +112,7 @@ JMeter 가 정한다 — 시작 = 첫 표본의 `timeStamp`(5.6.3 기본 `jmeter
   "comparability": {"plan_cache_mode": {"base": "auto", "cur": "force_custom_plan", "impact": ""},
                     "회차 길이": {"impact": "시간 제약으로 회차 길이 단축"}},
   "comparability_verdict": "■ 조건이 같다",
-  "endpoints": {"<JMeter 레이블>": {"target_p95_ms": 500, "single_limit_tps": 120, "headroom": 3.4}},
+  "endpoints": {"<JMeter 레이블>": {"target_p95_ms": 500, "single_limit_tps": 120, "headroom": 3.4, "color": "빨강"}},
   "db_worse": "",
   "profile_notes": {"bcrypt": "", "code_conversion": ""}, "profile_uptime_min": 10,
   "n_plus_one": {"<엔드포인트 키>": "원인 · 고칠 곳"},
@@ -133,7 +133,11 @@ JMeter 가 정한다 — 시작 = 첫 표본의 `timeStamp`(5.6.3 기본 `jmeter
                "odd": [{"element": "", "seen": "", "expected": "", "cause": ""}],
                "alerts": [{"state": "", "rule": "", "should": ""}]},
   "graph_notes": {"G1": "읽은 결과 한 줄", "G2": ""},
-  "round_interval_min": 15, "cache_mode": "warm"
+  "round_interval_min": 15, "cache_mode": "warm",
+  "data_load": [{"table": "property", "before": "312,661", "after": "998,640", "ratio": "3.2배", "note": ""}],
+  "data_gen": [{"what": "실매물", "how": "", "seed": "", "repro": ""}],
+  "distribution": [{"item": "자치구별 매물 분포", "basis": "25개 구에 분산", "measured": "", "verdict": "■ 맞음"}],
+  "scenarios_run": {"S1": "무엇을 어떤 속도로 돌렸나 — 결과"}
 }
 ```
 
@@ -149,7 +153,10 @@ JMeter 가 정한다 — 시작 = 첫 표본의 `timeStamp`(5.6.3 기본 `jmeter
 | [7.2] [7.5](3)(6) | `steps` — 계단 회차(`steps.json`)일 때만. 해석 · 권고 운영 상한은 사람 |
 | [7.8] 프로세스 종료 · 알림 · [9.4](라) | 슬롯 재시작 · OOM · 재부팅 · systemd 실패 · DB 재시작 · `alerts` — 「울렸어야 했나」는 서술 |
 | [1.1] [1.2] [1.3] | 서술(측정 줄 · [1.3]의 데이터 규모 · 커밋 · 크레딧 · 측정 수단은 자동) |
-| [1.4] | 레이블별 p95 · 5xx · 병목 계층 · 주 자원 자동, 목표 · 단독 한계 · 헤드룸은 서술 |
+| [1.4] | 레이블별 p95 · 5xx · 병목 계층 · 주 자원 자동, 목표 · 단독 한계 · 헤드룸은 서술. 색은 중심 회차 p95 로 정하되 `endpoints.<레이블>.color` 가 있으면 그것(단독 한계 불합격처럼 중심 회차 밖의 근거) |
+| [2.1] [2.2] [2.3] | `data_load` · `data_gen` · `distribution` 이 있으면 그 행, 없으면 빈 양식 |
+| [3] 이번에 돌렸나 | `scenarios_run` 의 ID 가 있으면 ■ + 그 글, 없으면 중심 회차의 `scenario` 로 |
+| [11.1] 시나리오 · 바꾼 것 · 판정 | 회차 `round.json` 의 `scenario` · `changed` · `verdict`. `verdict` 가 없으면 단독(`kind` 가 `solo` 거나 이름이 U 로 시작)은 「단가」, 나머지는 앞 혼합 회차와 유의차 하한으로 |
 | [2] [4.5] [5.7] [6.5] [6.8] [7.3] [7.5](1)(2)(4)(5) [7.6] [7.7] [7.9] [12] · 위에 없는 [4.3] [4.4] [4.7] [7.8] 칸 | 사람 |
 | [3] | 이번 회차 시나리오에 표시 |
 | [4.1] [4.2] [4.6] | 질의 통계 · auto_explain 건수 · 노드별 자원 · 대기 종류 |
