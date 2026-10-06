@@ -20,6 +20,8 @@
     sse · sse_ramp_s          SSE 연결을 붙잡는 스레드 수(기본 0 — 묶음 꺼짐) · 다 여는 데 걸리는 초(기본 30)
     login_burst · login_burst_s · burst_delay_s   로그인 몰림 — 계정 수(기본 0 — 꺼짐) · 몰리는 초(기본 10) · 시작 지연 초(기본 30)
     skew_pct · skew_district  쏠림(S3) — 요청의 이 % 를 한 자치구 · 같은 화면으로(기본 0). 자치구 기본값은 표본의 첫 top 묶음 자치구
+    map_levels                지도 묶음의 확대 레벨 목록(쉼표, 기본 7,8,9 — 자치구 단계에서 화면이 쓰는 범위). 1,…,9 면 확대해 보는 작은 영역까지 —
+                              타일이 작아 서로 다른 영역이 많고 캐시 적중이 낮다(#462 흩뜨린 회차)
 
   인증 — 계정마다 처음 한 번 로그인해 토큰을 계정에 붙여 둔다. 계정은 반복마다 빌리고 돌려놓아 한 번에 한 스레드만 쓴다.
   만료 100초 전에 다시 로그인하고, 그래도 401 이면 로그인 뒤 같은 요청을 한 번 더 보낸다(반복 2회 묶음).
@@ -87,10 +89,10 @@ props.put('ep_list', [districtPct: 75, contractPct: 20, depositPct: 20, gradePct
                       sorts    : ['deposit,asc', 'deposit,desc', 'debtRatio,asc', 'debtRatio,desc', 'registeredAt,asc']])
 
 // 지도 묶음 — frontend/src/features/property/map/constants.ts 의 값 그대로(타일 단위 0.0001도 · 레벨 1 부터, 실측 화면 폭 레벨 7,
-// 타일당 칸 6 · 5, 상한 24). 레벨은 7 ~ 9(자치구 단계에서 화면이 쓰는 범위 — 7 이 진입, 8 · 9 는 축소)
+// 타일당 칸 6 · 5, 상한 24). 레벨은 기본 7 ~ 9(자치구 단계에서 화면이 쓰는 범위 — 7 이 진입, 8 · 9 는 축소), map_levels 로 바꾼다
 def MAP = [lat: [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536],
            lng: [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072],
-           screenLat: 0.09765d, screenLng: 0.26692d, perLat: 6, perLng: 5, max: 24, levels: [7, 8, 9]]
+           screenLat: 0.09765d, screenLng: 0.26692d, perLat: 6, perLng: 5, max: 24, levels: ((props.get('map_levels') ?: '7,8,9') as String).split(',').collect { int v = it.trim() as int; if (v &lt; 1 || v &gt; 9) throw new IllegalArgumentException('map_levels 는 1 ~ 9: ' + v); v }]
 
 def base = FileServer.getFileServer().getBaseDir()
 def fileOf = { String p -&gt; def f = new File(p); f.isAbsolute() ? f : new File(base, p) }
@@ -209,7 +211,7 @@ def loanRows = (skew &amp;&amp; props.get('ep_skew_loan_rows')) ? props.get('ep_
 vars.put('loan_pid', loanRows[rnd.nextInt(loanRows.size())].property_id)
 
 // 지도 묶음 — 화면 readMapArea 와 같은 식: (중심 ± 실측 화면 폭 / 2)를 그 레벨 타일 배수로 밖으로 맞추고(roundOutward),
-// 행 · 열 = 타일 수 × 타일당 칸(상한 24, gridSize). 중심은 그 구의 표본 매물 좌표(구 안 여러 자리), 레벨 7 ~ 9.
+// 행 · 열 = 타일 수 × 타일당 칸(상한 24, gridSize). 중심은 그 구의 표본 매물 좌표(구 안 여러 자리), 레벨 기본 7 ~ 9(map_levels).
 // 쏠림이면 그 구 가운데 · 레벨 7 의 같은 화면
 if (ep == 'map-clusters') {
     def m = props.get('ep_map')
