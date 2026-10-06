@@ -26,6 +26,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import org.apache.ibatis.mapping.BoundSql;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -987,6 +988,264 @@ class PropertyMapperTest {
                 true, new BigDecimal("95.00"), fx[4], 1000))).isEmpty();
         assertThat(propertyMapper.selectListByLeaseRatioIndex(listBy(filter(null), PropertySortKey.DEBT_RATIO,
                 false, new BigDecimal("30.00"), fx[3], 1000))).isEmpty();
+    }
+
+    // ---------- 목록: 전세가율 인덱스 출발 + 매물 조건 필터(selectListByLeaseRatioIndex, V28 · #453) ----------
+
+    /**
+     * 필터 대조 픽스처 — 자치구 없이 읽으므로 식별자 순서(0 → 4)와 전세가율 순서(4 → 3 → 1 = 2 → 0)가 다르다. 반환은
+     * [0 ~ 4: 판정 있음, 5: 판정 없음]. 월세 NULL 이 둘(0 · 4)이고 1 · 2 는 전세가율이 같다.
+     *
+     * <pre>
+     * 번호  계약  유형      보증금  월세     면적    위도   경도    등급     전세가율
+     * 0    전세  아파트    100    NULL    30.00  37.50 126.80  SAFE     80.00
+     * 1    월세  아파트    200    300000  60.00  37.55 126.85  CAUTION  70.00
+     * 2    전세  오피스텔  300    0       85.00  37.60 126.90  CAUTION  70.00
+     * 3    월세  오피스텔  400    600000  120.00 37.65 126.95  DANGER   40.00
+     * 4    전세  아파트    500    NULL    150.00 37.70 127.00  SAFE     20.00
+     * 5    전세  아파트    250    0       60.00  37.60 126.90  (없음)
+     * </pre>
+     */
+    private long[] insertLeaseRatioFilterFixture() {
+        return new long[] {
+            insertFilterRow("DEPOSIT_ONLY", "APARTMENT", 100L, null, "30.00", 37.50, 126.80, "SAFE", "80.00"),
+            insertFilterRow("MONTHLY_RENT", "APARTMENT", 200L, 300_000L, "60.00", 37.55, 126.85, "CAUTION", "70.00"),
+            insertFilterRow("DEPOSIT_ONLY", "OFFICETEL", 300L, 0L, "85.00", 37.60, 126.90, "CAUTION", "70.00"),
+            insertFilterRow("MONTHLY_RENT", "OFFICETEL", 400L, 600_000L, "120.00", 37.65, 126.95, "DANGER", "40.00"),
+            insertFilterRow("DEPOSIT_ONLY", "APARTMENT", 500L, null, "150.00", 37.70, 127.00, "SAFE", "20.00"),
+            insertFilterRow("DEPOSIT_ONLY", "APARTMENT", 250L, 0L, "60.00", 37.60, 126.90, null, null)
+        };
+    }
+
+    private long insertFilterRow(String contractType, String propertyType, long deposit, Long monthlyRent,
+            String area, double lat, double lng, String grade, String leaseRatio) {
+        long id = insertProperty(D1, contractType, propertyType, deposit, monthlyRent, lat, lng, T0);
+        jdbc.update("UPDATE property SET area_sqm = ? WHERE property_id = ?", new BigDecimal(area), id);
+        if (grade != null) {
+            insertRisk(id, grade, leaseRatio, true, false);
+        }
+        return id;
+    }
+
+    private static DistrictCountRequest propertyFilter(ContractType contractType, Long depositMin, Long depositMax,
+            Long monthlyRentMax, PropertyType propertyType, List<RiskGrade> grades, String areaMin, String areaMax) {
+        return new DistrictCountRequest(null, contractType, depositMin, depositMax, monthlyRentMax, propertyType,
+                grades, areaMin == null ? null : new BigDecimal(areaMin),
+                areaMax == null ? null : new BigDecimal(areaMax));
+    }
+
+    /** 자치구 없는 전세가율순 목록 조건 — 필터에 영역 박스(null 이면 없음)를 더한다. 목록 조건 팩토리는 박스를 비우므로 직접 만든다. */
+    private static PropertySearchCondition ratioCondition(DistrictCountRequest f, BoundingBox box, boolean ascending,
+            BigDecimal lastDebtRatio, Long lastId, int limit) {
+        PropertySearchCondition c = listBy(f, PropertySortKey.DEBT_RATIO, ascending, lastDebtRatio, lastId, limit);
+        if (box == null) {
+            return c;
+        }
+        return new PropertySearchCondition(c.district(), c.contractType(), c.depositMin(), c.depositMax(),
+                c.monthlyRentMax(), c.propertyType(), c.riskGrades(), c.areaMin(), c.areaMax(), box.minLat(),
+                box.maxLat(), box.minLng(), box.maxLng(), c.sortKey(), c.ascending(), c.nullDebtRatio(),
+                c.lastDeposit(), c.lastDebtRatio(), c.lastRegisteredAt(), c.lastId(), c.limit(), null, null, null,
+                null);
+    }
+
+    private static List<Long> pick(long[] fx, int... indexes) {
+        return java.util.Arrays.stream(indexes).mapToObj(i -> fx[i]).toList();
+    }
+
+    /**
+     * 같은 조건을 두 방향으로 인덱스 매퍼와 selectList(판정 없는 끝부분은 뺀다)에 넣어 결과 · 순서가 같고, 맞는 매물이
+     * 기대한 번호들뿐인지 본다. 두 구현이 함께 틀리는 것을 막으려고 기대 번호를 따로 단언한다.
+     */
+    private void assertIndexMatchesSelectList(DistrictCountRequest f, BoundingBox box, long[] fx,
+            int... expectedIndexes) {
+        long none = fx[5];
+        for (boolean asc : new boolean[] {true, false}) {
+            PropertySearchCondition c = ratioCondition(f, box, asc, null, null, 1000);
+            List<Long> viaIndex = mineOf(propertyMapper.selectListByLeaseRatioIndex(c), fx);
+            List<Long> viaSelectList = mineOf(propertyMapper.selectList(c), fx).stream()
+                    .filter(id -> id != none).toList();
+
+            assertThat(viaIndex).as("asc=%s 인덱스 결과가 selectList 앞부분과 같다", asc).isEqualTo(viaSelectList);
+            assertThat(viaIndex).as("asc=%s 맞는 매물", asc)
+                    .containsExactlyInAnyOrderElementsOf(pick(fx, expectedIndexes));
+        }
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발 필터: 보증금 하한 · 상한 · 범위는 경계값을 포함하고 selectList 와 같다")
+    void leaseRatioIndexDepositFilterMatchesSelectList() {
+        long[] fx = insertLeaseRatioFilterFixture();
+
+        assertIndexMatchesSelectList(propertyFilter(null, 300L, null, null, null, null, null, null), null, fx, 2, 3, 4);
+        assertIndexMatchesSelectList(propertyFilter(null, null, 300L, null, null, null, null, null), null, fx, 0, 1, 2);
+        assertIndexMatchesSelectList(propertyFilter(null, 200L, 400L, null, null, null, null, null), null, fx, 1, 2, 3);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발 필터: 월세 상한은 월세 NULL 을 0 으로 보고 경계값을 포함한다")
+    void leaseRatioIndexMonthlyRentFilterTreatsNullAsZero() {
+        long[] fx = insertLeaseRatioFilterFixture();
+
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, 300_000L, null, null, null, null), null, fx,
+                0, 1, 2, 4);
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, 0L, null, null, null, null), null, fx, 0, 2, 4);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발 필터: 면적 하한 · 상한 · 범위는 경계값을 포함하고 selectList 와 같다")
+    void leaseRatioIndexAreaFilterMatchesSelectList() {
+        long[] fx = insertLeaseRatioFilterFixture();
+
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, null, null, null, "85", null), null, fx, 2, 3, 4);
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, null, null, null, null, "60"), null, fx, 0, 1);
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, null, null, null, "60", "120"), null, fx,
+                1, 2, 3);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발 필터: 계약 유형 · 매물 유형은 각각 · 함께 selectList 와 같다")
+    void leaseRatioIndexContractAndPropertyTypeFilterMatchesSelectList() {
+        long[] fx = insertLeaseRatioFilterFixture();
+
+        assertIndexMatchesSelectList(propertyFilter(ContractType.MONTHLY_RENT, null, null, null, null, null, null,
+                null), null, fx, 1, 3);
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, null, PropertyType.OFFICETEL, null, null,
+                null), null, fx, 2, 3);
+        assertIndexMatchesSelectList(propertyFilter(ContractType.MONTHLY_RENT, null, null, null,
+                PropertyType.OFFICETEL, null, null, null), null, fx, 3);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발 필터: 영역 박스는 네 변을 포함하고 selectList 와 같다")
+    void leaseRatioIndexBoundingBoxFilterMatchesSelectList() {
+        long[] fx = insertLeaseRatioFilterFixture();
+
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, null, null, null, null, null),
+                new BoundingBox(37.55, 37.65, 126.85, 126.95), fx, 1, 2, 3);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발 필터: 등급 하나 · 여럿이 selectList 와 같다")
+    void leaseRatioIndexRiskGradeFilterMatchesSelectListForOneAndMany() {
+        long[] fx = insertLeaseRatioFilterFixture();
+
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, null, null, List.of(RiskGrade.SAFE), null, null),
+                null, fx, 0, 4);
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, null, null, List.of(RiskGrade.CAUTION), null,
+                null), null, fx, 1, 2);
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, null, null,
+                List.of(RiskGrade.CAUTION, RiskGrade.DANGER), null, null), null, fx, 1, 2, 3);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발 필터: 여러 조건을 한꺼번에 걸어도 모두 만족하는 매물만 selectList 와 같게 나온다")
+    void leaseRatioIndexCombinedFiltersMatchSelectList() {
+        long[] fx = insertLeaseRatioFilterFixture();
+
+        assertIndexMatchesSelectList(propertyFilter(ContractType.DEPOSIT_ONLY, 100L, 500L, 0L, PropertyType.APARTMENT,
+                List.of(RiskGrade.SAFE), "30", "150"), new BoundingBox(37.50, 37.70, 126.80, 127.00), fx, 0, 4);
+        assertIndexMatchesSelectList(propertyFilter(ContractType.DEPOSIT_ONLY, null, null, null, null, null, "85",
+                null), null, fx, 2, 4);
+        assertIndexMatchesSelectList(propertyFilter(ContractType.MONTHLY_RENT, null, 300L, 300_000L, null, null,
+                null, null), null, fx, 1);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발 필터: 아무것도 맞지 않는 필터는 빈 목록이다")
+    void leaseRatioIndexNothingMatchingFilterReturnsEmpty() {
+        long[] fx = insertLeaseRatioFilterFixture();
+
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, null, null, null, "1000", null), null, fx);
+        assertIndexMatchesSelectList(propertyFilter(null, 500L, null, null, PropertyType.OFFICETEL, null, null, null),
+                null, fx);
+        assertIndexMatchesSelectList(propertyFilter(null, null, null, null, null, null, null, null),
+                new BoundingBox(10.0, 11.0, 10.0, 11.0), fx);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발 필터: 정렬은 전세가율 → 식별자이고 필터가 있어도 표와 이은 뒤 순서가 유지된다")
+    void leaseRatioIndexKeepsRatioOrderAfterJoinWithFilter() {
+        long[] fx = insertLeaseRatioFilterFixture();
+        DistrictCountRequest f = propertyFilter(null, 200L, null, null, null, null, null, null);
+
+        assertThat(mineOf(propertyMapper.selectListByLeaseRatioIndex(
+                ratioCondition(f, null, true, null, null, 1000)), fx))
+                .containsExactly(fx[4], fx[3], fx[1], fx[2]);
+        assertThat(mineOf(propertyMapper.selectListByLeaseRatioIndex(
+                ratioCondition(f, null, false, null, null, 1000)), fx))
+                .containsExactly(fx[2], fx[1], fx[3], fx[4]);
+    }
+
+    /** 커서를 마지막 행으로 옮기며 pageSize 건씩 끝까지 읽은 식별자(픽스처 밖 데이터 포함). */
+    private List<Long> walkLeaseRatioIndex(DistrictCountRequest f, boolean asc, int pageSize) {
+        List<Long> all = new ArrayList<>();
+        BigDecimal lastRatio = null;
+        Long lastId = null;
+        for (int i = 0; i < 50; i++) {
+            List<PropertyListResponse> page = propertyMapper.selectListByLeaseRatioIndex(
+                    ratioCondition(f, null, asc, lastRatio, lastId, pageSize));
+            if (page.isEmpty()) {
+                break;
+            }
+            all.addAll(ids(page));
+            PropertyListResponse last = page.get(page.size() - 1);
+            lastRatio = last.debtRatio();
+            lastId = last.propertyId();
+        }
+        return all;
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 출발 커서: 같은 전세가율이 쪽 경계에 걸려도 이어 읽으면 빠짐 · 중복 없이 selectList 순서와 같다 (필터 있음 · 없음, 두 방향)")
+    void leaseRatioIndexKeysetWalkAcrossTiesHasNoGapOrDuplicate() {
+        long[] fx = insertLeaseRatioFilterFixture();
+        long none = fx[5];
+        List<Long> mine = java.util.Arrays.stream(fx).boxed().toList();
+        // 보증금 ≤ 400 은 전세가율 70.00 동률 둘(1 · 2)을 모두 남긴다.
+        for (DistrictCountRequest f : List.of(propertyFilter(null, null, null, null, null, null, null, null),
+                propertyFilter(null, null, 400L, null, null, null, null, null))) {
+            for (boolean asc : new boolean[] {true, false}) {
+                List<Long> expected = mineOf(propertyMapper.selectList(ratioCondition(f, null, asc, null, null, 1000)),
+                        fx).stream().filter(id -> id != none).toList();
+                for (int pageSize = 1; pageSize <= 3; pageSize++) {
+                    List<Long> walked = walkLeaseRatioIndex(f, asc, pageSize).stream().filter(mine::contains).toList();
+
+                    assertThat(walked).as("asc=%s pageSize=%s", asc, pageSize).isEqualTo(expected);
+                    assertThat(walked).as("중복 없음 asc=%s pageSize=%s", asc, pageSize).doesNotHaveDuplicates();
+                }
+            }
+        }
+    }
+
+    // ---------- 필터 조각 분리(filterConditions + filter, #453): 조건이 일부만 · 하나도 없을 때의 WHERE ----------
+
+    @Test
+    @DisplayName("필터 조각: 자치구 없이 보증금 상한 하나만 걸어도 자치구 집계가 그 조건만 적용해 센다")
+    void districtCountsWithSingleNonDistrictFilterApplyOnlyThatCondition() {
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.5, 126.8, T0);
+        insertProperty(D2, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.5, 126.8, T0);
+        Long expected = jdbc.queryForObject("SELECT count(*) FROM property WHERE deposit <= 150", Long.class);
+
+        long counted = propertyMapper.selectDistrictCounts(PropertySearchCondition.ofFilter(
+                propertyFilter(null, null, 150L, null, null, null, null, null)))
+                .stream().mapToLong(DistrictCountRow::totalCount).sum();
+
+        assertThat(counted).isEqualTo(expected);
+    }
+
+    @Test
+    @DisplayName("필터 조각: 표시 영역만 있고 다른 조건이 없으면 마커 · 지도 묶음이 영역 안 매물만 전부 센다")
+    void markersAndClustersWithBoxOnlyApplyJustTheBox() {
+        // 서울 밖 좌표를 써서 다른 데이터와 섞이지 않게 한다.
+        long a = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 33.30, 127.30, T0);
+        long b = insertProperty(D2, "MONTHLY_RENT", "OFFICETEL", 9L, 500_000L, 33.40, 127.40, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 1L, 0L, 34.50, 127.30, T0); // 영역 밖
+        BoundingBox box = new BoundingBox(33.0, 33.75, 127.0, 127.75);
+
+        assertThat(propertyMapper.selectMarkers(PropertySearchCondition.ofMarkers(filter(null), box)))
+                .extracting(PropertyMarkerResponse::propertyId).containsExactlyInAnyOrder(a, b);
+        assertThat(propertyMapper.selectClusterCells(clusters(filter(null), box)))
+                .extracting(MapClusterCellRow::count).containsExactlyInAnyOrder(1L, 1L);
     }
 
     @Test

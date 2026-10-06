@@ -48,9 +48,11 @@
       계약 유형 · 매물 유형은 코드 테이블을 조인하지 않고 식별자로 비교한다 — 조인이 없는 조회에도 같은 필터를 걸기 위해서다.
       하위 질의는 유일 제약 uq_property_code_group_value (code_group, code_value)(V1)로 한 행을 찾고, 바깥 행과 무관해
       InitPlan 으로 한 번만 계산된다.
+      조건만 filterConditions 로 떼어 둔다 — 키셋까지 붙여 WHERE 를 여는 filter 와, 자기 WHERE · 행 비교 키셋을 쓰는
+      selectListByLeaseRatioIndex 안쪽 단계가 같은 조건을 공유한다(#453). 여기 매물 열을 더하면 V28 인덱스의 INCLUDE 도 함께
+      늘려야 그 조회가 인덱스 전용 스캔으로 남는다(V28 주석).
     -->
-    <sql id="filter">
-        <where>
+    <sql id="filterConditions">
             <if test="district != null and district != ''">
                 AND p.district = #{district}
             </if>
@@ -88,6 +90,11 @@
                 AND p.latitude BETWEEN CAST(#{minLat} AS NUMERIC) AND CAST(#{maxLat} AS NUMERIC)
                 AND p.longitude BETWEEN CAST(#{minLng} AS NUMERIC) AND CAST(#{maxLng} AS NUMERIC)
             </if>
+    </sql>
+
+    <sql id="filter">
+        <where>
+            <include refid="filterConditions"/>
             <!--
               목록 키셋. 정렬 값이 같은 행은 식별자로 가른다. 목록 외 조회는 lastId 가 null 이다.
               보증금순은 행 비교 (p.deposit, p.property_id) > / < (값, ID) 로 쓴다. deposit 은 NOT NULL 이라 행 비교와 OR 식
@@ -98,7 +105,7 @@
               행을 고르고, idx_property_registered(V19) · idx_property_district_registered(V15)의 탐색 시작점이 된다(#437 운영 실측,
               매물 312,661 · 내림 LIMIT 21 — 커서 깊이 300,000 에서 OR 식 135 ms · 버퍼 13,620 → 행 비교 0.32 ms · 13).
               전세가율순은 OR 식 그대로다 — 정렬식이 COALESCE(p.lease_ratio, 대체값)라 인덱스 열과 맞지 않고, 자치구 없는 전세가율순은
-              selectListByLeaseRatioIndex 가 행 비교로 따로 읽는다.
+              selectListByLeaseRatioIndex 가 filterConditions 와 행 비교로 따로 읽는다(이 키셋은 거기 붙지 않는다).
             -->
             <if test="lastId != null">
                 <choose>
@@ -379,54 +386,57 @@
     </select>
 
     <!--
-      자치구 없는 전세가율순 목록의 앞부분 — 판정이 있는 매물만, 매물의 부분 인덱스
-      ix_property_lease_ratio (lease_ratio, property_id) INCLUDE (risk_grade) WHERE lease_ratio IS NOT NULL(V24)을 정렬 순서대로 읽고
-      LIMIT 에서 멈춘다. V20 의 판정 표 인덱스 ix_risk_analysis_latest_lease_ratio 가 하던 역할을 옮겼다 — 그때 운영 측정(#347, 8회
-      중앙값) 필터 없음 오름 693.5 → 0.3ms, 내림 816.1 → 0.3ms, 등급 오름 370.1 → 0.3ms, 커서 오름 517.6 → 0.4ms. 매물 쪽 인덱스로
-      같은 계획이 나오는지는 운영 EXPLAIN 으로 확인한다(미검증).
-      서비스(PropertyQueryService)가 자치구 · 매물 조건 필터(계약 · 유형 · 보증금 · 월세 · 면적 · 좌표)가 모두 없을 때만 부른다 —
-      매물 조건 필터가 있으면 걸러지는 비율만큼 인덱스를 더 읽어 오름에서 93.9 → 313.3ms 로 나빠졌다(#347, V20 인덱스 측정). 등급
-      필터는 INCLUDE 열이라 허용한다. 커서는 앞부분 안(오름 < 1000 · 내림 > -1000)일 때만 넘어온다.
+      자치구 없는 전세가율순 목록의 앞부분 — 판정이 있는 매물만, 두 단계로 읽는다(#453).
+      안쪽 — 매물의 부분 인덱스 ix_property_lease_ratio_filter (lease_ratio, property_id) INCLUDE (등급 · 보증금 · 월세 · 면적 · 계약 ·
+      유형 · 좌표) WHERE lease_ratio IS NOT NULL(V28)을 정렬 순서대로 읽으며 공통 필터(filterConditions)와 범위 · 커서 조건으로 거르고,
+      LIMIT 에서 멈춰 식별자 · 전세가율만 고른다. 안쪽이 참조하는 열이 모두 인덱스에 있어 표를 읽지 않는다(Index Only Scan ·
+      Heap Fetches 0). 자치구 조건은 인덱스에 없지만 서비스가 자치구가 없을 때만 부르므로 걸리지 않는다.
+      바깥 — 고른 행(LIMIT 만큼)만 표 · 코드와 이어 목록 열을 채운다.
+      한 단계(표를 이으며 필터를 봄)였을 때는 필터 열이 V24 인덱스에 없어 행마다 표를 읽었고, 그래서 서비스가 매물 조건 필터가 있으면
+      이 조회를 피했다(#347 — V20 인덱스 때 오름 93.9 → 313.3ms). 운영 측정(#453, 매물 1,000,000, LIMIT 21, 데워진 2회차, 결과 행이
+      selectList 와 같음) selectList → 두 단계: 보증금 ≤ 3억 내림 779 ~ 791 → 0.35ms(버퍼 42,419 → 104), 같은 조건 다음 쪽 커서
+      840 ~ 874 → 0.39ms, 전세 · 위험 오름 538 ~ 542 → 2.1ms, 등급 안전 · 주의 내림 322 ~ 336 → 47 ~ 59ms(버퍼 296,744 → 20,664),
+      맞는 행이 드문 최악(면적 ≥ 1000, 0건) 225 → 180ms — 인덱스를 끝까지 훑지만 지금보다 느려진 조합은 없었다. 표 전체는 V28 주석.
+      커서는 앞부분 안(오름 < 1000 · 내림 > -1000)일 때만 넘어온다.
 
       범위 조건(오름 p.lease_ratio < 대체값 1000 · 내림 > -1000)을 빼지 않는다 — V20 측정에서 lease_ratio IS NOT NULL 만 있으면
       플래너가 부분 인덱스를 정렬 경로로 쓰지 않았다(정렬을 금지해도, #347). 범위 조건은 selectList 의 COALESCE 정렬에서 대체값보다
       앞에 오는 행만 고르는 조건이기도 하다 — 판정 · 전세가율이 없는 매물과 대체값 경계 바깥 값은 맨 뒤(끝부분)라 여기서 빠지고,
       서비스가 이 조회가 limit 보다 적게 돌려줄 때 selectList 로 이어 읽는다.
       앞부분의 정렬 값은 lease_ratio 그대로라 selectList 의 COALESCE(p.lease_ratio, 대체값)와 같고, 행 비교
-      (lease_ratio, property_id) > (값, ID) 는 selectList 의 키셋 조건(값 > 또는 값 = 이고 ID >)과 같다.
+      (lease_ratio, property_id) > (값, ID) 는 selectList 의 키셋 조건(값 > 또는 값 = 이고 ID >)과 같다. 필터는 selectList 와 같은
+      filterConditions 라 같은 행을 거른다. 바깥 ORDER BY 는 안쪽 순서를 다시 확정한다(조인 뒤 순서는 보장되지 않는다).
     -->
     <select id="selectListByLeaseRatioIndex" resultMap="propertyListRow">
-        SELECT p.property_id,
-               p.district,
-               p.address,
+        SELECT x.property_id,
+               x.district,
+               x.address,
                pt.code_value AS property_type,
                ct.code_value AS contract_type,
-               p.deposit,
-               COALESCE(p.monthly_rent, 0) AS monthly_rent,
-               p.area_sqm,
-               p.floor,
-               p.risk_grade,
-               p.lease_ratio AS debt_ratio,
-               p.registered_at AT TIME ZONE 'Asia/Seoul' AS registered_at
-          FROM property p
-          JOIN property_code ct ON ct.code_id = p.contract_type_code_id
-          JOIN property_code pt ON pt.code_id = p.property_type_code_id
-         WHERE p.lease_ratio IS NOT NULL
-           <choose>
-               <when test="ascending">AND p.lease_ratio &lt; #{nullDebtRatio}</when>
-               <otherwise>AND p.lease_ratio &gt; #{nullDebtRatio}</otherwise>
-           </choose>
-        <if test="riskGrades != null and !riskGrades.isEmpty()">
-           AND p.risk_grade IN
-            <foreach collection="riskGrades" item="grade" open="(" separator="," close=")">
-                #{grade}
-            </foreach>
-        </if>
-        <if test="lastId != null">
-           AND (p.lease_ratio, p.property_id) <include refid="keysetOp"/> (#{lastDebtRatio}, #{lastId})
-        </if>
-         ORDER BY p.lease_ratio <include refid="sortDir"/>, p.property_id <include refid="sortDir"/>
-         LIMIT #{limit}
+               x.deposit,
+               COALESCE(x.monthly_rent, 0) AS monthly_rent,
+               x.area_sqm,
+               x.floor,
+               x.risk_grade,
+               x.lease_ratio AS debt_ratio,
+               x.registered_at AT TIME ZONE 'Asia/Seoul' AS registered_at
+          FROM (SELECT p.property_id, p.lease_ratio
+                  FROM property p
+                 WHERE p.lease_ratio IS NOT NULL
+                   <choose>
+                       <when test="ascending">AND p.lease_ratio &lt; #{nullDebtRatio}</when>
+                       <otherwise>AND p.lease_ratio &gt; #{nullDebtRatio}</otherwise>
+                   </choose>
+                   <include refid="filterConditions"/>
+                   <if test="lastId != null">
+                       AND (p.lease_ratio, p.property_id) <include refid="keysetOp"/> (#{lastDebtRatio}, #{lastId})
+                   </if>
+                 ORDER BY p.lease_ratio <include refid="sortDir"/>, p.property_id <include refid="sortDir"/>
+                 LIMIT #{limit}) s
+          JOIN property x ON x.property_id = s.property_id
+          JOIN property_code ct ON ct.code_id = x.contract_type_code_id
+          JOIN property_code pt ON pt.code_id = x.property_type_code_id
+         ORDER BY s.lease_ratio <include refid="sortDir"/>, s.property_id <include refid="sortDir"/>
     </select>
 
     <!-- 한 행 조회지만 같은 방식으로 맞춘다. 이유는 districtCountRow 위 주석 -->
