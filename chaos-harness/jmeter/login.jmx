@@ -62,6 +62,11 @@
             <stringProp name="Header.name">Accept</stringProp>
             <stringProp name="Header.value">application/json</stringProp>
           </elementProp>
+          <!-- 화면(브라우저)이 늘 보내는 값 — HttpClient4 가 받은 gzip 을 풀어 검증한다 -->
+          <elementProp name="Accept-Encoding" elementType="Header">
+            <stringProp name="Header.name">Accept-Encoding</stringProp>
+            <stringProp name="Header.value">gzip</stringProp>
+          </elementProp>
         </collectionProp>
       </HeaderManager>
       <hashTree/>

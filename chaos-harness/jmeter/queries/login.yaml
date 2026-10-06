@@ -20,7 +20,7 @@
 # 실제 값 — 계정 jmeter+001@rental.test(make-accounts.sh). auth_id · user_id 는 노드마다 달라 그 계정을 찾는 하위 질의로 적었다 —
 # 실제 문장은 상수(바인딩 값)라 계획에 그 하위 질의(InitPlan, 유일 인덱스 한 번)만큼이 더 붙는다. 비교할 때 그 줄은 뺀다.
 # 지도 묶음 값 = run.sh 의 기본 bg_path(API 명세서(매물) 1.12 예시) — 칸 크기는 Java double 로 계산한 값 그대로다
-# ((37.58 − 37.52) ÷ 12, (126.89 − 126.81) ÷ 12, 격자 12 — PropertyQueryService.GRID_DIVISIONS). 좌표 · 칸 값은 JDBC 가
+# ((37.58 − 37.52) ÷ 12, (126.89 − 126.81) ÷ 12, 격자 12 × 12 — bg_path 가 rows · cols 를 보내지 않아 PropertyMapClustersRequest.DEFAULT_GRID_DIVISIONS). 좌표 · 칸 값은 JDBC 가
 # float8 로 보낸다(Double) — 그래서 ::float8 를 붙였다.
 
 queries:
