@@ -239,14 +239,15 @@
     <!--
       지도 묶음 격자 칸 번호(명세 1.12). floor((좌표 - 최소) / 칸 크기) 를 행은 0 ~ maxRowIndex, 열은 0 ~ maxColIndex 로 자른다 —
       최대 경계 위 좌표는 마지막 칸에 든다. 칸 크기가 0(최소 = 최대)이면 나눌 수 없어 모두 0번 칸이다.
+      자르기는 LEAST(GREATEST(FLOOR(…), 0), 최대) 로 FLOOR 를 한 번만 계산한다 — 값은 CASE(0 미만 → 0, 최대 초과 → 최대)와 같고,
+      CASE 는 축마다 FLOOR 를 최대 세 번 계산해 Index Only Scan 노드 시간 대부분을 썼다. 운영 DB-02 실제 값 질의 셋 × 5회 번갈아
+      중앙값 306.8 · 286.6 · 285.9 → 154.8 · 154.8 · 154.1 ms, 결과 행 동일(#451).
     -->
     <sql id="cellRow">
         <choose>
             <when test="cellLat == 0">0</when>
             <otherwise>
-                CASE WHEN FLOOR((p.latitude - #{minLat}) / #{cellLat}) &lt; 0 THEN 0
-                     WHEN FLOOR((p.latitude - #{minLat}) / #{cellLat}) &gt; #{maxRowIndex} THEN #{maxRowIndex}
-                     ELSE CAST(FLOOR((p.latitude - #{minLat}) / #{cellLat}) AS INTEGER) END
+                CAST(LEAST(GREATEST(FLOOR((p.latitude - #{minLat}) / #{cellLat}), 0), #{maxRowIndex}) AS INTEGER)
             </otherwise>
         </choose>
     </sql>
@@ -255,9 +256,7 @@
         <choose>
             <when test="cellLng == 0">0</when>
             <otherwise>
-                CASE WHEN FLOOR((p.longitude - #{minLng}) / #{cellLng}) &lt; 0 THEN 0
-                     WHEN FLOOR((p.longitude - #{minLng}) / #{cellLng}) &gt; #{maxColIndex} THEN #{maxColIndex}
-                     ELSE CAST(FLOOR((p.longitude - #{minLng}) / #{cellLng}) AS INTEGER) END
+                CAST(LEAST(GREATEST(FLOOR((p.longitude - #{minLng}) / #{cellLng}), 0), #{maxColIndex}) AS INTEGER)
             </otherwise>
         </choose>
     </sql>
