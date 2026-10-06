@@ -27,8 +27,8 @@ import org.springframework.stereotype.Component;
  *
  * <ol>
  *   <li><b>로컬</b> — 적중하면 Redis 도 DB 도 부르지 않는다. 요청 경로의 Redis 왕복은 로컬 빗나감에만 남는다</li>
- *   <li><b>Redis</b> — 슬롯끼리 나눠 쓴다. 로컬만 두면 슬롯마다 따로 빗나가 같은 영역을 슬롯 수만큼 DB 에서 읽는다(#462 스파이크
- *       재측정 — 서로 다른 영역 240개에 DB 지도 집계 1,815회). 키에 세대가 든다</li>
+ *   <li><b>Redis</b> — 슬롯끼리 나눠 쓴다. 로컬만 두면 슬롯마다 따로 빗나가 같은 영역을 슬롯 수만큼 DB 에서 읽는다(근거는
+ *       아키텍처 설계서(성능) 1.3 「예외 셋」). 키에 세대가 든다</li>
  * </ol>
  *
  * <p><b>키</b> — 세대 + 공통 검색 필터(자치구 집계와 같은 정규화) + 표시 영역 네 값 + 격자 행 · 열 수({@code |rows=R,cols=C}). 화면이 표시 영역을 타일 격자에
@@ -120,6 +120,7 @@ public class MapClusterCache {
         }
         try {
             MapClusterCacheEntry entry = store.find(gen, cacheKey).orElseGet(() -> {
+                // 시각을 DB 조회 **전에** 잡는다 — 인자 평가 순서. 조회 뒤에 잡으면 로컬 수명 상한이 조회 시간만큼 늦게 끝난다
                 MapClusterCacheEntry loaded = new MapClusterCacheEntry(clock.instant(), loader.get());
                 store.save(gen, cacheKey, loaded);
                 return loaded;
