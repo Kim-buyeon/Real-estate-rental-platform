@@ -340,8 +340,9 @@ if os.path.exists(jtl):
             except (KeyError, ValueError): pass
 steps = json.load(open(stepsf, encoding="utf-8")) if os.path.exists(stepsf) else {"start_epoch_ms": 0, "steps": []}
 t0 = steps["start_epoch_ms"] / 1000
-# steps.json 의 속도는 JMeter 에 넘긴 값(타이머 보정 +TST_OFFSET)이다 — 판정 · 한계는 보정을 뺀 목표로 센다
-_off = float(os.environ.get("TST_OFFSET", "1"))
+# 판정 · 한계는 보정을 뺀 목표로 센다. run.sh 가 RATE_OFFSET 으로 이미 뺐으면 steps.json 에 rate_offset 이 있다 —
+# 없으면(그 전에 남긴 파일) steps.json 의 속도는 JMeter 에 넘긴 값(+TST_OFFSET)이라 여기서 뺀다
+_off = 0.0 if "rate_offset" in steps else float(os.environ.get("TST_OFFSET", "1"))
 for s in steps["steps"]:
     s["target_rps"] = max(0.0, s["target_rps"] - _off)
     if "ramp_from_rps" in s: s["ramp_from_rps"] = max(0.0, s["ramp_from_rps"] - _off)

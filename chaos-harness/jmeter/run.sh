@@ -163,6 +163,7 @@ def parse(profile):
     return rows
 
 profile, burst = os.environ["PROFILE"], os.environ["BURST"]
+num_off = float(os.environ.get("RATE_OFFSET") or 0)   # steps.json 에 남긴다 — 목표에서 이미 뺐다는 표시
 steps, t = [], 0
 if burst:
     n, s = (int(x) for x in burst.split(","))
@@ -180,7 +181,7 @@ else:
 
 with open(os.environ["STEPS_JSON"], "w", encoding="utf-8") as f:
     json.dump({"start_epoch_ms": int(os.environ["LAUNCH_MS"]), "launch_epoch_ms": int(os.environ["LAUNCH_MS"]),
-               "start_basis": "launch", "profile": profile, "steps": steps}, f, ensure_ascii=False, indent=2)
+               "start_basis": "launch", "profile": profile, "rate_offset": num_off, "steps": steps}, f, ensure_ascii=False, indent=2)
 
 # round.json — 여기서 주는 값만 덮는다
 path = os.environ["ROUND_JSON"]
