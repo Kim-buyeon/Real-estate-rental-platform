@@ -37,7 +37,7 @@ measure/
 | 순서 | 명령 | 하는 일 | 운영 작업 |
 | --- | --- | --- | --- |
 | 1 | `bash node/pre-round.sh <회차>` | 행수 · 가시성 맵 · 적중률 · 자동 청소 · 복제 · 슬롯 넷 · 배치 스위치 · 크레딧 · Redis 명령 통계 기록 → **질의 통계 초기화**(`--no-reset`이면 건너뜀). 경고가 나오면 시작할지 정한다 | 질의 통계 초기화만(통계 누적값 — 서비스와 무관) |
-| 2 | `bash node/record.sh start <회차>` | 노드 표본기(지표 5초 · DB 대기 종류 1초 · nginx 접근 로그) · 생성기 vmstat · sar | — |
+| 2 | `bash node/record.sh start <회차>` | 노드 표본기(지표 5초 — DB 노드의 postgres 는 더 드물게, `node-sampler.sh` 머리 주석 · DB 대기 종류 1초 · nginx 접근 로그) · 생성기 vmstat · sar | — |
 | 3 | `bash ../jmeter/run.sh <회차> <mode> <load_profile> [bg_rps] [-- <JMeter 인자>]` | JMeter — `results/<회차>/jmeter/result.jtl` · `jmeter/html/` · `steps.json` · `round.json`(인자 · 플랜은 `chaos-harness/jmeter/README.md`) | — |
 | 4 | `bash node/record.sh stop <회차>` | 표본기 멈춤 · 가져오기 · Redis 명령 통계 · 크레딧 | — |
 | 5 | (10초 이상 뒤) `bash node/collect.sh <회차>` — 조건을 바꾼 회차면 `--heavy` | 질의 통계 상위 20 · 전체(`db/<노드>-pgss-all.csv.gz`, 첫 열 `datname`) · auto_explain 구간 · 추적 파일 · (`--heavy`) 설정 · 인덱스 · 테이블 통계 | — |

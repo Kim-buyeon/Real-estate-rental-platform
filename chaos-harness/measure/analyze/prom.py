@@ -721,13 +721,19 @@ def postgres(m: NodeMetrics, win, missing):
     res["checkpoints_delta"] = ck if found else None
     if not found:
         missing.append(f"{m.node}:pg_stat_*checkpoint*")
-    # WAL 바이트 — 이름이 판마다 달라 넓게 찾는다
+    # WAL 바이트 — 늘기만 하는 이름을 정한 순서로 하나만 쓴다. 이름 패턴으로 넓게 찾으면 오르내리는 게이지
+    # (pg_replication_slot_safe_wal_size_bytes · pg_wal_size_bytes)가 걸려 win_increase 가 감소를 재시작으로 보고
+    # 값을 더해 부풀었다(#445). 라벨 줄(슬롯 · 대기 노드)은 합치지 않고 줄마다 증가량을 구해 가장 큰 값
     wal = None
-    for n in m.data.get(t, {}):
-        if "wal" in n and n.endswith("bytes") or n.endswith("wal_bytes_total"):
-            wal = cdelta(n)
-            res["wal_metric"] = n
-            break
+    wn = _first(m, t, ("pg_stat_wal_wal_bytes_total", "pg_stat_wal_wal_bytes",
+                       "pg_stat_replication_pg_current_wal_lsn_bytes"))
+    if wn:
+        for pts in m.data[t][wn].values():
+            p = _in(pts, win)
+            if p:
+                d = win_increase(p, win)
+                wal = d if wal is None else max(wal, d)
+    res["wal_metric"] = wn if wal is not None else None
     res["wal_bytes_delta"] = wal
     # 연결 상태별 최대
     sname = _first(m, t, ("rental_pg_sessions_count", "pg_stat_activity_count"))

@@ -3,7 +3,7 @@
 #
 #   bash node-sampler.sh start <회차> <노드> <간격초> <Compose 자리>     이 노드에 맞는 표본기를 띄운다(이미 돌면 그대로 둔다)
 #   bash node-sampler.sh stop  <회차> <노드> <Compose 자리>              멈춘다(이미 멈췄으면 그대로)
-#   bash node-sampler.sh loop  <출력.gz> <간격초> <이름=URL>…            지표 긁기 본체 — start 가 띄운다
+#   bash node-sampler.sh loop  <출력.gz> <간격초> <이름[@N]=URL>…        지표 긁기 본체 — start 가 띄운다
 #
 # 표본은 노드의 $MEASURE_TMP/<회차>/ 에 쌓는다(기본 /tmp/rental-measure). SSH 가 끊겨도 멈추지 않게 setsid + nohup 으로
 # 세션에서 떼어 띄우고 pid 를 파일로 남긴다.
@@ -19,6 +19,9 @@
 #                            회전하므로 끝난 뒤 잘라 오면 앞부분이 없다
 #
 # 대상 이름 — node · redis · nginx · app-1 · app-2 · postgres. 주소는 운영 Compose 의 게시 자리(전부 루프백, APP-02 슬롯만 사설 IP)
+# 이름@N=URL — 그 대상은 N 번째 반복마다만 긁는다(첫 반복은 긁는다). 「# SCRAPE」 줄에는 @N 을 뗀 이름을 적는다 — 분석기가 이름으로 읽는다.
+#   postgres@3 — 5초 표본기와 상시 수집기(15초)가 같은 exporter 를 긁어 pg_stat_user_tables 질의가 회차 동안 303회,
+#   DB 질의 시간의 2.5 % 를 차지했다(#445). 3번째마다(간격 5초면 15초)면 상시 수집기와 같은 주기다
 set -uo pipefail
 
 BASE=${MEASURE_TMP:-/tmp/rental-measure}
@@ -33,13 +36,17 @@ alive() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
 # 마지막 gzip 멤버가 반쯤 쓰인 채 남지 않는다
 loop() {
   local out=$1 interval=$2; shift 2
-  local stop=0 t name url next now d ts tmp=$out.scrape
+  local stop=0 t key name every url next now d ts tmp=$out.scrape i=0
   trap 'stop=1' TERM INT
   next=$(date +%s%N)
   while [ "$stop" -eq 0 ]; do
     for t in "$@"; do
       [ "$stop" -eq 0 ] || break
-      name=${t%%=*} url=${t#*=}
+      key=${t%%=*} url=${t#*=}
+      name=${key%%@*} every=1
+      [ "$name" = "$key" ] || every=${key#*@}
+      [[ $every =~ ^[1-9][0-9]*$ ]] || every=1
+      [ $((i % every)) -eq 0 ] || continue
       ts=$(date +%s.%3N)
       if curl -sf --connect-timeout 1 -m 3 -o "$tmp" "$url"; then
         # 본문이 줄바꿈으로 끝나지 않으면 하나 붙인다 — 다음 멤버의 「# SCRAPE」 줄이 본문 끝에 붙지 않게
@@ -48,6 +55,7 @@ loop() {
         printf '# SCRAPE_ERROR %s\n' "$name" | gzip -1 >> "$out"
       fi
     done
+    i=$((i + 1))
     # 간격을 시각에 맞춘다 — 긁는 시간만큼 밀리지 않게
     next=$((next + interval * 1000000000)); now=$(date +%s%N); d=$((next - now))
     if [ "$d" -gt 0 ]; then
@@ -122,7 +130,7 @@ start() {
       targets=(node=http://127.0.0.1:9100/metrics redis=http://127.0.0.1:9121/metrics nginx=http://127.0.0.1:9113/metrics
                "app-1=http://$addr:8081/actuator/prometheus" "app-2=http://$addr:8082/actuator/prometheus") ;;
     db01|db02)
-      targets=(node=http://127.0.0.1:9100/metrics postgres=http://127.0.0.1:9187/metrics) ;;
+      targets=(node=http://127.0.0.1:9100/metrics postgres@3=http://127.0.0.1:9187/metrics) ;;   # @3 — 머리 주석(#445)
     *) echo "알 수 없는 노드: $node" >&2; return 1 ;;
   esac
 
