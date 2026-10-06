@@ -50,7 +50,7 @@ x-logging: &logging
 # 골라 죽인다. 서비스마다 상한을 주어 초과하는 쪽만 죽게 한다. 노드 크기는 시스템 구성서 3장이 갖는다.
 #
 # ── 앱 노드 배분(#394, 2026-10-05 결정) ──
-# APP-01 · APP-02 는 t3.medium(2 vCPU · 4 GiB). DB 노드(t3.small)의 배분은 postgres 서비스 주석(PG_MEM_LIMIT)이 갖는다.
+# APP-01 · APP-02 는 t3.medium(2 vCPU · 4 GiB). DB 노드(t3.medium — #447)의 배분은 postgres 서비스 주석(PG_MEM_LIMIT)이 갖는다.
 #
 #   APP-01(app,sentinel)      mem_limit      APP-02(app-node,sentinel)  mem_limit
 #   app-1 · app-2             768m × 2       app-1 · app-2              768m × 2
@@ -144,7 +144,7 @@ x-logging: &logging
 # 인덱스 빌드, 논리 백업의 전체 스캔)는 남는다.
 #   **(2026-10-01) 그 전제는 깨졌다.** 앱 DB 561 MB(pg_database_size — 부푼 인덱스 포함, 같은 날 #330 인덱스 재구성 뒤 489 MB)로 shared_buffers 64MB 를
 #   크게 넘고, 큰 표 순차 스캔은 공유 버퍼 밖(page cache)에서 읽힌다 — 자치구 집계 EXPLAIN 1.8만 블록 중 1.16만(shared hit 6,330 · read 11,637, #326 계획 변경 3).
-#   이 page cache 가 위 설명대로 PostgreSQL 컨테이너 상한에 과금된다. 64MB 를 유지하는 판단은 x-postgres-command 주석,
+#   이 page cache 가 위 설명대로 PostgreSQL 컨테이너 상한에 과금된다. shared_buffers 를 정하는 판단(#447 에서 64MB → 640MB)은 x-postgres-command 주석,
 #   상한 안에서 회수가 얼마나 일어나고 질의에 영향이 있는지는 **미확인** — postgres 서비스 주석의 「최악」 항목.
 #
 # 앱 슬롯의 힙 밖 — 힙은 MaxRAMPercentage 로 상한에 묶이지만 메타스페이스 · 코드 캐시 · G1 자료구조 · glibc 빈 공간은 그 밖이라,
@@ -274,14 +274,24 @@ x-app: &app
 #
 # 복제에 필요한 wal_level=replica · max_wal_senders=10 · max_replication_slots=10 · hot_standby=on 은 전부 기본값이다 —
 # **기본값에 기대고 있다는 사실만 남긴다.** 바꾸는 변경이 들어오면 복제 조건을 다시 본다.
+#
+# shared_buffers 640MB · work_mem 8MB(#447, 2026-10-06 결정 — DB 노드를 t3.medium 4 GiB 로 키운 묶음, 컨테이너 상한 2560m 은 postgres 서비스 주석).
+#   shared_buffers — PostgreSQL 17 문서(runtime-config-resource)의 「a reasonable starting value for shared_buffers is 25% of the memory
+#   in your system」을 이 컨테이너 상한 2560m 에 적용한 값이다. 나머지는 같은 cgroup 의 page cache 로 간다. 이력 — 128MB(이미지 기본)
+#   → 64MB(옛 단일 노드, 2026-09-23) → 640MB(#447). 64MB 를 유지했던 판단은 아래 plan_cache_mode 항목 뒤의 2026-09-30 · 10-01 측정이다.
+#   work_mem — #447 반영 전 측정(2026-10-06 11시대, DB-02 · t3.small · 4MB, 10/5 부하 회차의 실제 값 지도 묶음 질의 셋, 단독 실행)에서
+#   실행마다 임시 파일 562블록이 나왔고, 세션 SET 8MB 에서 0 블록 · 314 → 292 ms(−7 %)였다. 최악 — 커넥션 36(한 노드로 몰렸을 때 ·
+#   위) × 정렬 · 해시 2 × 8MB × hash_mem_multiplier 2.0 ≈ 1.15 GB 도 2560m 안이다. 이력 — 4MB(옛 단일 노드) → 8MB(#447).
+#   effective_cache_size 는 기본(4GB) 그대로 — 9/30 측정에서 ±3 % 안이었고(아래), 이번에 같이 바꾸면 효과가 섞인다.
+#   반영 뒤 같은 질의로 잰 값은 **미확인** — #447 반영 뒤 이슈 · 이 주석에 실측으로 남긴다.
 x-postgres-command: &postgres-command
   - postgres
   - -c
-  - shared_buffers=64MB
+  - shared_buffers=640MB
   - -c
   - max_connections=48
   - -c
-  - work_mem=4MB
+  - work_mem=8MB
   - -c
   - maintenance_work_mem=16MB
   - -c
@@ -303,7 +313,7 @@ x-postgres-command: &postgres-command
   # 실행 시간은 지도 2단계 −7%(119.8 → 111.6ms) · 3단계 −10%(6.3 → 5.7ms) · 자치구 집계 −3% · 목록 −1 ~ 4% · 0.4ms 이하
   # 짧은 조회 0 ~ −0.2ms, 배치 미판정 조회 −19%(321.9 → 261.9ms). 사용자 질의에서 줄어드는 시간이 0.6 ~ 13ms 이고, 가장 큰
   # 배치 몫(−60ms)은 하루 한 번 백그라운드에서 도는 질의라 사용자 응답과 무관하다 — 노드 1.9GB 에서 192MB 를 더 쓸 값이 아니어서
-  # 64MB 를 유지한다.
+  # 64MB 를 유지한다. **(2026-10-06) #447 에서 640MB 로 바꿨다** — 노드가 4 GiB 로 커져 위 「1.9GB 에서 192MB」의 저울이 달라졌다(위 머리 주석).
   # 대가 — 매 실행 계획을 다시 짠다. 지도 2단계 계획 시간 1 ~ 3ms. 짧은 기본 키 조회도 매번 계획한다.
   # 반영 — -c 인자라 컨테이너 재생성이 필요하다(standby 먼저, primary 는 점검 모드 안 — 운영 절차서의 primary 재생성 절차).
   # 세션에서도 바꿀 수 있는 설정이라 복제 조건(위 머리 주석)에는 영향이 없다. standby 도 같은 목록이다.
@@ -751,22 +761,27 @@ services:
     restart: unless-stopped
     logging: *logging
     # 기본 256m 은 단일 노드(APP-01 에 앱 · Redis 와 함께) 배분이다. **3노드의 DB 노드는 PostgreSQL 혼자라 PG_MEM_LIMIT 로 올린다**
-    # (#276 — DB-01 · DB-02 .env 768m). 부하 시험(INF-06, 2026-09-26 ~ 27)에서 DB-01 의 이 컨테이너가 256m 에 붙어 있었다 —
-    # 샘플 최대 250.8 MiB, 여덟 회차 중 일곱이 240 MiB 이상(OOM 은 없었다). 파일 캐시가 이 상한에 과금되므로(머리 주석)
-    # 상한에 닿으면 회수에 몰린다. 768m 은 DB 노드 가용(1905 − OS 약 264 − 수집기 상한 278 ≈ 1363 — 수집기는 node exporter 64 · postgres exporter 64(#357 에서 DB 노드로 옮겼다) · prom-agent-db 150. 1905 · 264 는 APP-01 에서 잰 값을 옮겨 쓴 것이다. DB-01 의 free -m 총량도 1,905 MiB 였다 — 2026-10-01. OS 몫은 따로 재지 않았다)의 절반을 조금 넘는다(#357 전 수집기 214 일 때는 1427 의 약 절반) — 나머지는
-    # 커널 page cache · 백업 스크립트 몫이다. standby 도 같은 값이다(승격 뒤 primary)
-    # DB-02 에는 sentinel(32m, #404)이 더 뜬다 — 수집기 278 + 32 = 310 이라 가용 약 1331 의 절반을 조금 넘는 그대로다(768m 을 바꾸지 않는다)
+    # (DB-01 · DB-02 .env 2560m — #447, 2026-10-06 결정. DB 노드 t3.medium 4 GiB). 2560m 은 DB 노드 가용
+    # (3831 − OS 약 264 − 수집기 상한 278 ≈ 3289. DB-02 는 sentinel 32 가 더해져 ≈ 3257)에서 상한 밖에 커널 · 백업 스크립트 ·
+    # page cache 몫 약 700 을 남긴 값이다. 3831 은 앱 노드 t3.medium 의 free -m 총량(#394, 머리 주석)을 옮겨 쓴 것이고, 264 는 옛 단일
+    # 노드 APP-01 값(머리 주석 이력)을 옮겨 쓴 것이다 — **DB 노드 4 GiB 에서 잰 값이 아니다(미확인)**, 반영 뒤 free -m 으로 잰다.
+    # 수집기 278 은 node exporter 64 · postgres exporter 64(#357 에서 DB 노드로 옮겼다) · prom-agent-db 150.
+    # 상한 안의 배분 — shared_buffers 640MB(상한의 25 %)와 work_mem 최악 약 1.15 GB 는 x-postgres-command 주석. 나머지는 같은 cgroup 의 page cache.
+    # standby 도 같은 값이다(승격 뒤 primary).
+    # 이력 — 256m(기본, 단일 노드) → 768m(#276, t3.small 2 GiB — 가용 1905 − 264 − 278 ≈ 1363 의 절반을 조금 넘게. DB-02 는 sentinel 더해 ≈ 1331)
+    # → 2560m(#447). 768m 으로 올린 이유는 부하 시험(INF-06, 2026-09-26 ~ 27)에서 DB-01 의 이 컨테이너가 256m 에 붙어 있었던 것이다 —
+    # 샘플 최대 250.8 MiB, 여덟 회차 중 일곱이 240 MiB 이상(OOM 은 없었다). 파일 캐시가 이 상한에 과금되므로(머리 주석) 상한에 닿으면 회수에 몰린다.
     mem_limit: ${PG_MEM_LIMIT:-256m}
     # 저장소 자원 상한 — 시스템 구성서 3장. 이미지 기본값(shared_buffers 128MB · max_connections 100)은
     # 이 노드에 들어오지 않는다.
     #
-    # **기본값 256m(단일 노드)은 최악값을 담지 못한다. 실측에서 잡았다.** 담지 못하는 항을 적어 둔다(DB 노드의 768m 은 아래 최악을 담는다) —
-    #   공유 메모리 세그먼트 전체는 약 80 MiB 다 — shared_buffers 64MB 에 wal_buffers · lock table · PGPROC 등이 더 붙는다
+    # **기본값 256m(단일 노드)은 최악값을 담지 못한다. 실측에서 잡았다.** 담지 못하는 항을 적어 둔다(DB 노드의 768m 은 아래 최악을 담았다. #447 의 640MB · 8MB 에서 커진 항목과 2560m 은 x-postgres-command 주석) —
+    #   공유 메모리 세그먼트 전체는 약 80 MiB 다 — shared_buffers 64MB 에 wal_buffers · lock table · PGPROC 등이 더 붙는다(64MB 일 때. 640MB 에서는 미측정)
     #   백엔드마다 relcache · plan cache 가 따로 잡힌다(커넥션당 1.5~3 MiB)
     #   work_mem 은 커넥션당이 아니라 질의 안의 정렬 · 해시 노드마다 잡힌다
     #   Flyway 의 CREATE INDEX 는 autovacuum 과 별개로 maintenance_work_mem 을 한 번 더 잡는다
     #   pg_stat_statements(#270)의 공유 메모리와 질의 문자열 파일 — **미확정**, 노드 반영 뒤 pg_shmem_allocations 로 재서 적는다
-    # 전부 더한 최악은 300~360 MiB 이고 256m 으로 담을 수 없다. **담으려면 앱 슬롯을 실측에 더 가깝게
+    # 전부 더한 최악은 300~360 MiB(shared_buffers 64MB · work_mem 4MB 일 때)이고 256m 으로 담을 수 없다. **담으려면 앱 슬롯을 실측에 더 가깝게
     # 조여야 하는데, 둘 다 담을 수 있는 배분은 이 노드 크기에 없다**(2026-09-23 결정).
     #
     # 그 최악이 성립하기 어렵다고 본 이유는 셋이었다(2026-09-23) —
@@ -789,6 +804,7 @@ services:
     #   DB 크기가 바꾸는 것은 이 상한에 과금되는 page cache(머리 주석)다 — 데이터 파일(재구성 뒤 489 MB)이 768m 안에서 프로세스 몫과
     #   함께 머물 수 있는지는 재지 않았다 — 상한 안 회수가 일어날 수 있다(**미확인**). 회수는 보통 재읽기로 끝나지만 **(2026-10-04) 쓰지 않은 페이지가 회수할 쪽을 채우면 OOM 이 된다** — standby 가 대량 쓰기 재생 중 컨테이너 안 OOM 으로 재시작했다(#382, 대책은 DB 노드 커널 쓰기 상한 infra/os/sysctl/60-rental-db-dirty.conf). 회수가 질의를 늦추는지와 부하 중
     #   컨테이너 메모리가 상한에 얼마나 붙는지는 **미확인 — 다음 부하 시험에서 docker stats 최대값과 cgroup memory.stat(anon · file)로 확인한다.**
+    #   (2026-10-06) 이 단락은 768m · t3.small 때의 판단이다 — 2560m · t3.medium(#447)에서는 반영 뒤 cgroup memory.current · memory.stat 을 다시 잰다(**미확인**).
     #   그때 노드 쪽 기준은 DB-01 free -m(2026-10-01 기동 직후 — total 1,905 · used 603 · buff/cache 976 · available 1,302 MiB)이다.
     #   단일 노드 기본값 256m 으로 지금 데이터를 띄워 잰 적은 없다 — 기동 직후 194.1 MiB 는 768m 에서 잰 값이라 256m 의 판단에
     #   옮겨 쓰지 않는다. **미확인** — 단일 노드 구성을 다시 쓸 때 잰다.
