@@ -385,7 +385,7 @@ Primary 장애 판정부터 서비스 정상화까지의 절차다. 각 단계�
 
 **승격 전 반드시 점검 모드로 전환한다.** 구 primary가 부분적으로 살아 있는 상태에서 standby를 승격하면 양쪽이 쓰기를 받는 스플릿 브레인이 발생한다. 자동 페일오버를 도입하지 않고 수동 승격을 채택한 이유가 여기에 있다. 감시 인력이 1인인 환경에서 자동 승격은 오탐 시 손상이 더 크다.
 
-**읽기 분산(`DB_REPLICA_ENABLED=true`)이 켜져 있어도 이 절차는 같다** — 6단계에서 `DB_HOST`만 바꾸고 `DB_REPLICA_HOSTS`는 그대로 둔다(바꾸지 않는다). 3노드에서 실제로 밟는 순서는 6.3절이다. 읽기용 풀은 그 목록에서 standby를 먼저 고르고 없으면 남은 노드로 가므로, 승격 · 재구축에 따라 드라이버가 대상을 바꾼다(`application.yml`의 `app.datasource.replica` 주석, #343).
+**읽기 분산(`DB_REPLICA_ENABLED=true`)이 켜져 있어도 이 절차는 같다** — 6단계에서 `DB_HOST`만 바꾸고 `DB_REPLICA_HOSTS` · `DB_REPLICA_HOSTS_APP2`(app-2 슬롯 — #459)는 그대로 둔다(바꾸지 않는다). 3노드에서 실제로 밟는 순서는 6.3절이다. 읽기용 풀은 그 목록에서 standby를 먼저 고르고(운영의 `DB_REPLICA_TARGET_SERVER_TYPE=any`는 목록 순서대로) 닿지 않으면 남은 노드로 가므로, 승격 · 재구축에 따라 드라이버가 대상을 바꾼다(`application.yml`의 `app.datasource.replica` 주석, #343).
 
 ### 6.2 페일백 절차
 
