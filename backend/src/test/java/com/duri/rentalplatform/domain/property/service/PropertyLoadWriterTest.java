@@ -15,10 +15,12 @@ import com.duri.rentalplatform.domain.property.enums.CodeGroup;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
+import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.repository.PropertyCodeRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
 import com.duri.rentalplatform.domain.property.vo.LedgerKeyFill;
 import com.duri.rentalplatform.domain.property.vo.LedgerLookupKey;
+import com.duri.rentalplatform.domain.property.vo.LoadedPriceRow;
 import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
 import com.duri.rentalplatform.domain.property.vo.PropertyPriceSnapshot;
@@ -46,13 +48,15 @@ class PropertyLoadWriterTest {
 
     private PropertyRepository propertyRepository;
     private PropertyCodeRepository propertyCodeRepository;
+    private PropertyMapper propertyMapper;
     private PropertyLoadWriter writer;
 
     @BeforeEach
     void setUp() {
         propertyRepository = mock(PropertyRepository.class);
         propertyCodeRepository = mock(PropertyCodeRepository.class);
-        writer = new PropertyLoadWriter(propertyRepository, propertyCodeRepository);
+        propertyMapper = mock(PropertyMapper.class);
+        writer = new PropertyLoadWriter(propertyRepository, propertyCodeRepository, propertyMapper);
     }
 
     private PropertyRegistration registrationOf(String address, Integer floor) {
@@ -155,7 +159,8 @@ class PropertyLoadWriterTest {
         PropertyRegistration reg2 = registrationOf("주소2", 2);
         Property property1 = Property.register(reg1, anyCode, anyCode, anyCode);
         Property property2 = Property.register(reg2, anyCode, anyCode, anyCode);
-        when(propertyRepository.findAllByDistrict("강남구")).thenReturn(List.of(property1, property2));
+        when(propertyMapper.selectNaturalKeysByDistrict("강남구"))
+                .thenReturn(List.of(property1.naturalKey(), property2.naturalKey()));
 
         Set<PropertyNaturalKey> naturalKeys = writer.findLoadedNaturalKeys("강남구");
 
@@ -177,17 +182,49 @@ class PropertyLoadWriterTest {
         return property;
     }
 
+    /** 저장소 투영 행 — 엔티티와 같은 값을 열 단위로 옮긴 것이다(저장소 통합 테스트가 같음을 따로 확인한다). */
+    private LoadedPriceRow loadedRowOf(Property property) {
+        return new LoadedPriceRow(property.getAddress(), property.getAreaSqm(), property.getFloor(),
+                property.getDeposit(), property.getMonthlyRent(), property.getPropertyId(), property.getMarketPrice(),
+                property.getPriceType(), property.getPriceDate(), property.ledgerKey() == null);
+    }
+
     @Test
     @DisplayName("갱신: 자치구의 기존 매물을 자연키 → 저장된 시세(식별자 · 금액 · 근거 · 기준일)로 바꾼다")
     void mapsExistingPropertiesToStoredPrices() {
         LocalDate priceDate = LocalDate.of(2026, 8, 20);
         Property property = storedProperty(5L, "주소1", 280_000_000L, priceDate);
-        when(propertyRepository.findAllByDistrict("강남구")).thenReturn(List.of(property));
+        when(propertyMapper.selectLoadedPricesByDistrict("강남구")).thenReturn(List.of(loadedRowOf(property)));
 
         Map<PropertyNaturalKey, PropertyPriceSnapshot> prices = writer.findLoadedPrices("강남구");
 
         assertThat(prices).containsExactly(Map.entry(property.naturalKey(),
                 new PropertyPriceSnapshot(5L, 280_000_000L, PriceType.ACTUAL_TRANSACTION, priceDate, true)));
+    }
+
+    @Test
+    @DisplayName("갱신: 자연키가 같은 매물이 둘이면 먼저 읽힌 쪽의 시세만 남긴다")
+    void keepsFirstReadWhenNaturalKeyDuplicated() {
+        LocalDate priceDate = LocalDate.of(2026, 8, 20);
+        Property first = storedProperty(5L, "주소1", 280_000_000L, priceDate);
+        Property second = storedProperty(6L, "주소1", 290_000_000L, priceDate);
+        when(propertyMapper.selectLoadedPricesByDistrict("강남구"))
+                .thenReturn(List.of(loadedRowOf(first), loadedRowOf(second)));
+
+        Map<PropertyNaturalKey, PropertyPriceSnapshot> prices = writer.findLoadedPrices("강남구");
+
+        assertThat(prices).hasSize(1);
+        assertThat(prices.get(first.naturalKey()).propertyId()).isEqualTo(5L);
+    }
+
+    @Test
+    @DisplayName("자연키 조회: 같은 자연키 행이 겹쳐도 집합에는 한 번만 든다")
+    void collapsesDuplicateNaturalKeys() {
+        Property property = storedProperty(5L, "주소1", 280_000_000L, LocalDate.of(2026, 8, 20));
+        when(propertyMapper.selectNaturalKeysByDistrict("강남구"))
+                .thenReturn(List.of(property.naturalKey(), property.naturalKey()));
+
+        assertThat(writer.findLoadedNaturalKeys("강남구")).containsExactly(property.naturalKey());
     }
 
     @Test
@@ -257,7 +294,7 @@ class PropertyLoadWriterTest {
     void marksSnapshotWithLedgerKeyAsPresent() {
         Property property = storedProperty(5L, "주소1", 280_000_000L, LocalDate.of(2026, 8, 20));
         property.fillLedgerKey(KEY);
-        when(propertyRepository.findAllByDistrict("강남구")).thenReturn(List.of(property));
+        when(propertyMapper.selectLoadedPricesByDistrict("강남구")).thenReturn(List.of(loadedRowOf(property)));
 
         assertThat(writer.findLoadedPrices("강남구").get(property.naturalKey()).ledgerKeyMissing()).isFalse();
     }

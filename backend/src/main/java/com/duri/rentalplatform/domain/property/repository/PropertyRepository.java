@@ -3,7 +3,6 @@ package com.duri.rentalplatform.domain.property.repository;
 import com.duri.rentalplatform.domain.property.entity.Property;
 import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import java.math.BigDecimal;
-import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -16,14 +15,6 @@ import org.springframework.data.repository.query.Param;
  * 아키텍처 설계서(영속성 구조) 1.1.
  */
 public interface PropertyRepository extends JpaRepository<Property, Long> {
-
-    /**
-     * 자치구 하나의 적재분을 전부 읽는다. 자연키 집합을 만들어 중복 적재를 거르는 용도다.
-     *
-     * <p>건마다 존재 여부를 묻지 않는 이유는 호출 횟수다. 한 자치구 수천 건에 대해 건별 조회를 하면
-     * 왕복이 그만큼 늘어난다. 적재는 자치구 단위로 도므로 한 번 읽어 메모리에서 비교한다.
-     */
-    List<Property> findAllByDistrict(String district);
 
     /**
      * 매물 유형 코드를 함께 읽는다. 호출부가 트랜잭션 밖(대출 한도 조회)이라 지연 로딩이 닿지 않는다 — 조인으로 한 번에 가져온다.

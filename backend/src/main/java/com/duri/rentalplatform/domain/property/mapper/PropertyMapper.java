@@ -8,12 +8,19 @@ import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyC
 import com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse;
 import com.duri.rentalplatform.domain.property.vo.DistrictCountRow;
+import com.duri.rentalplatform.domain.property.vo.LoadedPriceRow;
 import com.duri.rentalplatform.domain.property.vo.MapClusterCellRow;
 import com.duri.rentalplatform.domain.property.vo.MarkerCandidateRow;
 import com.duri.rentalplatform.domain.property.vo.PropertyDetailRow;
+import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
 import java.util.List;
 
-/** 매물 조회. XML 은 {@code resources/mapper/property/PropertyMapper.xml}. */
+/**
+ * 매물 조회. XML 은 {@code resources/mapper/property/PropertyMapper.xml}.
+ *
+ * <p>{@link #selectNaturalKeysByDistrict} · {@link #selectLoadedPricesByDistrict} 는 조회 조건이 자치구 하나라 Condition 을 두지
+ * 않는다. 요청 값이 가공 없이 그대로 조건이다.
+ */
 public interface PropertyMapper {
 
     /** 공통 필터를 적용한 자치구별 매물 수 · 등급 분포. 자치구명 순. */
@@ -64,4 +71,24 @@ public interface PropertyMapper {
      * {@link #selectUnanalyzedPropertyIds} 가 내주므로 두 조회가 겹치지 않는다. 식별자 자체가 커서라 동률이 없다.
      */
     List<Long> selectReanalysisPendingPropertyIds(ReanalysisPendingPropertyCondition condition);
+
+    /**
+     * 자치구 하나의 적재분 자연키를 전부 읽는다. 적재기가 중복 적재를 거르는 비교 대상이다 — 배치용 대량 조회(아키텍처
+     * 설계서(영속성 구조) 1.1). 정렬은 걸지 않는다.
+     *
+     * <p>건마다 존재 여부를 묻지 않는 이유는 호출 횟수다. 한 자치구 수천 건에 대해 건별 조회를 하면 왕복이 그만큼 늘어난다. 적재는
+     * 자치구 단위로 도므로 한 번 읽어 메모리에서 비교한다.
+     *
+     * <p>엔티티가 아니라 자연키 다섯 열만 읽는다(#383) — 자치구 전체를 엔티티로 읽으면 행마다 매핑된 모든 열의 값 객체와 영속성
+     * 컨텍스트 항목이 트랜잭션 끝까지 힙에 남는다. 행은 자연키 생성자로 만들어지므로 면적 정규화를 거쳐 {@code Property#naturalKey} 와
+     * 같은 값이 나온다.
+     */
+    List<PropertyNaturalKey> selectNaturalKeysByDistrict(String district);
+
+    /**
+     * 자치구 하나의 적재분 자연키 재료와 저장된 시세를 전부 읽는다. 갱신 적재(RISK-08)가 새 시세와 견주는 비교 대상이다 — 배치용
+     * 대량 조회. 엔티티가 아닌 이유는 {@link #selectNaturalKeysByDistrict} 와 같다. 대장 키 없음은 {@code Property#ledgerKey} 가
+     * null 을 돌려주는 조건(시군구 코드 없음)과 같게 판정한다. 정렬은 걸지 않는다.
+     */
+    List<LoadedPriceRow> selectLoadedPricesByDistrict(String district);
 }

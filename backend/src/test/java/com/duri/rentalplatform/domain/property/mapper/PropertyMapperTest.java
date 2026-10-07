@@ -12,6 +12,7 @@ import com.duri.rentalplatform.domain.property.dto.condition.UnanalyzedPropertyC
 import com.duri.rentalplatform.domain.property.dto.request.DistrictCountRequest;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyListResponse;
 import com.duri.rentalplatform.domain.property.dto.response.PropertyMarkerResponse;
+import com.duri.rentalplatform.domain.property.entity.Property;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertySortKey;
@@ -19,9 +20,13 @@ import com.duri.rentalplatform.domain.property.enums.PropertyType;
 import com.duri.rentalplatform.domain.property.enums.RiskGrade;
 import com.duri.rentalplatform.domain.property.vo.BoundingBox;
 import com.duri.rentalplatform.domain.property.vo.DistrictCountRow;
+import com.duri.rentalplatform.domain.property.vo.LoadedPriceRow;
 import com.duri.rentalplatform.domain.property.vo.MapClusterCellRow;
 import com.duri.rentalplatform.domain.property.vo.MarkerCandidateRow;
 import com.duri.rentalplatform.domain.property.vo.PropertyDetailRow;
+import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -61,6 +66,9 @@ class PropertyMapperTest {
 
     @Autowired
     JdbcTemplate jdbc;
+
+    @PersistenceContext
+    EntityManager entityManager;
 
     // ---------- 자치구 집계 ----------
 
@@ -1637,6 +1645,123 @@ class PropertyMapperTest {
             LocalDateTime lastRegisteredAt, Long lastId, int limit) {
         return PropertySearchCondition.ofList(f, PropertySortKey.REGISTERED_AT, ascending,
                 new BigDecimal(ascending ? "1000" : "-1000"), null, null, lastRegisteredAt, lastId, limit);
+    }
+
+    // ---------- 자치구 투영(갱신 적재, #383) ----------
+
+    @Test
+    @DisplayName("자연키 투영: 엔티티 경로(Property::naturalKey)와 같은 집합이다")
+    void naturalKeyProjectionMatchesEntityPath() {
+        insertProjected(D1, "주소A", "59.90", 3, 100L, 0L, "11680");
+        insertProjected(D1, "주소B", "84.9", 7, 200L, 50L, null);
+        insertProjected(D1, "주소C", "33.00", null, 300L, 0L, "11680");
+
+        List<PropertyNaturalKey> projected = propertyMapper.selectNaturalKeysByDistrict(D1);
+
+        assertThat(projected).hasSize(3);
+        assertThat(projected).containsExactlyInAnyOrderElementsOf(entityNaturalKeys(D1));
+    }
+
+    @Test
+    @DisplayName("시세 투영: 엔티티 경로가 만들던 자연키 · 시세 · 대장 키 없음 값과 한 행씩 같다")
+    void loadedPriceProjectionMatchesEntityPath() {
+        insertProjected(D1, "주소A", "59.90", 3, 100L, 0L, "11680");
+        insertProjected(D1, "주소B", "84.9", 7, 200L, 50L, null);
+
+        List<LoadedPriceRow> projected = propertyMapper.selectLoadedPricesByDistrict(D1);
+
+        List<LoadedPriceRow> expected = entityProperties(D1).stream()
+                .map(PropertyMapperTest::loadedRowOf).toList();
+        assertThat(projected).hasSize(2);
+        assertThat(projected).containsExactlyInAnyOrderElementsOf(expected);
+    }
+
+    @Test
+    @DisplayName("투영: 면적 소수 자릿수가 정규화된다 - 84.9 는 84.90, 셋째 자리 입력은 DB 가 둘째 자리로 반올림한 값")
+    void projectionAreaScaleIsNormalized() {
+        insertProjected(D1, "주소B", "84.9", 7, 200L, 50L, null);
+        insertProjected(D1, "주소D", "84.904", 7, 201L, 50L, null);
+
+        List<PropertyNaturalKey> projected = propertyMapper.selectNaturalKeysByDistrict(D1);
+
+        assertThat(projected).extracting(PropertyNaturalKey::areaSqm)
+                .containsExactlyInAnyOrder(new BigDecimal("84.90"), new BigDecimal("84.90"));
+        assertThat(projected).containsExactlyInAnyOrderElementsOf(entityNaturalKeys(D1));
+        assertThat(propertyMapper.selectLoadedPricesByDistrict(D1))
+                .allSatisfy(row -> assertThat(row.naturalKey().areaSqm()).isEqualTo(new BigDecimal("84.90")));
+    }
+
+    @Test
+    @DisplayName("투영: 대장 키 없음은 시군구 코드가 비었을 때만 참이다")
+    void projectionLedgerKeyMissingOnlyWhenSigunguCodeIsNull() {
+        long keyed = insertProjected(D1, "주소A", "59.90", 3, 100L, 0L, "11680");
+        long keyless = insertProjected(D1, "주소B", "84.90", 7, 200L, 50L, null);
+
+        List<LoadedPriceRow> rows = propertyMapper.selectLoadedPricesByDistrict(D1);
+
+        assertThat(rows).filteredOn(row -> row.propertyId() == keyed).singleElement()
+                .extracting(LoadedPriceRow::ledgerKeyMissing).isEqualTo(false);
+        assertThat(rows).filteredOn(row -> row.propertyId() == keyless).singleElement()
+                .extracting(LoadedPriceRow::ledgerKeyMissing).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("투영: 다른 자치구의 매물은 두 조회 모두에서 제외된다")
+    void projectionExcludesOtherDistrict() {
+        insertProjected(D1, "주소A", "59.90", 3, 100L, 0L, "11680");
+        long other = insertProjected(D2, "주소Z", "59.90", 3, 100L, 0L, "11680");
+
+        assertThat(propertyMapper.selectNaturalKeysByDistrict(D1)).hasSize(1)
+                .noneMatch(key -> "주소Z".equals(key.address()));
+        assertThat(propertyMapper.selectLoadedPricesByDistrict(D1)).hasSize(1)
+                .noneMatch(row -> row.propertyId() == other);
+    }
+
+    @Test
+    @DisplayName("투영: 층이 null 인 매물도 엔티티 경로와 같은 자연키(층 null)로 읽힌다")
+    void projectionNullFloorMatchesEntityPath() {
+        insertProjected(D1, "주소C", "33.00", null, 300L, 0L, "11680");
+
+        List<PropertyNaturalKey> projected = propertyMapper.selectNaturalKeysByDistrict(D1);
+
+        assertThat(projected).singleElement().satisfies(key -> assertThat(key.floor()).isNull());
+        assertThat(projected).containsExactlyElementsOf(entityNaturalKeys(D1));
+        assertThat(propertyMapper.selectLoadedPricesByDistrict(D1)).singleElement()
+                .satisfies(row -> assertThat(row.floor()).isNull());
+    }
+
+    private List<Property> entityProperties(String district) {
+        return entityManager.createQuery("SELECT p FROM Property p WHERE p.district = :district", Property.class)
+                .setParameter("district", district).getResultList();
+    }
+
+    private List<PropertyNaturalKey> entityNaturalKeys(String district) {
+        return entityProperties(district).stream().map(Property::naturalKey).toList();
+    }
+
+    /** 지금까지 PropertyLoadWriter 가 엔티티로 만들던 값과 같은 식. */
+    private static LoadedPriceRow loadedRowOf(Property property) {
+        return new LoadedPriceRow(property.getAddress(), property.getAreaSqm(), property.getFloor(),
+                property.getDeposit(), property.getMonthlyRent(), property.getPropertyId(),
+                property.getMarketPrice(), property.getPriceType(), property.getPriceDate(),
+                property.ledgerKey() == null);
+    }
+
+    private long insertProjected(String district, String address, String area, Integer floor, long deposit,
+            long monthlyRent, String sigunguCode) {
+        boolean keyed = sigunguCode != null;
+        return jdbc.queryForObject("""
+                INSERT INTO property (address, district, landlord_name, contract_type_code_id,
+                    property_type_code_id, status_code_id, deposit, monthly_rent, market_price, price_type,
+                    price_date, area_sqm, floor, latitude, longitude, sigungu_code, bjdong_code, bun, ji)
+                VALUES (?, ?, '김임대', ?, ?, ?, ?, ?, 300000000, 'ACTUAL_TRANSACTION',
+                    DATE '2026-06-30', ?, ?, 37.5, 126.8, ?, ?, ?, ?)
+                RETURNING property_id
+                """, Long.class,
+                address, district, codeId("CONTRACT_TYPE", "DEPOSIT_ONLY"),
+                codeId("PROPERTY_TYPE", "APARTMENT"), codeId("PROPERTY_STATUS", "AVAILABLE"),
+                deposit, monthlyRent, new BigDecimal(area), floor, sigunguCode,
+                keyed ? "10100" : null, keyed ? "0100" : null, keyed ? "0001" : null);
     }
 
     /** D1 로 좁히고 계약 유형 · 매물 유형만 거는 필터. */
