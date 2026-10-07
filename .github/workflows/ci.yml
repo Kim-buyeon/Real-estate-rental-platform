@@ -90,7 +90,7 @@ jobs:
             nginx:1.30-alpine nginx -t
       - name: Shell syntax check
         run: |
-          for f in infra/*.sh infra/backup/*.sh infra/tls/*.sh; do
+          for f in infra/*.sh infra/backup/*.sh infra/tls/*.sh chaos-harness/measure/node/*.sh chaos-harness/jmeter/*.sh; do
             bash -n "$f"
           done
       # 러너 이미지에 ShellCheck 가 이미 있다. 빠진 러너에서도 돌게 없을 때만 설치하고, 설치 실패는 그대로 잡 실패로 둔다.
@@ -103,4 +103,24 @@ jobs:
             sudo apt-get install -y shellcheck
           fi
           shellcheck --version
-          shellcheck --severity=warning infra/*.sh infra/backup/*.sh infra/tls/*.sh
+          shellcheck --severity=warning infra/*.sh infra/backup/*.sh infra/tls/*.sh chaos-harness/measure/node/*.sh chaos-harness/jmeter/*.sh
+      # 부하 측정 도구도 노드에서 돌거나(measure/node) 운영 노드에 요청을 보낸다(jmeter) — 위 두 검사에 함께 건다.
+      # 옛 k6 도구(chaos-harness/load · report)는 JMeter 로 옮긴 뒤 쓰지 않아 넣지 않는다.
+      #
+      # 측정 집계(chaos-harness/measure/analyze)는 결과 보고서를 만드는 Python 이다. 판을 정한 목록 파일이 없어
+      # README 가 적은 두 의존성을 판 고정 없이 받는다.
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Measure analysis tests
+        working-directory: chaos-harness/measure
+        run: |
+          pip install matplotlib jinja2
+          python -m unittest discover -s analyze/tests -t .
+      # 측정 모드 추적 설정(infra/otel/agent-measure.yaml)의 메서드 목록은 백엔드 소스에서 생성기가 만든다.
+      # 백엔드 메서드를 바꾸고 목록을 다시 만들지 않으면 측정 모드에서 그 메서드가 조용히 추적 밖으로 빠진다.
+      # 경로 필터가 없어 백엔드 PR 에서도 메서드 목록 검사가 돈다 — 막히면 생성기를 돌려 같이 커밋한다.
+      # 무엇이 다른지는 생성기가 로그에 적는다.
+      - name: Measure method list check
+        run: python chaos-harness/measure/tools/gen-methods.py --check
