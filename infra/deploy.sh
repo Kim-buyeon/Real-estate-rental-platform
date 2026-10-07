@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # 슬롯 순차 교체 배포 — 운영 절차서 3장. infra/ 에서 실행한다.
 #
-#   bash deploy.sh <태그>              일상 배포. 첫 슬롯 복귀 뒤 관찰(smoke.sh)한다
+#   bash deploy.sh <태그>              일상 배포. 첫 슬롯은 복귀 전에 예열 뒤 관찰(smoke.sh)한다
 #   bash deploy.sh <태그> --rollback   롤백. 되돌아갈 태그는 이미 검증된 버전이라 관찰을 건너뛴다(3.4)
 #
 # 태그는 커밋 해시다(image.yml). 순서: 드리프트 가드 → 원격 노드 확인 → 이미지 확인 → (슬롯마다) 제외 → drain → 교체 →
-# readiness → 복귀. 실패하면 그 슬롯을 down 으로 두고 멈춘다 — 남은 슬롯이 구버전으로 계속 서비스한다(3.1).
+# readiness → 예열 → (첫 슬롯) 관찰 → 복귀. 실패하면 그 슬롯을 down 으로 두고 멈춘다 — 남은 슬롯이 구버전으로 계속 서비스한다(3.1).
 # 착수 단계에서 upstream 설정이 추적 상태와 같은지 본다. SKIP_DRIFT_CHECK=1 로 끌 수 있다(기본 켜짐).
 #
 # 슬롯은 넷이다(INF-01) — 앱 노드 APP-01 · APP-02 에 둘씩. **두 앱 노드 어느 쪽에서든 돌린다**(입구 이중화, #404) — 돌리는 노드가
@@ -53,10 +53,10 @@ SLOTS=(
 REPO_ROOT=""                             # 드리프트 가드가 채운다. 비어 있으면 가드를 건너뛴 것이다
 UP_REL=""                                # 저장소 루트 기준의 UP 경로
 DRAIN=${DRAIN:-30}                       # 제외 뒤 진행 중인 요청이 끝나기를 기다리는 초 — graceful 30초와 같다
-WARMUP=${WARMUP:-60}                     # 첫 슬롯 복귀 뒤 JIT 워밍업 — 3.3
+WARMUP=${WARMUP:-60}                     # 첫 슬롯 예열 뒤 · 관찰 전 JIT 워밍업 — 3.3
 # 복귀 전 예열 — 슬롯마다 upstream 에 넣기 전에 주요 조회를 직접 보낸다(#273). 부하 중 배포(T6, 2026-09-27)에서 새로 뜬 JVM 이
 # 받은 첫 요청들이 최대 4 ~ 6초 걸렸다(p99 는 그대로). readiness 는 앱이 떴다는 것만 보고 JIT · 커넥션 풀은 차갑다.
-# 결과는 보지 않는다 — 판정은 readiness · 첫 슬롯 관찰(smoke.sh)이 한다. 0 이면 끈다. 요청마다 상한 3초(readiness 와 같다).
+# 결과는 보지 않는다 — 판정은 readiness · 첫 슬롯 관찰(smoke.sh)이 한다. 관찰보다 먼저 보낸다(#481, 슬롯 루프 주석). 0 이면 끈다. 요청마다 상한 3초(readiness 와 같다).
 # 경로는 공개 조회 열 개다(#416) — 아래 세 개에 더해 배포 시작 때 pick_warm_paths 가 목록 정렬 둘 · 반경 · 매물 하나의
 # 상세 · 위험도 · 등기 · 대장을 붙인다. 매물 경로는 #273 의 세 경로가 닿지 않아 슬롯 교체 뒤 첫 호출이 이후의 2 ~ 6배였다
 # (상세 49 → 9 ms · 등기 100 → 18 · 대장 33 → 17, #416).
@@ -391,6 +391,18 @@ for slot in "${SLOTS[@]}"; do
     sleep 2
   done
 
+  # 예열은 관찰보다 먼저다(#481) — 2026-10-07 노드 기동 직후 배포 두 번에서 첫 슬롯 관찰의 첫 district-counts 가 6.76 s
+  # (서버는 200, smoke.sh 의 curl 상한 5 s 초과)로 60건 중 1건이 실패해 배포가 멈췄다. 차가운 DB · 집계 캐시 탓이고 버전과 무관하다.
+  # 예열 요청은 3초 상한으로 끊겨도 서버가 끝까지 처리해 캐시를 채운다 — 관찰은 데워진 상태에서 신버전 결함만 거른다
+  if [ "$WARM_ROUNDS" -gt 0 ]; then
+    log "[$ID] 예열 ${WARM_ROUNDS}회 × ${#WARM_PATHS[@]}경로"
+    for i in $(seq 1 "$WARM_ROUNDS"); do
+      for p in "${WARM_PATHS[@]}"; do
+        curl -s -o /dev/null --connect-timeout 2 -m 3 "http://$ADDR:$PORT$p" || true
+      done
+    done
+  fi
+
   # 첫 슬롯은 upstream 에 넣기 전에 직접 두드려 본다 — 신버전이 사용자 요청을 받기 전에 걸러진다.
   # 원격 슬롯을 건너뛴 경우에는 처음 실제로 바꾼 슬롯이 첫 슬롯이다
   if [ "$FIRST" -eq 1 ] && [ "$MODE" != "--rollback" ]; then
@@ -402,15 +414,6 @@ for slot in "${SLOTS[@]}"; do
     fi
   fi
   FIRST=0
-
-  if [ "$WARM_ROUNDS" -gt 0 ]; then
-    log "[$ID] 예열 ${WARM_ROUNDS}회 × ${#WARM_PATHS[@]}경로"
-    for i in $(seq 1 "$WARM_ROUNDS"); do
-      for p in "${WARM_PATHS[@]}"; do
-        curl -s -o /dev/null --connect-timeout 2 -m 3 "http://$ADDR:$PORT$p" || true
-      done
-    done
-  fi
 
   log "[$ID] upstream 복귀(두 노드의 nginx)"
   if ! up_slot "$ADDR" "$PORT"; then
