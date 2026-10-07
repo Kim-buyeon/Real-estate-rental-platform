@@ -5,7 +5,7 @@
  * 내지 않아 정의서 값을 손으로 옮긴 파일이다 (frontend/CLAUDE.md 「스타일」). 정의서가 바뀌면 함께 고친다.
  *
  * font-family 는 정의서의 스택과 같은 것을 global.css 가 body 에 한 번 걸고 여기서는 상속받는다.
- * 같은 스택을 열네 번 되풀이하지 않기 위함이다.
+ * 같은 스택을 역할마다 되풀이하지 않기 위함이다.
  */
 
 .type-display {
@@ -30,6 +30,18 @@
   font-size: 18px;
   line-height: 1.4;
   font-weight: 700;
+}
+
+.type-section-title {
+  font-size: 22px;
+  line-height: 1.75;
+  font-weight: 400;
+}
+
+.type-content-title {
+  font-size: 20px;
+  line-height: 1.5;
+  font-weight: 400;
 }
 
 .type-body-lg {
