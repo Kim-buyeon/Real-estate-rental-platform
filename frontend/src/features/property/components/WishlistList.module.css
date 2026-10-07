@@ -55,3 +55,11 @@
   /* 상세로 가는 링크와 관심 해제 버튼이 나란히 선다 (이슈 104) */
   gap: var(--spacing-xs);
 }
+
+/*
+ * 첫 로딩의 자리 표시({components.skeleton}). 묶음 배치는 위 .list 를 그대로 쓰고, 막대 하나는 카드 한 장
+ * 자리다 — 카드 패딩 {spacing.md} 위아래에 두세 줄이 들어가는 높이를 {spacing.5xl} 로 잡았다(계측값 아님).
+ */
+.skeletonItem {
+  height: var(--spacing-5xl);
+}

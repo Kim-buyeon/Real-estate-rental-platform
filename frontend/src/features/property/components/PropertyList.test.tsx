@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { PROPERTY_SORT_LABEL, PROPERTY_SORTS } from '../../../domain/property';
+import { formatWon } from '../../../lib/format';
 import { debtRatioLabel, riskGradeLabel } from '../../../domain/risk';
 import {
   PROPERTY_LIST_AREA_PAGE,
@@ -12,6 +13,7 @@ import {
   PROPERTY_LIST_PAGE_2,
   propertyHandlers,
 } from '../../../test/msw/handlers/property';
+import { listRowName } from '../../../test/listRowName';
 import { server } from '../../../test/msw/server';
 import type { BoundingBox } from '../../../api/property';
 import { PropertyList, type PropertyListArea } from './PropertyList';
@@ -220,10 +222,29 @@ describe('PropertyList', () => {
 
     await waitFor(() => expect(screen.getByText(LIST_ITEM_1.address)).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: `${LIST_ITEM_1.address} 상세 보기` }));
+    fireEvent.click(screen.getByRole('button', { name: listRowName(LIST_ITEM_1.address) }));
 
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith(LIST_ITEM_1.propertyId);
+  });
+
+  it('행 전체가 하나의 버튼이고 별도의 「상세 보기」 버튼이 따로 없다 — 이름은 행 내용에 「상세 보기」가 붙은 꼴', async () => {
+    server.use(...propertyHandlers);
+    renderList();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM_1.address)).toBeInTheDocument());
+
+    const rowButton = screen.getByRole('button', { name: listRowName(LIST_ITEM_1.address) });
+    // 행의 내용(주소)이 그 버튼 안에 있다 — 주소를 눌러도 같은 버튼이다
+    expect(within(rowButton).getByText(LIST_ITEM_1.address)).toBeInTheDocument();
+    // 이름이 주소를 담고 「상세 보기」로 끝나며 가격 · 등급 글자도 읽힌다
+    const name = rowButton.textContent ?? '';
+    expect(name).toContain(riskGradeLabel(LIST_ITEM_1.riskGrade));
+    expect(name).toContain(formatWon(LIST_ITEM_1.deposit));
+    // 이름이 「상세 보기」로 끝나는 버튼은 매물 한 건에 하나다
+    const detailButtons = screen.getAllByRole('button', { name: /상세 보기$/ });
+    expect(detailButtons).toHaveLength(PROPERTY_LIST_PAGE_1.items.length);
+    expect(screen.queryByRole('button', { name: '상세 보기' })).not.toBeInTheDocument();
   });
 
   it('미분석 매물(riskGrade · debtRatio가 null)은 domain/risk.ts의 문구로 표시되고 깨지지 않는다', async () => {
@@ -235,7 +256,7 @@ describe('PropertyList', () => {
     await waitFor(() => expect(screen.getByText(LIST_ITEM_2.address)).toBeInTheDocument());
 
     // 미분석 매물 항목의 상세 보기 버튼이 렌더된다 — 렌더가 깨지지 않았다는 증거
-    expect(screen.getByRole('button', { name: `${LIST_ITEM_2.address} 상세 보기` })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: listRowName(LIST_ITEM_2.address) })).toBeInTheDocument();
 
     const item = screen.getByText(LIST_ITEM_2.address).closest('li');
     expect(item).not.toBeNull();

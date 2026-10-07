@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Alert, KvRow, KvRowList } from '../../../components/ui';
+import { Alert, KvRow, KvRowList, Spinner } from '../../../components/ui';
 import {
   applicabilityLabel,
   areaLabel,
@@ -32,7 +32,7 @@ export function BuildingLedgerSection({ propertyId }: BuildingLedgerSectionProps
   const ledgerQuery = useQuery(propertyQueries.ledger(propertyId));
 
   if (ledgerQuery.isPending) {
-    return <p className="type-caption">불러오는 중입니다.</p>;
+    return <Spinner />;
   }
 
   if (ledgerQuery.error) {

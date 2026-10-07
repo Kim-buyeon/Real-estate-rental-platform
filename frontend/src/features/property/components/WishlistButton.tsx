@@ -1,4 +1,4 @@
-import { Alert, Button } from '../../../components/ui';
+import { Button, useToast } from '../../../components/ui';
 import { useAddWishlist, useRemoveWishlist } from '../../../queries/property';
 import { useSession } from '../../../session/useSession';
 import styles from './WishlistButton.module.css';
@@ -28,9 +28,9 @@ export function WishlistButton({ propertyId, isWishlisted }: WishlistButtonProps
   const { isAuthenticated } = useSession();
   const addMutation = useAddWishlist();
   const removeMutation = useRemoveWishlist();
+  const toast = useToast();
 
-  // 지금 누르면 실행되는 쪽 하나만 본다 — 로딩 · 오류가 그 요청의 것이다.
-  // 등록이 실패하면 isWishlisted가 그대로이므로 실패한 등록의 문구가 계속 보인다.
+  // 지금 누르면 실행되는 쪽 하나만 본다 — 로딩이 그 요청의 것이다.
   const mutation = isWishlisted ? removeMutation : addMutation;
 
   return (
@@ -39,7 +39,13 @@ export function WishlistButton({ propertyId, isWishlisted }: WishlistButtonProps
         type="button"
         className={styles.button}
         variant={isWishlisted ? 'secondary' : 'primary'}
-        onClick={() => mutation.mutate(propertyId)}
+        onClick={() =>
+          // 실패는 뮤테이션 실패라 Toast 다(frontend/CLAUDE.md 「뮤테이션 실패는 Toast」). 문구는 서버
+          // error.message 그대로다 — 409 WISHLIST_DUPLICATED도 코드별 문구를 여기에 다시 적지 않는다
+          mutation.mutate(propertyId, {
+            onError: (failure) => toast.show(failure.message, { variant: 'error' }),
+          })
+        }
         isLoading={mutation.isPending}
         disabled={!isAuthenticated}
       >
@@ -49,10 +55,6 @@ export function WishlistButton({ propertyId, isWishlisted }: WishlistButtonProps
       {!isAuthenticated && (
         <p className={`${styles.note} type-body-sm`}>로그인하면 관심 매물로 등록할 수 있습니다.</p>
       )}
-
-      {/* 문구는 서버 error.message 그대로다 — 409 WISHLIST_DUPLICATED도 코드별 문구를 여기에 다시
-          적지 않는다. 뮤테이션 실패의 자리는 Toast지만 공용 UI에 아직 없어 재분석 버튼과 같이 Alert다 */}
-      {mutation.error && <Alert variant="error">{mutation.error.message}</Alert>}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { Link } from 'react-router';
 import type { PropertyFilter } from '../../../api/property';
-import { Alert, Badge, Card, EmptyState } from '../../../components/ui';
+import { Alert, Badge, Card, EmptyState, Skeleton } from '../../../components/ui';
 import { contractTypeLabel, propertyTypeLabel } from '../../../domain/property';
 import { debtRatioLabel, riskGradeLabel, riskGradeToken } from '../../../domain/risk';
 import { formatDate, formatWon } from '../../../lib/format';
@@ -47,9 +47,9 @@ export function RecentProperties({ filter = NO_FILTER }: RecentPropertiesProps) 
     [listQuery.data],
   );
 
-  // 로딩 표시(스피너 · 스켈레톤)는 정의서 어휘에 없다 — 기존 목록 화면과 같은 한 줄 안내다
+  // 첫 로딩은 카드 네 장 자리의 {components.skeleton} 이다 — 그리드 배치를 그대로 써서 카드가 들어와도 자리가 흔들리지 않는다
   if (listQuery.isPending) {
-    return <p className="type-body">불러오는 중입니다.</p>;
+    return <Skeleton count={RECENT_COUNT} className={styles.grid} itemClassName={styles.skeletonCard} />;
   }
 
   if (listQuery.error) {

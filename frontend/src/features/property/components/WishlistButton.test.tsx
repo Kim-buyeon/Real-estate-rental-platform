@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { setTokens } from '../../../session/store';
 import { server } from '../../../test/msw/server';
 import { WishlistButton } from './WishlistButton';
+import { ToastProvider } from '../../../components/ui';
+import { toastRegion } from '../../../test/toast';
 
 const PROPERTY_ID = 1024;
 
@@ -16,7 +18,9 @@ function renderButton(isWishlisted: boolean) {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <WishlistButton propertyId={PROPERTY_ID} isWishlisted={isWishlisted} />
+      <ToastProvider>
+        <WishlistButton propertyId={PROPERTY_ID} isWishlisted={isWishlisted} />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -70,5 +74,36 @@ describe('WishlistButton', () => {
 
     await waitFor(() => expect(deleteRequestUrl).not.toBeNull());
     expect(deleteRequestUrl!).toContain(`/me/wishlist/${PROPERTY_ID}`);
+  });
+  it('등록 요청이 실패하면 서버 error.message 가 오류 Toast 로 뜨고 Alert 은 남지 않는다', async () => {
+    setTokens({ accessToken: 'access-token', refreshToken: 'refresh-token' });
+    const message = '이미 관심 매물로 등록되어 있습니다.';
+    server.use(
+      http.post('/api/me/wishlist', () =>
+        HttpResponse.json({ success: false, error: { code: 'WISHLIST_DUPLICATED', message } }, { status: 409 }),
+      ),
+    );
+    renderButton(false);
+
+    fireEvent.click(screen.getByRole('button', { name: '관심 등록' }));
+
+    await waitFor(() => expect(toastRegion()).toHaveTextContent(message));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('해제 요청이 실패하면 서버 error.message 가 오류 Toast 로 뜬다', async () => {
+    setTokens({ accessToken: 'access-token', refreshToken: 'refresh-token' });
+    const message = '관심 매물을 해제하지 못했습니다.';
+    server.use(
+      http.delete('/api/me/wishlist/:propertyId', () =>
+        HttpResponse.json({ success: false, error: { code: 'WISHLIST_NOT_FOUND', message } }, { status: 404 }),
+      ),
+    );
+    renderButton(true);
+
+    fireEvent.click(screen.getByRole('button', { name: '관심 해제' }));
+
+    await waitFor(() => expect(toastRegion()).toHaveTextContent(message));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

@@ -6,6 +6,11 @@
  * 위치(화면 하단 중앙) · 지속(2.5초 — ToastProvider 의 TOAST_DURATION_MS) · 겹침 순서(z-index 100)의 정본은
  * 정의서 K-19 · K-13 이다. 여기서는 그 값을 쓰기만 한다. 아래 여백은 지도 화면 전환 토글과 같은 {spacing.xl} 이다.
  *
+ * 화면 하단에 떠 있는 컨트롤이 있으면 토스트는 그 위로 올라선다(K-19) — 그런 컨트롤은 data-toast-avoid 를 단다.
+ * 지금은 지도 화면의 전환 토글 하나다. 토글은 하단 {spacing.xl} 에 놓인 secondary · md 버튼(높이 48 —
+ * global.css 의 --button-height-secondary)이므로, 토스트 아래 끝 = 토글 아래 여백 + 토글 높이 + {spacing.sm} 틈이다.
+ * 토글은 768px 부터 display: none 이지만 DOM 에는 남아 :has 가 계속 맞는다 — 그 구간에서 원래 자리로 되돌린다.
+ *
  * 들어오고 나가는 움직임은 두지 않는다 — 정의서 7절 「전환」은 색 전환 150ms 만 정했고 움직임은 미관측(K-11)이다.
  * 그림자도 두지 않는다 — 정의서 5절 레벨 1 은 추정치이고 토큰이 없다.
  *
@@ -26,6 +31,18 @@
   transform: translateX(-50%);
   /* 비어 있는 영역이 아래 화면의 클릭을 막지 않는다 */
   pointer-events: none;
+}
+
+/* 하단에 떠 있는 컨트롤 위로 — 머리말 K-19 */
+:global(body:has([data-toast-avoid])) .region {
+  bottom: calc(var(--spacing-xl) + var(--button-height-secondary) + var(--spacing-sm));
+}
+
+@media (min-width: 768px) {
+  /* 전환 토글이 숨는 구간(MapPage.module.css .viewToggle) — 피할 것이 없다 */
+  :global(body:has([data-toast-avoid])) .region {
+    bottom: var(--spacing-xl);
+  }
 }
 
 .toast {

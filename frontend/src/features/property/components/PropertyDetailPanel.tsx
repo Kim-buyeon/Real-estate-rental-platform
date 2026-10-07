@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { ApiError } from '../../../api/client';
-import { Alert, Badge, Button, Disclosure, KvRow, KvRowList } from '../../../components/ui';
+import { Alert, Badge, Button, Disclosure, KvRow, KvRowList, Spinner } from '../../../components/ui';
 import { contractTypeLabel, propertyTypeLabel } from '../../../domain/property';
 import {
   debtRatioLabel,
@@ -74,7 +74,7 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
       <div className={styles.body}>
         {detailQuery.isPending && (
           <div className={styles.section}>
-            <p className="type-body">불러오는 중입니다.</p>
+            <Spinner />
           </div>
         )}
 
@@ -123,7 +123,7 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
 
             {riskQuery.isPending && (
               <div className={styles.section}>
-                <p className="type-body">위험도를 불러오는 중입니다.</p>
+                <Spinner label="위험도를 불러오는 중" />
               </div>
             )}
 

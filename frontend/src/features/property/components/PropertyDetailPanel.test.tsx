@@ -34,13 +34,16 @@ import {
 } from '../../../test/msw/handlers/risk';
 import { server } from '../../../test/msw/server';
 import { PropertyDetailPanel } from './PropertyDetailPanel';
+import { ToastProvider } from '../../../components/ui';
 
 function renderPanel() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onClose = vi.fn();
   render(
     <QueryClientProvider client={queryClient}>
-      <PropertyDetailPanel propertyId={PROPERTY_DETAIL.propertyId} onClose={onClose} />
+      <ToastProvider>
+        <PropertyDetailPanel propertyId={PROPERTY_DETAIL.propertyId} onClose={onClose} />
+      </ToastProvider>
     </QueryClientProvider>,
   );
   return onClose;
@@ -61,8 +64,10 @@ function renderPanelWithDistrictCountsProbe() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <DistrictCountsProbe />
-      <PropertyDetailPanel propertyId={PROPERTY_DETAIL.propertyId} onClose={vi.fn()} />
+      <ToastProvider>
+        <DistrictCountsProbe />
+        <PropertyDetailPanel propertyId={PROPERTY_DETAIL.propertyId} onClose={vi.fn()} />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -81,8 +86,10 @@ function renderPanelWithWishlistProbe() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <WishlistProbe />
-      <PropertyDetailPanel propertyId={PROPERTY_DETAIL.propertyId} onClose={vi.fn()} />
+      <ToastProvider>
+        <WishlistProbe />
+        <PropertyDetailPanel propertyId={PROPERTY_DETAIL.propertyId} onClose={vi.fn()} />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -123,9 +130,11 @@ describe('PropertyDetailPanel', () => {
 
     renderPanel();
 
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(message));
+    // 패널에는 Spinner · 토스트 영역도 role=status 다 — 안내는 문구로 특정하고 그 역할이 status 임을 본다
+    const notice = await screen.findByText(message, { exact: false });
+    expect(notice).toHaveAttribute('role', 'status');
     // 서버 문구에 화면 사정만 덧붙는다
-    expect(screen.getByRole('status')).toHaveTextContent('기본 정보만 표시합니다.');
+    expect(notice).toHaveTextContent('기본 정보만 표시합니다.');
     // 오류 Alert(role=alert)이 아니라 안내(role=status)로 뜬다
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     // 매물 기본 정보는 그대로 보인다
@@ -144,7 +153,8 @@ describe('PropertyDetailPanel', () => {
     renderPanel();
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(message));
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // RISK_NOT_ANALYZED 안내(status)가 아니다
+    expect(screen.queryByText('기본 정보만 표시합니다.', { exact: false })).not.toBeInTheDocument();
     // 매물 기본 정보는 그대로 보인다
     expect(screen.getByText(PROPERTY_DETAIL.address)).toBeInTheDocument();
   });

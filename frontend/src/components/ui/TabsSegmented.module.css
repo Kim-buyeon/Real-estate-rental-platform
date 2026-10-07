@@ -1,0 +1,86 @@
+/*
+ * 디자인 토큰 정의서 7절 Containment 의 {components.tabs-segmented}(+ -selected).
+ *   {colors.surface} / {colors.text} + 1px {colors.border} · {typography.body-lg} · {rounded.none} · h70.
+ *   컨테이너 N등분 · 칸이 맞붙는 1px 스트립 · 선택은 {colors.inverse-surface} / {colors.on-inverse} 반전.
+ * 배치(전폭 · 셀 등분 · 모바일 가로 스크롤)는 레이아웃 맵 favorites · my-info 「tabs/segmented 계측」 · 「반응형 붕괴」다.
+ *
+ * px 리터럴 —
+ *   1) 미디어 쿼리 조건 768 (global.css 머리말이 정본)
+ *   2) 1px 보더 두께
+ *   3) 정의서가 지정한 높이 70 과 레이아웃 맵의 모바일 높이 52(제안 · 미관측) — 아래 .strip 의 지역 변수
+ *
+ * 모바일(~767)은 맵의 제안대로 칸 폭을 내용에 맞추고 넘치면 가로로 스크롤한다. 칸이 적어 폭이 남으면 늘어나 채운다.
+ * 태블릿 이상은 컨테이너 전폭을 칸 수로 등분한다.
+ */
+.strip {
+  /* {components.tabs-segmented} — h70 */
+  --tabs-segmented-height: 70px;
+  /* 레이아웃 맵 favorites · my-info 「반응형 붕괴」 모바일 제안 — 70 → 52 (터치 타겟 44 충족) */
+  --tabs-segmented-height-mobile: 52px;
+
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.strip::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  display: inline-flex;
+  flex: 1 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tabs-segmented-height-mobile);
+  padding: 0 var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-none);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* 맞붙는 스트립 — 이웃 칸의 보더가 겹쳐 칸 사이 세로 보더가 한 줄이다 */
+.tab + .tab {
+  margin-inline-start: -1px;
+}
+
+/* 정의서 7절 -hover 포괄 규칙 — 면을 {colors.surface-muted} 로 낮춘다. 선택된 칸은 반전을 유지한다 */
+.tab:hover:not(.selected) {
+  background: var(--color-surface-muted);
+}
+
+/*
+ * 정의서 7절 -focus — {spacing.3xs} 두께 {colors.focus} 실선 링, 키보드 포커스에서만.
+ * 스트립이 가로 스크롤 영역이라 바깥 오프셋은 잘린다 — 안쪽으로 둔다(Tabs 와 같은 처리)
+ */
+.tab:focus-visible {
+  /* 이웃 칸이 겹친 보더 위로 링이 올라오게 한다 */
+  position: relative;
+  outline: var(--spacing-3xs) solid var(--color-focus);
+  outline-offset: calc(var(--spacing-3xs) * -1);
+}
+
+/* {components.tabs-segmented-selected} — 배경 반전만으로 표시한다. 보더도 어두운 면에 덮여 사라진다(맵 계측) */
+.selected {
+  position: relative;
+  border-color: var(--color-inverse-surface);
+  background: var(--color-inverse-surface);
+  color: var(--color-on-inverse);
+}
+
+@media (min-width: 768px) {
+  .strip {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    overflow-x: visible;
+  }
+
+  .tab {
+    min-height: var(--tabs-segmented-height);
+    padding: 0 var(--spacing-xs);
+  }
+}

@@ -50,13 +50,43 @@
   list-style: none;
 }
 
-/* {components.card-list-item} — 하단 1px 보더 · 패딩 {spacing.xl} */
+/* {components.card-list-item} — 하단 1px 보더 · 패딩 {spacing.xl}(패딩은 행 버튼 .row 가 갖는다) */
 .item {
+  border-bottom: 1px solid var(--color-border);
+}
+
+/*
+ * 행 전체가 버튼이다(이슈 489 — 맵의 목록 행은 행 자체가 눌린다). 패딩은 버튼이 가져 눌리는 면이 행 끝까지 간다.
+ * 버튼의 기본 모양(배경 · 보더 · 가운데 정렬 · 글꼴 상속 안 함)을 지운다.
+ */
+.row {
+  /* 끝의 숨김 글자(「상세 보기」 — 공용 visuallyHidden)는 absolute 라 행이 기준 상자다 */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2xs);
+  width: 100%;
   padding: var(--spacing-xl);
-  border-bottom: 1px solid var(--color-border);
+  border: 0;
+  background: var(--color-surface);
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* 정의서 7절 -hover 포괄 규칙 — 면을 {colors.surface-muted} 로 낮춘다 */
+.row:hover {
+  background: var(--color-surface-muted);
+}
+
+/*
+ * 정의서 7절 -focus — {spacing.3xs} 두께 {colors.focus} 실선 링, 키보드 포커스에서만.
+ * 목록이 넘치는 스크롤 영역(.body) 안이라 바깥 오프셋은 위아래 행 · 영역 끝에서 잘린다 — 안쪽으로 둔다(Tabs 와 같은 처리)
+ */
+.row:focus-visible {
+  outline: var(--spacing-3xs) solid var(--color-focus);
+  outline-offset: calc(var(--spacing-3xs) * -1);
 }
 
 .head {
@@ -84,8 +114,17 @@
   color: var(--color-text-secondary);
 }
 
-.actions {
+/*
+ * 첫 로딩의 자리 표시({components.skeleton}). 막대 하나가 목록 행 하나 자리다 — 행의 네 줄(가격 · 유형 · 주소 ·
+ * 스펙)이 들어가는 높이를 {spacing.5xl} 로 잡았다(계측값 아님). 행 사이 간격은 {spacing.sm}.
+ * 좌우 여백은 .body 의 패딩을 그대로 쓴다 — 실제 행처럼 패널 끝까지 늘이지 않는다(막대가 보더 대신 면이라).
+ */
+.skeleton {
   display: flex;
-  justify-content: flex-end;
-  margin-top: var(--spacing-xs);
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.skeletonItem {
+  height: var(--spacing-5xl);
 }

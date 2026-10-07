@@ -27,8 +27,9 @@ describe('RegistryTimeline', () => {
     const expected = REGISTRY_DATA_SOURCE_NOTICE.MOCK;
     // null이면 빈 문자열 비교가 무엇이든 통과하므로 먼저 막는다
     expect(expected).not.toBeNull();
-    const notice = await screen.findByRole('status');
-    expect(notice).toHaveTextContent(String(expected));
+    // 불러오는 동안의 Spinner 도 role=status 다 — 안내 문구가 뜰 때까지 기다린 뒤 status 가 그 안내 하나임을 본다
+    await screen.findByText(String(expected));
+    expect(screen.getByRole('status')).toHaveTextContent(String(expected));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     // 안내가 등기 내용을 대신하지 않는다 — 갑구 · 을구는 그대로 그려진다
     expect(screen.getByText('갑구 · 소유권')).toBeInTheDocument();

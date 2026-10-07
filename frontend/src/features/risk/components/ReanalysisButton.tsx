@@ -1,4 +1,4 @@
-import { Alert, Button } from '../../../components/ui';
+import { Alert, Button, useToast } from '../../../components/ui';
 import { RISK_REANALYZE_TOO_SOON, riskGradeLabel } from '../../../domain/risk';
 import { formatDateTime } from '../../../lib/format';
 import { useReanalyzeRisk } from '../../../queries/risk';
@@ -24,6 +24,7 @@ interface ReanalysisButtonProps {
 export function ReanalysisButton({ propertyId }: ReanalysisButtonProps) {
   const { isAuthenticated } = useSession();
   const reanalysis = useReanalyzeRisk(propertyId);
+  const toast = useToast();
 
   const error = reanalysis.error;
   // 간격 제한은 실패가 아니라 「잠시 뒤 가능」이다 — 명세 1.2. 다음 요청 가능 시각을 함께 낸다
@@ -36,7 +37,15 @@ export function ReanalysisButton({ propertyId }: ReanalysisButtonProps) {
         type="button"
         className={styles.button}
         variant="secondary"
-        onClick={() => reanalysis.mutate()}
+        onClick={() =>
+          reanalysis.mutate(undefined, {
+            // 실패는 뮤테이션 실패라 Toast 다(frontend/CLAUDE.md 「뮤테이션 실패는 Toast」). 문구는 서버 error.message
+            // 그대로다. 간격 제한은 실패가 아니라 「잠시 뒤 가능」이라 아래 안내(Alert info)로 남긴다 — 명세 1.2
+            onError: (failure) => {
+              if (failure.code !== RISK_REANALYZE_TOO_SOON) toast.show(failure.message, { variant: 'error' });
+            },
+          })
+        }
         isLoading={reanalysis.isPending}
         disabled={!isAuthenticated}
       >
@@ -47,15 +56,13 @@ export function ReanalysisButton({ propertyId }: ReanalysisButtonProps) {
         <p className={`${styles.note} type-body-sm`}>로그인하면 재분석을 요청할 수 있습니다.</p>
       )}
 
-      {/* 문구는 서버 error.message 그대로다. 다음 요청 가능 시각만 화면이 덧붙인다 */}
+      {/* 문구는 서버 error.message 그대로다. 다음 요청 가능 시각만 화면이 덧붙인다. 그 밖의 실패는 Toast 다(위 onError) */}
       {isTooSoon && (
         <Alert variant="info">
           {error.message}
           {error.retryAfter !== undefined && ` ${formatDateTime(error.retryAfter)}부터 가능합니다.`}
         </Alert>
       )}
-
-      {error && !isTooSoon && <Alert variant="error">{error.message}</Alert>}
 
       {result && (
         <Alert variant="info">

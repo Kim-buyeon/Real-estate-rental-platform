@@ -7,9 +7,13 @@ import { notificationQueries } from '../queries/notification';
 import { useLogout } from '../queries/user';
 import { useSession } from '../session/useSession';
 import { AppFooter } from './AppFooter';
+import { NAV_SECTIONS, type NavSection } from './navSections';
 import { NotificationStream } from './NotificationStream';
-import { fillsViewport, hidesFooter, isAuthEntryRoute } from './routeHandle';
+import { activeNavSection, fillsViewport, hidesFooter, isAuthEntryRoute } from './routeHandle';
 import styles from './AppShell.module.css';
+
+/** 헤더 메뉴의 묶음 순서 — 관심 목록이 먼저다 */
+const SECTION_ORDER: readonly NavSection[] = ['favorites', 'myInfo'];
 
 /**
  * 내비 항목의 클래스. 활성 항목은 디자인 토큰 정의서 7절 {components.top-nav}가 정한 대로
@@ -28,6 +32,8 @@ export function AppShell() {
   const isFooterHidden = matches.some((match) => hidesFooter(match.handle));
   // 화면 높이 고정도 handle이 정한다. 고정하지 않으면 긴 목록이 셸 · 지도 높이를 늘린다 (이슈 158)
   const isViewportFilled = matches.some((match) => fillsViewport(match.handle));
+  // 지금 화면이 속한 메뉴 묶음 — 헤더 메뉴의 활성 표시도 handle 이 정한다
+  const currentSection = activeNavSection(matches.map((match) => match.handle));
 
   // 헤더 「로그인」은 지금 위치를 redirect로 싣는다 — 로그인 뒤 보던 화면으로 돌아온다 (이슈 140).
   // 로그인 · 가입 화면 자신은 싣지 않는다: 로그인 뒤 다시 로그인 화면으로 오는 루프가 된다
@@ -60,27 +66,32 @@ export function AppShell() {
                 <NavLink to="/map" className={navLinkClassName}>
                   지도
                 </NavLink>
-                {isAuthenticated && (
-                  <>
-                    <NavLink to="/notifications" className={navLinkClassName}>
-                      알림
-                      {unreadCount > 0 && (
-                        <Badge variant="primary" aria-label={`읽지 않은 알림 ${formatCount(unreadCount)}건`}>
-                          {formatCount(unreadCount)}
-                        </Badge>
-                      )}
-                    </NavLink>
-                    <NavLink to="/me/notification-subscriptions" className={navLinkClassName}>
-                      알림 설정
-                    </NavLink>
-                    <NavLink to="/me/wishlist" className={navLinkClassName}>
-                      관심 매물
-                    </NavLink>
-                    <NavLink to="/me/profile" className={navLinkClassName}>
-                      계정 · 자격 정보
-                    </NavLink>
-                  </>
-                )}
+                {/*
+                 * 로그인 메뉴는 묶음 둘이다 — 관심 목록(관심 매물 · 알림) · 내 정보(계정 · 알림 설정). 묶음 안의 화면은
+                 * 페이지 위 탭으로 오간다(이슈 489 · app/navSections.ts). 메뉴는 묶음의 첫 탭을 가리키고, 묶음의 어느
+                 * 화면에 있든 활성이다 — 활성 여부는 라우트 handle 이 정한다(NavLink 의 경로 일치로는 다른 탭에서 꺼진다)
+                 */}
+                {isAuthenticated &&
+                  SECTION_ORDER.map((section) => {
+                    const { title, tabs } = NAV_SECTIONS[section];
+                    const isActive = section === currentSection;
+                    return (
+                      <Link
+                        key={section}
+                        to={tabs[0].to}
+                        className={navLinkClassName({ isActive })}
+                        aria-current={isActive ? 'true' : undefined}
+                      >
+                        {title}
+                        {/* 읽지 않은 알림 수는 알림 화면이 든 묶음의 메뉴에 붙는다 */}
+                        {section === 'favorites' && unreadCount > 0 && (
+                          <Badge variant="primary" aria-label={`읽지 않은 알림 ${formatCount(unreadCount)}건`}>
+                            {formatCount(unreadCount)}
+                          </Badge>
+                        )}
+                      </Link>
+                    );
+                  })}
               </nav>
               {/* 계정 액션. 내비와는 간격 + 구분선으로만 가른다 */}
               <div className={styles.account}>

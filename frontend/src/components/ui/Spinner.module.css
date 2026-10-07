@@ -1,0 +1,30 @@
+/*
+ * 디자인 토큰 정의서 7절 Feedback 의 {components.spinner} — {colors.text-tertiary} · 24({spacing.xl}).
+ * 프로젝트 정의 키다(K-21). 새 색 · 새 수치가 없다.
+ *
+ * 고리 두께는 포커스 링과 같은 {spacing.3xs} 다. 고리의 한 마디를 비워(투명) 스피너 모양을 낸다.
+ *
+ * **움직이지 않는다.** 정의서 K-21 이 회전 속도를 정하지 않았고, 7절 「전환」은 색 전환 150ms · 회전
+ * 120ms(상태 전환) 상한만 둔다 — 계속 도는 움직임의 속도가 아니다. 정의서가 정하지 않은 애니메이션
+ * 속도는 정의서에 먼저 넣는다(frontend/CLAUDE.md). 정해지면 여기에 넣고 prefers-reduced-motion 에서 끈다.
+ *
+ * 자리 — 쓰는 영역 가운데, 위아래 {spacing.md}. 패널 · 폼 한 영역의 대기라 영역 폭 가운데에 둔다.
+ * px 리터럴은 없다.
+ */
+
+.spinner {
+  display: flex;
+  justify-content: center;
+  padding: var(--spacing-md) 0;
+  color: var(--color-text-tertiary);
+}
+
+.ring {
+  --spinner-size: var(--spacing-xl);
+
+  width: var(--spinner-size);
+  height: var(--spinner-size);
+  border: var(--spacing-3xs) solid currentColor;
+  border-top-color: transparent;
+  border-radius: var(--rounded-pill);
+}

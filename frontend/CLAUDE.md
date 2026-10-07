@@ -22,6 +22,8 @@ frontend/
     │   ├── NotificationStream.tsx  SSE 연결 관리자 — EventSource를 여는 유일한 곳
     │   ├── AppShell.tsx          공통 레이아웃. 레이아웃 맵을 따른다
     │   ├── AppFooter.tsx         공통 푸터. 지도 화면은 렌더하지 않는다
+    │   ├── SectionLayout.tsx     메뉴 묶음의 머리(페이지 제목 + 탭). 관심 목록 · 내 정보 화면을 감싼다
+    │   ├── navSections.ts        상단 메뉴의 묶음 표 — 메뉴 이름 · 묶음 안 탭. 헤더 메뉴와 SectionLayout이 함께 읽는다
     │   └── routeHandle.ts        라우트의 성질(`handle`) 타입과 좁히는 함수
     ├── session/                토큰 보관(store.ts) · 로그인 상태 훅(useSession.ts)
     ├── pages/                  라우트 하나 = 파일 하나. 조합만 한다
@@ -44,6 +46,7 @@ frontend/
     │   └── global.css            리셋 · 폰트 로드 · keep-all · 프로젝트 정의 변수
     └── test/                   setup.ts · msw/handlers/<도메인>.ts — 응답은 API 명세의 예시 그대로
                                 jsdom에 없는 전역의 가짜 — eventSource.ts · kakao.ts · resizeObserver.ts
+                                toast.ts (토스트 영역 도우미) · listRowName.ts (지도 목록 행 버튼 찾기)
 ```
 
 테스트 파일은 대상 옆에 `<이름>.test.tsx`로 둔다. 무엇을 테스트하는지는 테스트 전략 문서가 정한다.
@@ -380,7 +383,7 @@ export function Button({ variant = 'primary', size = 'md', isLoading = false, ty
 | `/map` · `/map?propertyId=` | 지도 탐색 + 상세 패널 | PROP-08 · 02 · 03 · 04 · RISK-01 · 07 표시 · RISK-08 재분석 · LOAN-01 표시 | 선택 |
 | `/login` · `/signup` | 로그인 · 가입 | USER-02 · 01 | 공개 |
 | `/password-reset` · `/password-reset/confirm?token=` | 비밀번호 찾기 · 재설정 | USER-06 | 공개 |
-| `/me/profile` | 계정 · 자격 정보 | USER-03 | 필수 |
+| `/me/profile` | 계정 | USER-03 | 필수 |
 | `/me/wishlist` | 관심 매물 | PROP-05 | 필수 |
 | `/notifications` | 알림 목록 | NOTI-05 | 필수 |
 | `/me/notification-subscriptions` | 알림 구독 설정 | NOTI-01 | 필수 |
@@ -399,12 +402,12 @@ CSS Modules와 CSS 변수만 쓴다. CSS 프레임워크 · CSS-in-JS를 두지 
 | --- | --- | --- |
 | `styles/tokens.css` | `:root`의 CSS 변수. `--color-<키>` · `--spacing-<키>` · `--rounded-<키>` | **`npm run design:export` 출력 그대로**(`@google/design.md` `export --format css-vars`. `npx`로 부르지 않는다 — Windows에서 파일 열기 창). 손으로 고치지 않는다. 정의서와 같은 커밋 |
 | `styles/typography.css` | 정의서 `typography` 역할마다 클래스 하나 — `.type-body` · `.type-heading-1` | `css-vars` export가 타이포그래피를 내지 않아 정의서 값을 손으로 옮긴다. 정의서와 같은 커밋 |
-| `styles/global.css` | 리셋 · 폰트 로드 · `word-break: keep-all` · 브레이크포인트 주석 · **정의서가 정했으나 `css-vars` export가 내지 않는 값**(`--container-max` · `--touch-target-min`) | 한 번 |
+| `styles/global.css` | 리셋 · 폰트 로드 · `word-break: keep-all` · 브레이크포인트 주석 · **정의서가 정했으나 `css-vars` export가 내지 않는 값**(`--container-max` · `--touch-target-min` · `--button-height-secondary`) | 한 번 |
 | `<컴포넌트>.module.css` | 그 컴포넌트의 스타일 | 컴포넌트 옆 |
 | `<골격>.module.css` (camelCase) | 같은 레이아웃 맵 골격을 쓰는 여러 화면 · 폼의 공용 여백 — `pages/authCard` · `features/user/components/authForm`. 계측값을 화면마다 옮겨 적지 않는다 | 쓰는 파일들이 있는 폴더. 한 곳에서만 쓰면 두지 않는다 |
 
 - **색 · 간격 · 반경은 토큰 변수로만, 글꼴 · 글자 크기 · 행간은 `typography.css`의 역할 클래스로만 쓴다.** hex · `rgb()` · 색 이름 · 간격 px 리터럴 · `font-size`를 컴포넌트 CSS에 적지 않는다. 검사는 `grep -rnE '#[0-9a-fA-F]{3,8}\b' src` — `tokens.css` 외에 결과가 있으면 위반이다 (`quality-check`). **CSS 주석에 이슈 번호를 `#112` 꼴로 적지 않는다** — 이 검사에 그대로 걸린다. 「이슈 112」로 적는다. `.tsx`는 검사 대상이 아니다.
-- **px 리터럴이 허용되는 곳은 다섯이고 그 밖은 위반이다** — `typography.css`(정의서 typography 값의 이관), 정의서에 없는 레이아웃 1회성 값(그리드 트랙 · 격자에 맞지 않는 레이아웃 맵 계측값), 1px 보더 두께, 미디어 쿼리 조건, 그리고 **정의서가 정했으나 `css-vars` export가 내지 않는 값**. 미디어 쿼리는 CSS 변수를 쓸 수 없으므로 브레이크포인트 값은 정의서 Responsive Behavior 절의 것을 `global.css` 상단 주석에 한 번 적고 그 값만 쓴다. 다섯째는 컨테이너 최대 폭 · 터치 타겟 하한 · **컴포넌트가 지정한 치수**(높이 · 폭 · 간격 — `button-primary` 60 · `input` 48 · `badge` 30 · `card-form` 폭 540 · `kv-row` 라벨 열 150 · `tabs-underline` 간격 36 같은 것)다. export가 색 · 간격 · 반경만 내므로 쓸 토큰이 없는데, 그렇다고 값을 쓰는 자리마다 px로 다시 적으면 정의서가 값을 고쳐도 따라오지 않는다. **한 번만 적고 그것을 참조한다** — 여러 파일에 걸리는 값은 `global.css`의 프로젝트 정의 변수(`--container-max` · `--touch-target-min`)로, 한 컴포넌트에만 걸리는 값은 그 모듈 CSS의 지역 변수로 모은다. 어느 쪽이든 **어느 정의서 항목에서 온 값인지 주석에 적는다.** 미디어 쿼리 조건과 같은 처리이고 이유도 같다. `frontend-dev`와 `quality-check`의 px 규칙은 이 목록을 가리킨다.
+- **px 리터럴이 허용되는 곳은 다섯이고 그 밖은 위반이다** — `typography.css`(정의서 typography 값의 이관), 정의서에 없는 레이아웃 1회성 값(그리드 트랙 · 격자에 맞지 않는 레이아웃 맵 계측값), 1px 보더 두께, 미디어 쿼리 조건, 그리고 **정의서가 정했으나 `css-vars` export가 내지 않는 값**. 미디어 쿼리는 CSS 변수를 쓸 수 없으므로 브레이크포인트 값은 정의서 Responsive Behavior 절의 것을 `global.css` 상단 주석에 한 번 적고 그 값만 쓴다. 다섯째는 컨테이너 최대 폭 · 터치 타겟 하한 · **컴포넌트가 지정한 치수**(높이 · 폭 · 간격 — `button-primary` 60 · `input` 48 · `badge` 30 · `card-form` 폭 540 · `kv-row` 라벨 열 150 · `tabs-underline` 간격 36 같은 것)다. export가 색 · 간격 · 반경만 내므로 쓸 토큰이 없는데, 그렇다고 값을 쓰는 자리마다 px로 다시 적으면 정의서가 값을 고쳐도 따라오지 않는다. **한 번만 적고 그것을 참조한다** — 여러 파일에 걸리는 값은 `global.css`의 프로젝트 정의 변수(`--container-max` · `--touch-target-min` · `--button-height-secondary`)로, 한 컴포넌트에만 걸리는 값은 그 모듈 CSS의 지역 변수로 모은다. 어느 쪽이든 **어느 정의서 항목에서 온 값인지 주석에 적는다.** 미디어 쿼리 조건과 같은 처리이고 이유도 같다. `frontend-dev`와 `quality-check`의 px 규칙은 이 목록을 가리킨다.
 - `tokens.css`에 손으로 쓴 값을 남기지 않는다. 값을 고칠 일이 생기면 정의서를 고치고 export를 다시 돌린다 — 파일을 직접 고치면 다음 export가 그것을 지운다.
 - 인라인 `style`은 런타임 계산값(오버레이 좌표 · 진행률)만. 색 · 간격을 넣지 않는다.
 - 정의서에 없는 색 · 컴포넌트가 필요하면 만들지 않고 멈춘다. 토큰 추가는 정의서의 작업이다 (`frontend-dev`).

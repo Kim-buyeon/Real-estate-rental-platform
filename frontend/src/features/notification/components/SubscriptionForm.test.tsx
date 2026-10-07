@@ -11,6 +11,8 @@ import { SUBSCRIPTION_ITEM_HINT, SUBSCRIPTION_ITEMS } from '../../../domain/noti
 import { SUBSCRIPTIONS_FIXTURE, subscriptionHandlers } from '../../../test/msw/handlers/notification';
 import { server } from '../../../test/msw/server';
 import { SubscriptionForm } from './SubscriptionForm';
+import { ToastProvider } from '../../../components/ui';
+import { toastRegion } from '../../../test/toast';
 
 function renderForm() {
   const queryClient = new QueryClient({
@@ -18,7 +20,9 @@ function renderForm() {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <SubscriptionForm />
+      <ToastProvider>
+        <SubscriptionForm />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -179,5 +183,46 @@ describe('SubscriptionForm', () => {
     await waitFor(() => expect(getCount).toBe(2));
 
     server.events.removeListener('request:start', onRequestStart);
+  });
+  it('입력 하나를 가리키지 않는 저장 실패는 오류 Toast 로 뜨고 입력 아래에는 오류가 붙지 않는다', async () => {
+    const message = '일시적인 오류로 저장하지 못했습니다.';
+    server.use(
+      http.get('/api/me/notification-subscriptions', () =>
+        HttpResponse.json({ success: true, data: SUBSCRIPTIONS_FIXTURE }),
+      ),
+      http.put('/api/me/notification-subscriptions', () =>
+        HttpResponse.json({ success: false, error: { code: 'INTERNAL_ERROR', message } }, { status: 500 }),
+      ),
+    );
+    renderForm();
+    const group = await waitForLoaded();
+
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    await waitFor(() => expect(toastRegion()).toHaveTextContent(message));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(group.getAttribute('aria-describedby') ?? '').not.toContain('-error');
+  });
+
+  it('입력 하나를 가리키는 오류(error.field)는 토스트가 아니라 입력 아래에만 남는다', async () => {
+    const message = '자치구를 1개 이상 선택해 주세요.';
+    server.use(
+      http.get('/api/me/notification-subscriptions', () =>
+        HttpResponse.json({ success: true, data: SUBSCRIPTIONS_FIXTURE }),
+      ),
+      http.put('/api/me/notification-subscriptions', () =>
+        HttpResponse.json(
+          { success: false, error: { code: 'INVALID_REQUEST', message, field: 'newProperty.conditions.districts' } },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderForm();
+    await waitForLoaded();
+
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    await screen.findByText(message);
+    expect(toastRegion()).toBeEmptyDOMElement();
   });
 });

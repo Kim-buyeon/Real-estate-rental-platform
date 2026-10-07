@@ -1,0 +1,15 @@
+/*
+ * 화면에는 보이지 않고 화면 낭독기만 읽는 글자. Spinner · Skeleton 의 「불러오는 중」이 쓴다 —
+ * 두 컴포넌트가 같은 규칙을 갖지 않도록 한 곳에 둔다.
+ *
+ * display: none · visibility: hidden 은 낭독기도 읽지 않으므로 쓰지 않는다. 흐름에서 빼고(absolute)
+ * clip-path 로 전부 잘라 낸다 — 크기를 1px 로 줄이는 흔한 방식은 px 리터럴 규칙(frontend/CLAUDE.md
+ * 「스타일」의 다섯 곳)에 들지 않아 쓰지 않는다. 요소는 제 크기를 가진 채 보이지 않게만 된다.
+ */
+.visuallyHidden {
+  position: absolute;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  pointer-events: none;
+}

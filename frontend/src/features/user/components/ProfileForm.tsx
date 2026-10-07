@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import type { Profile, ProfileForm as ProfileFormValues } from '../../../api/user';
-import { Alert, Button, Field, Input, Select } from '../../../components/ui';
+import type { ApiError } from '../../../api/client';
+import { Alert, Button, Field, Input, Select, Spinner, useToast } from '../../../components/ui';
 import {
   CREDIT_SCORE_MAX,
   NAME_MAX_LENGTH,
@@ -33,7 +34,7 @@ interface ProfileFields {
 type FieldName = keyof ProfileFields;
 
 // 자격 정보 여섯 필드의 정본은 domain/user.ts의 PROFILE_FIELDS다 — 여기에 다시 적으면 필드가 늘 때
-// 한쪽만 고쳐지고, 빠진 필드의 서버 error.field가 입력이 아니라 폼 위 Alert로 떨어진다.
+// 한쪽만 고쳐지고, 빠진 필드의 서버 error.field가 입력이 아니라 Toast로 떨어진다.
 // satisfies는 PROFILE_FIELDS와 위 ProfileFields 인터페이스가 갈리는 것을 컴파일 시점에 잡는다 —
 // 정본을 한쪽만 고치면 같은 증상이 되돌아오고 타입 검사도 테스트도 잡지 못한다
 const FIELD_NAMES: readonly string[] = ['name', 'phone', ...PROFILE_FIELDS] satisfies FieldName[];
@@ -83,6 +84,12 @@ function inputNameOf(field: string | undefined): string | null {
   return field.split('.').at(-1) ?? null;
 }
 
+/** 이 폼의 입력 하나를 가리키는 오류인가 — 그렇다면 입력 아래에, 아니면 Toast 로 알린다 */
+function isFieldError(error: ApiError): boolean {
+  const name = inputNameOf(error.field);
+  return name !== null && FIELD_NAMES.includes(name);
+}
+
 /**
  * 계정 · 자격 정보 폼 (USER-03). 자격 정보는 대출 한도 계산의 입력이고, 미입력 여부는 서버가
  * 응답의 missingFields로 알려 준다 — 화면이 값을 보고 다시 판정하지 않는다 (명세 1.1).
@@ -92,12 +99,13 @@ function inputNameOf(field: string | undefined): string | null {
 export function ProfileForm() {
   const profileQuery = useQuery(userQueries.profile());
   const updateMutation = useUpdateProfile();
+  const toast = useToast();
   // 손대기 전에는 캐시가 그대로 출처다. 입력이 시작된 뒤에만 이 상태가 화면의 값이 되고, 저장에
   // 성공하면 다시 null로 돌아간다 — 응답을 계속 복사해 두면 저장 뒤 재조회한 값과 화면이 갈린다
   const [edited, setEdited] = useState<ProfileFields | null>(null);
 
   if (profileQuery.isPending) {
-    return <p className="type-body">불러오는 중입니다.</p>;
+    return <Spinner />;
   }
 
   if (profileQuery.error) {
@@ -110,8 +118,7 @@ export function ProfileForm() {
 
   const { error } = updateMutation;
   const errorInput = inputNameOf(error?.field);
-  const fieldError = errorInput && FIELD_NAMES.includes(errorInput) ? error : null;
-  const formError = error && !fieldError ? error : null;
+  const fieldError = error && isFieldError(error) ? error : null;
   const errorOf = (name: FieldName) => (fieldError && errorInput === name ? fieldError.message : null);
 
   /**
@@ -128,7 +135,14 @@ export function ProfileForm() {
     event.preventDefault();
     // 성공에서 초안을 비워 화면의 출처를 캐시 하나로 되돌린다. 훅이 무효화를 기다린 뒤 성공을 내므로
     // (queries/user.ts) 이 시점의 캐시는 이미 재조회된 값이고, 옛 값이 한 번 스쳤다 바뀌지 않는다
-    updateMutation.mutate(toRequest(fields), { onSuccess: () => setEdited(null) });
+    updateMutation.mutate(toRequest(fields), {
+      onSuccess: () => setEdited(null),
+      // 입력 하나에 걸리는 오류는 그 입력 아래에 남는다(errorOf). 그 밖의 실패는 뮤테이션 실패라
+      // Toast 다(frontend/CLAUDE.md 「뮤테이션 실패는 Toast」). 문구는 서버 error.message 그대로다
+      onError: (failure: ApiError) => {
+        if (!isFieldError(failure)) toast.show(failure.message, { variant: 'error' });
+      },
+    });
   };
 
   return (
@@ -145,8 +159,7 @@ export function ProfileForm() {
         </Alert>
       )}
 
-      {formError && <Alert variant="error">{formError.message}</Alert>}
-      {/* 저장 결과는 폼 안의 안내다 — 뮤테이션 실패 표시의 Toast는 components/ui 어휘에 아직 없다 */}
+      {/* 저장 성공은 폼 안의 안내로 남긴다 — 실패만 Toast 다(위 handleSubmit) */}
       {updateMutation.isSuccess && <Alert variant="info">저장했습니다.</Alert>}
 
       <fieldset className={styles.group}>

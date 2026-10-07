@@ -75,3 +75,12 @@
     grid-template-columns: repeat(4, 1fr);
   }
 }
+
+/*
+ * 첫 로딩의 자리 표시({components.skeleton}). 배치는 위 .grid 를 그대로 쓰고 막대 하나가 카드 한 장 자리다.
+ * 높이는 카드의 줄 넷(가격 · 유형 · 주소 · 스펙)과 카드 패딩이 드는 정도를 {spacing.5xl} + {spacing.3xl} 로
+ * 잡았다(계측값 아님 — 실제 카드 높이는 글자 줄 수로 정해진다).
+ */
+.skeletonCard {
+  height: calc(var(--spacing-5xl) + var(--spacing-3xl));
+}

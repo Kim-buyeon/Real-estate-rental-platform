@@ -1,0 +1,44 @@
+/*
+ * 메뉴 묶음의 머리 — 레이아웃 맵 favorites · my-info 「섹션 순서」 2 · 3.
+ *   page-title {typography.display} · 가운데 정렬 · top-nav ↔ 제목 107 · 제목 ↔ 탭 85
+ *   tabs/segmented — 컨테이너 전폭(내부 gutter 없음 — 탭 스트립이 컨테이너 좌우 끝에 맞는다)
+ * 탭 아래(빈 상태 · 폼 카드)와의 간격은 각 화면이 갖는다 — 묶음마다 다르다(184 · 162).
+ *
+ * 컨테이너는 헤더 · 푸터와 같다 — --container-max · 좌우 패딩 모바일 {spacing.md} · 태블릿 이상 {spacing.xl}.
+ *
+ * px 리터럴 — 미디어 쿼리 조건 768(global.css 머리말이 정본)과, spacing 격자에 없는 레이아웃 맵 계측값
+ * 107 · 85 — 아래 .head 의 지역 변수에 모았다. 모바일 제안(미관측) 32 · 24 는 격자 값이라 {spacing.2xl} · {spacing.xl} 을 쓴다.
+ * 페이지 제목은 모바일에서도 40(type-display)이다 — display-mobile(24)은 정의서에 있으나 typography.css 에 미구현 — K-27.
+ */
+.section {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.head {
+  /* 레이아웃 맵 「반응형 붕괴」 모바일 제안(미관측) — 상단 107 → 32, 하단 85 → 24 */
+  --section-title-top: var(--spacing-2xl);
+  --section-title-bottom: var(--spacing-xl);
+
+  width: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: var(--section-title-top) var(--spacing-md) 0;
+}
+
+.title {
+  margin: 0 0 var(--section-title-bottom);
+  color: var(--color-text);
+  text-align: center;
+}
+
+@media (min-width: 768px) {
+  .head {
+    /* 레이아웃 맵 favorites · my-info 「여백 리듬」 — top-nav ↔ 제목 107 · 제목 ↔ 탭 85 */
+    --section-title-top: 107px;
+    --section-title-bottom: 85px;
+
+    padding-inline: var(--spacing-xl);
+  }
+}
