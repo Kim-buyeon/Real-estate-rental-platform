@@ -19,7 +19,19 @@ export interface TabItem {
   isDisabled?: boolean;
 }
 
+/**
+ * 정의서 7절 Containment 의 탭 변형. underline — {components.tabs-underline}(상세 패널 탭),
+ * pill — {components.tabs-pill}(목록 상단 전환 · 메인 칩 줄). 탭의 동작(선택 · 키보드 이동 · 패널)은 같고 모양만 다르다
+ */
+export type TabsVariant = 'underline' | 'pill';
+
+const CLASS_BY_VARIANT: Record<TabsVariant, { root?: string; tab?: string; typography: string }> = {
+  underline: { typography: 'type-label' },
+  pill: { root: styles.pill, tab: styles.pillTab, typography: 'type-body-sm' },
+};
+
 interface TabsProps {
+  variant?: TabsVariant;
   /** 탭 목록의 이름 — role="tablist"의 aria-label */
   label: string;
   items: readonly TabItem[];
@@ -29,7 +41,8 @@ interface TabsProps {
   children: ReactNode;
 }
 
-export function Tabs({ label, items, selectedId, onSelect, children }: TabsProps) {
+export function Tabs({ variant = 'underline', label, items, selectedId, onSelect, children }: TabsProps) {
+  const variantClass = CLASS_BY_VARIANT[variant];
   const baseId = useId();
   const panelId = `${baseId}-panel`;
   const tabId = (id: string) => `${baseId}-tab-${id}`;
@@ -52,7 +65,7 @@ export function Tabs({ label, items, selectedId, onSelect, children }: TabsProps
   };
 
   return (
-    <div className={styles.tabs}>
+    <div className={[styles.tabs, variantClass.root].filter(Boolean).join(' ')}>
       <div role="tablist" aria-label={label} className={styles.list} onKeyDown={handleKeyDown}>
         {items.map((item) => {
           const isSelected = item.id === selectedId;
@@ -71,7 +84,9 @@ export function Tabs({ label, items, selectedId, onSelect, children }: TabsProps
               // 선택된 탭 하나만 Tab 키 순서에 둔다. 나머지는 좌우 화살표로 옮긴다 (roving tabindex)
               tabIndex={isSelected ? 0 : -1}
               disabled={item.isDisabled}
-              className={isSelected ? `${styles.tab} ${styles.selected} type-label` : `${styles.tab} type-label`}
+              className={[styles.tab, variantClass.tab, isSelected ? styles.selected : null, variantClass.typography]
+                .filter(Boolean)
+                .join(' ')}
               onClick={() => onSelect(item.id)}
             >
               {item.label}

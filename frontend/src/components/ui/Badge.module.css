@@ -29,6 +29,12 @@
   color: var(--color-primary-hover);
 }
 
+/* {components.badge-inverse} — 상태 표시. 메인 판정 기준 띠의 {components.card-feature} 좌상단 배지가 쓴다 */
+.inverse {
+  background: var(--color-inverse-surface);
+  color: var(--color-on-inverse);
+}
+
 .riskSafe {
   background: var(--color-risk-safe);
   color: var(--color-on-risk);

@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Link, NavLink, Outlet, useLocation, useMatches } from 'react-router';
-import { Badge, Button, buttonClassName } from '../components/ui';
+import { Badge, Button, ToastProvider, buttonClassName } from '../components/ui';
 import { formatCount } from '../lib/format';
 import { loginPath } from '../lib/routes';
 import { notificationQueries } from '../queries/notification';
@@ -42,73 +42,76 @@ export function AppShell() {
   const unreadCount = notificationsQuery.data?.pages.at(-1)?.unreadCount ?? 0;
 
   return (
-    <div className={isViewportFilled ? `${styles.shell} ${styles.shellFilled}` : styles.shell}>
-      {/* 실시간 수신(NOTI-03) 연결은 애플리케이션 전역에 하나다. 화면을 그리지 않는다 */}
-      {isAuthenticated && <NotificationStream />}
-      <header className={styles.header}>
-        {/* 내용은 푸터와 같은 컨테이너 안에 둔다 — 넓은 화면에서 좌우 끝이 맞아야 한다 */}
-        <div className={styles.container}>
-          <Link to="/" className={`${styles.brand} type-heading-3`}>
-            전월세 부동산 금융 플랫폼
-          </Link>
-          {/* 모바일은 이 줄이 가로로 스크롤된다 — 브랜드와 알림 배지가 먼저 보이고 나머지는 밀어서 본다 */}
-          <div className={styles.rail}>
-            <nav className={styles.nav} aria-label="주요 메뉴">
-              {/* 지도는 비로그인에도 열리는 화면이라 로그인 여부와 무관하게 둔다 (인증 「선택」) */}
-              <NavLink to="/map" className={navLinkClassName}>
-                지도
-              </NavLink>
-              {isAuthenticated && (
-                <>
-                  <NavLink to="/notifications" className={navLinkClassName}>
-                    알림
-                    {unreadCount > 0 && (
-                      <Badge variant="primary" aria-label={`읽지 않은 알림 ${formatCount(unreadCount)}건`}>
-                        {formatCount(unreadCount)}
-                      </Badge>
-                    )}
-                  </NavLink>
-                  <NavLink to="/me/notification-subscriptions" className={navLinkClassName}>
-                    알림 설정
-                  </NavLink>
-                  <NavLink to="/me/wishlist" className={navLinkClassName}>
-                    관심 매물
-                  </NavLink>
-                  <NavLink to="/me/profile" className={navLinkClassName}>
-                    계정 · 자격 정보
-                  </NavLink>
-                </>
-              )}
-            </nav>
-            {/* 계정 액션. 내비와는 간격 + 구분선으로만 가른다 */}
-            <div className={styles.account}>
-              {isAuthenticated ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  isLoading={logoutMutation.isPending}
-                  onClick={() => logoutMutation.mutate()}
-                >
-                  로그아웃
-                </Button>
-              ) : (
-                <>
-                  <Link to={loginTo} className={buttonClassName('ghost', 'sm')}>
-                    로그인
-                  </Link>
-                  <Link to="/signup" className={buttonClassName('primary', 'sm')}>
-                    회원가입
-                  </Link>
-                </>
-              )}
+    // 토스트 자리는 앱 전체에 하나다 — 본문(라우트)과 푸터가 같은 자리를 쓴다
+    <ToastProvider>
+      <div className={isViewportFilled ? `${styles.shell} ${styles.shellFilled}` : styles.shell}>
+        {/* 실시간 수신(NOTI-03) 연결은 애플리케이션 전역에 하나다. 화면을 그리지 않는다 */}
+        {isAuthenticated && <NotificationStream />}
+        <header className={styles.header}>
+          {/* 내용은 푸터와 같은 컨테이너 안에 둔다 — 넓은 화면에서 좌우 끝이 맞아야 한다 */}
+          <div className={styles.container}>
+            <Link to="/" className={`${styles.brand} type-heading-3`}>
+              전월세 부동산 금융 플랫폼
+            </Link>
+            {/* 모바일은 이 줄이 가로로 스크롤된다 — 브랜드와 알림 배지가 먼저 보이고 나머지는 밀어서 본다 */}
+            <div className={styles.rail}>
+              <nav className={styles.nav} aria-label="주요 메뉴">
+                {/* 지도는 비로그인에도 열리는 화면이라 로그인 여부와 무관하게 둔다 (인증 「선택」) */}
+                <NavLink to="/map" className={navLinkClassName}>
+                  지도
+                </NavLink>
+                {isAuthenticated && (
+                  <>
+                    <NavLink to="/notifications" className={navLinkClassName}>
+                      알림
+                      {unreadCount > 0 && (
+                        <Badge variant="primary" aria-label={`읽지 않은 알림 ${formatCount(unreadCount)}건`}>
+                          {formatCount(unreadCount)}
+                        </Badge>
+                      )}
+                    </NavLink>
+                    <NavLink to="/me/notification-subscriptions" className={navLinkClassName}>
+                      알림 설정
+                    </NavLink>
+                    <NavLink to="/me/wishlist" className={navLinkClassName}>
+                      관심 매물
+                    </NavLink>
+                    <NavLink to="/me/profile" className={navLinkClassName}>
+                      계정 · 자격 정보
+                    </NavLink>
+                  </>
+                )}
+              </nav>
+              {/* 계정 액션. 내비와는 간격 + 구분선으로만 가른다 */}
+              <div className={styles.account}>
+                {isAuthenticated ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    isLoading={logoutMutation.isPending}
+                    onClick={() => logoutMutation.mutate()}
+                  >
+                    로그아웃
+                  </Button>
+                ) : (
+                  <>
+                    <Link to={loginTo} className={buttonClassName('ghost', 'sm')}>
+                      로그인
+                    </Link>
+                    <Link to="/signup" className={buttonClassName('primary', 'sm')}>
+                      회원가입
+                    </Link>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </header>
-      <main className={styles.main}>
-        <Outlet />
-      </main>
-      {!isFooterHidden && <AppFooter />}
-    </div>
+        </header>
+        <main className={styles.main}>
+          <Outlet />
+        </main>
+        {!isFooterHidden && <AppFooter />}
+      </div>
+    </ToastProvider>
   );
 }
