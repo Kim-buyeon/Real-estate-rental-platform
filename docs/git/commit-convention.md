@@ -185,6 +185,8 @@ Nginx는 upstream 호스트명을 설정 로드 시점에 한 번만 해석한�
 | Vector 설정 | `vector validate --no-environment` — 환경 변수는 더미로 준다 |
 | OpenTelemetry 에이전트 설정(`infra/otel/`) | 같은 이미지로 일회용 슬롯을 띄우고 OTLP 수신기 하나로 받는다 — 업무 요청만 추적으로 오는지, 스위치(`OTEL_JAVAAGENT_ENABLED`)를 끄면 「Agent is disabled」가 찍히고 아무것도 오지 않는지. 문법만 보는 명령이 없다 |
 | 부하 시험 설정(`chaos-harness/load/`) | `k6 inspect <스크립트>` |
+| 부하 측정 집계(`chaos-harness/measure/analyze/`) | `cd chaos-harness/measure && python -m unittest discover -s analyze/tests -t .` |
+| 측정 추적 메서드 목록(`infra/otel/agent-measure.yaml`) | `python chaos-harness/measure/tools/gen-methods.py --check` |
 
 부하 시험 설정(k6)의 확인 명령은 부하 시험이 범위로 돌아와(2026-09-26) 위 표에 되살렸다. 관측 수집기의 확인 명령은 수집기가 정해져(인프라 기술 스택 4.1) 위 표에 더했다 — exporter는 Compose 서비스라 `docker compose config`에 이미 걸린다. Rocky 노드 설정은 이 PC에서 적용해 볼 수 없는 것이 많다. **문법만 본 것과 노드에서 동작을 본 것을 구분해 적는다.**
 
