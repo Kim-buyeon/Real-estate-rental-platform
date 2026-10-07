@@ -14,6 +14,7 @@ import type { CursorPage } from '../api/types';
 import { COMING_SOON_MESSAGE, ToastProvider } from '../components/ui';
 import { propertyDetailPath } from '../lib/routes';
 import { server } from '../test/msw/server';
+import { toastRegion } from '../test/toast';
 import MainPage from './MainPage';
 
 /** 명세 1.6 예시 항목 하나의 필드 형태 그대로. propertyId · address만 바꿔 5건을 만든다 */
@@ -156,14 +157,14 @@ describe('MainPage', () => {
 
   describe('준비 중 입구는 이동하지 않고 알림만 띄운다', () => {
     function expectComingSoon() {
-      expect(within(screen.getByRole('status')).getByText(COMING_SOON_MESSAGE)).toBeInTheDocument();
+      expect(within(toastRegion()).getByText(COMING_SOON_MESSAGE)).toBeInTheDocument();
     }
 
     it('알림 영역은 누르기 전에는 비어 있다', () => {
       mockPropertyList({ items: [], nextCursor: null, hasNext: false });
       renderMainPage();
 
-      expect(screen.getByRole('status')).toBeEmptyDOMElement();
+      expect(toastRegion()).toBeEmptyDOMElement();
     });
 
     it.each(['전월세 전환율 계산', '보증 신청기한 계산', '대출 상품 추천'])('카테고리 「%s」', (title) => {

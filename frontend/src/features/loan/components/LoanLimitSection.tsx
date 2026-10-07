@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import type { ApiError } from '../../../api/client';
-import { Alert, Badge, buttonClassName } from '../../../components/ui';
+import { Alert, Badge, buttonClassName, Spinner } from '../../../components/ui';
 import {
   appliedRegulationLabel,
   APPLIED_REGULATION_LABEL,
@@ -67,7 +67,7 @@ export function LoanLimitSection({ propertyId }: LoanLimitSectionProps) {
         </p>
       )}
 
-      {isAuthenticated && limitQuery.isPending && <p className="type-caption">한도를 불러오는 중입니다.</p>}
+      {isAuthenticated && limitQuery.isPending && <Spinner label="한도를 불러오는 중" />}
 
       {error?.code === PROFILE_INCOMPLETE && (
         <div className={styles.notice}>

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Alert } from '../../../components/ui';
+import { Alert, Spinner } from '../../../components/ui';
 import { registryDataSourceNotice } from '../../../domain/risk';
 import { formatDateTime } from '../../../lib/format';
 import { riskQueries } from '../../../queries/risk';
@@ -25,7 +25,7 @@ export function RegistryTimeline({ propertyId }: RegistryTimelineProps) {
   const registryQuery = useQuery(riskQueries.registry(propertyId));
 
   if (registryQuery.isPending) {
-    return <p className="type-caption">불러오는 중입니다.</p>;
+    return <Spinner />;
   }
 
   if (registryQuery.error) {

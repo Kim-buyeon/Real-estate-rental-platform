@@ -1,12 +1,15 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { Link } from 'react-router';
-import { Alert, Badge, Button, Card, EmptyState, buttonClassName } from '../../../components/ui';
+import { Alert, Badge, Button, Card, EmptyState, Skeleton, buttonClassName } from '../../../components/ui';
 import { riskGradeLabel, riskGradeToken } from '../../../domain/risk';
 import { formatDate, formatWon } from '../../../lib/format';
 import { propertyDetailPath } from '../../../lib/routes';
 import { useRemoveWishlist, wishlistQueries } from '../../../queries/property';
 import styles from './WishlistList.module.css';
+
+/** 첫 로딩에 자리를 잡아 둘 카드 수. 한 화면에 보이는 정도다 — 실제 건수와 무관하다 */
+const SKELETON_COUNT = 3;
 
 /**
  * 관심 매물 목록 (PROP-05). 데이터를 부르는 컴포넌트다.
@@ -34,7 +37,7 @@ export function WishlistList() {
   );
 
   if (wishlistQuery.isPending) {
-    return <p className="type-body">불러오는 중입니다.</p>;
+    return <Skeleton count={SKELETON_COUNT} className={styles.list} itemClassName={styles.skeletonItem} />;
   }
 
   if (wishlistQuery.error) {

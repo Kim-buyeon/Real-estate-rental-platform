@@ -61,8 +61,9 @@ describe('BuildingLedgerSection', () => {
     server.use(buildingLedgerHandler(BUILDING_LEDGER_MISSING));
     renderSection();
 
-    const notice = await screen.findByRole('status');
-    expect(notice).toHaveTextContent(LEDGER_MISSING_NOTICE);
+    // 불러오는 동안의 Spinner 도 role=status 다 — 안내 문구가 뜰 때까지 기다린 뒤 status 가 그 안내 하나임을 본다
+    await screen.findByText(LEDGER_MISSING_NOTICE);
+    expect(screen.getByRole('status')).toHaveTextContent(LEDGER_MISSING_NOTICE);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('위반건축물')).not.toBeInTheDocument();
     expect(screen.queryByText('해당 없음')).not.toBeInTheDocument();
