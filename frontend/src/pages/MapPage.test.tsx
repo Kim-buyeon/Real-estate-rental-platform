@@ -27,6 +27,7 @@ import { server } from '../test/msw/server';
 import { installFakeResizeObserver } from '../test/resizeObserver';
 import MapPage from './MapPage';
 
+import { ToastProvider } from '../components/ui';
 const LIST_ITEM = PROPERTY_LIST_PAGE_1.items[0]!;
 
 /** 요청 URL을 모으는 관측기 — PropertyDetailPanel.test.tsx와 같은 방식이다 */
@@ -45,7 +46,9 @@ function renderMapPage(path = '/map') {
   const router = createMemoryRouter([{ path: '/map', element: <MapPage /> }], { initialEntries: [path] });
   render(
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ToastProvider>
+        <RouterProvider router={router} />
+      </ToastProvider>
     </QueryClientProvider>,
   );
   return router;

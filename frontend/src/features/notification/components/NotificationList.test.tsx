@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
+import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { riskGradeLabel } from '../../../domain/risk';
 import { formatCount } from '../../../lib/format';
@@ -16,6 +17,8 @@ import {
 } from '../../../test/msw/handlers/notification';
 import { server } from '../../../test/msw/server';
 import { NotificationList } from './NotificationList';
+import { ToastProvider } from '../../../components/ui';
+import { toastRegion } from '../../../test/toast';
 
 // 항목의 「매물 보기」가 라우터 Link라 컨텍스트가 있어야 렌더된다(react-router 8) — MainPage.test.tsx와
 // 같은 방식(MemoryRouter). 이 파일은 목록 자체의 경로 조립은 검증하지 않으므로 initialEntries는 두지 않는다
@@ -24,7 +27,9 @@ function renderList() {
   render(
     <MemoryRouter>
       <QueryClientProvider client={queryClient}>
-        <NotificationList />
+        <ToastProvider>
+          <NotificationList />
+        </ToastProvider>
       </QueryClientProvider>
     </MemoryRouter>,
   );
@@ -151,5 +156,38 @@ describe('NotificationList', () => {
     NOTIFICATION_PAGE_1.items.forEach((item, index) => {
       expect(links[index]).toHaveAttribute('href', propertyDetailPath(item.propertyId));
     });
+  });
+  it('전체 읽음이 실패하면 서버 error.message 가 오류 Toast 로 뜬다', async () => {
+    const message = '전체 읽음 처리에 실패했습니다.';
+    server.use(
+      http.patch('/api/notifications/read-all', () =>
+        HttpResponse.json({ success: false, error: { code: 'INTERNAL_ERROR', message } }, { status: 500 }),
+      ),
+      ...notificationHandlers,
+    );
+    renderList();
+    await waitFor(() => expect(screen.getByRole('button', { name: '전체 읽음' })).toBeEnabled());
+
+    fireEvent.click(screen.getByRole('button', { name: '전체 읽음' }));
+
+    await waitFor(() => expect(toastRegion()).toHaveTextContent(message));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('개별 읽음이 실패하면 서버 error.message 가 오류 Toast 로 뜬다', async () => {
+    const message = '읽음 처리에 실패했습니다.';
+    server.use(
+      http.patch('/api/notifications/:notificationId/read', () =>
+        HttpResponse.json({ success: false, error: { code: 'INTERNAL_ERROR', message } }, { status: 500 }),
+      ),
+      ...notificationHandlers,
+    );
+    renderList();
+    const [firstReadButton] = await screen.findAllByRole('button', { name: '읽음' });
+
+    fireEvent.click(firstReadButton!);
+
+    await waitFor(() => expect(toastRegion()).toHaveTextContent(message));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

@@ -1,7 +1,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { Link } from 'react-router';
-import { Alert, Badge, Button, Card, EmptyState, buttonClassName } from '../../../components/ui';
+import { Alert, Badge, Button, Card, EmptyState, Skeleton, buttonClassName, useToast } from '../../../components/ui';
 import { notificationTypeLabel, notificationValueLabel } from '../../../domain/notification';
 import { formatCount, formatDateTime } from '../../../lib/format';
 import { propertyDetailPath } from '../../../lib/routes';
@@ -11,6 +11,9 @@ import {
   useMarkNotificationRead,
 } from '../../../queries/notification';
 import styles from './NotificationList.module.css';
+
+/** 첫 로딩에 자리를 잡아 둘 카드 수. 한 화면에 보이는 정도다 — 실제 건수와 무관하다 */
+const SKELETON_COUNT = 3;
 
 /**
  * 알림 목록 (NOTI-05). 데이터를 부르는 컴포넌트다.
@@ -29,6 +32,7 @@ export function NotificationList() {
   // 훅 하나를 목록 전체가 나눠 쓴다 — 지금 처리 중인 것이 어느 항목인지는 변수(notificationId)로 안다
   const markReadMutation = useMarkNotificationRead();
   const markAllMutation = useMarkAllNotificationsRead();
+  const toast = useToast();
 
   // 쪽마다 나뉜 항목을 한 배열로 잇는다. 렌더마다 다시 만들지 않는다
   const items = useMemo(
@@ -41,7 +45,7 @@ export function NotificationList() {
   const unreadCount = notificationsQuery.data?.pages.at(-1)?.unreadCount ?? 0;
 
   if (notificationsQuery.isPending) {
-    return <p className="type-body">불러오는 중입니다.</p>;
+    return <Skeleton count={SKELETON_COUNT} className={styles.list} itemClassName={styles.skeletonItem} />;
   }
 
   if (notificationsQuery.error) {
@@ -70,14 +74,16 @@ export function NotificationList() {
           variant="secondary"
           disabled={unreadCount === 0}
           isLoading={markAllMutation.isPending}
-          onClick={() => markAllMutation.mutate()}
+          onClick={() =>
+            // 실패는 뮤테이션 실패라 Toast 다(frontend/CLAUDE.md 「뮤테이션 실패는 Toast」). 문구는 서버 error.message 그대로다
+            markAllMutation.mutate(undefined, {
+              onError: (failure) => toast.show(failure.message, { variant: 'error' }),
+            })
+          }
         >
           전체 읽음
         </Button>
       </div>
-
-      {/* 실패 문구는 서버 error.message 그대로다 */}
-      {markAllMutation.error && <Alert variant="error">{markAllMutation.error.message}</Alert>}
 
       <ul className={styles.list}>
         {items.map((item) => (
@@ -113,11 +119,6 @@ export function NotificationList() {
                 </div>
               </dl>
 
-              {/* 실패한 항목에만 붙인다 */}
-              {markReadMutation.error && markReadMutation.variables === item.notificationId && (
-                <Alert variant="error">{markReadMutation.error.message}</Alert>
-              )}
-
               <div className={styles.actions}>
                 {/*
                   알림이 가리키는 매물의 상세로 간다 (이슈 104) — 그 전에는 매물 번호를 글자로만
@@ -134,7 +135,11 @@ export function NotificationList() {
                     type="button"
                     size="sm"
                     variant="secondary"
-                    onClick={() => markReadMutation.mutate(item.notificationId)}
+                    onClick={() =>
+                      markReadMutation.mutate(item.notificationId, {
+                        onError: (failure) => toast.show(failure.message, { variant: 'error' }),
+                      })
+                    }
                     isLoading={markReadMutation.isPending && markReadMutation.variables === item.notificationId}
                   >
                     읽음

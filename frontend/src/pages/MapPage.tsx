@@ -285,8 +285,17 @@ export default function MapPage() {
           </Tabs>
         </div>
 
-        {/* 좁은 화면에서만 보이는 지도 ↔ 목록 전환. 새 컴포넌트를 만들지 않고 Button 의 기존 변형이다 */}
-        <Button type="button" variant="secondary" className={styles.viewToggle} onClick={toggleNarrowView}>
+        {/*
+          좁은 화면에서만 보이는 지도 ↔ 목록 전환. 새 컴포넌트를 만들지 않고 Button 의 기존 변형이다.
+          하단에 떠 있어 토스트와 자리가 겹친다 — data-toast-avoid 로 토스트를 그 위로 올린다(정의서 K-19, Toast.module.css)
+        */}
+        <Button
+          type="button"
+          variant="secondary"
+          className={styles.viewToggle}
+          onClick={toggleNarrowView}
+          data-toast-avoid=""
+        >
           {isMapShown ? '목록' : '지도'}
         </Button>
       </div>

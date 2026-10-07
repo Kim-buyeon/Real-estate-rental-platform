@@ -79,7 +79,10 @@
   display: none;
 }
 
-/* 전환 토글. 지도 · 패널 위에 떠 있고 넓은 화면에서는 사라진다 */
+/*
+ * 전환 토글. 지도 · 패널 위에 떠 있고 넓은 화면에서는 사라진다. 토스트가 이 위로 올라선다(data-toast-avoid —
+ * Toast.module.css 가 이 bottom · 높이 · 768 조건을 쓴다. 여기를 바꾸면 거기도 본다)
+ */
 .viewToggle {
   position: absolute;
   bottom: var(--spacing-xl);

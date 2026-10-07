@@ -12,8 +12,10 @@ import { formatDateTime } from '../../../lib/format';
 import { loanQueries } from '../../../queries/loan';
 import { loanHandlers } from '../../../test/msw/handlers/loan';
 import { PROFILE, PROFILE_INCOMPLETE, userHandlers } from '../../../test/msw/handlers/user';
+import { toastRegion } from '../../../test/toast';
 import { server } from '../../../test/msw/server';
 import { ProfileForm } from './ProfileForm';
+import { ToastProvider } from '../../../components/ui';
 
 const LOAN_PROBE_PROPERTY_ID = 1024;
 
@@ -33,8 +35,10 @@ function renderFormWithLoanProbe() {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <LoanLimitProbe />
-      <ProfileForm />
+      <ToastProvider>
+        <LoanLimitProbe />
+        <ProfileForm />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -45,7 +49,9 @@ function renderForm() {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <ProfileForm />
+      <ToastProvider>
+        <ProfileForm />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -70,7 +76,10 @@ describe('ProfileForm', () => {
     renderForm();
     await waitForLoaded(PROFILE_INCOMPLETE.account.email);
 
-    const alert = screen.getByRole('status');
+    // 토스트 영역도 role=status 다 — 미입력 안내는 그 밖의 status 하나다
+    const [alert, ...others] = screen.getAllByRole('status').filter((el) => el !== toastRegion());
+    expect(others).toHaveLength(0);
+    if (!alert) throw new Error('미입력 안내(role=status)가 없다');
     PROFILE_INCOMPLETE.missingFields.forEach((field) => {
       expect(within(alert).getByText(profileFieldLabel(field))).toBeInTheDocument();
     });
@@ -89,8 +98,8 @@ describe('ProfileForm', () => {
     renderForm();
     await waitForLoaded(PROFILE.account.email);
 
-    // 미입력 안내 · 저장 성공 안내 모두 role=status다 — 아직 제출하지 않았으므로 없어야 한다
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // 미입력 안내 · 저장 성공 안내 모두 role=status다 — 아직 제출하지 않았으므로 토스트 영역 말고는 없어야 한다
+    expect(screen.getAllByRole('status')).toEqual([toastRegion()]);
   });
 
   it('이메일 · 권한 · 가입일시는 화면에 보이지만 그 값을 가진 입력 요소가 없다', async () => {
@@ -255,5 +264,45 @@ describe('ProfileForm', () => {
     await waitFor(() => expect(loanGetCount).toBe(2));
 
     server.events.removeListener('request:start', onRequestStart);
+  });
+  it('입력 하나를 가리키지 않는 저장 실패는 오류 Toast 로 뜬다', async () => {
+    const message = '일시적인 오류로 저장하지 못했습니다.';
+    server.use(
+      http.get('/api/me/profile', () => HttpResponse.json({ success: true, data: PROFILE })),
+      http.put('/api/me/profile', () =>
+        HttpResponse.json({ success: false, error: { code: 'INTERNAL_ERROR', message } }, { status: 500 }),
+      ),
+    );
+    renderForm();
+    await waitForLoaded(PROFILE.account.email);
+
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    await waitFor(() => expect(toastRegion()).toHaveTextContent(message));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('입력 하나를 가리키는 오류(error.field)는 그 입력 아래에 남고 토스트는 비어 있다', async () => {
+    const message = '연소득은 0 이상이어야 합니다.';
+    server.use(
+      http.get('/api/me/profile', () => HttpResponse.json({ success: true, data: PROFILE })),
+      http.put('/api/me/profile', () =>
+        HttpResponse.json(
+          { success: false, error: { code: 'INVALID_REQUEST', message, field: 'profile.annualIncome' } },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderForm();
+    await waitForLoaded(PROFILE.account.email);
+
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    const input = screen.getByLabelText(PROFILE_FIELD_LABEL.annualIncome);
+    await waitFor(() => expect(input).toHaveAttribute('aria-invalid', 'true'));
+    const errorId = (input.getAttribute('aria-describedby') ?? '').split(' ').find((id) => id.endsWith('-error'));
+    expect(errorId).toBeDefined();
+    expect(document.getElementById(errorId!)).toHaveTextContent(message);
+    expect(toastRegion()).toBeEmptyDOMElement();
   });
 });

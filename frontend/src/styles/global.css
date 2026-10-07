@@ -21,6 +21,11 @@
   /* 디자인 토큰 정의서 9절이 정한 값 중 css-vars export 가 내지 않는 것. 미디어 쿼리 조건과 같은 성질이다 */
   --container-max: 1200px;
   --touch-target-min: 44px;
+  /*
+   * 정의서 7절 {components.button-secondary} 높이. Button 과 Toast 두 파일에 걸려 여기 한 번 적는다 —
+   * Toast 가 지도 화면 전환 토글(secondary · md)의 높이만큼 올라선다(정의서 K-19)
+   */
+  --button-height-secondary: 48px;
 }
 
 *,

@@ -9,8 +9,10 @@ import { riskGradeLabel } from '../../../domain/risk';
 import { formatDateTime } from '../../../lib/format';
 import { setTokens } from '../../../session/store';
 import { REANALYZE_RESULT } from '../../../test/msw/handlers/risk';
+import { toastRegion } from '../../../test/toast';
 import { server } from '../../../test/msw/server';
 import { ReanalysisButton } from './ReanalysisButton';
+import { ToastProvider } from '../../../components/ui';
 
 const PROPERTY_ID = 1024;
 
@@ -20,7 +22,9 @@ function renderButton() {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      <ReanalysisButton propertyId={PROPERTY_ID} />
+      <ToastProvider>
+        <ReanalysisButton propertyId={PROPERTY_ID} />
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -48,7 +52,9 @@ describe('ReanalysisButton', () => {
 
     // REANALYZE_RESULT.gradeChanged는 참이다 — 이전 등급 → 새 등급 문구가 나온다
     const expectedText = `등급이 ${riskGradeLabel(REANALYZE_RESULT.previousGrade)}에서 ${riskGradeLabel(REANALYZE_RESULT.riskGrade)}(으)로 바뀌었습니다.`;
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(expectedText));
+    const notice = await screen.findByText(expectedText, { exact: false });
+    expect(notice).toHaveAttribute('role', 'status');
+    expect(toastRegion()).toBeEmptyDOMElement();
   });
 
   it('429 RISK_REANALYZE_TOO_SOON은 오류 Alert이 아니라 안내로 뜨고 retryAfter 시각이 함께 나온다', async () => {
@@ -67,12 +73,15 @@ describe('ReanalysisButton', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '재분석' }));
 
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(message));
-    expect(screen.getByRole('status')).toHaveTextContent(`${formatDateTime(retryAfter)}부터 가능합니다.`);
+    // 실패 Toast 가 아니라 Alert info(role=status)로 남는다 — 토스트 영역은 비어 있다
+    const notice = await screen.findByText(message, { exact: false });
+    expect(notice).toHaveAttribute('role', 'status');
+    expect(notice).toHaveTextContent(`${formatDateTime(retryAfter)}부터 가능합니다.`);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(toastRegion()).toBeEmptyDOMElement();
   });
 
-  it('그 밖의 오류는 오류 Alert으로 뜬다', async () => {
+  it('그 밖의 오류는 오류 Toast 로 뜨고 Alert 은 남지 않는다', async () => {
     setTokens({ accessToken: 'access-token', refreshToken: 'refresh-token' });
     const message = '외부 연동 장애로 재분석하지 못했습니다.';
     server.use(
@@ -84,7 +93,9 @@ describe('ReanalysisButton', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '재분석' }));
 
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(message));
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    await waitFor(() => expect(toastRegion()).toHaveTextContent(message));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // 간격 제한 안내(Alert info)도 아니다 — 문구를 담은 status 는 토스트 영역 하나뿐이다
+    expect(screen.getAllByRole('status').filter((el) => el.textContent?.includes(message))).toEqual([toastRegion()]);
   });
 });

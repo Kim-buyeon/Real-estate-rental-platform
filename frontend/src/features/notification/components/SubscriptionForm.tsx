@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import type { NewPropertyConditions, NotificationSubscriptions } from '../../../api/notification';
-import { Alert, Button, Field, Input, Select } from '../../../components/ui';
+import type { ApiError } from '../../../api/client';
+import { Alert, Button, Field, Input, Select, Spinner, useToast } from '../../../components/ui';
 import {
   SUBSCRIPTION_ENABLED_LABEL,
   SUBSCRIPTION_ITEM_HINT,
@@ -75,12 +76,18 @@ function toRequest(fields: SubscriptionFields): NotificationSubscriptions {
 /**
  * 서버 error.field로 입력을 고른다. 구독 설정의 필드 경로는 `newProperty.conditions.districts`처럼
  * 중첩돼 있어 ProfileForm과 같이 마지막 마디만 본다. 마지막 마디가 `enabled`인 오류(항목 누락)는
- * 네 항목 중 어느 것인지 이름만으로 가릴 수 없어 폼 위 Alert로 떨어진다 — 그 오류는 화면이 네 항목을
+ * 네 항목 중 어느 것인지 이름만으로 가릴 수 없어 Toast로 떨어진다 — 그 오류는 화면이 네 항목을
  * 전부 담아 보내는 한 나지 않는다.
  */
 function inputNameOf(field: string | undefined): string | null {
   if (!field) return null;
   return field.split('.').at(-1) ?? null;
+}
+
+/** 이 폼의 조건 입력 하나를 가리키는 오류인가 — 그렇다면 입력 아래에, 아니면 Toast 로 알린다 */
+function isFieldError(error: ApiError): boolean {
+  const name = inputNameOf(error.field);
+  return name !== null && FIELD_NAMES.includes(name);
 }
 
 /**
@@ -92,12 +99,13 @@ function inputNameOf(field: string | undefined): string | null {
 export function SubscriptionForm() {
   const subscriptionsQuery = useQuery(notificationQueries.subscriptions());
   const updateMutation = useUpdateNotificationSubscriptions();
+  const toast = useToast();
   // 손대기 전에는 캐시가 그대로 출처다. 입력이 시작된 뒤에만 이 상태가 화면의 값이 되고, 저장에
   // 성공하면 다시 null로 돌아간다 — 응답을 계속 복사해 두면 저장 뒤 재조회한 값과 화면이 갈린다
   const [edited, setEdited] = useState<SubscriptionFields | null>(null);
 
   if (subscriptionsQuery.isPending) {
-    return <p className="type-body">불러오는 중입니다.</p>;
+    return <Spinner />;
   }
 
   if (subscriptionsQuery.error) {
@@ -108,8 +116,7 @@ export function SubscriptionForm() {
 
   const { error } = updateMutation;
   const errorInput = inputNameOf(error?.field);
-  const fieldError = errorInput && FIELD_NAMES.includes(errorInput) ? error : null;
-  const formError = error && !fieldError ? error : null;
+  const fieldError = error && isFieldError(error) ? error : null;
   const errorOf = (name: string) => (fieldError && errorInput === name ? fieldError.message : null);
 
   /** 입력이 바뀔 때마다 부르는 한 자리. 직전 저장 결과 안내를 지운다 — ProfileForm과 같은 이유다 */
@@ -130,7 +137,14 @@ export function SubscriptionForm() {
     event.preventDefault();
     // 성공에서 초안을 비워 화면의 출처를 캐시 하나로 되돌린다. 훅이 무효화를 기다린 뒤 성공을 내므로
     // (queries/notification.ts) 이 시점의 캐시는 이미 재조회된 값이다
-    updateMutation.mutate(toRequest(fields), { onSuccess: () => setEdited(null) });
+    updateMutation.mutate(toRequest(fields), {
+      onSuccess: () => setEdited(null),
+      // 조건 입력 하나에 걸리는 오류는 그 입력 아래에 남는다(errorOf). 그 밖의 실패(항목 누락 등)는
+      // 뮤테이션 실패라 Toast 다(frontend/CLAUDE.md 「뮤테이션 실패는 Toast」). 문구는 서버 error.message 그대로다
+      onError: (failure: ApiError) => {
+        if (!isFieldError(failure)) toast.show(failure.message, { variant: 'error' });
+      },
+    });
   };
 
   const depositMaxAmount = Number(fields.depositMax);
@@ -141,8 +155,7 @@ export function SubscriptionForm() {
 
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
-      {formError && <Alert variant="error">{formError.message}</Alert>}
-      {/* 저장 결과는 폼 안의 안내다 — 뮤테이션 실패 표시의 Toast는 components/ui 어휘에 아직 없다 */}
+      {/* 저장 성공은 폼 안의 안내로 남긴다 — 실패만 Toast 다(위 handleSubmit) */}
       {updateMutation.isSuccess && <Alert variant="info">저장했습니다.</Alert>}
 
       <fieldset className={styles.group}>
