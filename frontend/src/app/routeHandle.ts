@@ -1,3 +1,5 @@
+import { NAV_SECTIONS, type NavSection } from './navSections';
+
 /**
  * 라우트 표가 갖는 라우트의 성질. `AppShell` 이 `useMatches()` 로 읽는다 —
  * 경로 문자열 비교를 레이아웃에 두면 라우트의 성질이 라우트 표 밖에 하나 더 생긴다.
@@ -9,6 +11,8 @@ export interface RouteHandle {
   fillsViewport?: boolean;
   /** 로그인 · 가입 · 비밀번호 찾기 · 재설정 화면. 헤더 「로그인」 링크가 이 화면을 redirect로 싣지 않는다 — 로그인 뒤 다시 로그인으로 오는 루프를 막는다 */
   isAuthEntry?: boolean;
+  /** 이 라우트가 속한 메뉴 묶음(관심 목록 · 내 정보). 헤더 메뉴의 활성 표시와 묶음 머리(제목 · 탭)가 읽는다 (이슈 489) */
+  navSection?: NavSection;
 }
 
 /** `useMatches()` 가 주는 `handle` 은 `unknown` 이다. 단언 없이 좁혀서 읽는다 */
@@ -24,4 +28,23 @@ export function fillsViewport(handle: unknown): boolean {
 /** 인증 진입 화면(로그인 · 가입 · 비밀번호 찾기 · 재설정)인가. hidesFooter와 같은 방식으로 좁혀 읽는다 */
 export function isAuthEntryRoute(handle: unknown): boolean {
   return typeof handle === 'object' && handle !== null && 'isAuthEntry' in handle && handle.isAuthEntry === true;
+}
+
+function isNavSection(value: unknown): value is NavSection {
+  return typeof value === 'string' && Object.keys(NAV_SECTIONS).includes(value);
+}
+
+/** 이 라우트가 속한 메뉴 묶음. 없거나 표에 없는 값이면 null. hidesFooter와 같은 방식으로 좁혀 읽는다 */
+export function navSectionOf(handle: unknown): NavSection | null {
+  if (typeof handle !== 'object' || handle === null || !('navSection' in handle)) return null;
+  return isNavSection(handle.navSection) ? handle.navSection : null;
+}
+
+/** 지금 위치가 속한 메뉴 묶음 — 바깥 라우트부터 읽어 처음 나온 것 */
+export function activeNavSection(handles: readonly unknown[]): NavSection | null {
+  for (const handle of handles) {
+    const section = navSectionOf(handle);
+    if (section) return section;
+  }
+  return null;
 }

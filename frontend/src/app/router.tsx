@@ -3,6 +3,7 @@ import MainPage from '../pages/MainPage';
 import { AppShell } from './AppShell';
 import { RequireAuth } from './RequireAuth';
 import type { RouteHandle } from './routeHandle';
+import { SectionLayout } from './SectionLayout';
 
 // 첫 화면(메인)만 정적 import. 나머지 페이지는 라우트 lazy로 나눈다 —
 // React.lazy 컴포넌트를 이 파일에 두면 Fast Refresh 규칙(react-refresh/only-export-components)에 걸린다
@@ -48,16 +49,32 @@ export const routes: RouteObject[] = [
       },
       {
         element: <RequireAuth />,
+        // 메뉴 묶음 — 경로는 그대로 두고 묶음마다 머리(제목 · 탭)를 하나 얹는다 (이슈 489 · app/navSections.ts)
         children: [
-          { path: '/me/profile', lazy: async () => ({ Component: (await import('../pages/ProfilePage')).default }) },
-          { path: '/me/wishlist', lazy: async () => ({ Component: (await import('../pages/WishlistPage')).default }) },
           {
-            path: '/notifications',
-            lazy: async () => ({ Component: (await import('../pages/NotificationsPage')).default }),
+            element: <SectionLayout />,
+            handle: { navSection: 'favorites' } satisfies RouteHandle,
+            children: [
+              {
+                path: '/me/wishlist',
+                lazy: async () => ({ Component: (await import('../pages/WishlistPage')).default }),
+              },
+              {
+                path: '/notifications',
+                lazy: async () => ({ Component: (await import('../pages/NotificationsPage')).default }),
+              },
+            ],
           },
           {
-            path: '/me/notification-subscriptions',
-            lazy: async () => ({ Component: (await import('../pages/SubscriptionsPage')).default }),
+            element: <SectionLayout />,
+            handle: { navSection: 'myInfo' } satisfies RouteHandle,
+            children: [
+              { path: '/me/profile', lazy: async () => ({ Component: (await import('../pages/ProfilePage')).default }) },
+              {
+                path: '/me/notification-subscriptions',
+                lazy: async () => ({ Component: (await import('../pages/SubscriptionsPage')).default }),
+              },
+            ],
           },
         ],
       },

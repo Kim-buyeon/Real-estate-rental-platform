@@ -1,7 +1,9 @@
 /*
- * favorites 아키타입 — 레이아웃 맵 examples/favorites. 컨테이너 중앙 · 1열.
- * 컨테이너 최대 폭은 정의서 9절이 정한 값이고 global.css 의 --container-max 하나를 참조한다.
- * 좌우 패딩은 모바일 16 · 태블릿 이상 24 다.
+ * favorites 아키타입 — 레이아웃 맵 examples/favorites 의 4 이후(탭 아래). 제목 · 탭은 묶음 머리(app/SectionLayout)가 갖는다.
+ * 컨테이너는 머리와 같다 — --container-max · 좌우 패딩 모바일 16 · 태블릿 이상 24.
+ *
+ * 탭 ↔ 내용 간격 — 맵의 「탭 ↔ 빈 상태 184」는 빈 상태 한 줄의 계측이고 채워진 목록은 미관측이다. 목록이 184 아래에서
+ * 시작하면 첫 화면에 거의 보이지 않아, 이전의 제목 아래 간격(spacing 격자 2xl · 4xl)을 그대로 쓴다.
  */
 .page {
   display: flex;
@@ -13,34 +15,8 @@
   padding: var(--spacing-2xl) var(--spacing-md);
 }
 
-/*
- * 페이지 제목 — 레이아웃 맵 「page-title {typography.display} 중앙 정렬」.
- * 맵의 상단 여백 107 · 하단 여백 85 는 근사 토큰(5xl 80 · 4xl 64)으로 옮긴다 — 격자 밖 값을
- * 새로 만들지 않는다. 모바일 축소(40 → 24)는 반영하지 못했다: font-size 를 컴포넌트 CSS 에
- * 적을 수 없고(frontend/CLAUDE.md 스타일), 반응형 역할 클래스는 styles/ 의 일이다.
- */
-.title {
-  margin: var(--spacing-2xl) 0 0;
-  color: var(--color-text);
-  text-align: center;
-}
-
-.note {
-  margin: var(--spacing-sm) 0 var(--spacing-2xl);
-  color: var(--color-text-secondary);
-  text-align: center;
-}
-
 @media (min-width: 768px) {
   .page {
-    padding: var(--spacing-3xl) var(--spacing-xl);
-  }
-
-  .title {
-    margin-top: var(--spacing-5xl);
-  }
-
-  .note {
-    margin-bottom: var(--spacing-4xl);
+    padding: var(--spacing-4xl) var(--spacing-xl) var(--spacing-3xl);
   }
 }

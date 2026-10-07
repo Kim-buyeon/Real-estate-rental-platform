@@ -22,6 +22,8 @@ frontend/
     │   ├── NotificationStream.tsx  SSE 연결 관리자 — EventSource를 여는 유일한 곳
     │   ├── AppShell.tsx          공통 레이아웃. 레이아웃 맵을 따른다
     │   ├── AppFooter.tsx         공통 푸터. 지도 화면은 렌더하지 않는다
+    │   ├── SectionLayout.tsx     메뉴 묶음의 머리(페이지 제목 + 탭). 관심 목록 · 내 정보 화면을 감싼다
+    │   ├── navSections.ts        상단 메뉴의 묶음 표 — 메뉴 이름 · 묶음 안 탭. 헤더 메뉴와 SectionLayout이 함께 읽는다
     │   └── routeHandle.ts        라우트의 성질(`handle`) 타입과 좁히는 함수
     ├── session/                토큰 보관(store.ts) · 로그인 상태 훅(useSession.ts)
     ├── pages/                  라우트 하나 = 파일 하나. 조합만 한다
@@ -381,7 +383,7 @@ export function Button({ variant = 'primary', size = 'md', isLoading = false, ty
 | `/map` · `/map?propertyId=` | 지도 탐색 + 상세 패널 | PROP-08 · 02 · 03 · 04 · RISK-01 · 07 표시 · RISK-08 재분석 · LOAN-01 표시 | 선택 |
 | `/login` · `/signup` | 로그인 · 가입 | USER-02 · 01 | 공개 |
 | `/password-reset` · `/password-reset/confirm?token=` | 비밀번호 찾기 · 재설정 | USER-06 | 공개 |
-| `/me/profile` | 계정 · 자격 정보 | USER-03 | 필수 |
+| `/me/profile` | 계정 | USER-03 | 필수 |
 | `/me/wishlist` | 관심 매물 | PROP-05 | 필수 |
 | `/notifications` | 알림 목록 | NOTI-05 | 필수 |
 | `/me/notification-subscriptions` | 알림 구독 설정 | NOTI-01 | 필수 |

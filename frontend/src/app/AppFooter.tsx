@@ -42,7 +42,7 @@ const SITEMAP: FooterColumn[] = [
       { kind: 'link', label: '관심 매물', to: '/me/wishlist' },
       { kind: 'link', label: '알림', to: '/notifications' },
       { kind: 'link', label: '알림 설정', to: '/me/notification-subscriptions' },
-      { kind: 'link', label: '계정 · 자격 정보', to: '/me/profile' },
+      { kind: 'link', label: '계정', to: '/me/profile' },
     ],
   },
   {
