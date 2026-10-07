@@ -13,8 +13,8 @@ import java.util.List;
 /**
  * 매물 조회 조건. 서비스가 요청을 가공해 만든다 — 반경은 바운딩 박스로, 커서는 정렬 값 · 식별자로.
  *
- * <p>쓰지 않는 조회에서는 좌표 · 정렬 · 커서 · 격자 필드가 null 이다. 자치구 집계와 마커는 정렬 · 커서를,
- * 목록은 좌표를 비운다. 격자 필드는 지도 묶음만 채운다.
+ * <p>쓰지 않는 조회에서는 좌표 · 정렬 · 커서 · 격자 필드가 null 이다. 자치구 집계와 마커는 정렬 · 커서를 비우고,
+ * 목록은 표시 영역이 없을 때 좌표를 비운다. 격자 필드는 지도 묶음만 채운다.
  *
  * @param nullDebtRatio 전세가율 정렬에서 미분석 매물이 갖는 대체값. 방향과 무관하게 맨 뒤로 가도록
  *                      서비스가 고른다
@@ -68,13 +68,19 @@ public record PropertySearchCondition(
                 null, false, null, null, null, null, null, null, null, null, null, null);
     }
 
-    /** 공통 필터 + 정렬 · 키셋 — 목록. */
-    public static PropertySearchCondition ofList(DistrictCountRequest f, PropertySortKey sortKey,
-            boolean ascending, BigDecimal nullDebtRatio, Long lastDeposit, BigDecimal lastDebtRatio,
-            LocalDateTime lastRegisteredAt, Long lastId, int limit) {
+    /**
+     * 공통 필터 + 표시 영역(선택) + 정렬 · 키셋 — 목록(명세 1.3).
+     *
+     * @param box 검증을 거친 표시 영역. 없으면 null — 좌표 필드를 비운다
+     */
+    public static PropertySearchCondition ofList(DistrictCountRequest f, BoundingBox box,
+            PropertySortKey sortKey, boolean ascending, BigDecimal nullDebtRatio, Long lastDeposit,
+            BigDecimal lastDebtRatio, LocalDateTime lastRegisteredAt, Long lastId, int limit) {
         return new PropertySearchCondition(f.district(), f.contractType(), f.depositMin(),
                 f.depositMax(), f.monthlyRentMax(), f.propertyType(), f.riskGrade(), f.areaMin(),
-                f.areaMax(), null, null, null, null, sortKey, ascending, nullDebtRatio, lastDeposit,
+                f.areaMax(), box == null ? null : box.minLat(), box == null ? null : box.maxLat(),
+                box == null ? null : box.minLng(), box == null ? null : box.maxLng(),
+                sortKey, ascending, nullDebtRatio, lastDeposit,
                 lastDebtRatio, lastRegisteredAt, lastId, limit, null, null, null, null);
     }
 

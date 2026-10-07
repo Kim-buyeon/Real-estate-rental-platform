@@ -87,35 +87,33 @@ public class PropertyQueryService {
     }
 
     /**
-     * 반경 조건이 있으면 마커, 없으면 목록. 반환 형태가 달라 호출자가 그대로 봉투에 담는다.
-     * 표시 영역 좌표는 받지 않는다 — 하나라도 오면 INVALID_REQUEST. 명세 1.3. 읽기 분산이 켜지면 읽기용 풀에서 읽는다(#343).
+     * 반경 조건이 있으면 마커, 없으면 목록. 반환 형태가 달라 호출자가 그대로 봉투에 담는다. 명세 1.3.
+     * 표시 영역 좌표는 목록에서만 받는다 — 반경 조건과 함께 오면 INVALID_REQUEST(minLat), 목록이면 지도 묶음(1.12)과
+     * 같은 검증({@link #validBox}) 뒤 목록 조건에 넘긴다. 읽기 분산이 켜지면 읽기용 풀에서 읽는다(#343).
      */
     @ReplicaRead
     public Object search(PropertySearchRequest request) {
-        if (request.minLat() != null) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST, "minLat");
-        }
-        if (request.maxLat() != null) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST, "maxLat");
-        }
-        if (request.minLng() != null) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST, "minLng");
-        }
-        if (request.maxLng() != null) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST, "maxLng");
-        }
+        boolean anyBox = Stream.of(request.minLat(), request.maxLat(), request.minLng(), request.maxLng())
+                .anyMatch(v -> v != null);
         boolean anyRadius = Stream.of(request.lat(), request.lng(), request.radiusKm())
                 .anyMatch(v -> v != null);
         boolean fullRadius = Stream.of(request.lat(), request.lng(), request.radiusKm())
                 .allMatch(v -> v != null);
 
+        if (anyBox && anyRadius) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "minLat");
+        }
+        if (anyBox) {
+            return searchList(request,
+                    validBox(request.minLat(), request.maxLat(), request.minLng(), request.maxLng()));
+        }
         if (anyRadius && !fullRadius) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "lat");
         }
         if (fullRadius) {
             return searchMarkersInRadius(request);
         }
-        return searchList(request);
+        return searchList(request, null);
     }
 
     /**
@@ -127,7 +125,7 @@ public class PropertyQueryService {
      */
     @ReplicaRead
     public PropertyMapClustersResponse getMapClusters(PropertyMapClustersRequest request) {
-        BoundingBox box = validBox(request);
+        BoundingBox box = validBox(request.minLat(), request.maxLat(), request.minLng(), request.maxLng());
         DistrictCountRequest filter = request.toFilter();
         int rows = request.rows();
         int cols = request.cols();
@@ -165,15 +163,18 @@ public class PropertyQueryService {
         return PropertyMapClustersResponse.clustered(total, clusters, markers);
     }
 
-    /** 표시 영역 네 값이 모두 있고 {@code min ≤ max} 여야 한다. 아니면 INVALID_REQUEST. */
-    private static BoundingBox validBox(PropertyMapClustersRequest request) {
-        if (request.minLat() == null || request.maxLat() == null || request.minLat() > request.maxLat()) {
+    /**
+     * 표시 영역 네 값이 모두 있고 {@code min ≤ max} 여야 한다(같으면 한 점 · 한 줄 영역). 아니면 INVALID_REQUEST — 위도 쪽이
+     * 어긋나면 field {@code minLat}, 경도 쪽이면 {@code minLng}. 지도 묶음(명세 1.12)과 목록(1.3)이 함께 쓴다.
+     */
+    private static BoundingBox validBox(Double minLat, Double maxLat, Double minLng, Double maxLng) {
+        if (minLat == null || maxLat == null || minLat > maxLat) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "minLat");
         }
-        if (request.minLng() == null || request.maxLng() == null || request.minLng() > request.maxLng()) {
+        if (minLng == null || maxLng == null || minLng > maxLng) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "minLng");
         }
-        return new BoundingBox(request.minLat(), request.maxLat(), request.minLng(), request.maxLng());
+        return new BoundingBox(minLat, maxLat, minLng, maxLng);
     }
 
     /**
@@ -230,7 +231,8 @@ public class PropertyQueryService {
         return PropertyMarkersResponse.of(items, truncated);
     }
 
-    private CursorPage<PropertyListResponse> searchList(PropertySearchRequest request) {
+    /** 목록. {@code box} 는 검증을 거친 표시 영역이고 없으면 null — 좌표 조건 없이 고른다. */
+    private CursorPage<PropertyListResponse> searchList(PropertySearchRequest request, BoundingBox box) {
         PropertySortKey sortKey = DEFAULT_SORT_KEY;
         boolean ascending = false;
         if (request.sort() != null && !request.sort().isBlank()) {
@@ -275,7 +277,7 @@ public class PropertyQueryService {
 
         int size = request.size();
         PropertySearchCondition condition = PropertySearchCondition.ofList(
-                request.toFilter(), sortKey, ascending, nullDebtRatio,
+                request.toFilter(), box, sortKey, ascending, nullDebtRatio,
                 lastDeposit, lastDebtRatio, lastRegisteredAt, lastId, size + 1);
         List<PropertyListResponse> rows = usesLeaseRatioIndex(condition)
                 ? selectListByLeaseRatio(condition)

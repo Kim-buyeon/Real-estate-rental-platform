@@ -274,15 +274,75 @@ class PropertyQueryServiceTest {
     }
 
     @Test
-    @DisplayName("표시 영역 네 값이 모두 있어도 INVALID_REQUEST(minLat)다 — 영역 조회는 1.12 묶음 조회의 몫")
-    void rejectsFullBox() {
-        assertInvalidRequest(boxRequest(37.0, 38.0, 126.0, 128.0), "minLat");
+    @DisplayName("표시 영역 네 값이 모두 있으면 목록 조건에 좌표가 그대로 실린다")
+    void listCarriesFullBoxToMapper() {
+        when(propertyMapper.selectList(any())).thenReturn(List.of());
+
+        service.search(boxRequest(37.5, 37.6, 126.9, 127.0));
+
+        PropertySearchCondition condition = capturedSelectList(1).get(0);
+        assertThat(condition.minLat()).isEqualTo(37.5);
+        assertThat(condition.maxLat()).isEqualTo(37.6);
+        assertThat(condition.minLng()).isEqualTo(126.9);
+        assertThat(condition.maxLng()).isEqualTo(127.0);
     }
 
     @Test
-    @DisplayName("표시 영역 값이 하나만 와도 그 파라미터 이름으로 INVALID_REQUEST다")
+    @DisplayName("표시 영역이 없으면 목록 조건의 좌표는 비어 있다")
+    void listWithoutBoxHasNoCoordinates() {
+        when(propertyMapper.selectList(any())).thenReturn(List.of());
+
+        service.search(listRequest(null));
+
+        PropertySearchCondition condition = capturedSelectList(1).get(0);
+        assertThat(condition.minLat()).isNull();
+        assertThat(condition.maxLat()).isNull();
+        assertThat(condition.minLng()).isNull();
+        assertThat(condition.maxLng()).isNull();
+    }
+
+    @Test
+    @DisplayName("표시 영역 min = max(한 점)는 허용하고 조건에 그대로 싣는다")
+    void listAllowsPointBox() {
+        when(propertyMapper.selectList(any())).thenReturn(List.of());
+
+        service.search(boxRequest(37.5, 37.5, 127.0, 127.0));
+
+        PropertySearchCondition condition = capturedSelectList(1).get(0);
+        assertThat(condition.minLat()).isEqualTo(condition.maxLat()).isEqualTo(37.5);
+        assertThat(condition.minLng()).isEqualTo(condition.maxLng()).isEqualTo(127.0);
+    }
+
+    @Test
+    @DisplayName("표시 영역 위도 값이 일부만 오면 INVALID_REQUEST(minLat)다 — 1.12 와 같은 이름")
+    void rejectsPartialLatBox() {
+        assertInvalidRequest(boxRequest(37.0, null, 126.0, 128.0), "minLat");
+        assertInvalidRequest(boxRequest(null, 38.0, 126.0, 128.0), "minLat");
+    }
+
+    @Test
+    @DisplayName("표시 영역 경도 값이 일부만 오면 INVALID_REQUEST(minLng)다 — 1.12 와 같은 이름")
+    void rejectsPartialLngBox() {
+        assertInvalidRequest(boxRequest(37.0, 38.0, 126.0, null), "minLng");
+        assertInvalidRequest(boxRequest(37.0, 38.0, null, 128.0), "minLng");
+    }
+
+    @Test
+    @DisplayName("표시 영역 값이 하나만 와도 INVALID_REQUEST다")
     void rejectsSingleBoxParam() {
-        assertInvalidRequest(boxRequest(null, null, null, 127.0), "maxLng");
+        assertInvalidRequest(boxRequest(null, null, null, 127.0), "minLat");
+    }
+
+    @Test
+    @DisplayName("minLat > maxLat 이면 INVALID_REQUEST(minLat)다")
+    void rejectsInvertedLat() {
+        assertInvalidRequest(boxRequest(38.0, 37.0, 126.0, 128.0), "minLat");
+    }
+
+    @Test
+    @DisplayName("minLng > maxLng 이면 INVALID_REQUEST(minLng)다")
+    void rejectsInvertedLng() {
+        assertInvalidRequest(boxRequest(37.0, 38.0, 128.0, 126.0), "minLng");
     }
 
     @Test
@@ -292,8 +352,8 @@ class PropertyQueryServiceTest {
     }
 
     @Test
-    @DisplayName("반경 조건과 함께 표시 영역이 와도 INVALID_REQUEST(minLat)다")
-    void rejectsBoxEvenWithRadius() {
+    @DisplayName("반경 조건과 표시 영역이 함께 오면 INVALID_REQUEST(minLat)다")
+    void rejectsBoxWithRadius() {
         PropertySearchRequest request = new PropertySearchRequest(null, null, null, null, null, null,
                 null, null, null, 37.0, 38.0, 126.0, 128.0, 37.5, 127.0, 1.0, null, null, null);
         assertInvalidRequest(request, "minLat");
