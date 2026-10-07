@@ -4,12 +4,13 @@
  * px 리터럴은 셋이다 —
  *   1) 미디어 쿼리 조건 768 (global.css 머리말이 정본. 데스크톱은 태블릿과 같아 1024 조건을 두지 않았다)
  *   2) 1px 보더 두께 — .linkBar 의 가로 구분선, 태블릿 .topCell 의 세로 구분선
- *   3) spacing 격자에 없는 레이아웃 맵 계측값 — 28 · 5 · 40 · 73 은 아래 .footer 의 지역 변수에 모았고,
+ *   3) spacing 격자에 없는 레이아웃 맵 계측값 — 28 · 40 · 73 은 아래 .footer 의 지역 변수에 모았고,
  *      .topArrow 의 8 은 SVG 자체 크기라 그 자리에 둔다. 디자인 토큰 정의서 4절 「격자에 맞지 않는
  *      관측값은 토큰으로 올리지 않았다 — 해당 layout.md 가 갖는다」에 따른 것이다
  *
- * {components.button-footer-primary} 의 h32 는 여기 없다 — 저장소 버튼이 Button 의 variant 를 쓰므로
- * 그 값은 Button.module.css 가 갖는다 (이슈 112 검토 C · 이슈 114).
+ * 사이트맵(구역 1)은 2026-10-07 결정(레이아웃 맵 M-07 · 정의서 K-32)을 따른다 — 컬럼 6 · 피치 190(첫 컬럼 인셋 20) ·
+ * 링크 줄 피치 28 · 링크 {typography.body-sm} 은 1007 값, 링크 색 {colors.text-secondary} 와 앞뒤 여백 64 / 48 은 기존 값.
+ * 피치 190 은 (1180 − 40) ÷ 6 이라 px 로 적지 않고 「좌우 인셋 {spacing.lg} + repeat(6, 1fr)」로 잡는다.
  *
  * 컨테이너 최대 폭 1200 · 터치 타겟 최소 44 는 정의서 9절이 정한 값이라 px 로 다시 적지 않는다 —
  * global.css 의 --container-max · --touch-target-min 을 쓴다 (이슈 112 검토 D · F).
@@ -19,8 +20,6 @@
 .footer {
   /* 레이아웃 맵 구역 1 — 컬럼 제목 ↔ 첫 링크 */
   --footer-title-gap: 28px;
-  /* 레이아웃 맵 구역 1 — 링크 줄 피치 31 = type-link 줄 높이 21 + 위아래 5 */
-  --footer-link-pad: 5px;
   /* 레이아웃 맵 구역 3 — 구분선 ↔ 정보 첫 줄 */
   --footer-divider-gap: 40px;
   /* 레이아웃 맵 구역 2 — TOP 셀 폭 */
@@ -49,7 +48,8 @@
 
 .sitemapColumns {
   display: grid;
-  grid-template-columns: 1fr;
+  /* 모바일 2열 — 6컬럼을 한 줄씩 쌓으면 푸터가 과하게 길어진다(레이아웃 맵 푸터 「반응형 붕괴」 모바일 제안의 취지) */
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--spacing-2xl);
   padding-block: var(--spacing-4xl) var(--spacing-3xl);
 }
@@ -60,11 +60,21 @@
   color: var(--color-text);
 }
 
-.sitemapLink {
+/* 데이터 출처(.sitemapText)는 누를 수 없지만 같은 컬럼 줄 피치를 맞추려고 링크와 같은 여백 · 색을 쓴다 */
+.sitemapLink,
+.sitemapText {
   display: block;
-  /* 모바일 터치 타겟 — 줄 높이 21 + 위아래 12 = 45 ≥ 44 (정의서 9절) */
+  /* 모바일 터치 타겟 — 줄 높이 20 + 위아래 12 = 44 ≥ 44 (정의서 9절) */
   padding-block: var(--spacing-sm);
   color: var(--color-text-secondary);
+}
+
+/* 준비 중 항목 — 링크 모양의 버튼이다. 버튼의 기본 모양(보더 · 면 · 가운데 정렬)을 지운다 */
+.sitemapButton {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
 }
 
 /*
@@ -130,28 +140,14 @@
   height: 8px;
 }
 
-/* ── 구역 3 · 4 — 프로젝트 정보 · 저장소 버튼 · 저작권 ── */
+/* ── 구역 3 · 4 — 프로젝트 정보 · 저작권 ── */
 
 .projectInfo {
   display: flex;
   flex-direction: column;
-  /* 문단 사이 · 문단 ↔ 버튼 줄 · 버튼 줄 ↔ 저작권이 모두 24다 */
+  /* 문단 사이 · 문단 ↔ 저작권이 모두 24다 */
   gap: var(--spacing-xl);
   padding-block: var(--footer-divider-gap) var(--spacing-xl);
-}
-
-.buttonRow {
-  display: flex;
-  gap: var(--spacing-xs);
-}
-
-/*
- * 저장소 버튼 — 소셜 버튼 4개를 대신하는 강조 버튼 하나. 면 · 높이 · 반경 · 글자는
- * {components.button-footer-primary} 이고 Button 의 variant 가 갖는다. 여기 남는 것은 폭뿐이다 —
- * 모바일 전폭은 이 푸터의 배치이지 버튼의 성질이 아니다.
- */
-.repositoryButton {
-  width: 100%;
 }
 
 /* ── 태블릿 768~1023 ── */
@@ -161,16 +157,19 @@
     padding-inline: var(--spacing-xl);
   }
 
+  /* 레이아웃 맵 푸터 「반응형 붕괴」 태블릿 제안 — 6컬럼 → 3컬럼 2행 */
   .sitemapColumns {
     grid-template-columns: repeat(3, 1fr);
   }
 
+  /* 링크 줄 피치 28 = body-sm 줄 높이 20 + 위아래 {spacing.2xs} 4 (M-07) */
   .columnTitle {
-    margin-bottom: calc(var(--footer-title-gap) - var(--footer-link-pad));
+    margin-bottom: calc(var(--footer-title-gap) - var(--spacing-2xs));
   }
 
-  .sitemapLink {
-    padding-block: var(--footer-link-pad);
+  .sitemapLink,
+  .sitemapText {
+    padding-block: var(--spacing-2xs);
   }
 
   .linkBar {
@@ -192,10 +191,13 @@
     width: var(--footer-top-cell-width);
     border-left: 1px solid var(--color-footer-divider);
   }
-
-  .repositoryButton {
-    width: auto;
-  }
 }
 
-/* ── 데스크톱 1024~ : 컨테이너 최대 폭 1200 중앙. 태블릿과 같은 3컬럼 · 한 줄 link-bar ── */
+/* ── 데스크톱 1024~ : 컨테이너 최대 폭 1200 중앙. 6컬럼 한 줄 · 첫 컬럼 인셋 {spacing.lg}(M-07) ── */
+@media (min-width: 1024px) {
+  .sitemapColumns {
+    grid-template-columns: repeat(6, 1fr);
+    column-gap: 0;
+    padding-inline: calc(var(--spacing-xl) + var(--spacing-lg));
+  }
+}
