@@ -217,7 +217,7 @@ stop_jmeter() {
 
 # 회차 하나 — 끝나면 CSV 한 줄
 run_round() {
-  local r=$1 name ph tg prof req extra notes warm kind rd jtl abortf donef mon_pid run_pid st reason
+  local r=$1 name ph tg prof req extra notes warm kind rd jtl abortf donef mon_pid run_pid
   name=$(field "$r" 0) ph=$(field "$r" 1) tg=$(field "$r" 2) prof=$(field "$r" 3) req=$(field "$r" 4)
   extra=$(field "$r" 5) notes=$(field "$r" 6) warm=$(field "$r" 7) kind=$(field "$r" 8)
   rd=$(round_dir "$name")

@@ -86,7 +86,7 @@ cloop() {
     first=1
     while read -r id svc; do
       [ -n "$id" ] || continue
-      cur= max= oom=null
+      cur='' max='' oom=null
       for p in "/sys/fs/cgroup/system.slice/docker-$id.scope" "/sys/fs/cgroup/docker/$id"; do
         if [ -r "$p/memory.current" ]; then
           cur=$(cat "$p/memory.current" 2>/dev/null); max=$(cat "$p/memory.max" 2>/dev/null)
@@ -130,7 +130,7 @@ start() {
       targets=(node=http://127.0.0.1:9100/metrics redis=http://127.0.0.1:9121/metrics nginx=http://127.0.0.1:9113/metrics
                "app-1=http://$addr:8081/actuator/prometheus" "app-2=http://$addr:8082/actuator/prometheus") ;;
     db01|db02)
-      targets=(node=http://127.0.0.1:9100/metrics postgres@3=http://127.0.0.1:9187/metrics) ;;   # @3 — 머리 주석(#445)
+      targets=("node=http://127.0.0.1:9100/metrics" "postgres@3=http://127.0.0.1:9187/metrics") ;;   # @3 — 머리 주석(#445)
     *) echo "알 수 없는 노드: $node" >&2; return 1 ;;
   esac
 
