@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import type { PropertyFilter } from '../../../api/property';
+import type { BoundingBox, PropertyFilter, PropertyMarker } from '../../../api/property';
 import { Alert } from '../../../components/ui';
 import { propertyQueries } from '../../../queries/property';
 import {
   addClickListener,
   addIdleListener,
+  canZoomInto,
   createMap,
   createOverlayLayer,
   fitBoundingBox,
@@ -24,7 +25,7 @@ import {
   type OverlayLayer,
 } from '../map';
 import { useDistrictPoints } from '../hooks/useDistrictPoints';
-import type { MapStage } from '../hooks/useMapStage';
+import { stageKeyOf, type MapStage } from '../hooks/useMapStage';
 import { DistrictOverlayContent } from './DistrictOverlayContent';
 import { MarkerClusterContent } from './MarkerClusterContent';
 import { toMarkerCluster, type MarkerCluster } from '../map';
@@ -41,7 +42,8 @@ const PENDING_AREA: MapArea = {
 /** SDK 로드 상태. 지도 화면에 들어온 뒤에야 내려받는다 (kakao-map 2장) */
 type SdkStatus = 'loading' | 'ready' | 'error';
 
-const stageKeyOf = (stage: MapStage) => (stage.type === 'seoul' ? 'seoul' : `district:${stage.district}`);
+/** 같은 좌표 판정의 키 — 응답의 위도 · 경도 값을 그대로 비교한다. 화면이 좌표를 반올림해 다시 묶지 않는다 (명세 1.12) */
+const spotKeyOf = (marker: PropertyMarker) => `${marker.latitude},${marker.longitude}`;
 
 /**
  * 읽은 표시 영역(격자 행 · 열 포함)과 그때의 단계. 단계를 함께 들고 있어야 자치구로 막 옮긴 순간에
@@ -73,13 +75,26 @@ interface MapExplorerProps {
   isShown?: boolean;
   onSelectDistrict: (district: string) => void;
   onOpenDetail: (propertyId: number) => void;
+  /**
+   * 지도로는 더 나눠 볼 수 없는 영역을 골랐다 — 목록으로 보여 달라는 요청이다 (kakao-map 3장 2단계).
+   * 레벨 2 이하에서 누른 묶음(칸 경계)과 같은 좌표에 2건 이상 겹친 마커(그 한 점)다. 건수는 넘기지 않는다 —
+   * 지도 응답의 숫자를 받는 쪽이 상태로 복사해 두지 않게 한다.
+   */
+  onSelectArea: (bbox: BoundingBox) => void;
 }
 
 /**
  * 지도 드릴다운 1 · 2단계. 오버레이 내용은 React 컴포넌트를 포털로 그리고,
  * CustomOverlay의 생성 · 제거는 map 폴더가 맡는다 (kakao-map 5장).
  */
-export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, onOpenDetail }: MapExplorerProps) {
+export function MapExplorer({
+  filter,
+  stage,
+  isShown = true,
+  onSelectDistrict,
+  onOpenDetail,
+  onSelectArea,
+}: MapExplorerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<KakaoMap | null>(null);
   const layerRef = useRef<OverlayLayer | null>(null);
@@ -244,19 +259,63 @@ export function MapExplorer({ filter, stage, isShown = true, onSelectDistrict, o
   // SDK가 준비되기 전 · 실패한 뒤에는 조회하지 않는다 — 지도가 없으면 좌표를 쓸 곳도 없다
   const districtPoints = useDistrictPoints(isSeoul && isSdkReady ? districtNames : []);
 
-  const handleHoverMarker = useCallback((propertyId: number) => setPreviewId(propertyId), []);
-  const handleSelectMarker = useCallback((propertyId: number) => setPreviewId(propertyId), []);
-  const handleClosePreview = useCallback(() => setPreviewId(null), []);
-  const handleHoverDistrict = useCallback((name: string) => setFrontDistrict(name), []);
-  const handleSelectCluster = useCallback((cluster: MarkerCluster) => {
-    const map = mapRef.current;
-    if (!map) return;
-    setPreviewId(null);
-    fitBoundingBox(map, cluster.bbox);
-  }, []);
-
   const mapClusters = mapClustersQuery.data;
   const markers = mapClusters?.markers;
+
+  /** 응답 markers 안에서 좌표마다 몇 건이 겹치는가. 응답이 바뀔 때만 센다 */
+  const spotCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const marker of markers ?? []) {
+      const key = spotKeyOf(marker);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [markers]);
+
+  const handleHoverMarker = useCallback((propertyId: number) => setPreviewId(propertyId), []);
+  /**
+   * 마커 클릭. 같은 좌표에 2건 이상이면 겹쳐 그려져 하나만 눌린다 — 확대해도 갈라지지 않으므로 그 한 점의 목록을 연다.
+   * 한 건이면 지금처럼 미리보기 카드를 고정한다. hover는 어느 쪽이든 미리보기다(위)
+   */
+  const handleSelectMarker = useCallback(
+    (propertyId: number) => {
+      const marker = markers?.find((candidate) => candidate.propertyId === propertyId);
+      const sameSpotCount = marker ? (spotCounts.get(spotKeyOf(marker)) ?? 1) : 1;
+      if (marker && sameSpotCount >= 2) {
+        setPreviewId(null);
+        // 건수는 같은 좌표 판정에만 쓰고 넘기지 않는다
+        onSelectArea({
+          minLat: marker.latitude,
+          maxLat: marker.latitude,
+          minLng: marker.longitude,
+          maxLng: marker.longitude,
+        });
+        return;
+      }
+      setPreviewId(propertyId);
+    },
+    [markers, onSelectArea, spotCounts],
+  );
+  const handleClosePreview = useCallback(() => setPreviewId(null), []);
+  const handleHoverDistrict = useCallback((name: string) => setFrontDistrict(name), []);
+  /**
+   * 묶음 클릭. 더 확대할 수 있으면 그 칸 경계로 들어간다(명세 1.12). setBounds는 레벨 2보다 깊이 가지 않으므로
+   * (kakao-map 6장 실측) 그 이하에서는 확대 대신 그 칸의 목록을 연다 — 칸 경계 안 매물이 곧 묶음의 매물이다
+   */
+  const handleSelectCluster = useCallback(
+    (cluster: MarkerCluster) => {
+      const map = mapRef.current;
+      if (!map) return;
+      setPreviewId(null);
+      if (canZoomInto(map)) {
+        fitBoundingBox(map, cluster.bbox);
+        return;
+      }
+      onSelectArea(cluster.bbox);
+    },
+    [onSelectArea],
+  );
+
   const previewMarker = useMemo(
     () => (previewId === null ? null : (markers?.find((marker) => marker.propertyId === previewId) ?? null)),
     [markers, previewId],

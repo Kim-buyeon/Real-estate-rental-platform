@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import type { PropertyFilter } from '../api/property';
+import type { BoundingBox, PropertyFilter } from '../api/property';
 import { Alert, Button, Tabs, type TabItem } from '../components/ui';
 import {
   DistrictPicker,
@@ -8,8 +8,10 @@ import {
   PropertyDetailPanel,
   PropertyFilterBar,
   PropertyList,
+  stageKeyOf,
   useDetailTarget,
   useMapStage,
+  type PropertyListArea,
 } from '../features/property';
 import { readDetailPropertyId, withDetailPropertyId, withoutDetailPropertyId } from '../lib/routes';
 import styles from './MapPage.module.css';
@@ -58,6 +60,20 @@ export default function MapPage() {
   // 없는 매물 번호로 들어왔을 때의 서버 문구. 파라미터를 지우고 나면 조회가 사라지므로 여기가 들고 있는다
   const [missingMessage, setMissingMessage] = useState<string | null>(null);
   const { stage, selectDistrict, backToSeoul, showDistrict } = useMapStage();
+  /**
+   * 칸 목록 — 지도로 더 나눠 볼 수 없는 묶음 칸 · 같은 좌표에 겹친 마커를 고르면 목록을 그 영역으로 좁힌다
+   * (kakao-map 3장 2단계). 필터 변경 · 지도 이동에서는 유지하고 — 조금만 움직여도 목록이 사라지면 안 된다 —
+   * 「전체 목록」 · 자치구 변경 · 서울 전체로 돌아가기에서 푼다. 단계 키가 바뀌면 렌더 중에 비운다 — 상세가
+   * 다른 구를 따라가는(showDistrict) 경로도 같이 풀리고, 같은 구로 돌아와도 되살아나지 않는다.
+   * 이펙트로 맞추지 않는 것은 바뀐 단계로 한 번 그려진 뒤에야 비워져 이전 칸 목록이 한 프레임 남기 때문이다.
+   */
+  const [area, setArea] = useState<PropertyListArea | null>(null);
+  const currentStageKey = stageKeyOf(stage);
+  const [areaStageKey, setAreaStageKey] = useState(currentStageKey);
+  if (areaStageKey !== currentStageKey) {
+    setAreaStageKey(currentStageKey);
+    setArea(null);
+  }
   // 상세 응답에서 자치구와 404 여부만 읽는다. 패널과 같은 쿼리 정의라 요청은 하나다
   const { district: detailDistrict, notFoundMessage } = useDetailTarget(detailPropertyId);
 
@@ -119,6 +135,35 @@ export default function MapPage() {
     },
     [detailPropertyId, setSearchParams],
   );
+
+  /**
+   * 지도가 고른 칸의 목록을 연다. 목록 탭으로 옮긴다 — 상세가 열려 있으면 탭 전환과 같이 URL의 매물 번호를 지운다
+   * (handleSelectTab). 좁은 화면에서는 지도 위에서 고른 것이므로 패널 쪽으로 넘긴다 — 상세 열기와 같은 판단이다.
+   */
+  const handleSelectArea = useCallback(
+    (bbox: BoundingBox) => {
+      setArea({ bbox });
+      handleSelectTab(LIST_TAB);
+      setNarrowView(PANEL_VIEW);
+    },
+    [handleSelectTab],
+  );
+
+  const handleClearArea = useCallback(() => setArea(null), []);
+
+  /** 자치구를 고르거나 서울 전체로 돌아가면 칸 목록을 푼다 — 같은 구를 다시 골라도 「그 구로 되돌려 달라」는 요청이다 */
+  const handleSelectDistrict = useCallback(
+    (district: string) => {
+      setArea(null);
+      selectDistrict(district);
+    },
+    [selectDistrict],
+  );
+
+  const handleBackToSeoul = useCallback(() => {
+    setArea(null);
+    backToSeoul();
+  }, [backToSeoul]);
 
   /**
    * 없는 매물 번호. 서버 문구를 그대로 알리고 파라미터를 지운다 — 링크가 잘못됐으므로 남겨 두면
@@ -196,11 +241,14 @@ export default function MapPage() {
 
       <div className={styles.stageBar}>
         {stage.type === 'district' && (
-          <Button type="button" size="sm" variant="ghost" onClick={backToSeoul}>
+          <Button type="button" size="sm" variant="ghost" onClick={handleBackToSeoul}>
             ← 서울 전체
           </Button>
         )}
-        <DistrictPicker district={stage.type === 'district' ? stage.district : null} onSelect={selectDistrict} />
+        <DistrictPicker
+          district={stage.type === 'district' ? stage.district : null}
+          onSelect={handleSelectDistrict}
+        />
         <p className="type-caption">
           {stage.type === 'seoul'
             ? '지도의 자치구를 누르거나 위에서 골라 매물을 봅니다'
@@ -214,15 +262,21 @@ export default function MapPage() {
             filter={filter}
             stage={stage}
             isShown={isMapShown}
-            onSelectDistrict={selectDistrict}
+            onSelectDistrict={handleSelectDistrict}
             onOpenDetail={handleOpenDetail}
+            onSelectArea={handleSelectArea}
           />
         </div>
 
         <div className={styles.panel}>
           <Tabs label="매물 보기" items={tabs} selectedId={panelTab} onSelect={handleSelectTab}>
             {panelTab === LIST_TAB ? (
-              <PropertyList filter={listFilter} onSelect={handleOpenDetail} />
+              <PropertyList
+                filter={listFilter}
+                area={area}
+                onClearArea={handleClearArea}
+                onSelect={handleOpenDetail}
+              />
             ) : (
               detailPropertyId !== null && (
                 <PropertyDetailPanel propertyId={detailPropertyId} onClose={handleCloseDetail} />

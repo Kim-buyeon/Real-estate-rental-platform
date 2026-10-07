@@ -14,12 +14,14 @@ export {
   OVERLAY_Z_FRONT,
   SEOUL_BOUNDS,
   SEOUL_INITIAL_LEVEL,
+  SET_BOUNDS_DEEPEST_LEVEL,
 } from './constants';
 
 export {
   addClickListener,
   addIdleListener,
   bboxTileUnits,
+  canZoomInto,
   createMap,
   fitBoundingBox,
   fitSeoul,

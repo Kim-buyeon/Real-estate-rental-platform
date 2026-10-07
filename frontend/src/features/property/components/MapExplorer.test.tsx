@@ -17,11 +17,13 @@ import type {
   KakaoMaps,
   KakaoStatus,
 } from '../map/kakao';
+import type { BoundingBox, PropertyMapClusters } from '../../../api/property';
 import type { MapStage } from '../hooks/useMapStage';
 import { FakeKakaoCustomOverlay, installFakeKakaoMaps, getKakaoMapInstances } from '../../../test/kakao';
 import { installFakeResizeObserver, getResizeObserverInstances } from '../../../test/resizeObserver';
 import { MAP_CLUSTERS, propertyHandlers } from '../../../test/msw/handlers/property';
 import { server } from '../../../test/msw/server';
+import { SET_BOUNDS_DEEPEST_LEVEL } from '../map/constants';
 import { MapExplorer } from './MapExplorer';
 
 let restoreKakao: () => void;
@@ -37,6 +39,7 @@ function renderExplorer(isShown: boolean) {
         isShown={isShown}
         onSelectDistrict={() => {}}
         onOpenDetail={() => {}}
+        onSelectArea={vi.fn()}
       />
     </QueryClientProvider>,
   );
@@ -51,6 +54,7 @@ function renderExplorer(isShown: boolean) {
             isShown={nextIsShown}
             onSelectDistrict={() => {}}
             onOpenDetail={() => {}}
+            onSelectArea={vi.fn()}
           />
         </QueryClientProvider>,
       ),
@@ -203,11 +207,17 @@ async function finishSdkLoad() {
   });
 }
 
-function renderAt(stage: MapStage) {
+function renderAt(stage: MapStage, onSelectArea: (bbox: BoundingBox) => void = vi.fn()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MapExplorer filter={{}} stage={stage} onSelectDistrict={() => {}} onOpenDetail={() => {}} />
+      <MapExplorer
+        filter={{}}
+        stage={stage}
+        onSelectDistrict={() => {}}
+        onOpenDetail={() => {}}
+        onSelectArea={onSelectArea}
+      />
     </QueryClientProvider>,
   );
 }
@@ -311,6 +321,111 @@ describe('MapExplorer SDK가 렌더 뒤에 준비될 때', () => {
     expect(bounds.getSouthWest().getLng()).toBe(126.8567);
     expect(bounds.getNorthEast().getLat()).toBe(37.55);
     expect(bounds.getNorthEast().getLng()).toBe(126.8633);
+  });
+
+  // ── 묶음 · 마커 클릭 분기(PROP-02) ──────────────────────────────────────
+  // 가짜 setBounds는 레벨을 바꾸지 않는다 — 판정은 클릭 시점의 getLevel 값이 정한다.
+  // 실측 상수(SET_BOUNDS_DEEPEST_LEVEL = 2)를 박지 않고 상수에서 읽는다.
+
+  /** 자치구 단계로 준비된 지도에 주어진 묶음 응답을 그려 두고 지도 · 버튼 접근자를 돌려준다 */
+  async function openDistrictWith(
+    clusters: PropertyMapClusters,
+    district: string,
+    onSelectArea: (bbox: BoundingBox) => void,
+  ) {
+    server.use(
+      http.get('/api/properties/map-clusters', () => HttpResponse.json({ success: true, data: clusters })),
+    );
+    renderAt({ type: 'district', district }, onSelectArea);
+    await finishSdkLoad();
+    await waitFor(() => expect(getKakaoMapInstances()).toHaveLength(1));
+    const map = getKakaoMapInstances()[0]!;
+    const clusterButton = () =>
+      createdOverlays
+        .map((overlay) => overlay.getContent().querySelector<HTMLButtonElement>('button[aria-label*="묶음"]'))
+        .find((button) => button !== null && button !== undefined);
+    const markerButtons = () =>
+      createdOverlays
+        .map((overlay) => overlay.getContent().querySelector<HTMLButtonElement>('button:not([aria-label])'))
+        .filter((button): button is HTMLButtonElement => button !== null && button !== undefined);
+    const hasPreview = () =>
+      createdOverlays.some((overlay) => overlay.getContent().querySelector('button[aria-label="미리보기 닫기"]') !== null);
+    return { map, clusterButton, markerButtons, hasPreview };
+  }
+
+  it('묶음을 누를 때 레벨이 setBounds가 갈 수 있는 깊이보다 깊으면(레벨 3) 확대하고 목록 요청은 올리지 않는다', async () => {
+    const onSelectArea = vi.fn();
+    const { map, clusterButton } = await openDistrictWith(MAP_CLUSTERS, '서초구', onSelectArea);
+    await waitFor(() => expect(clusterButton()).toBeDefined());
+    map.level = SET_BOUNDS_DEEPEST_LEVEL + 1;
+    map.setBounds.mockClear();
+
+    fireEvent.click(clusterButton()!);
+
+    expect(map.setBounds).toHaveBeenCalledTimes(1);
+    expect(onSelectArea).not.toHaveBeenCalled();
+  });
+
+  it('묶음을 누를 때 레벨이 가장 깊은 값(레벨 2)이면 확대하지 않고 그 칸 경계로 목록을 요청한다', async () => {
+    const onSelectArea = vi.fn();
+    const { map, clusterButton } = await openDistrictWith(MAP_CLUSTERS, '송파구', onSelectArea);
+    await waitFor(() => expect(clusterButton()).toBeDefined());
+    map.level = SET_BOUNDS_DEEPEST_LEVEL;
+    map.setBounds.mockClear();
+    const cluster = MAP_CLUSTERS.clusters[0]!;
+
+    fireEvent.click(clusterButton()!);
+
+    expect(map.setBounds).not.toHaveBeenCalled();
+    expect(onSelectArea).toHaveBeenCalledTimes(1);
+    expect(onSelectArea).toHaveBeenCalledWith({
+      minLat: cluster.minLat,
+      maxLat: cluster.maxLat,
+      minLng: cluster.minLng,
+      maxLng: cluster.maxLng,
+    });
+  });
+
+  it('응답 markers에 같은 좌표가 2건이면 마커를 누를 때 그 한 점으로 목록을 요청하고 미리보기는 열지 않는다', async () => {
+    const base = MAP_CLUSTERS.markers[0]!;
+    const sameSpot: PropertyMapClusters = {
+      ...MAP_CLUSTERS,
+      clusters: [],
+      markers: [
+        { ...base, propertyId: 1, latitude: 37.5, longitude: 127.1 },
+        { ...base, propertyId: 2, latitude: 37.5, longitude: 127.1 },
+      ],
+    };
+    const onSelectArea = vi.fn();
+    const { markerButtons, hasPreview } = await openDistrictWith(sameSpot, '강동구', onSelectArea);
+    await waitFor(() => expect(markerButtons()).toHaveLength(2));
+
+    fireEvent.click(markerButtons()[0]!);
+
+    expect(onSelectArea).toHaveBeenCalledTimes(1);
+    expect(onSelectArea).toHaveBeenCalledWith({ minLat: 37.5, maxLat: 37.5, minLng: 127.1, maxLng: 127.1 });
+    // 미리보기 카드도 오버레이다 — 열렸다면 닫기 버튼이 오버레이 내용에 있다
+    expect(hasPreview()).toBe(false);
+  });
+
+  it('좌표가 조금이라도 다른 마커 2건은 같은 좌표가 아니다 — 누르면 목록 요청 없이 기존 미리보기를 연다', async () => {
+    const base = MAP_CLUSTERS.markers[0]!;
+    const apart: PropertyMapClusters = {
+      ...MAP_CLUSTERS,
+      clusters: [],
+      markers: [
+        { ...base, propertyId: 1, latitude: 37.5, longitude: 127.1 },
+        { ...base, propertyId: 2, latitude: 37.5, longitude: 127.1001 },
+      ],
+    };
+    const onSelectArea = vi.fn();
+    const { markerButtons, hasPreview } = await openDistrictWith(apart, '광진구', onSelectArea);
+    await waitFor(() => expect(markerButtons()).toHaveLength(2));
+
+    fireEvent.click(markerButtons()[0]!);
+
+    expect(onSelectArea).not.toHaveBeenCalled();
+    await waitFor(() => expect(hasPreview()).toBe(true));
   });
 
   it('로드 중에 언마운트하면 로드가 끝나도 지도를 만들지 않고 조회도 하지 않는다', async () => {

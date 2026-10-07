@@ -14,7 +14,7 @@ export interface MarkerCluster {
   count: number;
   /** 등급별 건수. 미분석은 unanalyzed — 열거값이 아니므로 domain/risk.ts의 미분석 처리와 같은 자리다 */
   gradeCounts: Record<RiskGrade, number> & { unanalyzed: number };
-  /** 누르면 확대해 들어갈 칸 경계 */
+  /** 누르면 확대해 들어갈 칸 경계. 더 확대할 수 없는 레벨이면 칸 목록의 영역이다 */
   bbox: BoundingBox;
 }
 

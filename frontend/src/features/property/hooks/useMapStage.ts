@@ -4,6 +4,12 @@ import { useCallback, useState } from 'react';
 export type MapStage = { type: 'seoul' } | { type: 'district'; district: string };
 
 /**
+ * 단계를 비교하는 키. 단계 객체는 갱신마다 새로 만들어지므로 같은 단계인지는 이 문자열로 본다 —
+ * 지도가 읽은 표시 영역 · 화면이 고른 칸 목록이 어느 단계의 것인지 가를 때 쓴다.
+ */
+export const stageKeyOf = (stage: MapStage) => (stage.type === 'seoul' ? 'seoul' : `district:${stage.district}`);
+
+/**
  * 단계 상태. 필터는 여기에 두지 않는다 — 단계를 오갈 때 유지되어야 하므로 지도 상태와 분리한다
  * (kakao-map 3장 되돌아가기 행).
  */

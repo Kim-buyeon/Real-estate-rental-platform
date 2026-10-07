@@ -1,5 +1,7 @@
-// SDK가 없는 환경의 동작만 검증한다 — 렌더링 전반은 대상이 아니다 (docs/architecture/testing.md 1.1).
-// jsdom에는 window.kakao가 없으므로 SDK를 가짜로 만들지 않고 그 상태를 그대로 쓴다.
+// 두 묶음이다. 첫 describe 「MapPage」는 SDK가 없는 환경의 동작만 검증한다 — 렌더링 전반은 대상이 아니다
+// (docs/architecture/testing.md 1.1). jsdom에는 window.kakao가 없으므로 SDK를 가짜로 만들지 않고 그 상태를
+// 그대로 쓴다. 둘째 describe 「MapPage 칸 목록」은 묶음 오버레이를 눌러야 하므로 가짜 SDK를 쓰되, 그 묶음의
+// beforeEach/afterEach에서만 설치 · 해제한다.
 //
 // 딥링크(이슈 104)는 useSearchParams를 쓰므로 라우터 컨텍스트가 있어야 렌더된다 —
 // createMemoryRouter + RouterProvider로 감싸고, initialEntries로 진입 경로(?propertyId=)를 준다.
@@ -8,11 +10,21 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { SET_BOUNDS_DEEPEST_LEVEL } from '../features/property/map/constants';
+import type { KakaoCustomOverlayOptions } from '../features/property/map/kakao';
 import { propertyDetailPath } from '../lib/routes';
-import { PROPERTY_DETAIL, PROPERTY_LIST_PAGE_1, propertyHandlers } from '../test/msw/handlers/property';
+import { FakeKakaoCustomOverlay, getKakaoMapInstances, installFakeKakaoMaps } from '../test/kakao';
+import {
+  MAP_CLUSTERS,
+  PROPERTY_DETAIL,
+  PROPERTY_LIST_AREA_PAGE,
+  PROPERTY_LIST_PAGE_1,
+  propertyHandlers,
+} from '../test/msw/handlers/property';
 import { riskHandlers } from '../test/msw/handlers/risk';
 import { server } from '../test/msw/server';
+import { installFakeResizeObserver } from '../test/resizeObserver';
 import MapPage from './MapPage';
 
 const LIST_ITEM = PROPERTY_LIST_PAGE_1.items[0]!;
@@ -380,5 +392,194 @@ describe('MapPage', () => {
     expect(screen.queryByRole('button', { name: '← 서울 전체' })).not.toBeInTheDocument();
     // 상세는 여전히 열려 있다 — 지도 단계와 무관하게 패널은 그대로다
     expect(screen.getByRole('button', { name: '상세 닫기' })).toBeInTheDocument();
+  });
+});
+
+// ── 칸 목록(PROP-02) ────────────────────────────────────────────────────
+// 더 확대할 수 없는 묶음을 누르면 목록 탭이 그 칸의 목록이 되고, 어떤 동작에서 풀리는가.
+// 묶음 클릭은 지도 오버레이에서 오므로 가짜 지도(frontend/src/test/kakao.ts)에 오버레이를 기록하는 자리를
+// 끼우고, 가짜 지도의 레벨을 실측 상수(가장 깊은 레벨)로 맞춰 누른다. 가짜 SDK는 이 묶음의
+// beforeEach/afterEach에서만 설치 · 해제하므로 위의 SDK 없음 경로에는 영향이 없다.
+
+let restoreKakao: () => void;
+let restoreResizeObserver: () => void;
+let createdOverlays: FakeKakaoCustomOverlay[] = [];
+
+class RecordingOverlay extends FakeKakaoCustomOverlay {
+  constructor(options: KakaoCustomOverlayOptions) {
+    super(options);
+    createdOverlays.push(this);
+  }
+}
+
+/** 목록 요청(/api/properties)의 검색 파라미터를 요청 순서대로 모은다 */
+function trackListRequests() {
+  const calls: URLSearchParams[] = [];
+  server.events.on('request:start', ({ request }) => {
+    const url = new URL(request.url);
+    if (url.pathname === '/api/properties') calls.push(url.searchParams);
+  });
+  return {
+    calls,
+    last: () => calls[calls.length - 1]!,
+    stop: () => server.events.removeAllListeners('request:start'),
+  };
+}
+
+const AREA_ITEM_ADDRESS = PROPERTY_LIST_AREA_PAGE.items[0]!.address;
+const FULL_ITEM_ADDRESS = PROPERTY_LIST_PAGE_1.items[0]!.address;
+
+/** 해제 뒤 목록이 전체 목록으로 돌아왔는지 — 전체 목록 항목이 보이고 영역 항목이 사라졌으며 마지막 요청에 영역이 없다 */
+async function expectBackToFullList(tracker: ReturnType<typeof trackListRequests>) {
+  await waitFor(() => expect(screen.getByText(FULL_ITEM_ADDRESS)).toBeInTheDocument());
+  expect(screen.queryByText(AREA_ITEM_ADDRESS)).not.toBeInTheDocument();
+  expect(tracker.last().has('minLat')).toBe(false);
+}
+
+const clusterButton = () =>
+  createdOverlays
+    .map((overlay) => overlay.getContent().querySelector<HTMLButtonElement>('button[aria-label*="묶음"]'))
+    .find((button) => button !== null && button !== undefined);
+
+/** 자치구를 골라 묶음이 그려지길 기다린 뒤, 가장 깊은 레벨에서 묶음을 눌러 칸 목록을 연다 */
+async function openAreaIn(district: string) {
+  fireEvent.change(screen.getByLabelText('자치구'), {
+    target: { value: district },
+  });
+  await waitFor(() => expect(getKakaoMapInstances()).toHaveLength(1));
+  await waitFor(() => expect(clusterButton()).toBeDefined());
+  getKakaoMapInstances()[0]!.level = SET_BOUNDS_DEEPEST_LEVEL;
+  fireEvent.click(clusterButton()!);
+}
+
+describe('MapPage 칸 목록', () => {
+  beforeEach(() => {
+    server.use(...propertyHandlers);
+    createdOverlays = [];
+    restoreKakao = installFakeKakaoMaps();
+    const maps = window.kakao.maps;
+    window.kakao = { maps: { ...maps, CustomOverlay: RecordingOverlay } };
+    restoreResizeObserver = installFakeResizeObserver();
+  });
+
+  afterEach(() => {
+    restoreKakao();
+    restoreResizeObserver();
+  });
+
+  it('더 확대할 수 없는 묶음을 누르면 목록 탭이 열리고 그 칸 안내가 뜨며 좁은 화면은 패널 쪽으로 넘어간다', async () => {
+    renderMapPage();
+    expect(screen.getByRole('button', { name: '목록' })).toBeInTheDocument();
+
+    await openAreaIn('송파구');
+
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent('이 위치의 매물을 보고 있습니다');
+    expect(screen.getByRole('tab', { name: '목록' })).toHaveAttribute('aria-selected', 'true');
+    // 좁은 화면 토글이 패널 쪽(지도로 돌아가는 「지도」 문구)으로 넘어갔다
+    expect(screen.getByRole('button', { name: '지도' })).toBeInTheDocument();
+  });
+
+  it('자치구를 바꾸면 칸 목록 안내가 사라진다', async () => {
+    renderMapPage();
+    await openAreaIn('송파구');
+    await screen.findByRole('status');
+
+    const tracker = trackListRequests();
+    fireEvent.change(screen.getByLabelText('자치구'), {
+      target: { value: '마포구' },
+    });
+
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    await expectBackToFullList(tracker);
+    // 구가 바뀌었으니 목록은 그 구로 좁혀진다
+    expect(tracker.last().get('district')).toBe('마포구');
+    tracker.stop();
+  });
+
+  it('「← 서울 전체」로 돌아가면 칸 목록 안내가 사라진다', async () => {
+    renderMapPage();
+    await openAreaIn('송파구');
+    await screen.findByRole('status');
+
+    fireEvent.click(screen.getByRole('button', { name: '← 서울 전체' }));
+
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  });
+
+  it('필터를 바꿔도 칸 목록 안내가 남고 목록 요청에 영역 네 값과 바꾼 필터가 함께 실린다', async () => {
+    renderMapPage();
+    await openAreaIn('송파구');
+    await screen.findByRole('status');
+
+    const tracker = trackListRequests();
+    fireEvent.change(screen.getByLabelText('계약유형'), {
+      target: { value: 'DEPOSIT_ONLY' },
+    });
+
+    await waitFor(() => expect(tracker.last()?.get('contractType')).toBe('DEPOSIT_ONLY'));
+    const params = tracker.last();
+    const cluster = MAP_CLUSTERS.clusters[0]!;
+    expect(params.get('minLat')).toBe(String(cluster.minLat));
+    expect(params.get('maxLat')).toBe(String(cluster.maxLat));
+    expect(params.get('minLng')).toBe(String(cluster.minLng));
+    expect(params.get('maxLng')).toBe(String(cluster.maxLng));
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    tracker.stop();
+  });
+
+  it('「전체 목록」을 누르면 안내가 사라진다', async () => {
+    renderMapPage();
+    await openAreaIn('송파구');
+    await screen.findByRole('status');
+
+    const tracker = trackListRequests();
+    fireEvent.click(screen.getByRole('button', { name: '전체 목록' }));
+
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    await expectBackToFullList(tracker);
+    tracker.stop();
+  });
+
+  it('칸 목록을 연 뒤 상세가 다른 구를 따라가면 풀리고, 상세가 원래 구로 돌아와도 되살아나지 않는다', async () => {
+    // 상세의 자치구를 매물 번호로 가른다 — 칸 목록의 매물(3333)은 강서구, 전체 목록의 매물(1024)은 송파구
+    // 이 경로는 handleSelectDistrict · handleBackToSeoul을 거치지 않으므로 해제는 단계 키 변경이 맡는다
+    server.use(
+      // 앞에 끼우면 map-clusters · district-counts까지 잡는다 — 매물 번호(숫자)일 때만 응답하고 나머지는 넘긴다
+      http.get('/api/properties/:propertyId', ({ params }) =>
+        !/^\d+$/.test(String(params.propertyId))
+          ? undefined
+          : HttpResponse.json({
+              success: true,
+              data: {
+                ...PROPERTY_DETAIL,
+                propertyId: Number(params.propertyId),
+                district: params.propertyId === '3333' ? '강서구' : '송파구',
+              },
+            }),
+      ),
+    );
+    renderMapPage();
+    await openAreaIn('송파구');
+    await screen.findByRole('status');
+
+    // 칸 목록의 매물을 열면 상세가 강서구를 따라가고 단계 키가 바뀐다
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: `${AREA_ITEM_ADDRESS} 상세 보기`,
+      }),
+    );
+    await waitFor(() => expect(screen.getByLabelText('자치구')).toHaveValue('강서구'));
+    fireEvent.click(screen.getByRole('tab', { name: '목록' }));
+    await waitFor(() => expect(screen.getByText(FULL_ITEM_ADDRESS)).toBeInTheDocument());
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    // 다른 매물의 상세가 송파구를 따라가 원래 구로 돌아와도 칸 목록은 되살아나지 않는다
+    fireEvent.click(screen.getByRole('button', { name: `${FULL_ITEM_ADDRESS} 상세 보기` }));
+    await waitFor(() => expect(screen.getByLabelText('자치구')).toHaveValue('송파구'));
+    fireEvent.click(screen.getByRole('tab', { name: '목록' }));
+    await waitFor(() => expect(screen.getByText(FULL_ITEM_ADDRESS)).toBeInTheDocument());
+    expect(screen.queryByText(AREA_ITEM_ADDRESS)).not.toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

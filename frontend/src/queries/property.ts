@@ -44,14 +44,15 @@ export const propertyQueries = {
    * PROP-01 매물 목록 — 지도 옆 패널의 목록 탭. 커서 목록이라 infiniteQueryOptions다
    * (공통 규약 1.4 — 응답의 nextCursor를 그대로 다음 요청에 넣는다).
    *
-   * 필터와 정렬이 요청을 바꾸므로 둘 다 키에 들어간다. 없으면 다른 조건의 결과가 캐시에서 나오고,
+   * 필터 · 정렬 · 표시 영역이 요청을 바꾸므로 셋 다 키에 들어간다. 없으면 다른 조건의 결과가 캐시에서 나오고,
    * 정렬을 바꿔도 앞의 순서가 그대로 보인다. 커서는 pageParam으로 TanStack Query가 관리한다.
-   * 좌표는 들어가지 않는다 — 목록 조회는 좌표를 보내지 않는다 (명세 1.3, api/property.ts).
+   * 표시 영역은 선택이다 — 지도에서 더 확대할 수 없는 묶음 칸 · 같은 좌표에 겹친 마커를 고른 「칸 목록」일 때만
+   * 준다 (명세 1.3 「목록의 표시 영역」, api/property.ts). 없으면 키의 그 자리가 undefined라 전체 목록과 같은 키다.
    */
-  list: (filter: PropertyFilter, sort?: PropertySort) =>
+  list: (filter: PropertyFilter, sort?: PropertySort, area?: BoundingBox) =>
     infiniteQueryOptions({
-      queryKey: [...propertyQueries.all(), 'list', filter, sort] as const,
-      queryFn: ({ pageParam }) => fetchPropertyList(filter, sort, pageParam),
+      queryKey: [...propertyQueries.all(), 'list', filter, sort, area] as const,
+      queryFn: ({ pageParam }) => fetchPropertyList(filter, sort, pageParam, area),
       initialPageParam: undefined as string | undefined, // v5는 필수
       getNextPageParam: (lastPage) => (lastPage.hasNext ? lastPage.nextCursor : undefined),
     }),

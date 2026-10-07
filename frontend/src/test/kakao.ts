@@ -74,7 +74,9 @@ export class FakeKakaoMap implements KakaoMap {
   setLevel = vi.fn();
   setMaxLevel = vi.fn();
   relayout = vi.fn();
-  getLevel = vi.fn(() => 8);
+  /** getLevel이 돌려주는 값. 테스트가 대입해 레벨을 바꾼다(예: 묶음 클릭 분기 — 레벨 2 이하 / 초과) */
+  level = 8;
+  getLevel = vi.fn(() => this.level);
   getBounds = vi.fn(
     (): KakaoLatLngBounds =>
       new FakeKakaoLatLngBounds(new FakeKakaoLatLng(37.4, 126.7), new FakeKakaoLatLng(37.7, 127.2)),

@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import type { PropertyFilter } from '../../../api/property';
+import type { BoundingBox, PropertyFilter } from '../../../api/property';
 import { Alert, Badge, Button, Field, Select } from '../../../components/ui';
 import {
   PROPERTY_SORTS,
@@ -15,17 +15,31 @@ import { formatDate, formatWon } from '../../../lib/format';
 import { propertyQueries } from '../../../queries/property';
 import styles from './PropertyList.module.css';
 
+/**
+ * 칸 목록 — 지도에서 더 확대할 수 없는 묶음 칸이나 같은 좌표에 겹친 마커를 골랐을 때 목록을 그 영역으로 좁힌다.
+ * bbox는 요청에 그대로 나가는 표시 영역(명세 1.3 「목록의 표시 영역」)이다. 건수는 두지 않는다 — 지도 응답의 숫자
+ * (묶음 count · 겹친 마커 수)를 화면 상태에 복사하면 서버 값과 어긋날 수 있다(서버 상태는 쿼리가 갖는다).
+ */
+export interface PropertyListArea {
+  bbox: BoundingBox;
+}
+
 interface PropertyListProps {
   /** 지도와 같은 필터다 — 목록 전용 조건을 따로 두지 않는다 (매물 API 명세 1.1) */
   filter: PropertyFilter;
+  /** 칸 목록의 영역. 없으면(null · 생략) 필터 전체의 목록이다 */
+  area?: PropertyListArea | null;
+  /** 「전체 목록」 — 칸 목록을 해제한다. area를 주는 쪽이 함께 준다 */
+  onClearArea?: () => void;
   onSelect: (propertyId: number) => void;
 }
 
 /**
  * 매물 목록 (PROP-01). 데이터를 부르는 컴포넌트다.
  *
- * 좌표를 보내지 않는 조회라 응답이 목록 형태로 온다 — 같은 엔드포인트가 좌표 유무로 형태를 가른다
- * (명세 1.3). 지도의 표시 영역과 무관하며, 좁히는 것은 필터의 자치구다.
+ * 반경 조건을 보내지 않는 조회라 응답이 목록 형태로 온다 — 같은 엔드포인트가 반경 유무로 형태를 가른다
+ * (명세 1.3). 평소에는 지도의 표시 영역과 무관하며, 좁히는 것은 필터의 자치구다. area가 오면(칸 목록) 그 영역
+ * 네 값을 함께 보내 그 안의 매물만 받는다 — 지도를 움직여도 따라가지 않고, 「전체 목록」이나 자치구 변경에서 풀린다.
  *
  * 커서 목록이라 「더 보기」로 다음 쪽을 잇는다 — 전체 건수는 주지 않는다 (공통 규약 1.4).
  * 정렬은 화면 상태로 여기가 갖는다. 고르지 않은 상태에서는 값을 보내지 않고, 그때의 순서(등록일
@@ -33,16 +47,29 @@ interface PropertyListProps {
  *
  * 등급 · 전세가율은 서버 값을 표시만 한다. 미분석(null) 문구도 domain/risk.ts가 갖는다.
  */
-export function PropertyList({ filter, onSelect }: PropertyListProps) {
+export function PropertyList({ filter, area = null, onClearArea, onSelect }: PropertyListProps) {
   const [sort, setSort] = useState<PropertySort | undefined>(undefined);
-  // 필터와 정렬이 쿼리 키에 들어간다 — 조건이 바뀌면 커서도 처음부터 다시 쌓인다 (queries/property.ts)
-  const listQuery = useInfiniteQuery(propertyQueries.list(filter, sort));
+  // 필터 · 정렬 · 칸 영역이 쿼리 키에 들어간다 — 조건이 바뀌면 커서도 처음부터 다시 쌓인다 (queries/property.ts)
+  const listQuery = useInfiniteQuery(propertyQueries.list(filter, sort, area?.bbox));
 
   // 쪽마다 나뉜 항목을 한 배열로 잇는다. 렌더마다 다시 만들지 않는다
   const items = useMemo(() => listQuery.data?.pages.flatMap((page) => page.items) ?? [], [listQuery.data]);
 
   return (
     <div className={styles.list}>
+      {area && (
+        <div className={styles.areaNotice}>
+          <Alert variant="info" className={styles.areaAlert}>
+            <span>이 위치의 매물을 보고 있습니다</span>
+            {onClearArea && (
+              <Button type="button" variant="secondary" size="sm" onClick={onClearArea}>
+                전체 목록
+              </Button>
+            )}
+          </Alert>
+        </div>
+      )}
+
       <div className={styles.toolbar}>
         <Field label="정렬">
           {(control) => (
