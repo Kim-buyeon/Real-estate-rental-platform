@@ -112,6 +112,12 @@ public class GlobalExceptionHandler {
     /** PostgreSQL 의 질의 취소 SQLSTATE — statement_timeout(30s, 설정 파일) 초과 또는 운영자의 취소. */
     static final String QUERY_CANCELED = "57014";
 
+    /**
+     * 읽기 노드(standby)에서 복제 반영과 충돌해 취소된 질의의 SQLSTATE. PostgreSQL 은 복제 충돌 취소를
+     * {@code ERRCODE_T_R_SERIALIZATION_FAILURE}(40001)로 보낸다. 앱은 READ COMMITTED 만 쓰므로 쓰기 노드(primary)에서는 나지 않는다.
+     */
+    static final String REPLICATION_CONFLICT_CANCELED = "40001";
+
     /** 원인 체인을 몇 단계까지 따라갈지. 정상 체인은 서너 단계다 — 순환하는 체인에서 멈추기 위한 상한이다. */
     private static final int MAX_CAUSE_DEPTH = 16;
 
@@ -124,6 +130,8 @@ public class GlobalExceptionHandler {
      *       DB 에 접속하지 못해 풀이 채워지지 않은 경우도 같은 타입이다 — 그때 원인은 드라이버의 접속 실패다. pgJDBC 는 이 타입을
      *       던지지 않는다.</li>
      *   <li>SQLSTATE {@value #QUERY_CANCELED} — 질의가 취소됐다. pgJDBC 의 {@code PSQLException} 이다.</li>
+     *   <li>SQLSTATE {@value #REPLICATION_CONFLICT_CANCELED} — 읽기 노드에서 복제 반영과 충돌해 질의가 취소됐다. 다시 하면 되는
+     *       취소라 버그(500)와 섞지 않는다. pgJDBC 의 {@code PSQLException} 이다.</li>
      * </ul>
      *
      * <p>감싸는 모양은 경로마다 다르다(Spring 7.0 · Hibernate 7.4 · mybatis-spring 4.1 소스, 단위 테스트가 고정한다).
@@ -144,7 +152,8 @@ public class GlobalExceptionHandler {
             if (t instanceof SQLTransientConnectionException connection) {
                 return connection;
             }
-            if (t instanceof SQLException sql && QUERY_CANCELED.equals(sql.getSQLState())) {
+            if (t instanceof SQLException sql && (QUERY_CANCELED.equals(sql.getSQLState())
+                    || REPLICATION_CONFLICT_CANCELED.equals(sql.getSQLState()))) {
                 return sql;
             }
         }

@@ -121,6 +121,35 @@ class DatabaseBusyMappingTest {
     }
 
     @Test
+    @DisplayName("직렬화 실패(40001, 읽기 노드 복제 충돌 취소) - Hibernate 변환 경로도 503")
+    void serializationFailureThroughHibernate() {
+        DataAccessException e = hibernateTranslate(new org.hibernate.exception.LockAcquisitionException(
+                "could not execute statement", serializationFailure(), "select 1"));
+        assertThat(e).isNotNull();
+        assertBusy(e);
+    }
+
+    @Test
+    @DisplayName("직렬화 실패(40001) - MyBatis 변환 경로도 503")
+    void serializationFailureThroughMyBatis() {
+        DataAccessException e = myBatisTranslate(serializationFailure());
+        assertThat(e).isNotNull();
+        assertBusy(e);
+    }
+
+    @Test
+    @DisplayName("연결 실패(08006)는 503 이 아니라 500")
+    void connectionFailureIsInternal() {
+        DataAccessException e = myBatisTranslate(new SQLException("connection failure", "08006"));
+        assertThat(e).isNotNull();
+        assertInternal(e);
+    }
+
+    private static SQLException serializationFailure() {
+        return new SQLException("ERROR: canceling statement due to conflict with recovery", "40001");
+    }
+
+    @Test
     @DisplayName("다른 SQLSTATE 의 DB 오류(중복 키 23505)는 503 이 아니라 500")
     void otherSqlStateIsInternal() {
         DataAccessException e = myBatisTranslate(new SQLException("duplicate key value", "23505"));
