@@ -2,17 +2,16 @@ import styles from './Button.module.css';
 
 /**
  * 변형 이름은 디자인 토큰 정의서 7절 Actions 의 button-* 항목을 따른다.
- * 정의서의 나머지 변형(button-icon · button-social · pulldown)처럼 쓰는 화면이 생길 때 추가한다 —
+ * 정의서의 나머지 변형(button-icon · button-social · button-footer-primary · pulldown)처럼 쓰는 화면이 생길 때 추가한다 —
  * 지금 화면이 쓰는 것만 둔다.
  */
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'footer-primary';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
 export type ButtonSize = 'sm' | 'md';
 
 const CLASS_BY_VARIANT: Record<ButtonVariant, string | undefined> = {
   primary: styles.primary,
   secondary: styles.secondary,
   ghost: styles.ghost,
-  'footer-primary': styles.footerPrimary,
 };
 
 /** 정의서 7절 — 주 버튼 라벨은 {typography.button}, 소형 버튼 라벨은 {typography.button-sm} 이다 */
