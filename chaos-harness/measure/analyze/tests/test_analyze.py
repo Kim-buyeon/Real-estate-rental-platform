@@ -589,7 +589,19 @@ class StepRound(unittest.TestCase):
         self.assertEqual([(x["rule"], x["minutes_after_start"], x["after_end"]) for x in a["fired"]], [("수집 끊김", 3.3, False)])
         self.assertTrue(a["transitions"][-1]["after_end"])
         self.assertTrue(a["rules_compare"]["same"])
-        self.assertEqual(len(a["rules_defined"]), 7)                 # 관측 설계서 5.1 의 일곱
+        # 규칙 파일을 시험 안에서 직접 읽어 센 값과 맞춘다(alerts 의 함수를 쓰지 않는다) — 고정값 없이 파일이 늘어도 맞는다
+        import json
+        files = sorted((Path(__file__).resolve().parents[4] / "infra" / "grafana" / "alerting").glob("rules-*.json"))
+        self.assertGreaterEqual(len(files), 2)
+        expect = {}
+        for f in files:
+            d = json.loads(f.read_text(encoding="utf-8"))
+            expect[d["title"]] = [r["uid"] for r in d["rules"]]
+        got = {}
+        for r in a["rules_defined"]:
+            got.setdefault(r["group"], []).append(r["uid"])
+        self.assertEqual(got, expect)                                              # 파일(그룹)별 규칙 · 순서까지
+        self.assertEqual(len(a["rules_defined"]), sum(len(v) for v in expect.values()))
         self.assertEqual(a["errors"], {"annotations_error": "HTTP 403"})
 
     def test_single_step_setup_dup_ramp(self):

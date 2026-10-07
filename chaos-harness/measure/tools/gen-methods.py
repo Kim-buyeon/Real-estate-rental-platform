@@ -150,7 +150,10 @@ def types(code):
 
 
 def classes():
-    for path in sorted((SRC / BASE).rglob("*.java")):
+    # 경로 조각(str) 튜플로 정렬한다 — Path 끼리의 비교는 Windows 에서 대소문자를 무시하고 Linux 에서 구분해,
+    # 같은 소스에서 순서가 달라진다(Windows 에서 만든 파일이 ubuntu 러너의 --check 에서 1 이 됐다, #379).
+    # str 비교는 코드 포인트 순이라 두 OS 에서 같고, Linux 의 PosixPath 정렬(조각 단위 · 대소문자 구분)과도 같다
+    for path in sorted((SRC / BASE).rglob("*.java"), key=lambda p: p.relative_to(SRC).parts):
         parts = path.relative_to(SRC / BASE).parts
         in_layer = len(parts) >= 3 and parts[0] == "domain" and parts[2] in LAYERS
         in_external = parts[0] == EXTERNAL
@@ -197,11 +200,49 @@ def render():
     return "\n".join(lines)
 
 
+def entries(text):
+    """메서드 블록의 (클래스, 메서드) 쌍 — 클래스 자체는 (클래스, None). --check 안내에서 더해지고 빠지는 것을 센다."""
+    block = re.search(r"# BEGIN methods.*?# END methods", text, re.S)
+    pairs, current = set(), None
+    for line in (block.group(0) if block else "").splitlines():
+        if m := re.match(r"\s*- class:\s*(\S+)", line):
+            current = m.group(1)
+            pairs.add((current, None))
+        elif (m := re.match(r"\s*- name:\s*(\S+)", line)) and current:
+            pairs.add((current, m.group(1)))
+    return pairs
+
+
+def explain(text, new):
+    """--check 가 다를 때 표준 오류로 — 무엇이 다르고 어떻게 맞추는지. CI 로그에서 바로 읽히게 한다."""
+    old_pairs, new_pairs = entries(text), entries(new)
+    added, removed = new_pairs - old_pairs, old_pairs - new_pairs
+
+    def count(pairs, is_class):
+        return sum(1 for _, name in pairs if (name is None) == is_class)
+
+    lines = [
+        f"{TARGET.relative_to(ROOT).as_posix()} 의 메서드 목록이 백엔드 소스와 다르다.",
+        "  python chaos-harness/measure/tools/gen-methods.py 를 돌려 바뀐 agent-measure.yaml 을 같은 커밋에 넣는다.",
+        f"  클래스 +{count(added, True)} -{count(removed, True)} · 메서드 +{count(added, False)} -{count(removed, False)}",
+    ]
+    if not added and not removed:
+        lines.append("  항목은 같고 순서 · 서식만 다르다 — 생성기를 다시 돌려 커밋한다.")
+    for sign, pairs in (("+", added), ("-", removed)):
+        for cls, name in sorted(pairs, key=lambda p: (p[0], p[1] or "")):
+            lines.append(f"  {sign} {cls}" + (f".{name}" if name else ""))
+    sys.stderr.reconfigure(encoding="utf-8")
+    print("\n".join(lines), file=sys.stderr)
+
+
 def main():
     text = TARGET.read_text(encoding="utf-8")
     new = re.sub(r"# BEGIN methods.*?# END methods", lambda _: render(), text, flags=re.S)
     if "--check" in sys.argv:
-        sys.exit(0 if new == text else 1)
+        if new == text:
+            sys.exit(0)  # 같으면 0, 다르면 1 — CI 가 이 종료 코드로 판정한다
+        explain(text, new)
+        sys.exit(1)
     TARGET.write_text(new, encoding="utf-8", newline="\n")
     count = new.count("- class:")
     sys.stdout.reconfigure(encoding="utf-8")
