@@ -95,7 +95,7 @@ jobs:
           done
       # 러너 이미지에 ShellCheck 가 이미 있다. 빠진 러너에서도 돌게 없을 때만 설치하고, 설치 실패는 그대로 잡 실패로 둔다.
       # 기준은 warning 이상 — error · warning 은 인용 누락 · 단어 분리 · 모호한 확장 같은 동작이 달라지는 지적이고,
-      # info · style 은 취향에 가까워 인프라와 무관한 PR 까지 막는다. 현재 네 스크립트는 style 기준으로도 지적이 없다.
+      # info · style 은 취향에 가까워 인프라와 무관한 PR 까지 막는다.
       - name: ShellCheck
         run: |
           if ! command -v shellcheck > /dev/null; then
