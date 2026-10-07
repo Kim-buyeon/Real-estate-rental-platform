@@ -75,6 +75,31 @@ class DataSourceSettingsTest {
     }
 
     @Test
+    @DisplayName("기본 풀은 소켓 읽기 제한 socketTimeout 을 60(초)으로 갖는다")
+    void primaryPoolSocketTimeout() {
+        assertThat(primary().getDataSourceProperties().getProperty("socketTimeout")).isEqualTo("60");
+    }
+
+    @Test
+    @DisplayName("읽기용 풀도 socketTimeout 60 을 기본 풀에서 그대로 입는다")
+    void replicaPoolInheritsSocketTimeout() {
+        HikariConfig replica = new HikariConfig();
+        binder.bind("spring.datasource.hikari", Bindable.ofInstance(replica));
+        binder.bind("app.datasource.replica.hikari", Bindable.ofInstance(replica));
+        assertThat(replica.getDataSourceProperties().getProperty("socketTimeout")).isEqualTo("60");
+    }
+
+    @Test
+    @DisplayName("Flyway 설정에는 socketTimeout 이 가지 않는다 - 마이그레이션은 오래 걸려도 끊기지 않는다")
+    void flywayHasNoSocketTimeout() {
+        FlywayProperties flyway = binder.bind("spring.flyway", FlywayProperties.class).get();
+        String appUrl = binder.bind("spring.datasource.url", String.class).get();
+        assertThat(flyway.getUrl()).doesNotContainIgnoringCase("socketTimeout");
+        assertThat(appUrl).doesNotContainIgnoringCase("socketTimeout");
+        assertThat(flyway.getInitSqls()).noneMatch(sql -> sql.toLowerCase().contains("socket"));
+    }
+
+    @Test
     @DisplayName("Flyway 는 앱과 같은 주소 · 계정의 자기 커넥션을 쓰고 세션 시간 제한을 0 으로 연다")
     void flywayHasOwnConnectionWithoutTimeouts() {
         FlywayProperties flyway = binder.bind("spring.flyway", FlywayProperties.class).get();
