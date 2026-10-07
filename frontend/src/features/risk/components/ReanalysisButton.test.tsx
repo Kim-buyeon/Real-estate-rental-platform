@@ -1,5 +1,5 @@
-// ReanalysisButton 검증 — 비로그인 비활성, 재분석 성공 시 등급 변경 문구, 429 안내와 그 외 오류의
-// Alert 처리를 확인한다 (이슈 #91 계획 8번 · 검증 표). 문구는 domain/risk.ts · lib/format.ts의
+// ReanalysisButton · ReanalysisNotice 검증 — 비로그인 비활성, 재분석 성공 시 등급 변경 문구, 429 안내와 그 외 오류의
+// Alert 처리를 확인한다. 둘은 같은 뮤테이션을 읽으므로 상세 패널처럼 한 번 만들어 둘에 내려주는 하네스로 그린다 (이슈 #91 계획 8번 · 검증 표). 문구는 domain/risk.ts · lib/format.ts의
 // 함수로 확인해 서버 값이 바뀌면 테스트도 함께 틀어지게 한다.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -11,10 +11,22 @@ import { setTokens } from '../../../session/store';
 import { REANALYZE_RESULT } from '../../../test/msw/handlers/risk';
 import { toastRegion } from '../../../test/toast';
 import { server } from '../../../test/msw/server';
+import { useReanalyzeRisk } from '../../../queries/risk';
 import { ReanalysisButton } from './ReanalysisButton';
+import { ReanalysisNotice } from './ReanalysisNotice';
 import { ToastProvider } from '../../../components/ui';
 
 const PROPERTY_ID = 1024;
+
+function Harness() {
+  const reanalysis = useReanalyzeRisk(PROPERTY_ID);
+  return (
+    <>
+      <ReanalysisButton reanalysis={reanalysis} />
+      <ReanalysisNotice reanalysis={reanalysis} />
+    </>
+  );
+}
 
 function renderButton() {
   const queryClient = new QueryClient({
@@ -23,18 +35,18 @@ function renderButton() {
   render(
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <ReanalysisButton propertyId={PROPERTY_ID} />
+        <Harness />
       </ToastProvider>
     </QueryClientProvider>,
   );
 }
 
 describe('ReanalysisButton', () => {
-  it('비로그인이면 재분석 버튼이 비활성이고 사유 문구가 뜬다', () => {
+  // 비로그인 사유 문구는 상세 패널이 바 밖에 낸다 — PropertyDetailPanel.test.tsx
+  it('비로그인이면 재분석 버튼이 비활성이다', () => {
     renderButton();
 
     expect(screen.getByRole('button', { name: '재분석' })).toBeDisabled();
-    expect(screen.getByText('로그인하면 재분석을 요청할 수 있습니다.')).toBeInTheDocument();
   });
 
   it('로그인 상태에서 누르면 재분석이 요청되고 등급이 바뀌면 이전 등급 → 새 등급 문구가 뜬다', async () => {
@@ -51,7 +63,7 @@ describe('ReanalysisButton', () => {
     fireEvent.click(button);
 
     // REANALYZE_RESULT.gradeChanged는 참이다 — 이전 등급 → 새 등급 문구가 나온다
-    const expectedText = `등급이 ${riskGradeLabel(REANALYZE_RESULT.previousGrade)}에서 ${riskGradeLabel(REANALYZE_RESULT.riskGrade)}(으)로 바뀌었습니다.`;
+    const expectedText = `위험 등급이 ${riskGradeLabel(REANALYZE_RESULT.previousGrade)}에서 ${riskGradeLabel(REANALYZE_RESULT.riskGrade)}(으)로 바뀌었습니다.`;
     const notice = await screen.findByText(expectedText, { exact: false });
     expect(notice).toHaveAttribute('role', 'status');
     expect(toastRegion()).toBeEmptyDOMElement();

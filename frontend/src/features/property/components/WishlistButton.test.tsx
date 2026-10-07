@@ -26,14 +26,20 @@ function renderButton(isWishlisted: boolean) {
 }
 
 describe('WishlistButton', () => {
-  it('비로그인이면 관심 등록 버튼이 비활성이고 사유 문구가 뜬다', () => {
+  // 비로그인 사유 문구는 상세 패널이 바 밖에 낸다 — PropertyDetailPanel.test.tsx
+  it('비로그인이면 관심 등록 버튼이 비활성이다', () => {
     renderButton(false);
 
     const button = screen.getByRole('button', { name: '관심 등록' });
     expect(button).toBeDisabled();
-    // 숨기지 않는다 — 버튼과 함께 화면에 그대로 보인다
+    // 숨기지 않는다 — 화면에 그대로 보인다
     expect(button).toBeVisible();
-    expect(screen.getByText('로그인하면 관심 매물로 등록할 수 있습니다.')).toBeInTheDocument();
+  });
+
+  it('아이콘 버튼이라 접근 이름과 눌림 상태(aria-pressed)가 등록 여부를 따른다', () => {
+    renderButton(true);
+
+    expect(screen.getByRole('button', { name: '관심 해제' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('isWishlisted가 거짓이면 관심 등록으로 뜨고, 누르면 등록 요청(POST)이 그 propertyId로 나간다', async () => {

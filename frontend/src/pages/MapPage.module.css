@@ -91,6 +91,14 @@
   transform: translateX(-50%);
 }
 
+/*
+ * 상세 패널이 보이는 중 — 패널 하단 바(global.css 의 --action-bar-height) 위로 {spacing.sm} 틈을 두고 올라선다.
+ * 768px 부터는 토글이 숨으므로 좁은 화면에만 의미가 있다. Toast.module.css 가 이 높이를 쓴다
+ */
+.viewToggle[data-above-action-bar] {
+  bottom: calc(var(--action-bar-height) + var(--spacing-sm));
+}
+
 @media (min-width: 768px) {
   /* 좁은 화면의 전환 상태가 넓은 화면의 배치를 바꾸지 않는다 — 둘 다 보인다 */
   .mapShown .panel,

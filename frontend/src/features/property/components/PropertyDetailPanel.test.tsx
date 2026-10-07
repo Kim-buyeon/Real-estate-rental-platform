@@ -7,7 +7,7 @@
 // 들이지 않는 한 그 경로는 이 슬라이스에서 검증할 수 없다 — MapPage.test.tsx에도 추가하지 않는다.
 // 패널이 열린 뒤의 동작(닫기 · 데이터 렌더)만 여기서 컴포넌트 단위로 검증한다.
 import { QueryClient, QueryClientProvider, useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -308,7 +308,7 @@ describe('PropertyDetailPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '재분석' }));
 
-    // 재분석 결과 안내(「등급은 그대로입니다.」)가 뜬 뒤에도 자치구 집계는 다시 요청되지 않는다 —
+    // 재분석 결과 안내(「위험 등급은 그대로입니다.」)가 뜬 뒤에도 자치구 집계는 다시 요청되지 않는다 —
     // property 전체 무효화는 gradeChanged가 참일 때만 실행되는 분기다 (queries/risk.ts).
     // getByRole('status')로는 등기 검출 · 개인 자격 Alert과 겹쳐 여럿이 잡히므로 성공 문구로 특정한다
     await waitFor(() => expect(screen.getByText(/그대로입니다/)).toBeInTheDocument());
@@ -368,11 +368,45 @@ describe('PropertyDetailPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '재분석' }));
 
-    // 재분석 결과 안내(「등급은 그대로입니다.」)가 뜬 뒤에도 wishlist는 다시 요청되지 않는다 —
+    // 재분석 결과 안내(「위험 등급은 그대로입니다.」)가 뜬 뒤에도 wishlist는 다시 요청되지 않는다 —
     // wishlist 전체 무효화는 gradeChanged가 참일 때만 실행되는 분기다 (queries/risk.ts).
     await waitFor(() => expect(screen.getByText(/그대로입니다/)).toBeInTheDocument());
     expect(requestedUrls.filter((url) => url.includes('/me/wishlist')).length).toBe(requestsBefore);
 
     server.events.removeListener('request:start', onRequestStart);
+  });
+
+  // 하단 고정 바({components.action-bar}) — 관심은 아이콘 버튼, 재분석은 주 버튼이고 둘 다 바 안에 있다.
+  // 안내 문구(비로그인 사유 · 재분석 결과)는 바 높이 92 를 지키려고 바 밖 본문 끝에 낸다
+  it('하단 바 안에 관심 아이콘 버튼과 재분석 버튼이 있고, 비로그인 사유는 바 밖에 한 번 나온다', async () => {
+    server.use(...propertyHandlers, ...riskHandlers);
+    renderPanel();
+
+    const bar = await screen.findByRole('group', { name: '매물 동작' });
+    // 토스트가 바 위로 올라서도록 표시를 단다(Toast.module.css)
+    expect(bar).toHaveAttribute('data-toast-avoid', 'action-bar');
+
+    const wishlist = within(bar).getByRole('button', { name: '관심 등록' });
+    expect(wishlist).toHaveAttribute('aria-pressed', String(PROPERTY_DETAIL.wishlisted));
+    expect(wishlist).toBeDisabled();
+    expect(within(bar).getByRole('button', { name: '재분석' })).toBeDisabled();
+    expect(within(bar).getAllByRole('button')).toHaveLength(2);
+
+    const note = screen.getByText('로그인하면 재분석을 요청하고 관심 매물로 등록할 수 있습니다.');
+    expect(bar).not.toContainElement(note);
+  });
+
+  it('재분석 결과 안내는 바 밖에 나오고 로그인 상태에서는 사유 문구가 없다', async () => {
+    setTokens({ accessToken: 'access-token', refreshToken: 'refresh-token' });
+    server.use(...propertyHandlers, ...riskHandlers);
+    renderPanel();
+
+    const bar = await screen.findByRole('group', { name: '매물 동작' });
+    expect(screen.queryByText(/로그인하면/)).not.toBeInTheDocument();
+
+    fireEvent.click(within(bar).getByRole('button', { name: '재분석' }));
+
+    const notice = await screen.findByText(/위험 등급이 .*바뀌었습니다/);
+    expect(bar).not.toContainElement(notice);
   });
 });

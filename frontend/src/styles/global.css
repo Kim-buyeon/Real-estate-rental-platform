@@ -26,6 +26,11 @@
    * Toast 가 지도 화면 전환 토글(secondary · md)의 높이만큼 올라선다(정의서 K-19)
    */
   --button-height-secondary: 48px;
+  /*
+   * 정의서 7절 {components.action-bar} 높이. 상세 패널(PropertyDetailPanel)과 Toast 두 파일에 걸려 여기 한 번
+   * 적는다 — Toast 가 하단 바 위로 올라선다(정의서 K-19)
+   */
+  --action-bar-height: 92px;
 }
 
 *,
