@@ -5,7 +5,7 @@ import { fetchRegistry, fetchRiskAnalysis, reanalyzeRisk, type RiskReanalyzeResu
 import { propertyQueries, wishlistQueries } from './property';
 
 export const riskQueries = {
-  /** 도메인 루트. 무효화 연쇄(재분석 · SSE 위험도 변경)가 이 키로 걸린다 */
+  /** 도메인 루트. 무효화 연쇄(재분석 · SSE 위험 등급 변경)가 이 키로 걸린다 */
   all: () => ['risk'] as const,
 
   /**

@@ -159,7 +159,7 @@ export const fetchPropertyList = (filter: PropertyFilter, sort?: PropertySort, c
   request<CursorPage<PropertyListItem>>({ url: '/properties', params: { ...filter, ...area, sort, cursor } });
 
 /**
- * 매물 상세의 최신 위험도 요약 — 명세 1.7 riskSummary.
+ * 매물 상세의 최신 위험 등급 요약 — 명세 1.7 riskSummary.
  * 판정 근거 전체는 위험도 조회(위험도 명세 1.1)가 주며, 여기는 등급 · 전세가율 · 가입 가능 여부만이다.
  */
 export interface PropertyRiskSummary {

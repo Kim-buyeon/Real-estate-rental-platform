@@ -1,7 +1,7 @@
 // MainPage 검증 — 렌더링 전반은 대상이 아니다(docs/architecture/testing.md 1.1). 여기서는 동작과
 // 로직만 본다: 최근 등록 매물이 조건 없는 기존 목록 쿼리를 그대로 쓰고 앞 4건만 보여주는지(RecentProperties가
 // 소유한 로직이지만 화면 조합 결과로 검증한다), 본문에 /map 링크가 없는지(카드 딥링크 제외), 준비 중 입구 · 칩 필터가
-// 동작하는지, 빈 목록·조회 실패가 EmptyState·Alert로 갈리는지다. 위험도 안내(RiskGradeBadges ·
+// 동작하는지, 빈 목록·조회 실패가 EmptyState·Alert로 갈리는지다. 위험 등급 안내(RiskGradeBadges ·
 // RiskCriteriaCards)는 고정 문구 · 배지라 로직이 없어 단언하지 않는다 — 등급 배지의 색·문구가 domain/risk.ts에서 온다는 것은
 // PropertyList.test.tsx가 이미 지킨다(같은 도메인 함수를 쓰므로 중복이다).
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

@@ -40,7 +40,7 @@ export interface RiskConsistency {
   areaMatched: boolean | null;
 }
 
-/** 위험 등급과 판정 근거 — 명세 1.1. 깡통전세 · 권리 침해 · 정합 · 3사 판정이 모두 이 응답에 담긴다 */
+/** 위험 등급과 판정 근거 — 명세 1.1. 깡통전세 · 권리 침해 · 정합 · 보증기관 3곳 판정이 모두 이 응답에 담긴다 */
 export interface RiskAnalysis {
   riskGrade: RiskGrade;
   gradeReason: GradeReason;
@@ -55,7 +55,7 @@ export interface RiskAnalysis {
   seniorDebtTotal: number;
   /** 깡통전세 해당 여부. 기준 비율은 서버(RISK_CRITERIA)가 갖는다 */
   isNegativeEquity: boolean;
-  /** 3사 중 하나 이상 가입 가능 여부 */
+  /** 보증기관 3곳 중 하나 이상 가입 가능 여부 */
   insuranceEligible: boolean;
   providers: InsuranceProvider[];
   /** 시스템이 판정하지 않는 개인 자격 확인 사항 */

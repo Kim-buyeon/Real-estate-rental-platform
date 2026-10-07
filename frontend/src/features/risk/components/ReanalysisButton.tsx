@@ -12,7 +12,7 @@ interface ReanalysisButtonProps {
 }
 
 /**
- * 위험도 재분석 요청 (RISK-08). 인증 「필수」다 — 위험도 API 명세 1장.
+ * 위험 등급 재분석 요청 (RISK-08). 인증 「필수」다 — 위험도 API 명세 1장.
  *
  * 상세 패널 하단 {components.action-bar}의 {components.button-primary}다 — 패널에서 서버에 요청을
  * 보내는 동작이 재분석과 관심 둘이고, 관심이 {components.button-icon}이므로 남은 주 동작이 이것이다.

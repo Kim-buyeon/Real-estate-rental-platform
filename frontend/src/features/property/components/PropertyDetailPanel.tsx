@@ -164,7 +164,7 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
               </>
             )}
 
-            {/* 원본 자료는 위험도 분석 여부와 무관하다 — 미분석 매물에서도 보인다 */}
+            {/* 원본 자료는 위험 등급 분석 여부와 무관하다 — 미분석 매물에서도 보인다 */}
             <div className={styles.section}>
               <Disclosure
                 title="건축물대장"
@@ -185,7 +185,7 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
               </Disclosure>
             </div>
 
-            {/* 대출 한도(LOAN-01). 위험도 분석 여부와 무관하게 마운트한다 — 가입 불가 매물은
+            {/* 대출 한도(LOAN-01). 위험 등급 분석 여부와 무관하게 마운트한다 — 가입 불가 매물은
                 422 LOAN_PROPERTY_NOT_ELIGIBLE 안내가 그 안에서 나온다 */}
             <div className={styles.section}>
               <LoanLimitSection propertyId={propertyId} />

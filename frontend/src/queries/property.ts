@@ -25,7 +25,7 @@ import {
 import type { PropertySort } from '../domain/property';
 
 export const propertyQueries = {
-  /** 도메인 루트. 무효화 연쇄(재분석 · SSE 위험도 변경)가 이 키로 걸린다 */
+  /** 도메인 루트. 무효화 연쇄(재분석 · SSE 위험 등급 변경)가 이 키로 걸린다 */
   all: () => ['property'] as const,
 
   /**
@@ -96,7 +96,7 @@ export const propertyQueries = {
 };
 
 export const wishlistQueries = {
-  /** 도메인 루트. 등록 · 해제와 등급이 바뀐 재분석 · SSE 위험도 변경이 이 키로 걸린다 */
+  /** 도메인 루트. 등록 · 해제와 등급이 바뀐 재분석 · SSE 위험 등급 변경이 이 키로 걸린다 */
   all: () => ['wishlist'] as const,
 
   /**
