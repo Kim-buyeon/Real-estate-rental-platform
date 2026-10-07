@@ -66,11 +66,11 @@ export function WishlistList() {
                   <dd>{formatWon(item.deposit)}</dd>
                 </div>
                 <div className={styles.fact}>
-                  <dt>직전 등급</dt>
+                  <dt>직전 위험 등급</dt>
                   <dd>{riskGradeLabel(item.previousGrade)}</dd>
                 </div>
                 <div className={styles.fact}>
-                  <dt>현재 등급</dt>
+                  <dt>현재 위험 등급</dt>
                   <dd>
                     <Badge variant={riskGradeToken(item.riskGrade)}>{riskGradeLabel(item.riskGrade)}</Badge>
                   </dd>

@@ -23,7 +23,7 @@ import {
 describe('알려진 코드 → 표시 문구', () => {
   test('등급 결정 사유 (gradeReason)', () => {
     expect(gradeReasonLabel('NEGATIVE_EQUITY')).toBe('깡통전세 해당');
-    expect(gradeReasonLabel('INSURANCE_INELIGIBLE')).toBe('3사 가입 불가');
+    expect(gradeReasonLabel('INSURANCE_INELIGIBLE')).toBe('보증기관 3곳 가입 불가');
     expect(gradeReasonLabel('LEASE_RATIO_CAUTION')).toBe('전세가율 주의 구간');
     expect(gradeReasonLabel('INSURANCE_ELIGIBLE')).toBe('보증보험 가입 가능');
   });

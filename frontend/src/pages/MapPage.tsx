@@ -227,6 +227,8 @@ export default function MapPage() {
   );
 
   const isMapShown = narrowView === MAP_VIEW;
+  // 좁은 화면에서 상세 패널이 보이는 중 — 패널 하단 바({components.action-bar})가 화면 하단에 있어 전환 토글이 그 위로 올라선다
+  const isAboveActionBar = !isMapShown && panelTab === DETAIL_TAB && detailPropertyId !== null;
 
   return (
     <section className={styles.page}>
@@ -288,6 +290,7 @@ export default function MapPage() {
         {/*
           좁은 화면에서만 보이는 지도 ↔ 목록 전환. 새 컴포넌트를 만들지 않고 Button 의 기존 변형이다.
           하단에 떠 있어 토스트와 자리가 겹친다 — data-toast-avoid 로 토스트를 그 위로 올린다(정의서 K-19, Toast.module.css)
+          상세 패널이 보이는 중이면 패널 하단 바와도 겹친다 — data-above-action-bar 로 토글을 바 위로 올린다
         */}
         <Button
           type="button"
@@ -295,6 +298,7 @@ export default function MapPage() {
           className={styles.viewToggle}
           onClick={toggleNarrowView}
           data-toast-avoid=""
+          data-above-action-bar={isAboveActionBar ? '' : undefined}
         >
           {isMapShown ? '목록' : '지도'}
         </Button>

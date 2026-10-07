@@ -45,7 +45,7 @@ describe('AppFooter', () => {
     const footer = await renderLoginFooter();
 
     expect(
-      screen.getByText('위험도 판정과 대출 한도는 공개 데이터에 근거한 참고 정보이며 법적 효력이 없습니다.'),
+      screen.getByText('위험 등급 판정과 대출 한도는 공개 데이터에 근거한 참고 정보이며 법적 효력이 없습니다.'),
     ).toBeInTheDocument();
     expect(screen.getByText('© 2026 전월세 부동산 금융 플랫폼')).toBeInTheDocument();
     expect(footer).toBeInTheDocument();

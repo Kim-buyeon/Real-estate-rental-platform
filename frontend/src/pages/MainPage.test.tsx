@@ -147,9 +147,9 @@ describe('MainPage', () => {
     renderMainPage();
 
     expect(
-      screen.getByRole('heading', { level: 1, name: /전세사기 위험도,\s*계약 전에 확인하세요/ }),
+      screen.getByRole('heading', { level: 1, name: /전세사기 위험 등급,\s*계약 전에 확인하세요/ }),
     ).toBeInTheDocument();
-    for (const title of ['최근 등록 매물', '위험도 판정 기준', '전세 계약 가이드']) {
+    for (const title of ['최근 등록 매물', '위험 등급 판정 기준', '전세 계약 가이드']) {
       expect(screen.getByRole('heading', { level: 2, name: title })).toBeInTheDocument();
     }
     expect(screen.queryByText('참고 서비스')).not.toBeInTheDocument();
@@ -176,7 +176,7 @@ describe('MainPage', () => {
       expectComingSoon();
     });
 
-    it.each(['위험도 해설 상담', '상담 이력'])('상담 타일 「%s」', (name) => {
+    it.each(['위험 등급 해설 상담', '상담 이력'])('상담 타일 「%s」', (name) => {
       mockPropertyList({ items: [], nextCursor: null, hasNext: false });
       renderMainPage();
 

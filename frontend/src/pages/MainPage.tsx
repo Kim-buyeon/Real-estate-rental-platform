@@ -51,7 +51,7 @@ const COMING_SOON_CATEGORIES: readonly { title: string; description: string }[] 
 /** 「전세 계약 가이드」 콘텐츠 카드 다섯 — 글은 아직 없다. 누르면 토스트만 뜬다 */
 const GUIDES: readonly { label: string; heading: string }[] = [
   { label: '용어', heading: '깡통전세란 무엇인가요' },
-  { label: '보증보험', heading: '보증보험 3사는 무엇이 다른가요' },
+  { label: '보증보험', heading: '보증기관 3곳은 무엇이 다른가요' },
   { label: '등기', heading: '등기부등본 보는 법' },
   { label: '시세', heading: '전세가율은 어떻게 계산하나요' },
   { label: '대출', heading: '전세자금대출 한도는 어떻게 정해지나요' },
@@ -136,21 +136,21 @@ export default function MainPage() {
           */}
           <div className={styles.categoryArea}>
             <section className={styles.banner} aria-labelledby="main-title">
-              <p className={`${styles.bannerEyebrow} type-eyebrow`}>서울시 전월세 매물 위험도</p>
+              <p className={`${styles.bannerEyebrow} type-eyebrow`}>서울시 전월세 매물 위험 등급</p>
               <h1 id="main-title" className={`${styles.bannerTitle} type-heading-1`}>
-                전세사기 위험도,
+                전세사기 위험 등급,
                 <br />
                 계약 전에 확인하세요
               </h1>
               <p className={`${styles.bannerLead} type-body`}>
-                등기 · 건축물대장 · 시세 · 보증보험 기준을 대조해 매물의 위험도를 3단계로 보여 줍니다.
+                등기 · 건축물대장 · 시세 · 보증보험 기준을 대조해 매물의 위험 등급을 3단계로 보여 줍니다.
               </p>
             </section>
 
             <ul className={styles.categories} aria-label="서비스 안내">
               <li className={styles.categoryWide}>
                 <CardCategory
-                  title="전세사기 위험도"
+                  title="전세사기 위험 등급"
                   description="매물마다 네 가지 자료를 대조해 3단계로 판정합니다."
                   footer={<RiskGradeBadges />}
                 />
@@ -175,7 +175,7 @@ export default function MainPage() {
 
             <div className={styles.promo}>
               <PromoPanel title="전세 계약 상담" description="계약 전 궁금한 점을 상담으로 풀어 드립니다.">
-                <PromoPanelTile icon={CHAT_ICON} label="위험도 해설 상담" onClick={comingSoon} />
+                <PromoPanelTile icon={CHAT_ICON} label="위험 등급 해설 상담" onClick={comingSoon} />
                 <PromoPanelTile icon={HISTORY_ICON} label="상담 이력" onClick={comingSoon} />
               </PromoPanel>
             </div>
@@ -205,7 +205,7 @@ export default function MainPage() {
       <section className={styles.band} aria-labelledby="criteria-title">
         <div className={styles.container}>
           <h2 id="criteria-title" className={`${styles.bandTitle} type-section-title`}>
-            위험도 판정 기준
+            위험 등급 판정 기준
           </h2>
           <RiskCriteriaCards />
         </div>

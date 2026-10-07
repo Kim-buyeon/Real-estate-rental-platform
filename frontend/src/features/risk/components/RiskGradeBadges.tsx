@@ -10,7 +10,7 @@ import styles from './RiskGradeBadges.module.css';
  */
 export function RiskGradeBadges() {
   return (
-    <ul className={styles.badges} aria-label="위험도 3단계">
+    <ul className={styles.badges} aria-label="위험 등급 3단계">
       {RISK_GRADES.map((grade) => (
         <li key={grade}>
           <Badge variant={riskGradeToken(grade)}>{riskGradeLabel(grade)}</Badge>

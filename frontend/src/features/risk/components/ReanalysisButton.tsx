@@ -1,77 +1,50 @@
-import { Alert, Button, useToast } from '../../../components/ui';
-import { RISK_REANALYZE_TOO_SOON, riskGradeLabel } from '../../../domain/risk';
-import { formatDateTime } from '../../../lib/format';
-import { useReanalyzeRisk } from '../../../queries/risk';
+import { Button, useToast } from '../../../components/ui';
+import { RISK_REANALYZE_TOO_SOON } from '../../../domain/risk';
+import type { useReanalyzeRisk } from '../../../queries/risk';
 import { useSession } from '../../../session/useSession';
-import styles from './ReanalysisButton.module.css';
+
+/** 재분석 뮤테이션 하나. 버튼(바 안)과 결과 안내(바 밖)가 같은 요청 상태를 읽도록 부모가 한 번 만들어 내려준다 */
+export type ReanalysisMutation = ReturnType<typeof useReanalyzeRisk>;
 
 interface ReanalysisButtonProps {
-  propertyId: number;
+  reanalysis: ReanalysisMutation;
+  className?: string;
 }
 
 /**
  * 위험도 재분석 요청 (RISK-08). 인증 「필수」다 — 위험도 API 명세 1장.
  *
- * 상세 패널 하단의 {components.action-bar} 안에 들어간다 — 카드가 아니라 버튼 하나와 그 결과
- * 문구다. 설명 문구를 두지 않는 것은 바 높이(92)가 그것을 담을 자리가 아니기 때문이다.
+ * 상세 패널 하단 {components.action-bar}의 {components.button-primary}다 — 패널에서 서버에 요청을
+ * 보내는 동작이 재분석과 관심 둘이고, 관심이 {components.button-icon}이므로 남은 주 동작이 이것이다.
+ *
+ * 버튼만 갖는다. 간격 제한 · 결과 안내는 바 높이(92)를 지키기 위해 ReanalysisNotice가 바 밖에 낸다 —
+ * 같은 요청 상태를 읽도록 뮤테이션은 부모가 만들어 둘에 내려준다.
  *
  * 비로그인이면 버튼을 숨기지 않고 비활성으로 둔다. 숨기면 왜 없는지 알 수 없고, 로그인 화면으로
  * 보내면 지도 위치 · 확대 수준 · 필터와 열린 패널이 날아간다 (이슈 #91 계획 「정한 것」).
- *
- * 성공하면 위험도 · 상세 · 등기 쿼리가 무효화되어(queries/risk.ts) 패널이 새 등급을 스스로 다시
- * 그린다. 여기서는 등급이 바뀌었는지만 알린다.
  */
-export function ReanalysisButton({ propertyId }: ReanalysisButtonProps) {
+export function ReanalysisButton({ reanalysis, className }: ReanalysisButtonProps) {
   const { isAuthenticated } = useSession();
-  const reanalysis = useReanalyzeRisk(propertyId);
   const toast = useToast();
 
-  const error = reanalysis.error;
-  // 간격 제한은 실패가 아니라 「잠시 뒤 가능」이다 — 명세 1.2. 다음 요청 가능 시각을 함께 낸다
-  const isTooSoon = error?.code === RISK_REANALYZE_TOO_SOON;
-  const result = reanalysis.data;
-
   return (
-    <div className={styles.action}>
-      <Button
-        type="button"
-        className={styles.button}
-        variant="secondary"
-        onClick={() =>
-          reanalysis.mutate(undefined, {
-            // 실패는 뮤테이션 실패라 Toast 다(frontend/CLAUDE.md 「뮤테이션 실패는 Toast」). 문구는 서버 error.message
-            // 그대로다. 간격 제한은 실패가 아니라 「잠시 뒤 가능」이라 아래 안내(Alert info)로 남긴다 — 명세 1.2
-            onError: (failure) => {
-              if (failure.code !== RISK_REANALYZE_TOO_SOON) toast.show(failure.message, { variant: 'error' });
-            },
-          })
-        }
-        isLoading={reanalysis.isPending}
-        disabled={!isAuthenticated}
-      >
-        재분석
-      </Button>
-
-      {!isAuthenticated && (
-        <p className={`${styles.note} type-body-sm`}>로그인하면 재분석을 요청할 수 있습니다.</p>
-      )}
-
-      {/* 문구는 서버 error.message 그대로다. 다음 요청 가능 시각만 화면이 덧붙인다. 그 밖의 실패는 Toast 다(위 onError) */}
-      {isTooSoon && (
-        <Alert variant="info">
-          {error.message}
-          {error.retryAfter !== undefined && ` ${formatDateTime(error.retryAfter)}부터 가능합니다.`}
-        </Alert>
-      )}
-
-      {result && (
-        <Alert variant="info">
-          {result.gradeChanged
-            ? `등급이 ${riskGradeLabel(result.previousGrade)}에서 ${riskGradeLabel(result.riskGrade)}(으)로 바뀌었습니다.`
-            : '등급은 그대로입니다.'}{' '}
-          {formatDateTime(result.analyzedAt)} 기준
-        </Alert>
-      )}
-    </div>
+    <Button
+      type="button"
+      className={className}
+      variant="primary"
+      onClick={() =>
+        reanalysis.mutate(undefined, {
+          // 실패는 뮤테이션 실패라 Toast 다(frontend/CLAUDE.md 「뮤테이션 실패는 Toast」). 문구는 서버 error.message
+          // 그대로다. 간격 제한은 실패가 아니라 「잠시 뒤 가능」이라 ReanalysisNotice 의 안내(Alert info)로 남긴다 — 명세 1.2
+          onError: (failure) => {
+            if (failure.code !== RISK_REANALYZE_TOO_SOON) toast.show(failure.message, { variant: 'error' });
+          },
+        })
+      }
+      isLoading={reanalysis.isPending}
+      disabled={!isAuthenticated}
+    >
+      재분석
+    </Button>
   );
 }

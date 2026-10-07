@@ -76,25 +76,43 @@
 }
 
 /*
- * {components.action-bar} — 높이 92 · 상단 1px {colors.border} · 패딩 {spacing.md}.
- * 두 동작(재분석 · 관심)이 폭을 나눠 갖는다. 각 동작이 실패 · 결과 문구를 함께 내므로 92는
- * 고정이 아니라 최소 높이다 — 문구가 나오면 그만큼만 늘어난다.
+ * 하단 바 두 동작의 안내(비로그인 사유 · 재분석 결과). 본문 끝에 놓이고 낼 것이 없으면 접힌다.
+ * 회색 띠를 두지 않는다 — 섹션이 아니라 바로 위 섹션에 딸린 안내다
+ */
+.notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: 0 var(--spacing-xl) var(--spacing-xl);
+}
+
+.notices:empty {
+  display: none;
+}
+
+.note {
+  color: var(--color-text-secondary);
+}
+
+/*
+ * {components.action-bar} — 면 {colors.surface} · 상단 1px {colors.border} · 높이 92 · 패딩 {spacing.md} ·
+ * 버튼 갭 {spacing.xs} (정의서 7절 · 레이아웃 맵 map-search 「여백 리듬」). 버튼 높이 60 + 위아래 패딩 16 × 2 = 92 다.
+ * 높이는 고정이다 — 안내 문구는 바 안에 두지 않는다(.notices). 높이 값은 Toast 도 쓰므로 global.css 의
+ * --action-bar-height 다. 패널이 세로 flex 이고 본문(.body)만 스크롤하므로 바는 스크롤과 무관하게 같은 자리다.
  */
 .actionBar {
-  /* 정의서 7절 {components.action-bar} 의 높이. export 가 색 · 간격 · 반경만 내므로 여기 한 번 적는다 */
-  --action-bar-height: 92px;
-
   display: flex;
   flex: none;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--spacing-xs);
-  min-height: var(--action-bar-height);
-  padding: var(--spacing-md) var(--spacing-xl);
+  height: var(--action-bar-height);
+  padding: var(--spacing-md);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
 }
 
-.actionBar > * {
+/* {components.button-primary} 는 아이콘 버튼을 뺀 나머지 폭 전부 */
+.primaryAction {
   flex: 1 1 0;
   min-width: 0;
 }

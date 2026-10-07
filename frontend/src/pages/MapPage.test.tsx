@@ -216,6 +216,23 @@ describe('MapPage', () => {
     expect(screen.queryByRole('button', { name: '목록' })).not.toBeInTheDocument();
   });
 
+  it('상세가 열려 패널 쪽이 보이면 좁은 화면 토글이 하단 바 위로 올라서는 상태가 되고, 지도로 돌아가면 풀린다', async () => {
+    server.use(...propertyHandlers, ...riskHandlers);
+
+    renderMapPage();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: '목록' })).not.toHaveAttribute('data-above-action-bar');
+
+    fireEvent.click(screen.getByRole('button', { name: listRowName(LIST_ITEM.address) }));
+
+    const toggle = await screen.findByRole('button', { name: '지도' });
+    expect(toggle).toHaveAttribute('data-above-action-bar');
+
+    fireEvent.click(toggle);
+    expect(screen.getByRole('button', { name: '목록' })).not.toHaveAttribute('data-above-action-bar');
+  });
+
   // ── 딥링크(이슈 104) ────────────────────────────────────────────────────
 
   it('?propertyId로 들어오면 상세 탭이 곧바로 열리고 지도가 그 매물의 자치구 단계로 간다', async () => {

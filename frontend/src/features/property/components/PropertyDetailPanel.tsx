@@ -12,13 +12,15 @@ import {
 } from '../../../domain/risk';
 import { formatDate, formatWon } from '../../../lib/format';
 import { propertyQueries } from '../../../queries/property';
-import { riskQueries } from '../../../queries/risk';
+import { riskQueries, useReanalyzeRisk } from '../../../queries/risk';
+import { useSession } from '../../../session/useSession';
 import { LoanLimitSection } from '../../loan';
 import {
   ConsistencyCheck,
   InsuranceProviders,
   PersonalConditions,
   ReanalysisButton,
+  ReanalysisNotice,
   RegistryTimeline,
   RiskFindings,
   RiskVerdict,
@@ -55,6 +57,9 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
   // 패널 .body에 overflow-y: auto가 있어 패널이 길어지는 것은 문제가 되지 않는다.
   const [isLedgerOpen, setIsLedgerOpen] = useState(false);
   const [isRegistryOpen, setIsRegistryOpen] = useState(false);
+  // 재분석 요청 하나를 바 안의 버튼과 바 밖의 결과 안내가 함께 읽는다 — 그래서 여기서 한 번 만든다
+  const reanalysis = useReanalyzeRisk(propertyId);
+  const { isAuthenticated } = useSession();
 
   const detail = detailQuery.data;
   const riskError = riskQuery.error as ApiError | null;
@@ -123,7 +128,7 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
 
             {riskQuery.isPending && (
               <div className={styles.section}>
-                <Spinner label="위험도를 불러오는 중" />
+                <Spinner label="위험 등급을 불러오는 중" />
               </div>
             )}
 
@@ -185,19 +190,38 @@ export function PropertyDetailPanel({ propertyId, onClose }: PropertyDetailPanel
             <div className={styles.section}>
               <LoanLimitSection propertyId={propertyId} />
             </div>
+
+            {/*
+              하단 바 두 동작의 안내. 바는 높이 92 고정이라 안내를 담지 않고 본문 끝에 낸다 — 낼 것이 없으면
+              이 자리는 비어 접힌다(.notices:empty). 비로그인 사유는 두 동작이 같아 한 문장으로 낸다
+            */}
+            <div className={styles.notices}>
+              {!isAuthenticated && (
+                <p className={`${styles.note} type-body-sm`}>
+                  로그인하면 재분석을 요청하고 관심 매물로 등록할 수 있습니다.
+                </p>
+              )}
+              <ReanalysisNotice reanalysis={reanalysis} />
+            </div>
           </>
         )}
       </div>
 
       {/*
         {components.action-bar} — 패널 스크롤과 무관하게 같은 자리에 있는 하단 고정 바 (레이아웃 맵
-        map-search 11번). 재분석(RISK-08)과 관심 등록 · 해제(PROP-05)가 이 패널의 두 동작이다.
-        등록 여부는 상세 응답의 wishlisted다 — 관심 매물 목록을 따로 받아 계산하지 않는다.
+        map-search 11번). 정의서 7절은 {components.button-icon} 2개 + {components.button-primary}(나머지 폭)다.
+        이 패널에서 서버에 요청하는 동작은 관심 등록 · 해제(PROP-05)와 재분석(RISK-08) 둘이다 — 관심은 정의서가
+        button-icon 의 쓰임으로 적은 「찜」이라 아이콘, 남은 재분석이 primary 다. 정의서의 다른 아이콘 자리(공유)는
+        기능 정의에 없는 기능이라 만들지 않는다. 등록 여부는 상세 응답의 wishlisted다 — 관심 매물 목록을 따로
+        받아 계산하지 않는다.
+
+        토스트가 바를 가리지 않게 data-toast-avoid="action-bar" 를 단다 — 토스트는 바 위로 올라선다(정의서 K-19,
+        Toast.module.css)
       */}
       {detail && (
-        <div className={styles.actionBar}>
-          <ReanalysisButton propertyId={propertyId} />
+        <div className={styles.actionBar} role="group" aria-label="매물 동작" data-toast-avoid="action-bar">
           <WishlistButton propertyId={propertyId} isWishlisted={detail.wishlisted} />
+          <ReanalysisButton reanalysis={reanalysis} className={styles.primaryAction} />
         </div>
       )}
     </aside>

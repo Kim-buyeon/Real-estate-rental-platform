@@ -7,9 +7,19 @@
  * 정의서 K-19 · K-13 이다. 여기서는 그 값을 쓰기만 한다. 아래 여백은 지도 화면 전환 토글과 같은 {spacing.xl} 이다.
  *
  * 화면 하단에 떠 있는 컨트롤이 있으면 토스트는 그 위로 올라선다(K-19) — 그런 컨트롤은 data-toast-avoid 를 단다.
- * 지금은 지도 화면의 전환 토글 하나다. 토글은 하단 {spacing.xl} 에 놓인 secondary · md 버튼(높이 48 —
+ * 지금은 둘이다 — 지도 화면의 전환 토글과 매물 상세 패널의 하단 바(아래). 토글은 하단 {spacing.xl} 에 놓인 secondary · md 버튼(높이 48 —
  * global.css 의 --button-height-secondary)이므로, 토스트 아래 끝 = 토글 아래 여백 + 토글 높이 + {spacing.sm} 틈이다.
  * 토글은 768px 부터 display: none 이지만 DOM 에는 남아 :has 가 계속 맞는다 — 그 구간에서 원래 자리로 되돌린다.
+ *
+ * 매물 상세 패널의 하단 바({components.action-bar}, data-toast-avoid="action-bar")도 하단에 붙어 있다. 바는 모든 폭에서
+ * 보이고(768px~ 은 지도 옆 패널, 그 아래는 전폭) 가운데 놓인 토스트와 가로로 겹칠 수 있어, 폭과 무관하게
+ * 바 높이(global.css 의 --action-bar-height) + {spacing.sm} 틈 위로 올린다. 토글보다 높으므로 둘이 함께 있으면 이쪽이 이긴다 —
+ * 그래서 아래에서 토글 규칙들보다 뒤에 둔다.
+ *
+ * 좁은 화면에서 상세 패널이 보이는 중이면 셋이 쌓인다 — 바(0 ~ 92) 위에 토글이 {spacing.sm} 틈을 두고 올라서고
+ * (data-above-action-bar, MapPage.module.css), 토스트는 다시 그 토글 위로 {spacing.sm} 틈을 둔다:
+ *   토스트 아래 끝 = 바 높이 + {spacing.sm} + 토글 높이(--button-height-secondary) + {spacing.sm}  (92 + 12 + 48 + 12 = 164)
+ * 768px 부터는 토글이 숨으므로 바만 피한다(92 + 12). 근거는 정의서 K-19 「하단에 떠 있는 컨트롤 위로」다.
  *
  * 들어오고 나가는 움직임은 두지 않는다 — 정의서 7절 「전환」은 색 전환 150ms 만 정했고 움직임은 미관측(K-11)이다.
  * 그림자도 두지 않는다 — 정의서 5절 레벨 1 은 추정치이고 토큰이 없다.
@@ -57,4 +67,21 @@
 .error {
   background: var(--color-error);
   color: var(--color-on-error);
+}
+
+/* 상세 패널 하단 바 위로 — 머리말. 위 768px 되돌림보다 뒤에 있어야 모든 폭에서 이긴다 */
+:global(body:has([data-toast-avoid='action-bar'])) .region {
+  bottom: calc(var(--action-bar-height) + var(--spacing-sm));
+}
+
+/* 좁은 화면 · 상세 패널이 보이는 중 — 바 위로 올라선 토글 위로. 선택자가 위 규칙보다 구체적이라 그것을 이긴다 */
+:global(body:has([data-toast-avoid][data-above-action-bar])) .region {
+  bottom: calc(var(--action-bar-height) + var(--spacing-sm) + var(--button-height-secondary) + var(--spacing-sm));
+}
+
+@media (min-width: 768px) {
+  /* 토글이 숨는 구간 — 바만 피한다 */
+  :global(body:has([data-toast-avoid][data-above-action-bar])) .region {
+    bottom: calc(var(--action-bar-height) + var(--spacing-sm));
+  }
 }

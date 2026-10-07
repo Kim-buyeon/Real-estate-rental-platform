@@ -47,11 +47,11 @@ const CRITERIA: readonly Criterion[] = [
   },
   {
     badge: '보증보험',
-    title: '3사 가입 가능 여부',
+    title: '보증기관 3곳 가입 가능 여부',
     description: 'HUG · HF · SGI 의 집 단위 가입 조건에 맞는지 기관마다 대조합니다.',
     items: [
       { label: `${riskGradeLabel('SAFE')} · ${riskGradeLabel('CAUTION')}`, value: '한 곳 이상 가입 가능' },
-      { label: riskGradeLabel('DANGER'), value: '3사 모두 가입 불가' },
+      { label: riskGradeLabel('DANGER'), value: '보증기관 3곳 모두 가입 불가' },
     ],
   },
 ];

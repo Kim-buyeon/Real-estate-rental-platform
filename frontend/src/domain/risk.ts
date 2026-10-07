@@ -53,7 +53,7 @@ export type GradeReason = (typeof GRADE_REASONS)[number];
 
 export const GRADE_REASON_LABEL: Record<GradeReason, string> = {
   NEGATIVE_EQUITY: '깡통전세 해당',
-  INSURANCE_INELIGIBLE: '3사 가입 불가',
+  INSURANCE_INELIGIBLE: '보증기관 3곳 가입 불가',
   LEASE_RATIO_CAUTION: '전세가율 주의 구간',
   INSURANCE_ELIGIBLE: '보증보험 가입 가능',
 };
