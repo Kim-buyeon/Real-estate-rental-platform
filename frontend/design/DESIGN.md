@@ -457,8 +457,8 @@ omitted: []
 
 ## 1. Overview
 
-> **델타 드래프트 — 2026-10-07 · 이슈 #483 · `home` 1007 컷 4장 · 사용자 결정 반영(2026-10-07, 「권고대로」).**
-> 정본(`frontend/design/DESIGN.md`)을 복사해 1007 컷의 신규 토큰 · 컴포넌트를 더하고, 같은 역할에 다른 값이 나온 열한 건
+> **델타 1007 — 2026-10-07 · 이슈 #483 · `home` 1007 컷 4장 · 사용자 결정 반영(2026-10-07, 「권고대로」).**
+> 1007 컷의 신규 토큰 · 컴포넌트를 더하고, 같은 역할에 다른 값이 나온 열한 건
 > (M-01 ~ M-11)을 사용자 결정대로 정리했다. **정본의 토큰 값은 바꾸지 않았다.** 바뀐 것은 정본의 **결정 문장 2곳**
 > (K-08 「콘텐츠 카드 면 `#eeeeee` 미채택」 → `{colors.surface-sunken}` 채택 · 4절 「격자 밖 관측값」의 56 →
 > `{spacing.section-tight}` 채택 — K-39(M-11))과, 신규 항목 중 **우리 메인이 쓰지 않는 넷을 프론트매터에서 뺀 것**이다(K-36).
@@ -1012,26 +1012,26 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 
 ### 의도적 이탈 — 린터 경고
 
-**검수 2회차 실측 error 0 · warning 46 · info 1**(`@google/design.md` 0.4.0 — 전문은 `reviews/designmd-review.md` 2R-0). 사용자 결정 반영(컴포넌트 3 · 타이포 1 제거)으로 건수 구성이 아래 「결정 반영 뒤 기대」로 바뀐다 — 재검수가 실측한다.
-정본의 실측은 error 0 · warning 39 · info 1이다. 남는 warning은 전부 K-25 · K-01 · K-02 · K-15로 설명되며,
+**실측 error 0 · warning 46 · info 1**(`@google/design.md` 0.4.0, 사용자 결정 반영 뒤 · 2026-10-07).
+남는 warning은 전부 K-25 · K-01 · K-02 · K-15로 설명되며,
 **error는 0건이다** — 규격 밖 하위 토큰도 값은 전부 정의된 토큰을 가리키므로 실제로 깨진 참조는 없다.
 
-| 규칙 | 결정 반영 뒤 기대 · 2회차 실측 · 정본 | 어디 |
+| 규칙 | 실측 | 어디 |
 | --- | --- | --- |
-| `broken-ref` | **39** · 41 · 37 | 규격 밖 component 하위 토큰 (K-25). #150에서 dialog · checkbox · checkbox-disabled의 `borderColor` 3건, 델타 1007에서 `card-feature` · `card-content`의 `borderColor` 2건 추가(미채택 `card-placeholder` 둘의 2건은 빠진다) |
-| `contrast-ratio` | **2** · 2 · 2 | `{components.button-primary-disabled}` · `{components.input-disabled}` (K-01 · K-02) |
-| `orphaned-tokens` | **5** · 3 · 0 | `{colors.primary-line-soft}` · `{colors.surface-recessed}` · `{colors.block-feature}` · `{colors.on-block-feature}` · `{colors.on-block-feature-muted}` — 배치 · 장식 전용 색이라 유지, 경고 감수 (K-15). 뒤의 둘은 미채택 슬라이드 위치 표시가 빠지면서 참조가 없어진 것이다 |
-| `token-summary` (info) | 1 | 기대: 색 36 · 타이포 18 · 반경 5 · 간격 12 · 컴포넌트 65 (2회차 실측: 색 36 · 타이포 19 · 컴포넌트 68 / 정본: 색 30 · 타이포 16 · 반경 5 · 간격 11 · 컴포넌트 60) |
+| `broken-ref` | **39** | 규격 밖 component 하위 토큰 (K-25). #150에서 dialog · checkbox · checkbox-disabled의 `borderColor` 3건, 델타 1007에서 `card-feature` · `card-content`의 `borderColor` 2건 추가(미채택 `card-placeholder` 둘의 2건은 빠진다) |
+| `contrast-ratio` | **2** | `{components.button-primary-disabled}` · `{components.input-disabled}` (K-01 · K-02) |
+| `orphaned-tokens` | **5** | `{colors.primary-line-soft}` · `{colors.surface-recessed}` · `{colors.block-feature}` · `{colors.on-block-feature}` · `{colors.on-block-feature-muted}` — 배치 · 장식 전용 색이라 유지, 경고 감수 (K-15). 뒤의 둘은 미채택 슬라이드 위치 표시가 빠지면서 참조가 없어진 것이다 |
+| `token-summary` (info) | 1 | 색 36 · 타이포 18 · 반경 5 · 간격 12 · 컴포넌트 65 |
 | `missing-primary` · `section-order` · `unknown-key` · `token-like-ignored` · `missing-sections` · `missing-typography` | **0** | — |
 
 채택한 신규 쌍의 대비 — `promo-panel` 4.52 · `card-content` 4.75 · 띠 제목 `{colors.on-block-feature}` on `{colors.block-feature}` 8.26(산문 쌍).
 
 | # | 항목 | 내용 |
 | --- | --- | --- |
-| K-25 | **규격 밖 component 하위 토큰 — `broken-ref` 37건** | 규격이 인정하는 하위 토큰은 `backgroundColor` · `textColor` · `typography` · `rounded` · `padding` · `size` · `height` · `width` **8개뿐**이고, 여기에 **보더와 간격이 없다.** 내역: `borderColor` **31** · `gap` **3**(`field` · `tabs-underline` · `empty-state`) · `shadow` **1**(`input-focus`) · `minWidth` **1**(`select`) · `labelWidth` **1**(`kv-row`). **유지하기로 결정했다 — 이슈 #110 작업 판단(2026-09-18), 검수 권장 수용. 사용자 승인 사항이 아니다.** 사유 — **이 시스템은 그림자 대신 1px 실선으로 면을 나누므로 보더 색은 부가 정보가 아니라 핵심 표현 수단이고, 따라서 산문이 아니라 기계가 읽는 자리에 남긴다.** 어느 컴포넌트가 `{colors.border}`를 쓰고 어느 것이 `{colors.border-subtle}`를 쓰는지가 `components`에서 사라지면 CSS로 옮길 때 정보를 잃는다. **값은 전부 `{colors.*}` 참조라 실제로 깨진 참조가 아니며 severity도 warning이다**(error 0건). 대가로 린터 경고 37건을 안고 간다. **델타 1007에서 같은 방침으로 `borderColor` 2건을 더했다(결정 반영 뒤 기대 39)** |
+| K-25 | **규격 밖 component 하위 토큰 — `broken-ref` 39건** | 규격이 인정하는 하위 토큰은 `backgroundColor` · `textColor` · `typography` · `rounded` · `padding` · `size` · `height` · `width` **8개뿐**이고, 여기에 **보더와 간격이 없다.** 내역: `borderColor` **31** · `gap` **3**(`field` · `tabs-underline` · `empty-state`) · `shadow` **1**(`input-focus`) · `minWidth` **1**(`select`) · `labelWidth` **1**(`kv-row`). **유지하기로 결정했다 — 이슈 #110 작업 판단(2026-09-18), 검수 권장 수용. 사용자 승인 사항이 아니다.** 사유 — **이 시스템은 그림자 대신 1px 실선으로 면을 나누므로 보더 색은 부가 정보가 아니라 핵심 표현 수단이고, 따라서 산문이 아니라 기계가 읽는 자리에 남긴다.** 어느 컴포넌트가 `{colors.border}`를 쓰고 어느 것이 `{colors.border-subtle}`를 쓰는지가 `components`에서 사라지면 CSS로 옮길 때 정보를 잃는다. **값은 전부 `{colors.*}` 참조라 실제로 깨진 참조가 아니며 severity도 warning이다**(error 0건). 대가로 린터 경고 37건을 안고 간다. **델타 1007에서 같은 방침으로 `borderColor` 2건을 더했다** |
 | K-01 | **비활성 버튼 대비 — `contrast-ratio` 1건** | 계측(`signup/01`)은 `{colors.disabled-surface}` + 흰 글자로 대비 ≈1.4:1이다. 우리는 글자를 `{colors.text-disabled}`(#999999)로 바꿔 **2.00:1**을 확보했다. 그래도 4.5:1 미만이라 경고가 난다. WCAG 2.2 SC 1.4.3은 **비활성 사용자 인터페이스 구성요소의 텍스트를 대비 요건에서 제외**하므로 위반은 아니다(SC 1.4.11도 같다). **검수에서 예외 적용을 승인했다.** **참고 사이트를 그대로 베끼지 않았다는 사실을 함께 기록한다** |
 | K-02 | **`{components.input-disabled}` 대비 — `contrast-ratio` 1건** | `{colors.surface-muted}` + `{colors.text-disabled}` = **2.61:1**. 같은 비활성 예외이고 **검수에서 승인됐다.** 기존 구현값 유지 |
-| K-15 | **컴포넌트가 참조하지 않는 색 토큰 — `orphaned-tokens` 5건(델타 1007 · 결정 반영 뒤 기대)** | **린터가 보는 것**(검수가 린터 소스로 확인): `components`가 참조하는 경로와 같은 계열 이름(`on-` · `inverse-` 앞붙이, `-container` · `-variant` 등 뒷붙이를 뗀 이름)뿐이고 **본문 산문은 세지 않는다.** MD3 표준 계열(`primary` · `secondary` · `tertiary` · `error` · `surface` · `background` · `outline`)은 면제된다.<br>**정본 몫 — 경고 없음.** `{colors.background}`(`global.css`이 `background: var(--color-background)`로 실제 사용 중 — 지우면 전역 배경이 깨진다)는 린터의 MD3 표준 계열 면제(`background`)로 경고가 나지 않는다 — 산문 참조와 무관하다. `{colors.on-error}`도 `error` 계열 면제 대상이며, #150부터는 `{components.toast-error}`가 직접 참조한다. 경고가 없더라도 **삭제 후보가 아니라는 사실**을 남긴다.<br>**델타 1007 몫 — 유지, 경고 5건 감수.** 다섯 다 컴포넌트가 아니라 **배치 · 장식 전용 색**이라 참조할 컴포넌트 자리가 없다. 참조를 만들려고 컴포넌트를 새로 지어내지 않는다(K-25와 같은 판단 형식). (1) `{colors.surface-recessed}` — 추천 래퍼 면. 래퍼는 배치라 `examples/home/layout.md` 소관이다. 계열 이름이 `surface-recessed`라 `surface` 면제를 받지 못한다(이름 유지 결정 — K-37). (2) `{colors.primary-line-soft}` — `{components.card-content}` 라벨 밑 1px 밑줄. 규격 하위 토큰에 둘째 선 색 자리가 없다. (3) `{colors.block-feature}` — 슬라이드 구역의 전폭 띠 면. 띠는 배치다. (4) `{colors.on-block-feature}` — 띠 위 섹션 제목 글자. 제목은 타이포 역할이지 컴포넌트가 아니다. (3) · (4)는 미채택 슬라이드 위치 표시가 유일한 참조였다(K-36). (5) `{colors.on-block-feature-muted}` — 띠 위 「더 보기」 링크 · 셰브런. 해당 컴포넌트가 없다(띠는 배치) |
+| K-15 | **컴포넌트가 참조하지 않는 색 토큰 — `orphaned-tokens` 5건(델타 1007)** | **린터가 보는 것**(검수가 린터 소스로 확인): `components`가 참조하는 경로와 같은 계열 이름(`on-` · `inverse-` 앞붙이, `-container` · `-variant` 등 뒷붙이를 뗀 이름)뿐이고 **본문 산문은 세지 않는다.** MD3 표준 계열(`primary` · `secondary` · `tertiary` · `error` · `surface` · `background` · `outline`)은 면제된다.<br>**정본 몫 — 경고 없음.** `{colors.background}`(`global.css`이 `background: var(--color-background)`로 실제 사용 중 — 지우면 전역 배경이 깨진다)는 린터의 MD3 표준 계열 면제(`background`)로 경고가 나지 않는다 — 산문 참조와 무관하다. `{colors.on-error}`도 `error` 계열 면제 대상이며, #150부터는 `{components.toast-error}`가 직접 참조한다. 경고가 없더라도 **삭제 후보가 아니라는 사실**을 남긴다.<br>**델타 1007 몫 — 유지, 경고 5건 감수.** 다섯 다 컴포넌트가 아니라 **배치 · 장식 전용 색**이라 참조할 컴포넌트 자리가 없다. 참조를 만들려고 컴포넌트를 새로 지어내지 않는다(K-25와 같은 판단 형식). (1) `{colors.surface-recessed}` — 추천 래퍼 면. 래퍼는 배치라 `examples/home/layout.md` 소관이다. 계열 이름이 `surface-recessed`라 `surface` 면제를 받지 못한다(이름 유지 결정 — K-37). (2) `{colors.primary-line-soft}` — `{components.card-content}` 라벨 밑 1px 밑줄. 규격 하위 토큰에 둘째 선 색 자리가 없다. (3) `{colors.block-feature}` — 슬라이드 구역의 전폭 띠 면. 띠는 배치다. (4) `{colors.on-block-feature}` — 띠 위 섹션 제목 글자. 제목은 타이포 역할이지 컴포넌트가 아니다. (3) · (4)는 미채택 슬라이드 위치 표시가 유일한 참조였다(K-36). (5) `{colors.on-block-feature-muted}` — 띠 위 「더 보기」 링크 · 셰브런. 해당 컴포넌트가 없다(띠는 배치) |
 
 ### 값 충돌 — 승인 대상
 
@@ -1049,7 +1049,6 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 `#eeeeee` 미채택」 · 4절 「격자 밖 관측값」의 56)은 결정에 따라 바뀐다 — K-39(M-11). 값 · 근거의 본문은 `analysis/merge-notes.md`
 (「권고 · 결정」 표)에 있고, 여기는 정의서에서 걸리는 자리와 결정만 적는다. 근거의 공통 전제 — **1007 컷은 브라우저 확대 100%에서
 찍었고 배율(×1.147)을 겹친 컷 네 쌍으로 검증했다. 기존 `home/01` · `home/02` 값은 「컨테이너 = 1330」에 되맞춘 줌 보정 추정이다.**
-`layout.md` 값의 교체(M-02 · M-05 · M-07)는 analyzer가 한다.
 
 | # | merge-notes | 정의서에서 걸리는 자리 | 결정 |
 | --- | --- | --- | --- |
