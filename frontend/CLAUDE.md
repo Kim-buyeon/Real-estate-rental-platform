@@ -397,7 +397,7 @@ CSS Modules와 CSS 변수만 쓴다. CSS 프레임워크 · CSS-in-JS를 두지 
 
 | 파일 | 내용 | 만드는 방법 |
 | --- | --- | --- |
-| `styles/tokens.css` | `:root`의 CSS 변수. `--color-<키>` · `--spacing-<키>` · `--rounded-<키>` | **`npx @google/design.md export <정의서> --format css-vars` 출력 그대로.** 손으로 고치지 않는다. 정의서와 같은 커밋 |
+| `styles/tokens.css` | `:root`의 CSS 변수. `--color-<키>` · `--spacing-<키>` · `--rounded-<키>` | **`npm run design:export` 출력 그대로**(`@google/design.md` `export --format css-vars`. `npx`로 부르지 않는다 — Windows에서 파일 열기 창). 손으로 고치지 않는다. 정의서와 같은 커밋 |
 | `styles/typography.css` | 정의서 `typography` 역할마다 클래스 하나 — `.type-body` · `.type-heading-1` | `css-vars` export가 타이포그래피를 내지 않아 정의서 값을 손으로 옮긴다. 정의서와 같은 커밋 |
 | `styles/global.css` | 리셋 · 폰트 로드 · `word-break: keep-all` · 브레이크포인트 주석 · **정의서가 정했으나 `css-vars` export가 내지 않는 값**(`--container-max` · `--touch-target-min`) | 한 번 |
 | `<컴포넌트>.module.css` | 그 컴포넌트의 스타일 | 컴포넌트 옆 |
