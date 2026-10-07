@@ -11,13 +11,19 @@ colors:
   primary: "#326cf9"          # 기존 구현값 유지. 계측 추정 #3d6ff5는 흰 글자 대비 4.38 — Known Gaps K-03
   primary-hover: "#2a5fe0"    # 미관측 · 기존 구현값 유지
   primary-surface: "#eaf0ff"  # seen on: map-search/05 · listing/02
+  primary-line-soft: "#b8c9f7" # 델타 1007 · seen on: home/1007-04 · 추정 · 1회 관측 · 채택(2026-10-07 승인) — K-36
   on-primary: "#ffffff"
   # ── 바탕 ──
   background: "#ffffff"
   surface: "#ffffff"
-  surface-muted: "#f4f5f6"    # seen on: home/01 · listing/02 · map-search/03
-  inverse-surface: "#1e1e1e"  # seen on: favorites/01-03 · my-info/01 · listing/05
+  surface-muted: "#f4f5f6"    # seen on: home/01 · home/1007-01 · listing/02 · map-search/03
+  surface-recessed: "#fafafa" # 델타 1007 · seen on: home/02 · home/1007-01 · 02 · 추정 · 2컷 같은 구역(추천 래퍼) · 채택 · 이름 유지(2026-10-07 승인) — K-31(M-05) · K-37
+  surface-sunken: "#eeeeee"   # 델타 1007 · seen on: home/03 · home/1007-04 · 추정 · 같은 페이지 같은 구역 · 채택 · 이름 유지(2026-10-07 승인, 정본 K-08 미채택을 뒤집음) — K-39(M-11)
+  inverse-surface: "#1e1e1e"  # seen on: favorites/01-03 · my-info/01 · listing/05 · home/1007-01 · 03
   on-inverse: "#ffffff"
+  block-feature: "#444e6a"    # 델타 1007 · seen on: home/1007-02 · 03 · 04(한 띠) · 추정 · 1회 관측 · 채택(2026-10-07 승인) — K-36
+  on-block-feature: "#ffffff" # 델타 1007 · seen on: home/1007-03 · 1회 관측 · 채택 — K-36
+  on-block-feature-muted: "#c5cad6" # 델타 1007 · seen on: home/1007-03 · 추정 · 1회 관측 · 채택 — K-36
   footer-surface: "#3c3c3c"   # seen on: home/03 · login/01 · favorites/01 · listing/06
   footer-surface-raised: "#4a4a4a"
   on-footer: "#c9c9c9"
@@ -48,7 +54,9 @@ typography:
   heading-1: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 28px, fontWeight: 700, lineHeight: 1.35 }
   display-mobile: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 24px, fontWeight: 700, lineHeight: 1.3 }     # 프로젝트 정의 · 모바일(~767) 전용 — 9절
   heading-1-mobile: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 22px, fontWeight: 700, lineHeight: 1.35 }  # 프로젝트 정의 · 모바일(~767) 전용 — 9절
+  section-title: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 22px, fontWeight: 400, lineHeight: 1.75 }    # 델타 1007 · seen on: home/1007-01 · 03 · 04(3곳 반복) · 추정 · 메인 섹션 제목으로 채택(2026-10-07 승인) — K-29(M-03)
   heading-2: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 20px, fontWeight: 700, lineHeight: 1.4 }
+  content-title: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 20px, fontWeight: 400, lineHeight: 1.5 }     # 델타 1007 · seen on: home/1007-04 · 추정 · 1회 관측 · 채택(2026-10-07 승인) — K-36
   heading-3: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 18px, fontWeight: 700, lineHeight: 1.4 }
   body-lg: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 16px, fontWeight: 400, lineHeight: 1.6 }
   body: { fontFamily: "Pretendard Variable, Pretendard, system-ui, sans-serif", fontSize: 15px, fontWeight: 400, lineHeight: 1.6 }
@@ -71,6 +79,7 @@ spacing:
   xl: 24px
   2xl: 32px
   3xl: 48px
+  section-tight: 56px   # 델타 1007 · seen on: home/1007-01 · 02 · 03(같은 페이지 2곳) · 측정 · 채택 · 이름 유지(2026-10-07 승인) — K-37 · K-39(M-11)
   4xl: 64px
   5xl: 80px
 components:
@@ -216,6 +225,28 @@ components:
     borderColor: "{colors.border}"
     rounded: "{rounded.none}"
     padding: 24px
+  # 아래 card-category · card-feature · card-content 셋은 델타 1007(이슈 #483) 신규 · 우리 메인이 쓰는 것만 채택(2026-10-07 승인 — K-36).
+  # seen on: home/1007 · 전부 1회 관측 · 색 · 반경 · 글자는 추정, 치수는 측정(±4) — 7절. card-placeholder(+primary)는 미채택 — 11절 K-36
+  # 폭은 적지 않는다 — 관측 폭(580 · 233)은 참고 사이트 1180 그리드의 컬럼 폭이라 우리 화면에서는 그리드(4절 repeat(N, 1fr))가 정한다. 참고 폭은 7절에만
+  card-category:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    typography: "{typography.heading-3}"   # M-04 결정(2026-10-07): 18/700 heading-3 채택. 옛 layout.md 의 heading-2 20/700 은 보정 순환값 — K-30
+    rounded: "{rounded.lg}"
+  card-feature:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    borderColor: "{colors.border}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.none}"
+    height: 411px
+  card-content:
+    backgroundColor: "{colors.surface-sunken}"
+    textColor: "{colors.primary-hover}"   # 의도적 이탈(2026-10-07 승인) — 관측 글자 primary 는 이 면 위 3.89:1 로 AA 미달, primary-hover 4.75:1. 상단 선 · 원 버튼 외곽선은 primary 그대로 — K-33
+    borderColor: "{colors.primary}"
+    typography: "{typography.content-title}"
+    rounded: "{rounded.none}"
+    height: 330px
   table:
     backgroundColor: "{colors.surface}"
     borderColor: "{colors.border}"
@@ -407,10 +438,32 @@ components:
     borderColor: "{colors.border}"
     height: 92px
     padding: 16px
+  # 아래 둘은 델타 1007(이슈 #483) 신규 — seen on: home/1007 · 1회 관측 · 채택(2026-10-07 승인 — K-36). promo-panel은 8절 Don't의 명시 예외 — K-34
+  # promo-panel 폭(관측 482 = 우 레일 폭)은 그리드가 정하므로 적지 않는다 — 7절. pagination-indicator는 미채택 — 11절 K-36
+  promo-panel:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.lg}"
+    height: 99px
+  promo-panel-tile:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    typography: "{typography.caption}"
+    rounded: "{rounded.md}"
+    size: 84px 80px
 omitted: []
 ---
 
 ## 1. Overview
+
+> **델타 드래프트 — 2026-10-07 · 이슈 #483 · `home` 1007 컷 4장 · 사용자 결정 반영(2026-10-07, 「권고대로」).**
+> 정본(`frontend/design/DESIGN.md`)을 복사해 1007 컷의 신규 토큰 · 컴포넌트를 더하고, 같은 역할에 다른 값이 나온 열한 건
+> (M-01 ~ M-11)을 사용자 결정대로 정리했다. **정본의 토큰 값은 바꾸지 않았다.** 바뀐 것은 정본의 **결정 문장 2곳**
+> (K-08 「콘텐츠 카드 면 `#eeeeee` 미채택」 → `{colors.surface-sunken}` 채택 · 4절 「격자 밖 관측값」의 56 →
+> `{spacing.section-tight}` 채택 — K-39(M-11))과, 신규 항목 중 **우리 메인이 쓰지 않는 넷을 프론트매터에서 뺀 것**이다(K-36).
+> 결정 내역은 11절 「값 충돌 — 1007 델타」와 `analysis/merge-notes.md`(「결정」 열)에 있다.
+> 신규 항목은 프론트매터 주석과 본문에 `델타 1007`로 표시했다.
 
 무채색 팔레트 하나와 파랑 하나로 끝나는 시스템이다. 면을 나누는 수단은 그림자가 아니라 1px
 `{colors.border}` 실선과 `{colors.surface-muted}` 가로 띠이고, 강조는 `{colors.primary}` 한 색이
@@ -434,24 +487,33 @@ omitted: []
 > `analysis/tokens.md` 0장에 있으나 그 파일은 커밋 대상이 아니므로(`design-extract` 2장) 근거를
 > 여기 옮겨 적는다. 이 판단이 뒤집히면 px 값을 일괄로 2로 나누면 되고, 비율 기반 값(컨테이너 대비
 > 컬럼 폭 등)은 배율과 무관하게 유효하다.
+>
+> **델타 1007 — 이 가정에 의문이 생겼다(K-28, M-01).** 배율을 캡처 조건으로 아는 1007 컷(브라우저 100% ·
+> OS 150% · 이미지 px × 1.147 = CSS px, 겹친 컷 네 쌍으로 배율 검증)에서 컨테이너는 **1180**이다. 기존 컷이
+> 약 1.127배 확대돼 있었다면(1180 × 1.127 = 1330) 위 ×1.0 결론과 그에 기댄 값이 바뀐다.
+> **결정(2026-10-07): 참고 사이트 컨테이너 기준은 1180이다** — 추가 캡처 없이 1007 측정값을 기준으로 삼는다.
+> 위 ×1.0 판단은 기록으로 남긴다. 그에 기댄 기존 컴포넌트 치수(입력 48 · 주 버튼 60 · 폼 카드 540 등)는 이번 결정에서
+> 바꾸지 않았다 — 우리 구현값으로 이미 쓰이고 있고, 1007 컷에 같은 컴포넌트가 없어 대조할 값이 없다(K-28).
 
 ---
 
 ## 2. Colors
 
-> Source pages: `map-search` · `favorites` · `login` · `signup` · `my-info` · `home` · `listing`
+> Source pages: `map-search` · `favorites` · `login` · `signup` · `my-info` · `home` · `listing` · **`home/1007`**(델타)
 > (`listing`은 우리가 만들지 않는 화면이고 토큰 인벤토리 계측에만 썼다. **`home`은 메인 화면(`/`)의 정본이 됐다** —
 > 처음에는 푸터 구역만 계측했으나 메인을 만들면서 본문 구역까지 보강했다(이슈 #117). `home/01` · `home/02`는
-> 약 1.33~1.34배 확대 캡처라 보정값이며, 푸터 정본은 `home/03`이다.)
+> 약 1.33~1.34배 확대 캡처라 보정값이며, 푸터 정본은 `home/03`이다. **`home/1007`**은 이슈 #483의 4컷으로,
+> 뷰포트 1707 · 배율 ×1.147을 캡처 조건으로 알고 잰 값이다 — 기존 보정값과의 차이는 11절 K-28 ~ K-32.)
 
 ### Brand & Accent
 
 | 토큰 | 값 | 쓰임 | seen on |
 | --- | --- | --- | --- |
-| `{colors.primary}` | `#326cf9` | 주 버튼 · 선택된 탭 글자와 인디케이터 · 강조 수치 · 링크 | login/01 · listing/02 · map-search/02 (값은 기존 구현값 — K-03) |
-| `{colors.primary-hover}` | `#2a5fe0` | 주 버튼 hover · `{components.badge-primary}` 글자 | 미관측 · 기존 구현값 |
+| `{colors.primary}` | `#326cf9` | 주 버튼 · 선택된 탭 글자와 인디케이터 · 강조 수치 · 링크 | login/01 · listing/02 · map-search/02 · home/1007-01 · 02 · 04 (값은 기존 구현값 — K-03. 1007 관측 ≈ `#3c6ff5`도 계측 추정 `#3d6ff5`와 같다) |
+| `{colors.primary-hover}` | `#2a5fe0` | 주 버튼 hover · `{components.badge-primary}` 글자 · **델타 1007** `{components.card-content}` 글자(옅은 면 위 파랑 글자 — 의도적 이탈 K-33) | 미관측 · 기존 구현값 |
 | `{colors.primary-surface}` | `#eaf0ff` | 옅은 강조 면 — 활성 내비 pill · 선택 칩 · `{components.badge-primary}` 배경 | map-search/05 · listing/02 |
-| `{colors.on-primary}` | `#ffffff` | `{colors.primary}` 위의 글자 | 전 컷 |
+| `{colors.primary-line-soft}` | `#b8c9f7` | **델타 1007.** primary의 옅은 단계 **선** — `{components.card-content}` 라벨 밑 짧은 밑줄(1px · 폭 ≈ 25). `{colors.primary-surface}`(면)보다 진하다. 면으로 쓰지 않는다 | home/1007-04 · **추정 · 1회 관측** |
+| `{colors.on-primary}` | `#ffffff` | `{colors.primary}` 위의 글자 | 전 컷 · home/1007-01 |
 
 ### Surface
 
@@ -459,9 +521,14 @@ omitted: []
 | --- | --- | --- | --- |
 | `{colors.background}` | `#ffffff` | 페이지 바탕 | 전 컷 |
 | `{colors.surface}` | `#ffffff` | 카드 · 패널 · 표 본문 · 내비 | 전 컷 |
-| `{colors.surface-muted}` | `#f4f5f6` | 섹션 사이 가로 띠 · 타일 면 · `{components.alert-info}` 배경 | home/01 · listing/02 · map-search/03 |
-| `{colors.inverse-surface}` | `#1e1e1e` | 선택 반전 면 · `{components.tooltip}` · `{components.badge-inverse}` | favorites/01-03 · my-info/01 · listing/05 |
+| `{colors.surface-muted}` | `#f4f5f6` | 섹션 사이 가로 띠 · 타일 면 · `{components.alert-info}` 배경 | home/01 · listing/02 · map-search/03 · home/1007-01(hero · 카테고리 회색 면 ≈ `#f4f4f4`) |
+| `{colors.surface-recessed}` | `#fafafa` | **델타 1007.** 추천 래퍼 면(+ 1px `{colors.border}`). 같은 컷의 `{colors.surface-muted}` 면보다 **눈에 띄게 밝다** — 두 면이 한 컷에 함께 있어 비교했다. 이 면 위 글자는 `{colors.text-secondary}` 이상 — 아래 Text 인용 | home/02 · home/1007-01 · 02 · **추정 · 2컷 같은 구역.** 옛 `home/02` 래퍼 표본도 `#fafafa`(같은 컷 상단 회색 띠 `#f5f5f5`) — 기존 `layout.md`의 「래퍼 = `{colors.surface-muted}`」는 옛 컷에서도 관측과 다른 **표기 오류**였다(검수 표본). 채택(2026-10-07) — K-31(M-05) · 이름 유지 K-37 |
+| `{colors.surface-sunken}` | `#eeeeee` | **델타 1007.** `{components.card-content}` 면 | home/03 · home/1007-04(≈ `#efefef`) · **추정.** 2회 관측이지만 같은 페이지 같은 구역이다. 정본 K-08의 「미채택」을 뒤집어 채택(2026-10-07) — K-39(M-11) |
+| `{colors.inverse-surface}` | `#1e1e1e` | 선택 반전 면 · `{components.tooltip}` · `{components.badge-inverse}` | favorites/01-03 · my-info/01 · listing/05 · home/1007-01(선택 칩) · 03(슬라이드 첫 배지) |
 | `{colors.on-inverse}` | `#ffffff` | 반전 면 위의 글자 | 〃 |
+| `{colors.block-feature}` | `#444e6a` | **델타 1007.** 큰 면적 장식 띠(뷰포트 전폭) — 슬라이드 구역의 면. 푸른 기가 있는 짙은 회색이고 `{colors.footer-surface}`(무채색)와 **다른 색 · 다른 역할**이다 | home/1007-02 · 03 · 04(한 띠가 세 컷에 걸침) · **추정 · 1회 관측** |
+| `{colors.on-block-feature}` | `#ffffff` | **델타 1007.** `{colors.block-feature}` 위의 섹션 제목(`{typography.section-title}`). hex는 `{colors.on-inverse}`와 같으나 역할이 달라 키를 나눴다. 대비 8.26 | home/1007-03 · **1회 관측** |
+| `{colors.on-block-feature-muted}` | `#c5cad6` | **델타 1007.** `{colors.block-feature}` 위의 보조 링크(「더 보기」) · 셰브런. 대비 5.03 | home/1007-03 · **추정 · 1회 관측** |
 | `{colors.footer-surface}` | `#3c3c3c` | 푸터 구역 2~4 배경 | home/03 · login/01 · favorites/01 · listing/06 |
 | `{colors.footer-surface-raised}` | `#4a4a4a` | 푸터 소형 버튼 · 소셜 버튼 면 | home/03 |
 | `{colors.on-footer}` | `#c9c9c9` | 푸터 링크 · 본문 | 〃 |
@@ -472,13 +539,14 @@ omitted: []
 
 | 토큰 | 값 | 쓰임 | seen on |
 | --- | --- | --- | --- |
-| `{colors.text}` | `#222222` | 제목 · 라벨 · 주 본문 | 전 컷 |
-| `{colors.text-secondary}` | `#666666` | 값 텍스트 · 표 본문 · 부가 설명 | map-search/02 · my-info/01 · listing/05 |
-| `{colors.text-tertiary}` | `#767676` | 보조 설명 · placeholder · 셰브런. **흰 면 위에서만** | 역할은 관측(map-search/01 · favorites/01), 값은 기존 구현값 — K-04 |
+| `{colors.text}` | `#222222` | 제목 · 라벨 · 주 본문 | 전 컷 · home/1007 전 컷 |
+| `{colors.text-secondary}` | `#666666` | 값 텍스트 · 표 본문 · 부가 설명 | map-search/02 · my-info/01 · listing/05 · home/1007-02 |
+| `{colors.text-tertiary}` | `#767676` | 보조 설명 · placeholder · 셰브런. **흰 면(`{colors.surface}`) 위에서만** — `{colors.surface-muted}` · `{colors.surface-recessed}` 위 불가 | 역할은 관측(map-search/01 · favorites/01 · home/1007-01 ~ 03), 값은 기존 구현값 — K-04 |
 
 > `{colors.text-tertiary}`는 `{colors.surface}` 위에서 **4.54**로 AA를 넘지만 `{colors.surface-muted}` 위에서는
-> **4.16**으로 미달한다. 회색 띠 · `{components.alert-info}` 안의 본문 텍스트에는 `{colors.text-secondary}`를
-> 쓴다. placeholder는 `{components.input-placeholder}`가 `{colors.surface}` 배경을 명시하므로 통과한다.
+> **4.16**, `{colors.surface-recessed}` 위에서는 **4.35**로 미달한다. `{colors.primary}` 글자도 `{colors.surface-recessed}`
+> 위에서 **4.33**으로 미달한다. 회색 띠 · 추천 래퍼 · `{components.alert-info}` 안의 본문 텍스트에는 `{colors.text-secondary}`
+> (`{colors.surface-recessed}` 위 5.50)를 쓴다. placeholder는 `{components.input-placeholder}`가 `{colors.surface}` 배경을 명시하므로 통과한다.
 > 린터는 정의된 쌍만 보므로 이 조합을 잡지 못한다 — 8절 Don't에도 적었다.
 | `{colors.text-disabled}` | `#999999` | 비활성 컨트롤 글자 | 미관측 · 기존 구현값 |
 
@@ -486,7 +554,7 @@ omitted: []
 
 | 토큰 | 값 | 쓰임 | seen on |
 | --- | --- | --- | --- |
-| `{colors.border}` | `#e5e5e5` | 기본 1px 선 — 카드 · 입력 · 탭 · 행 구분 | 전 컷 |
+| `{colors.border}` | `#e5e5e5` | 기본 1px 선 — 카드 · 입력 · 탭 · 행 구분 | 전 컷 · home/1007-01 ~ 03(칩 · 빈 카드 · 슬라이드 정보부 세로선. 래퍼 보더 ≈ `#ececec`도 JPG 오차 안) |
 | `{colors.border-subtle}` | `#e5e8eb` | 더 옅은 선 — `{components.card}` · `{components.disclosure}` | 미관측 · 기존 구현값 |
 | `{colors.border-strong}` | `#333333` | 표 헤더 상단 2px 선 | listing/05 (1회 관측) |
 | `{colors.focus}` | `#326cf9` | 포커스 링 | 미관측 · 기존 구현값 |
@@ -501,6 +569,7 @@ omitted: []
 
 참고 사이트에서 관측된 의미색(실거래가 최고/최저 배지, 검증 배지, 「새단장」 pill)은 전부 1회 관측이고
 우리 화면에 대응 역할이 없어 채택하지 않았다 — Known Gaps K-08. `listing` 전용 블록 색 3종도 같다.
+1007 컷의 top-nav · 카테고리 카드 배지(계측 `accent-new`)도 같은 이유로 미채택 그대로다.
 
 ### > Project-defined:
 
@@ -526,7 +595,7 @@ omitted: []
 
 | 항목 | 값 |
 | --- | --- |
-| 주 패밀리 | 한글 지오메트릭 산세리프 1종. 20컷 전부 동일 (측정) |
+| 주 패밀리 | 한글 지오메트릭 산세리프 1종. 20컷 전부 동일 (측정) · 1007 4컷도 같다 |
 | 참고 사이트 패밀리 이름 | **확정 불가** — Pretendard 계열로 보이나 JPG에서 확정할 수 없다 (K-05) |
 | 우리 스택 | `Pretendard Variable, Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Apple SD Gothic Neo, Noto Sans KR, Malgun Gothic, sans-serif` — 오픈소스 Pretendard로 대체한다 |
 | 숫자 · 라틴 | 본문과 같은 패밀리로 렌더된다. 별도 숫자 폰트 없음 |
@@ -540,30 +609,35 @@ omitted: []
 | `{typography.heading-1}` | 28 / 700 / 1.35 | 폼 카드 제목 · 상세 패널 가격 | login/01 · signup/01 · map-search/05 |
 | `{typography.display-mobile}` | 24 / 700 / 1.3 | 모바일(`~767px`)의 페이지 제목 — `{typography.display}` 대신 | 프로젝트 정의 · 9절 |
 | `{typography.heading-1-mobile}` | 22 / 700 / 1.35 | 모바일(`~767px`)의 폼 카드 제목 — `{typography.heading-1}` 대신 | 프로젝트 정의 · 9절 |
-| `{typography.heading-2}` | 20 / 700 / 1.4 | 섹션 제목 · 패널 헤더 | map-search/02-03 · listing/05 |
-| `{typography.heading-3}` | 18 / 700 / 1.4 | 목록 카드 가격 · 표 행 제목 | map-search/01 · home/02 |
+| `{typography.section-title}` | 22 / **400** / 1.75 | **델타 1007.** 메인(`/`) 섹션 제목 — 흰 면 · `{colors.block-feature}` 띠의 인사 문구 · 띠 제목 · 콘텐츠 제목. lh는 2줄 피치 39에서 | home/1007-01 · 03 · 04 · **추정 · 페이지 안 3곳 반복**. 메인 섹션 제목으로 채택(2026-10-07) — K-29(M-03) |
+| `{typography.heading-2}` | 20 / 700 / 1.4 | 섹션 제목(메인 외) · 패널 헤더. 메인 섹션 제목은 `{typography.section-title}` | map-search/02-03 · listing/05 |
+| `{typography.content-title}` | 20 / **400** / 1.5 | **델타 1007.** `{components.card-content}` 제목(2~3줄, 피치 30) | home/1007-04 · **추정 · 1회 관측** · 채택(2026-10-07) — K-36 |
+| `{typography.heading-3}` | 18 / 700 / 1.4 | 목록 카드 가격 · 표 행 제목 · `{components.card-category}` 제목(M-04 결정) | map-search/01 · home/02 · home/1007-01 · 02 |
 | `{typography.body-lg}` | 16 / 400 / 1.6 | 폼 안내문 · 빈 상태 · 탭 라벨 | login/01 · favorites/01 |
-| `{typography.body}` | 15 / 400 / 1.6 | 라벨/값 행 · 표 본문 | map-search/02 · my-info/01 |
-| `{typography.body-strong}` | 15 / 700 / 1.6 | `{components.field}` 라벨 · `{components.kv-row}` 라벨 | login/01 · map-search/02 |
-| `{typography.body-sm}` | 13 / 400 / 1.55 | 푸터 정보 · 목록 카드 설명 · 보조 줄 | home/03 · listing/05 |
+| `{typography.body}` | 15 / 400 / 1.6 | 라벨/값 행 · 표 본문 | map-search/02 · my-info/01 · home/1007-01(top-nav 항목) |
+| `{typography.body-strong}` | 15 / 700 / 1.6 | `{components.field}` 라벨 · `{components.kv-row}` 라벨 | login/01 · map-search/02 · home/1007-02(추천 래퍼 제목) |
+| `{typography.body-sm}` | 13 / 400 / 1.55 | 푸터 정보 · 푸터 사이트맵 링크(M-07 결정 — 줄 피치 28) · 목록 카드 설명 · 보조 줄 | home/03 · listing/05 · home/1007-01 ~ 04 |
 | `{typography.label}` | 14 / 500 / 1.5 | 폼 보조 라벨 | 미관측 · 기존 구현값 유지 |
-| `{typography.link}` | 14 / 400 / 1.5 | 푸터 링크 · 폼 하단 보조 링크 | home/03 · login/01 |
+| `{typography.link}` | 14 / 400 / 1.5 | 폼 하단 보조 링크 · 푸터 링크(사이트맵 제외) | home/03 · login/01. 사이트맵 링크는 1007-04에서 ≈ 13으로 측정돼 `{typography.body-sm}`으로 옮겼다(2026-10-07 결정 — K-32(M-07)). 이 역할의 값은 바꾸지 않았다 |
 | `{typography.button}` | 16 / 700 / 1 | 주 버튼 라벨 | login/01 · listing/02 |
 | `{typography.button-sm}` | 13 / 400 / 1 | 소형 버튼 라벨 | map-search/02 · home/03 |
-| `{typography.eyebrow}` | 13 / 700 / 1.4 | 푸터 사이트맵 컬럼 제목 | home/03 |
-| `{typography.caption}` | 12 / 400 / 1.4 | 배지 · 아이콘 라벨 | map-search/03 · listing/05 |
+| `{typography.eyebrow}` | 13 / 700 / 1.4 | 푸터 사이트맵 컬럼 제목 · 칩 글자 | home/03 · home/1007-01 · 04 |
+| `{typography.caption}` | 12 / 400 / 1.4 | 배지 · 아이콘 라벨 · 메인 매물 카드 1줄(유형 · 단지 — M-09 결정) | map-search/03 · listing/05 · home/1007-02 · 03 · 04 |
 
 > **위 표의 size · weight · line-height는 전부 컷에서 역산한 추정이다 (K-07).** `analysis/tokens.md` 0.3 · 2.2가
 > 「폰트 크기는 글자 높이 역산, weight도 추정」으로 못박은 값이다. 반복 관측된 역할(`{typography.body}` ·
 > `{typography.caption}` · `{typography.button}`)이 상대적으로 신뢰도가 높고, 1~2컷에서만 나온 역할
-> (`{typography.display}` · `{typography.eyebrow}`)은 낮다.
+> (`{typography.display}` · `{typography.eyebrow}`)은 낮다. 델타 1007의 두 역할도 같다 —
+> `{typography.section-title}`만 페이지 안 3곳에서 반복됐고, **400 굵기는 JPG 획 두께 비교로 읽은 추정이다.**
 
 `heading-1` `heading-2` `heading-3` `body` `body-strong` `label` `caption` 일곱은 기존 `typography.css`의
 클래스 이름과 1:1이다. 나머지 일곱은 계측에서 나온 역할이라 추가했다 — 삭제한 역할은 없다.
+델타 1007에서 `section-title` · `content-title` 둘을 더했다 — 기존 역할의 값은 바꾸지 않았다. 사진 위 제목
+(관측 22/700)은 사진 카드를 쓰지 않아 역할로 두지 않았다 — K-36.
 
 ### Principles
 
-- **크기는 14단계가 아니라 역할로 고른다.** 같은 15px라도 라벨이면 `{typography.body-strong}`, 값이면 `{typography.body}`다.
+- **크기는 단계가 아니라 역할로 고른다.** 같은 15px라도 라벨이면 `{typography.body-strong}`, 값이면 `{typography.body}`다. 같은 22px라도 메인 섹션 제목이면 `{typography.section-title}`(400), 모바일 폼 카드 제목이면 `{typography.heading-1-mobile}`(700)이다.
 - 굵기는 400 · 500 · 700 셋뿐이다. 600은 쓰지 않는다 (계측에 없다).
 - letter-spacing은 **전 역할 미관측**이라 지정하지 않는다 — 브라우저 기본값 (K-06).
 - 한국어 본문은 `word-break: keep-all`.
@@ -579,39 +653,49 @@ omitted: []
 | 토큰 | 값 | 쓰임 |
 | --- | --- | --- |
 | `{spacing.3xs}` | 2px | 포커스 링 두께 · 탭 인디케이터 (미관측 · 기존 구현값 유지) |
-| `{spacing.2xs}` | 4px | 사진 그리드 갭 · 배지 내부 상하 |
-| `{spacing.xs}` | 8px | 칩 사이 · 푸터 소형 버튼 갭 |
-| `{spacing.sm}` | 12px | 배지 좌우 패딩 · 라벨↔입력 |
-| `{spacing.md}` | 16px | `{components.pulldown}` 사이 · 타일 갭 · 입력 좌우 패딩 |
-| `{spacing.lg}` | 20px | 카드 그리드 갭 |
-| `{spacing.xl}` | 24px | 패널 좌우 패딩 · 표 셀 상하 패딩 |
-| `{spacing.2xl}` | 32px | 폼 묶음 사이 |
-| `{spacing.3xl}` | 48px | 폼 카드 제목↔구분선 · 입력↔주 버튼 |
-| `{spacing.4xl}` | 64px | 페이지 섹션 사이 |
-| `{spacing.5xl}` | 80px | 폼 카드 내부 패딩 |
+| `{spacing.2xs}` | 4px | 사진 그리드 갭 · 배지 내부 상하 · 콘텐츠 카드 그리드 갭(home/1007-04) |
+| `{spacing.xs}` | 8px | 칩 사이 · 푸터 소형 버튼 갭 · `{components.promo-panel-tile}` 사이 |
+| `{spacing.sm}` | 12px | 배지 좌우 패딩 · 라벨↔입력 · 칩 갭 · 칩 좌우 패딩 |
+| `{spacing.md}` | 16px | `{components.pulldown}` 사이 · 타일 갭 · 입력 좌우 패딩 · 카테고리 카드 갭 |
+| `{spacing.lg}` | 20px | 카드 그리드 갭 · 추천 래퍼 패딩 |
+| `{spacing.xl}` | 24px | 패널 좌우 패딩 · 표 셀 상하 패딩 · 칩 줄↔래퍼 |
+| `{spacing.2xl}` | 32px | 폼 묶음 사이 · top-nav 항목 간격 |
+| `{spacing.3xl}` | 48px | 폼 카드 제목↔구분선 · 입력↔주 버튼 · 띠 제목↔카드 |
+| `{spacing.section-tight}` | 56px | **델타 1007.** 흰 면 안의 내용 블록 끝 ↔ 면 전환(카테고리 카드 하단 ↔ 회색 면 끝 · 래퍼 하단 ↔ `{colors.block-feature}` 띠). **측정 · 같은 페이지 2곳** · 채택 · 이름 유지(2026-10-07) — K-37 |
+| `{spacing.4xl}` | 64px | 페이지 섹션 사이 · 면 전환 직후 ↔ 다음 제목(home/1007, 2곳) |
+| `{spacing.5xl}` | 80px | 폼 카드 내부 패딩 · 띠 하단 패딩 |
 
-격자에 맞지 않는 관측값(44 · 56 · 76 · 184)은 토큰으로 올리지 않았다. 해당 화면의 `layout.md`가 갖는다.
+격자에 맞지 않는 관측값(44 · 76 · 184)은 토큰으로 올리지 않았다. 해당 화면의 `layout.md`가 갖는다.
+56은 8의 배수이고 메인에서 같은 역할(면 전환 직전)로 2곳 반복돼 `{spacing.section-tight}`로 둔다(2026-10-07 결정 — K-39(M-11)).
+`section-tight`는 다른 키의 크기 이름 체계에서 벗어난다 — `3xl`과 `4xl` 사이에 들어갈 크기 이름이 없어서이고, 이 이름으로 확정했다(K-37).
 
 ### Grid & Container
 
 | 항목 | 값 | 출처 |
 | --- | --- | --- |
-| 참고 사이트 고정 컨테이너 | **1330px** (뷰포트 2518~2559의 6컷에서 불변) | 계측 |
-| **우리 컨테이너 최대 폭** | **1200px** | 프로젝트 정의 (`input.md` 4장 · 2026-09-18 승인) |
+| **참고 사이트 컨테이너 — 기준** | **1180px** (뷰포트 1707, `home/1007` 4컷 전 구역이 같은 좌우 끝) | **델타 1007 · 측정** · 기준으로 채택(2026-10-07 결정 — K-28(M-01)) |
+| 참고 사이트 컨테이너 — 옛 컷 | 1330px (뷰포트 2518~2559의 6컷, ×1.0 배율 가정) | 계측 · 기록으로 남김. 뷰포트 반응인지 배율 가정 오류인지는 가리지 않았다(추가 캡처 없음 — K-28) |
+| **우리 컨테이너 최대 폭** | **1200px** | 프로젝트 정의 (`input.md` 4장 · 2026-09-18 승인) — 이번 결정으로 바뀌지 않는다 |
 | 4컬럼 그리드 | 컬럼 **285px** · gap **20px** (`{spacing.lg}`) | **환산값** |
 | 유동 아키타입 | 지도 탐색만 컨테이너 없이 뷰포트 전폭 | 계측 |
 
-> **참고 사이트의 1330 컨테이너 · 컬럼 318 · gap 20을 우리 1200 컨테이너에 비율로 환산해 컬럼 285 · gap 20을
-> 채택했다.** 4×285 + 3×20 = 1200. 컬럼 폭 대비 gap 비율(약 7%)이 계측과 같다.
+> **참고 사이트의 1180 컨테이너 · 4열 컬럼 280 · gap 20((1180 − 60) ÷ 4)을 우리 1200 컨테이너에 맞춰 컬럼 285 · gap 20을
+> 채택했다.** 4×285 + 3×20 = 1200. 1200 ÷ 1180 ≈ 1.017배라 280 → 284.7 ≈ 285, gap 20 → 20.3 ≈ 20으로 같은 값이 나온다.
+> (정본은 옛 기준 1330 · 컬럼 318 · gap 20에서 같은 285 · 20을 얻었다 — 기준이 바뀌어도 채택값은 그대로다.)
 >
 > **285는 좌우 패딩 0을 전제한 값이다.** 실제 컨테이너는 좌우 패딩 24를 갖는다(9절 · `examples/home/layout.md`).
 > 그 안에서 같은 4열을 잡으면 (1200 − 48 − 60) ÷ 4 = **273**이다. **코드는 px를 적지 않고
 > `repeat(4, 1fr)` + `gap: {spacing.lg}`로 잡는다** — 컨테이너 폭이 바뀌면 컬럼이 따라간다. 285와 273은
 > 같은 그리드를 기준점만 달리 읽은 것이고, 둘 중 하나가 틀린 것이 아니다.
+>
+> **델타 1007.** 1007 컷의 추천 그리드는 컨테이너 1180 안 래퍼 패딩 20을 빼고 **4열 · 컬럼 270 · gap 20**
+> (4×270 + 3×20 = 1140)이다. gap `{spacing.lg}`와 `repeat(4, 1fr)` 방식은 그대로 맞는다. 환산의 분모는
+> 1180으로 정했고(K-28) **우리 1200은 바뀌지 않는다.**
 
 ### Whitespace
 
 리듬은 「폼 안은 `{spacing.3xl}`, 섹션 사이는 `{spacing.4xl}`, 카드 안쪽은 `{spacing.5xl}`」 세 박자다.
+메인은 「면 전환 직후 `{spacing.4xl}`, 면 전환 직전 `{spacing.section-tight}`」 두 박자다(델타 1007).
 섹션 순서 · 그리드 배치 · 구간별 여백은 `examples/<아키타입>/layout.md`가 갖는다. 정의서는 다시 쓰지 않는다.
 
 ---
@@ -620,8 +704,8 @@ omitted: []
 
 | 레벨 | 값 | 쓰임 | seen on |
 | --- | --- | --- | --- |
-| 0 | 그림자 없음. 1px `{colors.border}`로만 면을 나눈다 | 카드 · 폼 · 표 · 탭 — **기본값** | login/01 · favorites/01 · my-info/01 · listing/05 |
-| 1 | `0 2px 10px rgba(0,0,0,0.06)` (추정) | 떠 있는 카드 · 검색 바 | home/01 (줌 보정) |
+| 0 | 그림자 없음. 1px `{colors.border}`로만 면을 나눈다 | 카드 · 폼 · 표 · 탭 — **기본값** | login/01 · favorites/01 · my-info/01 · listing/05 · home/1007-03 · 04(`{components.card-feature}` · `{components.card-content}` 그림자 없음) |
+| 1 | `0 2px 10px rgba(0,0,0,0.06)` (추정) | 떠 있는 카드 · 검색 바 | home/01 (줌 보정). home/1007-01은 축소 JPG라 **판별 불가** — 일치도 충돌도 아님 |
 | 2 | 좌측 경계에 옅은 그림자 | 지도 위에 얹히는 상세 패널 | map-search/02 · map-search/05 |
 | 3 | **미관측** | 모달 — 컷 없음 (K-12) | — |
 
@@ -641,28 +725,31 @@ omitted: []
 
 | 토큰 | 값 | 쓰임 |
 | --- | --- | --- |
-| `{rounded.none}` | 0 | `{components.card-form}` · `{components.input}` · `{components.tabs-segmented}` · 표 |
+| `{rounded.none}` | 0 | `{components.card-form}` · `{components.input}` · `{components.tabs-segmented}` · 표 · `{components.card-feature}` · `{components.card-content}` |
 | `{rounded.sm}` | 4px | `{components.button-primary}` · 배지 · 태그 칩 · 썸네일 |
-| `{rounded.md}` | 8px | `{components.select}` · `{components.popover}` · `{components.disclosure}` · 요약 카드 |
-| `{rounded.lg}` | 12px | `{components.card}` |
-| `{rounded.pill}` | 9999px | `{components.pulldown}` · `{components.tabs-pill}` · 원형 버튼(정사각에 적용하면 원) |
+| `{rounded.md}` | 8px | `{components.select}` · `{components.popover}` · `{components.disclosure}` · 요약 카드 · `{components.promo-panel-tile}` · 메인 추천 래퍼(M-05 결정) · 메인 매물 썸네일(M-06 — 기존 유지) |
+| `{rounded.lg}` | 12px | `{components.card}` · `{components.card-category}`(≈ 10, 8~12) · `{components.promo-panel}` · 큰 배너 |
+| `{rounded.pill}` | 9999px | `{components.pulldown}` · `{components.tabs-pill}` · 원형 버튼(정사각에 적용하면 원) · 검색 바 |
 
 폼 입력의 반경은 계측에서 0~2px로 읽혔고 `{rounded.none}`으로 확정했다 (추정 — K-07).
+델타 1007의 반경은 전부 축소 JPG 경계 추정이다 — 매물 썸네일(8 vs ≈ 4)은 축소 컷으로 가를 수 없어 기존 8을 유지했다(2026-10-07 결정 — K-30(M-06)).
 
 ### Border Width
 
 | 값 | 쓰임 |
 | --- | --- |
-| 1px | 기본. 카드 · 입력 · 탭 · 행 구분선 · 푸터 구분선 |
-| 2px | 강조. 표 헤더 상단(`{colors.border-strong}`) · 선택된 `{components.tabs-underline-selected}` 하단 인디케이터(`{colors.primary}`) |
+| 1px | 기본. 카드 · 입력 · 탭 · 행 구분선 · 푸터 구분선 · `{components.card-feature}` 정보부 세로선 · `{components.card-content}` 라벨 밑줄(`{colors.primary-line-soft}`) |
+| 2px | 강조. 표 헤더 상단(`{colors.border-strong}`) · 선택된 `{components.tabs-underline-selected}` 하단 인디케이터(`{colors.primary}`) · `{components.card-content}` 상단 선(2~3px, ±1) — home/1007-04 |
 
 ### Icon
 
 | 크기 | 쓰임 |
 | --- | --- |
 | 16px | 본문 아이콘 · 셰브런 |
-| 20px | 푸터 검색 아이콘 |
-| 24px | 액션 아이콘 · 입력 접미 아이콘 |
+| 18px | **델타 1007.** 섹션 제목 끝 정보 아이콘 — home/1007-01 · **1회 관측** |
+| 20px | 푸터 검색 아이콘 · hero 검색 바 아이콘(home/1007-01) |
+| 24px | 액션 아이콘 · 입력 접미 아이콘 · 찜(home/1007-02) · `{components.promo-panel-tile}` 아이콘 |
+| 28px | **델타 1007.** `{components.card-content}` 좌하단 원형 외곽선 버튼(1px `{colors.primary}`) — home/1007-04 · **1회 관측** |
 | 32px | 타일 아이콘 (타일 72px) |
 | 36px | 원형 소셜 · 아바타(내비) |
 
@@ -719,12 +806,28 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | `{components.table}` · `{components.table-header}` · `{components.table-row}` | 헤더 상단 2px `{colors.border-strong}` · 헤더 배경은 `{colors.surface}`(회색 아님) · 행마다 1px `{colors.border}` · 셀 상하 22px | **판정 근거 표** | listing/05 |
 | `{components.tabs-segmented}` (+`-selected`) | 컨테이너 N등분 · h70 · 맞붙는 1px 스트립 · 선택은 `{colors.inverse-surface}` 반전 | 페이지 상단 탭 | favorites/01-03 · my-info/01 |
 | `{components.tabs-underline}` (+`-selected`) | h58 · 간격 36 · 선택은 `{colors.primary}` 글자 + 2px 인디케이터 | 상세 패널 탭 | map-search/02-04 |
-| `{components.tabs-pill}` (+`-selected`) | h30 · `{rounded.pill}` | 목록 상단 전환 | map-search/05 |
+| `{components.tabs-pill}` (+`-selected`) | h30 · `{rounded.pill}` | 목록 상단 전환 · 메인 해시태그 칩 줄(6개 · h32, 오차 안) | map-search/05 · home/1007-01 · 02 |
 | `{components.popover}` | `{colors.surface}` + 1px `{colors.border}` · `{rounded.md}` | 지도 위 컨트롤 면 | map-search/01 · map-search/05 |
 | `{components.disclosure}` | `{colors.surface}` + 1px `{colors.border-subtle}` · `{rounded.md}` · 트리거 패딩 12/16 | **프로젝트 정의** — 상세 패널의 건축물대장 · 등기 이력 접기 | project |
 
 `{components.disclosure}`는 규격의 표준 어휘에 없다. 우리 상세 패널이 이미 쓰고 있어 프로젝트 정의
 컴포넌트로 넣었고 값은 기존 구현(`Disclosure.module.css`)에서 옮겼다.
+
+#### 델타 1007 — 카드 변형 셋 (`card-*`)
+
+**전부 `seen on: home/1007` · 1회 관측이다.** 치수는 측정(±4 CSS px), 색 · 반경 · 글자는 추정이다.
+`card`의 변형으로 이름을 붙였다(`card-form` · `card-summary`와 같은 방식). 사진 · 일러스트 · 문구 · 아이콘 형태는 적지 않고 **자리**만 적는다.
+**우리 메인이 쓰는 셋만 채택했다(2026-10-07 결정 — K-36).** 같은 컷의 빈 칸 · 안내 카드는 미채택이라 여기 없다 — 11절 K-36.
+
+> **「참고 폭」은 관측 기록일 뿐 컴포넌트의 값이 아니다.** 580 · 233은 참고 사이트 1180 컨테이너 안의 컬럼 폭이고
+> (2열 · 5열), 우리 컨테이너는 1200이다. 폭은 4절의 `repeat(N, 1fr)` + gap 그리드가 정한다 — 그래서
+> 프론트매터에는 높이만 두었다. `{components.card-form}` 540처럼 그리드와 무관한 고정 폭은 해당하지 않는다.
+
+| 토큰 | 매핑 | 쓰임 | seen on |
+| --- | --- | --- | --- |
+| `{components.card-category}` | `{colors.surface}` / `{colors.text}` · 제목 `{typography.heading-3}` · 설명 2~3줄 `{typography.body-sm}` `{colors.text-tertiary}`(줄 피치 24) · `{rounded.lg}`(≈ 10) · 좌 패딩 `{spacing.lg}` · 높이 1행 175 / 2행 170(고정) · 우상단 배지 자리 · 우하단 ≈ 44 일러스트 자리 | 메인 hero 아래 카테고리 진입 카드(1행 2장 · 2행 3장 — 배치는 `layout.md`) | home/1007-01 · **1회 관측.** 제목 크기 18/700 `{typography.heading-3}` 채택(2026-10-07 결정 — K-30(M-04)). 옛 `layout.md`의 20/700은 보정 순환값 |
+| `{components.card-feature}` | 높이 411(참고 폭 580 = 2열 컬럼) · `{rounded.none}` · 그림자 없음. 이미지부 높이 299 — 관측에서는 사진 자리지만 **우리 화면은 사진을 쓰지 않는다**(K-35). 이 자리에 무엇을 둘지는 화면 작업이 정한다. 좌상단 윗변에 붙은 배지는 `{components.badge-inverse}` h31 하나만 쓴다 — 관측의 둘째 배지(사진 위 반투명 면)와 사진 위 흰 글자 제목(관측 22/700)은 쓰지 않는다(K-35 · K-36). 정보부 580 × 111 `{colors.surface}` · 4열(피치 ≈ 145) · 열 사이 1px `{colors.border}` 세로선(위아래 ≈ 24 들임) · 라벨 `{typography.caption}` `{colors.text-tertiary}` / 값 `{typography.body-sm}` `{colors.text}`(피치 24) · 패딩 좌 ≈ 20 · 위아래 ≈ 24 | `{colors.block-feature}` 띠 안의 슬라이드 카드. 참고 폭 580 = (1180 − 20) ÷ 2라 「2장 보기 · 갭 20」으로 읽히나 둘째 칸은 미관측. 슬라이드 위치 표시는 쓰지 않는다(K-36) | home/1007-03 · **1회 관측** · 채택(2026-10-07) |
+| `{components.card-content}` | `{colors.surface-sunken}` 면 · 상단 2~3px `{colors.primary}` 선 · `{rounded.none}` · 높이 330 고정(참고 폭 233 = 5열 컬럼) · 패딩 좌 ≈ 30 · 위 ≈ 40 · 아래 ≈ 30 · 라벨 ≈ 12 `{colors.primary-hover}` + 1px `{colors.primary-line-soft}` 밑줄(폭 ≈ 25) · 제목 `{typography.content-title}` `{colors.primary-hover}` · 좌하단 28 원형 외곽선 버튼(`{colors.primary}`) | 메인 추천 콘텐츠 5열(갭 ≈ `{spacing.2xs}`) | home/1007-04 (기존 `home/03`은 5열 · 면 · 상단 선만) · **1회 관측.** 채택(2026-10-07). 글자 `{colors.primary-hover}` on `{colors.surface-sunken}` = **4.75 ✓ — 의도적 이탈 K-33(승인)**(관측 글자 `{colors.primary}`는 3.89로 AA 미달). 선 · 외곽선은 글자가 아니라 `{colors.primary}` 그대로(비텍스트 3:1 기준 3.89 ✓) |
 
 ### Feedback
 
@@ -740,7 +843,7 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | `{components.skeleton}` | `{colors.surface-muted}` 면 · `{rounded.sm}` | 목록 · 카드 자리 표시 | **project** — K-21 |
 | `{components.badge-neutral}` | `{colors.surface-muted}` / `{colors.text-secondary}` | 중립 표시 | map-search/01 |
 | `{components.badge-primary}` | `{colors.primary-surface}` / `{colors.primary-hover}` | 강조 표시 | project |
-| `{components.badge-inverse}` | `{colors.inverse-surface}` / `{colors.on-inverse}` | 상태 표시(마감 등) | listing/05 |
+| `{components.badge-inverse}` | `{colors.inverse-surface}` / `{colors.on-inverse}` | 상태 표시(마감 등) | listing/05 · home/1007-03(h31, 오차 안) |
 | `{components.badge-tag}` | `{colors.surface}` + 1px `{colors.border}` / `{colors.text-secondary}` · h28 | 매물 특징 태그 | map-search/05 |
 
 #### > Project-defined: 등급 배지
@@ -760,12 +863,12 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 
 **규격의 표준 어휘에 역할이 없는 프로젝트 고유 컴포넌트다.** 표준 이름(`button` · `card` · `table` …)을
 빌릴 수 없어 관측된 역할 이름을 그대로 썼다. 여섯 모두 우리가 만드는 화면의 구조물이고, 출처는
-`analysis/tokens.md` 8.12다.
+`analysis/tokens.md` 8.12다. 델타 1007의 둘은 아래 별도 표에 있다(출처 `analysis/tokens.md` 13.1).
 
 | 토큰 | 매핑 | 쓰임 | seen on |
 | --- | --- | --- | --- |
-| `{components.top-nav}` | `{colors.surface}` / `{colors.text}` · `{typography.body}` · 하단 1px `{colors.border}` · h80 | 전 페이지 상단 내비. 활성 항목은 `{colors.primary}` 글자 + `{colors.primary-surface}` pill. 로그인 상태에서 우측이 아바타(36px) + 닉네임으로 바뀐다 | signup/01 · favorites/01-02 · my-info/01 · listing/02 |
-| `{components.site-footer}` | `{colors.footer-surface}` / `{colors.on-footer}` · `{typography.body-sm}` · 구분선 `{colors.footer-divider}` | **`map-search`를 제외한** 전 페이지 하단 — 그 아키타입은 뷰포트의 남은 높이를 전부 쓰는 유동 구조라 푸터를 붙이면 지도가 줄어든다(4절 Grid & Container의 예외와 같은 이유). 참고 사이트도 지도 화면 5컷 모두에 푸터가 없다. 구역 1은 흰 면, 구역 2~4가 어두운 면이다. 내부 버튼은 `{components.button-footer}` · `{components.button-footer-primary}` · `{components.button-social}`. 구역 배치는 `examples/home/layout.md`가 갖는다 | home/03 · login/01 · signup/01 · favorites/01-03 · listing/06 |
+| `{components.top-nav}` | `{colors.surface}` / `{colors.text}` · `{typography.body}` · 하단 1px `{colors.border}` · h80 | 전 페이지 상단 내비. 활성 항목은 `{colors.primary}` 글자 + `{colors.primary-surface}` pill. 로그인 상태에서 우측이 아바타(36px) + 닉네임으로 바뀐다 | signup/01 · favorites/01-02 · my-info/01 · listing/02 · home/1007-01(h78 · 좌 인셋 20 — 오차 안. 아바타 ≈ 30은 1회 관측. 하단 선은 아래 회색 면과 겹쳐 판별 불가) |
+| `{components.site-footer}` | `{colors.footer-surface}` / `{colors.on-footer}` · `{typography.body-sm}` · 구분선 `{colors.footer-divider}` | **`map-search`를 제외한** 전 페이지 하단 — 그 아키타입은 뷰포트의 남은 높이를 전부 쓰는 유동 구조라 푸터를 붙이면 지도가 줄어든다(4절 Grid & Container의 예외와 같은 이유). 참고 사이트도 지도 화면 5컷 모두에 푸터가 없다. 구역 1은 흰 면, 구역 2~4가 어두운 면이다. 내부 버튼은 `{components.button-footer}` · `{components.button-footer-primary}` · `{components.button-social}`. 구역 배치는 `examples/home/layout.md`가 갖는다 | home/03 · login/01 · signup/01 · favorites/01-03 · listing/06 · home/1007-04(구역 1 구조 — 6열 · 굵은 제목). **구역 1 사이트맵(2026-10-07 결정 — K-32(M-07)):** 컬럼 피치 190(첫 컬럼 인셋 20) · 링크 줄 피치 28 · 링크 `{typography.body-sm}`(≈ 13)는 1007 값. 링크 색은 `{colors.text-secondary}` 유지(관측 `#999` 근처 — 의도적 이탈). 앞 섹션 ↔ 사이트맵 `{spacing.4xl}` · 사이트맵 ↔ 어두운 면 ≈ 48은 기존 유지 |
 | `{components.info-row}` | `{colors.surface}` / 라벨 `{typography.body-strong}` `{colors.text}` · 값 `{colors.text-secondary}` · 우측 끝 셰브런 16px · h76 · 1px `{colors.border}` | 설정·프로필의 「라벨 — 값 — >」 행. 누르면 편집으로 들어간다 | my-info/01 |
 | `{components.kv-row}` | `{colors.surface}` / `{colors.text-secondary}` · `{typography.body}` · 행마다 하단 1px `{colors.border}` · h66 · 라벨 열 150px | 상세 패널 판정 근거 · 등기·건축물대장 값 표시. 라벨은 `{typography.body-strong}` `{colors.text}`, 강조 수치는 `{colors.primary}` | map-search/02 · map-search/03 |
 | `{components.empty-state}` | `{colors.text}` · `{typography.body-lg}` · 줄 간격 29px | 관심 매물 · 알림의 빈 목록. 2줄 중앙 정렬 — 1줄은 `{colors.text}`, 2줄 보조 설명은 `{colors.text-secondary}`(계측 `ink-subtle`은 흰 면 위 2.68로 미채택 — K-04). 상단 여백 184px는 격자 밖이라 `examples/favorites/layout.md`가 갖는다 | favorites/01-03 |
@@ -777,13 +880,27 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 - `type-rail` · `detail-panel` · `sub-nav` · `option-tile-grid` · `photo-grid`도 관측됐지만 **토큰이 아니라
   배치**라서 각 `layout.md`가 정본이다 (K-08).
 
+#### 델타 1007 — 고유 컴포넌트 둘
+
+**전부 `seen on: home/1007` · 1회 관측 · 채택(2026-10-07 결정 — K-36).** 치수는 측정, 색 · 글자는 추정이다.
+같은 컷의 슬라이드 위치 표시는 미채택이라 여기 없다 — 11절 K-36.
+
+| 토큰 | 매핑 | 쓰임 | seen on |
+| --- | --- | --- | --- |
+| `{components.promo-panel}` | `{colors.primary}` 면 / `{colors.on-primary}` · 높이 99(참고 폭 482 = 우 레일 폭 — 그리드가 정한다) · `{rounded.lg}`(≈ 12) · 좌 패딩 ≈ 20 · 좌측 제목(≈ 17/700 — 역할 없음, `{typography.heading-3}` 근사) + 부제 `{typography.body-sm}` · 우측 `{components.promo-panel-tile}` 2개(갭 `{spacing.xs}`, 우 인셋 ≈ 12) | 메인 우 레일의 상담 입구(바로가기 상자) **한 곳**. 장식 원호는 기록하지 않는다 | home/1007-01 · **1회 관측.** `{colors.primary}`를 큰 면적에 쓴다 — **8절 Don't의 명시 예외**(2026-10-07 결정 — K-34). 다른 자리에 같은 면을 쓰지 않는다 |
+| `{components.promo-panel-tile}` | `{colors.surface}` / `{colors.text}` · 84 × 80 · `{rounded.md}` · 아이콘(24) 위 + 라벨(≈ 12/700 — `{typography.caption}` 근사, 굵기는 다르다) 아래 | `{components.promo-panel}` 안 흰 타일 버튼 | home/1007-01 · **1회 관측** |
+
+> 칩 줄의 **선택 칩 ↔ 래퍼 연결 꼭지**(래퍼 윗변의 ≈ 12 삼각형)는 `{components.tabs-pill-selected}`의 1회 관측
+> 장식으로 기록만 한다 — 컴포넌트로 세지 않았다. 추천 래퍼 · `{colors.block-feature}` 띠 · hero 검색 바는 **배치**라
+> `examples/home/layout.md`가 정본이다.
+
 ### 상태 · 전환 · 레이어
 
 | 항목 | 내용 |
 | --- | --- |
-| `-hover` | **전부 미관측** (K-11). `{components.button-primary-hover}`만 기존 구현값을 유지하고, 나머지는 면을 `{colors.surface-muted}`로 낮추는 규칙을 따른다 |
+| `-hover` | **전부 미관측** (K-11). `{components.button-primary-hover}`만 기존 구현값을 유지하고, 나머지는 면을 `{colors.surface-muted}`로 낮추는 규칙을 따른다. 1007 컷도 hover 없음(K-38) |
 | `-focus` | 미관측. `{spacing.3xs}` 두께 `{colors.focus}` 실선 링 + 같은 값 offset. 키보드 포커스에서만(`:focus-visible`) |
-| `-selected` | 관측됨. 두 방식뿐이다 — 반전(`{components.tabs-segmented-selected}`) 또는 `{colors.primary}` 인디케이터(`{components.tabs-underline-selected}`) |
+| `-selected` | 관측됨. 두 방식뿐이다 — 반전(`{components.tabs-segmented-selected}`) 또는 `{colors.primary}` 인디케이터(`{components.tabs-underline-selected}`). 1007의 칩 줄도 반전(`{components.tabs-pill-selected}`)이다 |
 | `-disabled` | 관측된 것은 주 버튼 하나. 8절 참조 |
 | 전환 | 미관측. 색 전환 150ms ease, 회전 120ms ease를 넘지 않는다 (기존 구현값) |
 | z-index | 미관측. 육안 순서는 콘텐츠 < 지도 컨트롤 < 상세 패널 < `{components.tooltip}` < 모달. 값은 미확정 (K-13) |
@@ -803,16 +920,20 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
   제외하지만, 1.4:1은 비활성이라는 사실조차 읽히지 않는 수준이다. `{colors.text-disabled}`로 약 2:1을 확보한다.
   린터 `contrast-ratio`가 여기서 경고를 내면 그것은 **의도된 이탈**이다 (K-01).
 - **간격은 토큰에서 고른다.** 44 · 76처럼 격자 밖 값이 필요하면 그 화면의 `layout.md`에 기록한다.
-
 ### Don't
 
 - **hex를 컴포넌트 CSS에 적지 않는다.** 색은 토큰 변수로만 온다.
 - **역할이 같은데 키를 새로 만들지 않는다.** `text` · `surface` 계열 키 이름은 고정이다.
 - **`{colors.primary}`를 큰 면적의 배경으로 쓰지 않는다.** 이 시스템에서 파랑은 컨트롤과 수치에만 붙는다.
+  **예외는 하나다** — 메인 우 레일의 상담 입구 `{components.promo-panel}` 한 곳(2026-10-07 결정 — K-34). 다른 화면 · 다른 자리로 넓히지 않는다.
 - **등급 색을 배지 밖에서 쓰지 않는다.** 글자색 · 보더 색으로 돌려 쓰면 대비 보장이 깨진다.
 - **`{colors.text-tertiary}`를 흰 면 밖에서 본문 텍스트로 쓰지 않는다.** `{colors.surface}` 위 4.54는 통과하지만
-  `{colors.surface-muted}` 띠나 `{components.alert-info}` 위에서는 4.16으로 미달한다. 그 자리에는
-  `{colors.text-secondary}`를 쓴다. 린터는 정의된 쌍만 보므로 이 조합을 잡아주지 않는다.
+  `{colors.surface-muted}` 띠나 `{components.alert-info}` 위에서는 4.16, `{colors.surface-recessed}` 추천 래퍼 위에서는
+  4.35로 미달한다. 그 자리에는 `{colors.text-secondary}`를 쓴다. 린터는 정의된 쌍만 보므로 이 조합을 잡아주지 않는다.
+- **`{colors.primary}`를 `{colors.surface-recessed}` 위의 글자로 쓰지 않는다.** 4.33으로 미달한다(델타 1007). 같은 이유로
+  `{colors.surface-sunken}` 위 파랑 글자는 `{colors.primary-hover}`다 — `{components.card-content}` · K-33.
+- **`{colors.block-feature}` 위에 일반 글자색을 쓰지 않는다.** 그 띠 위의 글자는 `{colors.on-block-feature}` ·
+  `{colors.on-block-feature-muted}` 둘뿐이다(델타 1007).
 - **비활성 상태를 opacity로 만들지 않는다.** 배경색과 글자색을 바꾼다 (계측도 opacity 흔적이 없다).
 - **그림자를 깊이 표현의 기본으로 쓰지 않는다.**
 - **섹션 순서 · 그리드 · 여백 리듬을 이 문서에 다시 적지 않는다.** 정본은 `layout.md`다.
@@ -822,6 +943,7 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 ## 9. Responsive Behavior
 
 **이 절은 계측값이 아니다.** 20컷 전부 뷰포트 2518~2559px의 데스크톱이고 모바일 · 태블릿 컷이 없다.
+델타 1007의 4컷도 뷰포트 1707 한 폭의 데스크톱이다(K-38).
 아래는 2026-09-18에 승인된 **프로젝트 정의**다.
 
 ### Breakpoints
@@ -842,6 +964,7 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
   계측값이라 어느 쪽도 버릴 수 없다 — 입력 수단으로 가른다. 근거는 44가 WCAG 2.2 SC 2.5.5 Target Size (Enhanced)의
   **AAA** 기준이고 AA 기준인 SC 2.5.8 Target Size (Minimum)은 **24×24**라는 것이다. 즉 32는 포인터 구간에서 AA를
   넘고, 터치 구간에서는 우리가 AAA를 목표로 44까지 올린다. 충돌 자체는 K-26에 남긴다.
+  델타 1007의 `{components.card-content}` 원형 버튼(28)도 같은 규칙을 따른다.
 
 ### Typography
 
@@ -855,6 +978,7 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 - **값은 레이아웃 맵의 반응형 제안(미관측)을 옮긴 프로젝트 정의다.** 모바일 컷이 없으므로 계측값이 아니다. weight · line-height는 원 역할과 같게 둔다.
 - 역할을 새로 두는 이유: 컴포넌트 CSS가 `font-size`를 직접 적지 않는다는 규칙 때문에, 크기를 바꾸려면 바꿀 대상 역할이 정의서에 있어야 한다.
 - 화면 적용(`typography.css` 이관과 미디어 쿼리)은 별도 프론트 작업이다 — 이슈 #130 범위 밖.
+- 델타 1007의 `{typography.section-title}` · `{typography.content-title}`은 모바일 역할을 두지 않았다 — 모바일 컷이 없다(K-38).
 
 ### Collapsing
 
@@ -888,33 +1012,63 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 
 ### 의도적 이탈 — 린터 경고
 
-**실측 총계: error 0 · warning 39 · info 1.** 아래는 예상이 아니라 `npx @google/design.md lint DESIGN.md`를
-실행한 결과다(전문은 `reviews/designmd-review.md` 0장). warning 39건은 전부 K-25 · K-01 · K-02로 설명되며,
+**검수 2회차 실측 error 0 · warning 46 · info 1**(`@google/design.md` 0.4.0 — 전문은 `reviews/designmd-review.md` 2R-0). 사용자 결정 반영(컴포넌트 3 · 타이포 1 제거)으로 건수 구성이 아래 「결정 반영 뒤 기대」로 바뀐다 — 재검수가 실측한다.
+정본의 실측은 error 0 · warning 39 · info 1이다. 남는 warning은 전부 K-25 · K-01 · K-02 · K-15로 설명되며,
 **error는 0건이다** — 규격 밖 하위 토큰도 값은 전부 정의된 토큰을 가리키므로 실제로 깨진 참조는 없다.
 
-| 규칙 | 건수 | 어디 |
+| 규칙 | 결정 반영 뒤 기대 · 2회차 실측 · 정본 | 어디 |
 | --- | --- | --- |
-| `broken-ref` | **37** | 규격 밖 component 하위 토큰 (K-25). #150에서 dialog · checkbox · checkbox-disabled의 `borderColor` 3건 추가 |
-| `contrast-ratio` | **2** | `{components.button-primary-disabled}` · `{components.input-disabled}` (K-01 · K-02) |
-| `token-summary` (info) | 1 | 색 30 · 타이포 16 · 반경 5 · 간격 11 · 컴포넌트 60 |
-| `orphaned-tokens` · `missing-primary` · `section-order` · `unknown-key` · `token-like-ignored` · `missing-sections` · `missing-typography` | **0** | — |
+| `broken-ref` | **39** · 41 · 37 | 규격 밖 component 하위 토큰 (K-25). #150에서 dialog · checkbox · checkbox-disabled의 `borderColor` 3건, 델타 1007에서 `card-feature` · `card-content`의 `borderColor` 2건 추가(미채택 `card-placeholder` 둘의 2건은 빠진다) |
+| `contrast-ratio` | **2** · 2 · 2 | `{components.button-primary-disabled}` · `{components.input-disabled}` (K-01 · K-02) |
+| `orphaned-tokens` | **5** · 3 · 0 | `{colors.primary-line-soft}` · `{colors.surface-recessed}` · `{colors.block-feature}` · `{colors.on-block-feature}` · `{colors.on-block-feature-muted}` — 배치 · 장식 전용 색이라 유지, 경고 감수 (K-15). 뒤의 둘은 미채택 슬라이드 위치 표시가 빠지면서 참조가 없어진 것이다 |
+| `token-summary` (info) | 1 | 기대: 색 36 · 타이포 18 · 반경 5 · 간격 12 · 컴포넌트 65 (2회차 실측: 색 36 · 타이포 19 · 컴포넌트 68 / 정본: 색 30 · 타이포 16 · 반경 5 · 간격 11 · 컴포넌트 60) |
+| `missing-primary` · `section-order` · `unknown-key` · `token-like-ignored` · `missing-sections` · `missing-typography` | **0** | — |
+
+채택한 신규 쌍의 대비 — `promo-panel` 4.52 · `card-content` 4.75 · 띠 제목 `{colors.on-block-feature}` on `{colors.block-feature}` 8.26(산문 쌍).
 
 | # | 항목 | 내용 |
 | --- | --- | --- |
-| K-25 | **규격 밖 component 하위 토큰 — `broken-ref` 37건** | 규격이 인정하는 하위 토큰은 `backgroundColor` · `textColor` · `typography` · `rounded` · `padding` · `size` · `height` · `width` **8개뿐**이고, 여기에 **보더와 간격이 없다.** 내역: `borderColor` **31** · `gap` **3**(`field` · `tabs-underline` · `empty-state`) · `shadow` **1**(`input-focus`) · `minWidth` **1**(`select`) · `labelWidth` **1**(`kv-row`). **유지하기로 결정했다 — 이슈 #110 작업 판단(2026-09-18), 검수 권장 수용. 사용자 승인 사항이 아니다.** 사유 — **이 시스템은 그림자 대신 1px 실선으로 면을 나누므로 보더 색은 부가 정보가 아니라 핵심 표현 수단이고, 따라서 산문이 아니라 기계가 읽는 자리에 남긴다.** 어느 컴포넌트가 `{colors.border}`를 쓰고 어느 것이 `{colors.border-subtle}`를 쓰는지가 `components`에서 사라지면 CSS로 옮길 때 정보를 잃는다. **값은 전부 `{colors.*}` 참조라 실제로 깨진 참조가 아니며 severity도 warning이다**(error 0건). 대가로 린터 경고 37건을 안고 간다 |
+| K-25 | **규격 밖 component 하위 토큰 — `broken-ref` 37건** | 규격이 인정하는 하위 토큰은 `backgroundColor` · `textColor` · `typography` · `rounded` · `padding` · `size` · `height` · `width` **8개뿐**이고, 여기에 **보더와 간격이 없다.** 내역: `borderColor` **31** · `gap` **3**(`field` · `tabs-underline` · `empty-state`) · `shadow` **1**(`input-focus`) · `minWidth` **1**(`select`) · `labelWidth` **1**(`kv-row`). **유지하기로 결정했다 — 이슈 #110 작업 판단(2026-09-18), 검수 권장 수용. 사용자 승인 사항이 아니다.** 사유 — **이 시스템은 그림자 대신 1px 실선으로 면을 나누므로 보더 색은 부가 정보가 아니라 핵심 표현 수단이고, 따라서 산문이 아니라 기계가 읽는 자리에 남긴다.** 어느 컴포넌트가 `{colors.border}`를 쓰고 어느 것이 `{colors.border-subtle}`를 쓰는지가 `components`에서 사라지면 CSS로 옮길 때 정보를 잃는다. **값은 전부 `{colors.*}` 참조라 실제로 깨진 참조가 아니며 severity도 warning이다**(error 0건). 대가로 린터 경고 37건을 안고 간다. **델타 1007에서 같은 방침으로 `borderColor` 2건을 더했다(결정 반영 뒤 기대 39)** |
 | K-01 | **비활성 버튼 대비 — `contrast-ratio` 1건** | 계측(`signup/01`)은 `{colors.disabled-surface}` + 흰 글자로 대비 ≈1.4:1이다. 우리는 글자를 `{colors.text-disabled}`(#999999)로 바꿔 **2.00:1**을 확보했다. 그래도 4.5:1 미만이라 경고가 난다. WCAG 2.2 SC 1.4.3은 **비활성 사용자 인터페이스 구성요소의 텍스트를 대비 요건에서 제외**하므로 위반은 아니다(SC 1.4.11도 같다). **검수에서 예외 적용을 승인했다.** **참고 사이트를 그대로 베끼지 않았다는 사실을 함께 기록한다** |
 | K-02 | **`{components.input-disabled}` 대비 — `contrast-ratio` 1건** | `{colors.surface-muted}` + `{colors.text-disabled}` = **2.61:1**. 같은 비활성 예외이고 **검수에서 승인됐다.** 기존 구현값 유지 |
-| K-15 | 컴포넌트가 참조하지 않는 색 토큰 1종 | `{colors.background}`(`global.css`이 `background: var(--color-background)`로 실제 사용 중 — 지우면 전역 배경이 깨진다). `{colors.on-error}`는 #150에서 `{components.toast-error}`가 참조해 해소됐다. **`orphaned-tokens` 경고는 나지 않는다** — 린터가 본문 산문의 참조까지 세는데 2절 Surface 표와 10절에서 참조되기 때문이다. 경고가 없더라도 **삭제 후보가 아니라는 사실**을 남긴다 |
+| K-15 | **컴포넌트가 참조하지 않는 색 토큰 — `orphaned-tokens` 5건(델타 1007 · 결정 반영 뒤 기대)** | **린터가 보는 것**(검수가 린터 소스로 확인): `components`가 참조하는 경로와 같은 계열 이름(`on-` · `inverse-` 앞붙이, `-container` · `-variant` 등 뒷붙이를 뗀 이름)뿐이고 **본문 산문은 세지 않는다.** MD3 표준 계열(`primary` · `secondary` · `tertiary` · `error` · `surface` · `background` · `outline`)은 면제된다.<br>**정본 몫 — 경고 없음.** `{colors.background}`(`global.css`이 `background: var(--color-background)`로 실제 사용 중 — 지우면 전역 배경이 깨진다)는 린터의 MD3 표준 계열 면제(`background`)로 경고가 나지 않는다 — 산문 참조와 무관하다. `{colors.on-error}`도 `error` 계열 면제 대상이며, #150부터는 `{components.toast-error}`가 직접 참조한다. 경고가 없더라도 **삭제 후보가 아니라는 사실**을 남긴다.<br>**델타 1007 몫 — 유지, 경고 5건 감수.** 다섯 다 컴포넌트가 아니라 **배치 · 장식 전용 색**이라 참조할 컴포넌트 자리가 없다. 참조를 만들려고 컴포넌트를 새로 지어내지 않는다(K-25와 같은 판단 형식). (1) `{colors.surface-recessed}` — 추천 래퍼 면. 래퍼는 배치라 `examples/home/layout.md` 소관이다. 계열 이름이 `surface-recessed`라 `surface` 면제를 받지 못한다(이름 유지 결정 — K-37). (2) `{colors.primary-line-soft}` — `{components.card-content}` 라벨 밑 1px 밑줄. 규격 하위 토큰에 둘째 선 색 자리가 없다. (3) `{colors.block-feature}` — 슬라이드 구역의 전폭 띠 면. 띠는 배치다. (4) `{colors.on-block-feature}` — 띠 위 섹션 제목 글자. 제목은 타이포 역할이지 컴포넌트가 아니다. (3) · (4)는 미채택 슬라이드 위치 표시가 유일한 참조였다(K-36). (5) `{colors.on-block-feature-muted}` — 띠 위 「더 보기」 링크 · 셰브런. 해당 컴포넌트가 없다(띠는 배치) |
 
 ### 값 충돌 — 승인 대상
 
 | # | 항목 | 내용 |
 | --- | --- | --- |
 | K-26 | **9절 터치 타겟 44 ↔ `{components.button-footer}` · `{components.button-footer-primary}`의 `height: 32px` 충돌** | 둘 다 버릴 수 없어 **입력 수단으로 갈랐다** — 터치 구간(`~767px`)은 44, 포인터 구간(`768px~`)은 컴포넌트 지정 높이. 규칙은 9절 Touch Targets에 있다. 근거는 44가 WCAG 2.2 SC 2.5.5(**AAA**)이고 AA 기준 SC 2.5.8은 **24×24**라는 것이다 — 32는 포인터 구간에서 AA를 넘는다. 이 충돌은 정의서 안에 원래 있었고 구현이 만든 것이 아니다 (이슈 #112 검토에서 드러남) |
-| K-03 | `{colors.primary}` 값 | 계측 추정은 `#3d6ff5`이고 이 값은 `{colors.on-primary}`와 **4.38:1**로 AA에 못 미친다. hex는 JPG 압축 기반 「추정」이므로 기존 구현값 `#326cf9`(4.52)를 유지했다. 계측값을 쓰려면 사용자 승인이 필요하다 |
+| K-03 | `{colors.primary}` 값 | 계측 추정은 `#3d6ff5`이고 이 값은 `{colors.on-primary}`와 **4.38:1**로 AA에 못 미친다. hex는 JPG 압축 기반 「추정」이므로 기존 구현값 `#326cf9`(4.52)를 유지했다. 계측값을 쓰려면 사용자 승인이 필요하다. 1007 관측(≈ `#3c6ff5`)도 계측 추정과 같다 — 새 충돌이 아니다 |
 | K-04 | `{colors.text-tertiary}` 값 | 계측 `#9e9e9e`는 흰 바탕 대비 약 2.6:1로 본문 텍스트에 쓸 수 없다. 기존 `#767676`(4.54)을 유지했다. placeholder 계측값 `#aaaaaa`도 같은 이유로 미채택 |
 | K-10 | `{components.card}` 반경 | 기존 구현은 `{rounded.lg}`(12) + `{colors.border-subtle}`, 계측 `card-summary`는 `{rounded.md}`(8) + `{colors.border}`다. 덮어쓰지 않고 **두 항목으로 분리**했다. 하나로 합칠지는 승인 대상 |
 | K-14 | 폼 입력↔주 버튼 간격 | `login/01`은 34, `signup/01`은 60으로 같은 역할에 값이 달랐다. **48(`{spacing.3xl}`)로 확정**했다(계측자 권장 수용). 충돌이 있었다는 사실을 남긴다 |
+
+### 값 충돌 — 1007 델타 (이슈 #483 · 2026-10-07 사용자 결정)
+
+**사용자가 권고대로 결정했다(진행표 5단계, 2026-10-07).** 정본의 토큰 값은 바뀌지 않았다. 정본의 **결정 문장 2곳**(K-08 「콘텐츠 카드 면
+`#eeeeee` 미채택」 · 4절 「격자 밖 관측값」의 56)은 결정에 따라 바뀐다 — K-39(M-11). 값 · 근거의 본문은 `analysis/merge-notes.md`
+(「권고 · 결정」 표)에 있고, 여기는 정의서에서 걸리는 자리와 결정만 적는다. 근거의 공통 전제 — **1007 컷은 브라우저 확대 100%에서
+찍었고 배율(×1.147)을 겹친 컷 네 쌍으로 검증했다. 기존 `home/01` · `home/02` 값은 「컨테이너 = 1330」에 되맞춘 줌 보정 추정이다.**
+`layout.md` 값의 교체(M-02 · M-05 · M-07)는 analyzer가 한다.
+
+| # | merge-notes | 정의서에서 걸리는 자리 | 결정 |
+| --- | --- | --- | --- |
+| K-28 | M-01 컨테이너 1330 vs 1180 · M-10 | 1절 「픽셀 배율 ×1.0」 · 4절 Grid & Container의 환산(컬럼 285) | **참고 사이트 컨테이너 기준 1180** — 추가 캡처 없이. 우리 1200 · `repeat(4, 1fr)` · gap `{spacing.lg}` · 컬럼 285는 그대로. **남는 것:** (a) 뷰포트 반응 / (b) 옛 컷 배율 가정 오류 중 어느 쪽인지는 가리지 않았다 — 옛 ×1.0 가정에 기댄 컴포넌트 치수(입력 48 · 주 버튼 60 · 폼 카드 540 등)는 우리 구현값으로 그대로 둔다 — 1007 컷에 같은 컴포넌트가 없어 대조할 값이 없다. 가르려면 넓은 뷰포트(≈ 2520) 배율 기록 컷 1장이 필요하다. M-10 오차 경계 4건은 조치 없음 |
+| K-29 | M-03 섹션 제목 20/700 vs ≈ 22/400 | 3절 Hierarchy | **신규 채택** — 메인 섹션 제목은 `{typography.section-title}` 22/400. `{typography.heading-2}`는 메인 밖 섹션 제목 · 패널 헤더에 남긴다. 400 굵기는 JPG 추정으로 남는다 |
+| K-30 | M-02 · M-04 · M-06 · M-08 · M-09 (`layout.md` 값) | `{components.card-category}` 제목 · 썸네일 반경 · 매물 카드 1줄 | **M-02 · M-04 · M-09 신규** — `{components.card-category}` 제목 `{typography.heading-3}` 18/700 · 매물 카드 1줄 `{typography.caption}` 12 · 나머지 `home/01` · `02` 보정값은 1007 측정값으로(`layout.md`). **M-06 · M-08 기존 유지** — 썸네일 `{rounded.md}` 8 · 검색 아이콘 ↔ 글자 `{spacing.md}` 16 |
+| K-31 | M-05 추천 래퍼 면 · 반경 · 패딩 | `{colors.surface-recessed}` · 래퍼는 배치라 `layout.md` | **신규 채택** — 면 `{colors.surface-recessed}` + 1px `{colors.border}` · `{rounded.md}` · 패딩 `{spacing.lg}`. 옛 `layout.md`의 「래퍼 = `{colors.surface-muted}`」는 표기 오류로 정리된다. `{colors.surface-muted}` 자체의 값은 바꾸지 않는다(hero 면에서 일치 관측) |
+| K-32 | M-07 사이트맵 | `{components.site-footer}` 구역 1 · `{typography.link}` | **나눠서** — 컬럼 피치 190 · 링크 줄 피치 28 · 링크 크기 13(`{typography.body-sm}`)은 **신규**. 링크 색은 **`{colors.text-secondary}` 유지 — 의도적 이탈**(관측 `#999` 근처, 검수 표본 `#a9a9a9`. `#999999`는 흰 면 위 2.85로 AA 미달 — K-04와 같은 이유). 앞뒤 여백(1007 86 / 61)은 **보류 — 기존 64 / ≈ 48 유지**(배율로 설명되지 않는 방향의 차이) |
+| K-39 | M-11 정본 결정 문장 뒤집기 | 정본 11절 K-08 · 정본 4절 「격자에 맞지 않는 관측값(44 · 56 · 76 · 184)」 | **둘 다 채택** — (a) K-08의 「`#eeeeee` 미채택」을 뒤집어 `{colors.surface-sunken}` 채택(`{components.card-content}` 채택과 함께 — K-33). (b) 56을 격자 밖 목록에서 빼고 `{spacing.section-tight}`로 채택(K-37). 이 문서의 K-08 · 4절 문장은 결정대로 고쳤다 |
+
+### 델타 1007 — 신규 항목의 문제
+
+| # | 항목 | 내용 |
+| --- | --- | --- |
+| K-33 | **`{components.card-content}` 글자색 — 의도적 이탈** | 관측 `{colors.primary}` 글자 on `{colors.surface-sunken}`은 **3.89:1로 AA 미달**이다. `{typography.content-title}` 20/400은 큰 글자(24px 또는 18.66px 굵게)가 아니라 4.5:1 대상이고, 라벨(≈ 12)도 같은 면 위다. 그래서 관측값을 베끼지 않고 글자를 `{colors.primary-hover}`로 바꿨다 — **4.75:1 ✓**(컷 표본 면 `#f0f0f0` 위 4.79). K-03 · K-04와 같은 방식이고, 옅은 면 위 파랑 글자에 `{colors.primary-hover}`를 쓰는 선례는 `{components.badge-primary}`다. 면 · 상단 선 · 원 버튼 외곽선은 글자가 아니라 `{colors.primary}` 그대로다(비텍스트 3:1 기준 3.89 ✓). **2026-10-07 사용자 결정 — 이 이탈과 함께 `{components.card-content}`를 채택했다** |
+| K-34 | **`{components.promo-panel}` ↔ 8절 Don't — 명시 예외** | 「`{colors.primary}`를 큰 면적의 배경으로 쓰지 않는다」와 관측 482 × 99(높이 99 · 폭은 우 레일) primary 면이 부딪쳤다. **2026-10-07 사용자 결정 — 채택하고, 8절 Don't에 예외로 적었다: 메인 우 레일의 상담 입구 한 곳.** 규칙 자체는 그대로이고 예외를 넓히지 않는다 |
+| K-35 | **사진 위 반투명 배지 면 — 쓰지 않음(결정)** | 계측 `overlay-badge`(`#66738f` 근처 · 반투명)는 아래 사진에 따라 합성색이 흔들려 불투명 hex로 적으면 관측을 왜곡하고, 알파 값은 관측할 수 없다. **2026-10-07 사용자 결정 — 우리 화면은 사진이 없으므로 쓰지 않는다.** 키를 두지 않는다. `{components.card-feature}`의 이미지부(높이 299) 자리에 무엇을 둘지는 정해지지 않았다 — 화면 작업에서 정한다 |
+| K-36 | **1회 관측 신규 항목 — 우리 메인이 쓰는 것만 채택(결정)** | **2026-10-07 사용자 결정.** **채택**: 색 `{colors.block-feature}` · `{colors.on-block-feature}` · `{colors.on-block-feature-muted}` · `{colors.primary-line-soft}` · `{colors.surface-recessed}`(2컷 같은 구역 — K-31) · `{colors.surface-sunken}`(정본 K-08 미채택을 뒤집음 — K-39), 타이포 `{typography.section-title}`(3곳 반복) · `{typography.content-title}`, 간격 `{spacing.section-tight}`(2곳), 컴포넌트 `{components.card-category}` · `{components.card-feature}` · `{components.card-content}` · `{components.promo-panel}` · `{components.promo-panel-tile}`. 반복 관측이 아닌 것은 1회 관측 표기를 그대로 둔다.<br>**관측됨 · 미채택** — 프론트매터에서 뺐다. 다시 쓰게 되면 아래 관측값에서 시작한다.<br>· `pagination-indicator` — 띠 위 슬라이드 현재 위치 숫자(13/700 · 띠 위 흰 글자 · 아래 2px 밑줄 폭 ≈ 16 · 뷰포트 중앙). **사유: 슬라이드를 만들지 않는다.** home/1007-03 · 1회 관측<br>· `overlay-title` — 사진 위 흰 글자 제목 22/700(line-height 미관측). **사유: 사진 카드를 쓰지 않는다(K-35).** home/1007-03 · 1회 관측<br>· `card-placeholder` — 그리드 빈 칸(흰 면 + 1px 보더 · 가운데 13 글자 2줄 · 반경 ≈ 2~4 · 높이 159) · `card-placeholder-primary` — 같은 모양에 보더 · 글자 primary + 채운 원 16. **사유: 지금 쓰는 자리가 없다 — 필요해질 때 재검토.** home/1007-02 · 1회 관측 |
+| K-37 | **이름 — `{spacing.section-tight}` · `{colors.surface-recessed}` · `{colors.surface-sunken}` (결정)** | **2026-10-07 사용자 결정 — 세 이름 그대로.** `section-tight`는 크기 이름 체계 밖이다 — `3xl`(48)과 `4xl`(64) 사이에 들어갈 크기 이름이 없어서다. `surface-recessed` · `surface-sunken`은 둘 다 「바탕보다 낮다」로 읽혀 밝기 방향을 이름으로 알 수 없다 — 실제 밝기는 `{colors.surface}` `#fff` > `surface-recessed` `#fafafa` > `{colors.surface-muted}` `#f4f5f6` > `surface-sunken` `#eeeeee`이고, 이 순서는 이 행과 2절 Surface 표가 갖는다. 이름이 그대로라 K-15의 고아 판정도 그대로다 |
 
 ### 추정 · 미관측 (참고 사이트)
 
@@ -923,12 +1077,14 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | K-05 | 폰트 패밀리 이름 미확정. 「한글 지오메트릭 산세리프 1종」까지만 확인했고 폴백 스택은 미관측이다. 우리는 Pretendard로 대체한다 |
 | K-06 | letter-spacing 전 역할 미관측 — 지정하지 않음 |
 | K-07 | 반경 · 그림자 · 폰트 크기 · weight · hex는 전부 컷에서 역산한 **추정**이다. 입력 반경은 0~2px로 읽혀 `{rounded.none}`으로 확정했다 |
-| K-08 | 1회 관측이라 채택하지 않은 색: 실거래가 최고/최저 배지, 검증 배지, 「새단장」 pill, `listing` 블록 색 3종, 콘텐츠 카드 면(`#eeeeee`). 필요해지면 추가한다.<br>**컴포넌트 변형 중 미채택**: `card/grid-item`(home/02 · listing/04) · `tabs/segment-toggle`(map-search/04) · `badge/solid-primary`(listing/05 — 정의서의 `{components.badge-primary}`는 `{colors.primary-surface}` 면이라 다른 것이다). 우리 화면에 역할이 없다.<br>`type-rail` · `detail-panel` · `option-tile-grid` · `photo-grid` · `sub-nav`는 관측됐으나 **토큰이 아니라 구조물**이라 각 `layout.md`가 정본이다 — 7절 「구조」 소절 참조 |
+| K-08 | 1회 관측이라 채택하지 않은 색: 실거래가 최고/최저 배지, 검증 배지, 「새단장」 pill, `listing` 블록 색 3종. 필요해지면 추가한다. 콘텐츠 카드 면 `#eeeeee`는 처음에 1회 관측이라 이 목록에 있었으나, 델타 1007에서 같은 구역이 다시 관측돼
+`{colors.surface-sunken}`으로 채택했다(2026-10-07 결정 — K-39(M-11)).<br>**컴포넌트 변형 중 미채택**: `card/grid-item`(home/02 · listing/04 · home/1007-02 — 면 없는 매물 카드) · `tabs/segment-toggle`(map-search/04) · `badge/solid-primary`(listing/05 — 정의서의 `{components.badge-primary}`는 `{colors.primary-surface}` 면이라 다른 것이다) · `badge/pill-accent`(home/1007-01 nav · 카테고리 카드 배지). 우리 화면에 역할이 없다.<br>`type-rail` · `detail-panel` · `option-tile-grid` · `photo-grid` · `sub-nav`는 관측됐으나 **토큰이 아니라 구조물**이라 각 `layout.md`가 정본이다 — 7절 「구조」 소절 참조 |
 | K-11 | `-hover` · `-focus` · `-error` · 열린 `pulldown` · zebra · 정렬 컨트롤 · 다크 모드 · 애니메이션 전부 미관측 |
 | K-12 | 모달 그림자(레벨 3) 미관측 |
 | K-13 | z-index 계층 미관측 — 값 미확정 |
 | K-16 | 모바일 · 태블릿 컷이 하나도 없다. 9절은 전부 프로젝트 정의이고 붕괴 규칙은 각 `layout.md`의 제안(미관측)이다 |
 | K-17 | 표 폭 1364와 컨테이너 1330의 불일치(계측 G-04), 푸터 구역 2 높이 편차 88~100(G-05)은 측정 한계로 남는다 |
+| K-38 | **델타 1007에서도 못 본 것.** 축소 JPG(1488)라 그림자 · 1~3px 단위(콘텐츠 그리드 갭 · 상단 선 두께 · 작은 반경)를 가를 수 없다(G-28). 칩 · 카드 · 더 보기 · 슬라이드의 hover · 다른 선택 · 넘김 상태, 슬라이드 둘째 칸 미관측(G-29). 로그아웃 상태의 인사 문구 · 추천 래퍼 미관측 — 컷은 로그인 상태(G-30). 뷰포트 1707의 푸터 구역 2~4 미관측(G-31). 모바일 · 태블릿 컷 여전히 없음(G-32) |
 
 ### 프로젝트 정의 — 미확정 · 미구현
 
@@ -939,7 +1095,7 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | K-19 | `toast` · `toast-error` — **키 정의됨 · 미구현 · 미관측.** 기존 토큰 조합(#150). 표시 위치 · 지속 시간 · 겹침 순서(K-13 z-index)는 쓰는 화면에서 정한다 |
 | K-20 | `checkbox` · `-checked` · `-disabled` — **키 정의됨 · 미구현 · 미관측.** 기존 토큰 조합(#150). 알림 구독 화면은 아직 네이티브 `<input>`을 직접 그린다 — 공용 컴포넌트로 옮길 때 이 키를 쓴다. 20px은 터치 타겟(44)이 아니라 상자 크기다 — 터치 구간(`~767px`)에서는 누르는 영역이 44 하한을 채워야 한다(9절). 채우는 방식은 구현 때 정한다 |
 | K-21 | 로딩 표시 `spinner` · `skeleton` — **키 정의됨 · 미구현.** 표준 어휘에 없는 프로젝트 정의, 기존 토큰 조합(#150). 애니메이션(회전 · 맥동)의 속도는 정하지 않았다 |
-| K-22 | `radio` · `switch` · `textarea` · `date` · `calendar` — 미관측 · 미사용. 필요해지면 정의서에 먼저 넣는다 |
+| K-22 | `radio` · `switch` · `textarea` · `date` · `calendar` — 미관측 · 미사용. 필요해지면 정의서에 먼저 넣는다. 1007 컷에도 없다(`dialog` · `checkbox` · `toast` · `select` · `alert` 포함) |
 | K-23 | 차트(실거래가 · 시세)는 차기 범위다. 데이터 시각화 색은 **미사용** |
 | K-24 | `{colors.border-subtle}` · `{colors.focus}` · `{colors.error}` 계열 · `{typography.label}` · `{spacing.3xs}`는 참고 사이트에서 관측되지 않았다. **기존 구현값을 유지**했고 삭제하지 않았다 |
 | K-27 | `{typography.display-mobile}` · `{typography.heading-1-mobile}` — **정의만 있고 미구현.** `typography.css` 이관과 모바일 미디어 쿼리 적용은 별도 프론트 작업이다 (9절 Typography, 이슈 #130) |

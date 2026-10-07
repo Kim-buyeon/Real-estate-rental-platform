@@ -2,12 +2,18 @@
   --color-primary: #326cf9;
   --color-primary-hover: #2a5fe0;
   --color-primary-surface: #eaf0ff;
+  --color-primary-line-soft: #b8c9f7;
   --color-on-primary: #ffffff;
   --color-background: #ffffff;
   --color-surface: #ffffff;
   --color-surface-muted: #f4f5f6;
+  --color-surface-recessed: #fafafa;
+  --color-surface-sunken: #eeeeee;
   --color-inverse-surface: #1e1e1e;
   --color-on-inverse: #ffffff;
+  --color-block-feature: #444e6a;
+  --color-on-block-feature: #ffffff;
+  --color-on-block-feature-muted: #c5cad6;
   --color-footer-surface: #3c3c3c;
   --color-footer-surface-raised: #4a4a4a;
   --color-on-footer: #c9c9c9;
@@ -38,6 +44,7 @@
   --spacing-xl: 24px;
   --spacing-2xl: 32px;
   --spacing-3xl: 48px;
+  --spacing-section-tight: 56px;
   --spacing-4xl: 64px;
   --spacing-5xl: 80px;
   --rounded-none: 0px;
