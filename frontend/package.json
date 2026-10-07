@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "design:lint": "node ./node_modules/@google/design.md/dist/index.js lint design/DESIGN.md",
+    "design:export": "node ./node_modules/@google/design.md/dist/index.js export design/DESIGN.md --format css-vars"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",
@@ -19,6 +21,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@google/design.md": "0.4.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^24.13.3",

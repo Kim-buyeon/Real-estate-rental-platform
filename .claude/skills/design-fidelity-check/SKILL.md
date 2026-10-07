@@ -34,7 +34,7 @@ description: 디자인 토큰 정의서 드래프트를 검수하는 절차. 공
 ## 순서
 
 ```
-0. 린트          npx @google/design.md lint DESIGN.md
+0. 린트          node frontend/node_modules/@google/design.md/dist/index.js lint <드래프트>   (정본은 frontend 에서 npm run design:lint. npx 금지 — Windows 에서 파일 열기 창)
 1. A1 참조       깨진 {group.token} 전수
 2. A2 명암비     component마다 textColor ↔ backgroundColor
 3. A3 고아       정의됐는데 참조 없는 토큰

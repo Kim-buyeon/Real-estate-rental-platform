@@ -15,7 +15,7 @@ model: opus
 ## 순서
 
 ```
-1. 린트를 돌린다            npx @google/design.md lint DESIGN.md — 기계가 잡는 것부터
+1. 린트를 돌린다            node frontend/node_modules/@google/design.md/dist/index.js lint <드래프트> — 기계가 잡는 것부터. npx 로 부르지 않는다(Windows 에서 실행 이름 design.md 를 파일로 열려 해 창이 뜬다)
         │
 2. 참조 · 명암비 · 고아 토큰   A1 · A2 · A3
         │

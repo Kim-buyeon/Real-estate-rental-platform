@@ -5,7 +5,7 @@ description: 디자인 토큰 정의서(DESIGN.md) 포맷의 정본. Google desi
 
 # designmd-spec
 
-`DESIGN.md`는 한 사이트의 디자인 시스템을 **기계가 읽는 토큰(프론트매터)** + **사람이 읽는 의도(본문)** 로 한 파일에 적는다. 포맷은 Google의 `design.md` 규격(`@google/design.md`)이고, 규격 자체의 정본은 `npx @google/design.md spec`이 출력한다. **이 문서와 그 출력이 다르면 그 출력이 맞다.**
+`DESIGN.md`는 한 사이트의 디자인 시스템을 **기계가 읽는 토큰(프론트매터)** + **사람이 읽는 의도(본문)** 로 한 파일에 적는다. 포맷은 Google의 `design.md` 규격(`@google/design.md`)이고, 규격 자체의 정본은 `node frontend/node_modules/@google/design.md/dist/index.js spec`이 출력한다. **이 문서와 그 출력이 다르면 그 출력이 맞다.**
 
 ## 1. 프론트매터
 
@@ -110,7 +110,7 @@ components:
 
 ## 4. 린트
 
-`npx @google/design.md lint DESIGN.md`. reviewer가 돌리고 결과를 리포트에 붙인다.
+`node frontend/node_modules/@google/design.md/dist/index.js lint <파일>` — 정본은 `frontend`에서 `npm run design:lint`. reviewer가 돌리고 결과를 리포트에 붙인다. **`npx @google/design.md`로 부르지 않는다** — 실행 이름이 `design.md`라 Windows 셸이 .md 파일을 열려 하고 「어떤 앱으로 열까요」 창이 뜬다(출력도 비어 보인다).
 
 | 규칙 | 심각도 | 무엇 |
 | --- | --- | --- |
