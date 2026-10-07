@@ -10,15 +10,22 @@
  * 폭과 무관하게 한 줄이다. 넘치면 줄바꿈하지 않고 가로로 스크롤한다 — 모바일은 레이아웃 맵 제안과
  * 같고, 768 이상도 줄이 둘이 되면 지도 높이가 폭에 따라 달라진다.
  *
- * px 리터럴은 셋이다 (frontend/CLAUDE.md 스타일 규칙) —
+ * px 리터럴은 넷이다 (frontend/CLAUDE.md 스타일 규칙) —
  *   1) 1px 보더 두께 — 필터 줄 하단 선
  *   2) spacing 격자에 없는 레이아웃 맵 계측값 — 줄 높이 72
  *   3) 정의서가 지정했으나 css-vars export 가 내지 않는 값 — {components.pulldown} 의 h40.
  *      한 컴포넌트에만 걸리므로 아래 .bar 의 지역 변수에 모았다 (이슈 114)
+ *   4) 같은 셋째 성질 — 정의서 6절 Icon 의 16(본문 아이콘). 초기화 버튼의 아이콘 크기
+ *
+ * 줄 끝의 초기화 버튼(레이아웃 맵 「초기화 아이콘 버튼 1」)은 {components.button-ghost} 다. 정의서 ·
+ * 레이아웃 맵 어디에도 이 버튼의 크기가 없고, {components.button-icon} 57 × 60 은 상세 하단 바의 것이라
+ * h40 줄에 넣으면 줄보다 크다. 높이 없는 ghost 를 pulldown 높이 40 에 맞추고 아이콘(16)과 글자를 둔다.
  */
 .bar {
   /* 정의서 7절 {components.pulldown} 의 높이 */
   --pulldown-height: 40px;
+  /* 정의서 6절 Icon 의 본문 아이콘 크기 */
+  --filter-reset-icon: 16px;
 
   display: flex;
   flex-wrap: nowrap;
@@ -75,4 +82,14 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
+}
+
+/* 줄 끝의 초기화 버튼 — pulldown 과 같은 높이로 바닥을 맞춘다. 반경은 ghost 의 {rounded.sm} 그대로 */
+.bar .reset {
+  min-height: var(--pulldown-height);
+}
+
+.resetIcon {
+  width: var(--filter-reset-icon);
+  height: var(--filter-reset-icon);
 }

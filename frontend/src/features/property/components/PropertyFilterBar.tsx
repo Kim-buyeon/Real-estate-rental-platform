@@ -21,6 +21,20 @@ interface PropertyFilterBarProps {
   leading?: ReactNode;
 }
 
+/** 필터 줄이 다루는 값. 초기화는 이 값들만 되돌리고 나머지 키는 그대로 둔다 */
+const FILTER_BAR_KEYS = ['contractType', 'depositMax', 'riskGrade'] as const satisfies readonly (keyof PropertyFilter)[];
+
+/** 필터 줄이 다루는 값을 기본값(키 없음 — 지도 화면의 첫 필터가 빈 객체다)으로 되돌린 필터 */
+const resetFilterBarValues = (filter: PropertyFilter): PropertyFilter => {
+  const next: PropertyFilter = { ...filter };
+  for (const key of FILTER_BAR_KEYS) delete next[key];
+  return next;
+};
+
+/** 필터 줄이 다루는 값이 모두 기본값인가 — 초기화 버튼의 비활성 판정. 위험 등급 빈 배열은 선택 없음과 같다 */
+const isFilterBarInitial = (filter: PropertyFilter): boolean =>
+  filter.contractType === undefined && filter.depositMax === undefined && (filter.riskGrade ?? []).length === 0;
+
 /**
  * 공통 검색 필터 — 매물 API 명세 1.1. 자치구 집계와 매물 조회가 같은 조건을 쓰므로
  * 단계를 오가도 그대로 유지된다. 필터 상태는 페이지가 소유한다.
@@ -34,6 +48,9 @@ export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onCha
     },
     [filter, onChange],
   );
+
+  const handleReset = useCallback(() => onChange(resetFilterBarValues(filter)), [filter, onChange]);
+  const isInitial = isFilterBarInitial(filter);
 
   return (
     <div className={styles.bar} role="search" aria-label="매물 필터">
@@ -99,6 +116,23 @@ export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onCha
           })}
         </div>
       </fieldset>
+
+      {/* 레이아웃 맵 map-search filter-bar 끝의 초기화 버튼. 자치구 단계 · 지도 위치는 필터가 아니라 건드리지 않는다 */}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={styles.reset}
+        aria-label="필터 초기화"
+        disabled={isInitial}
+        onClick={handleReset}
+      >
+        <svg className={styles.resetIcon} viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3 8a5 5 0 1 0 1.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <polyline points="3,2 3,5 6,5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+        </svg>
+        초기화
+      </Button>
     </div>
   );
 });
