@@ -51,8 +51,15 @@ spring:
       #   읽기용 풀이 그대로 입는다 — 읽기용 풀은 이 spring.datasource.hikari 를 먼저 입힌다(ReplicaDataSourceConfig).
       #   Flyway 에는 가지 않는다 — Flyway 의 커넥션은 url · 계정만으로 만든다(아래 spring.flyway 주석). url 에 붙이면 따라간다.
       #   서버 전역(-c) · ALTER ROLE 이 아니다 — 같은 계정의 운영자 수작업 · pg_basebackup 에 걸리지 않는다.
+      # socketTimeout(#472) — 초. 응답을 기다리는 소켓 읽기의 상한이다(pgJDBC 기본 0 — 무한). 위와 같은 이유로 이 자리에 둔다
+      # (두 풀이 입고 Flyway 에는 가지 않는다 — 큰 마이그레이션이 끊기지 않는다).
+      #   서버 쪽 statement_timeout(30s)이 먼저 작동해 57014(503)로 끝나야 하므로 그보다 길게 둔다.
+      #   서버가 사라지면(노드 정지 · 망 단절) 서버 쪽 상한은 작동하지 않고, 질의 중인 커넥션은 커널 재전송 상한(tcp_retries2 기본
+      #   924.6초 이상)까지 매달린다. 페일오버와 달리 DB-02 장애에는 슬롯을 재기동하는 단계가 없어 읽기용 풀이 그대로 묶인다.
+      #   값과 근거의 정본은 아키텍처 설계서(성능 및 확장성) 1.4 다.
       data-source-properties:
         options: "-c statement_timeout=30s -c idle_in_transaction_session_timeout=60s"
+        socketTimeout: 60
       # 풀 이름 — Hikari 지표의 pool 태그다. 읽기 분산(app.datasource.replica)을 켜면 읽기용 풀이 replica 로 따로 나온다.
       # 이름을 주지 않으면 HikariPool-1 처럼 생성 순서로 붙는다.
       pool-name: primary
