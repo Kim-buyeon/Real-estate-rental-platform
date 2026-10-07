@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * 마스킹 변환기 — 민감한 값이 로그 한 줄에 남지 않는다.
@@ -98,6 +99,94 @@ class MaskingConverterTest {
         assertThat(converted)
                 .contains("email=***", "annualIncome=***")
                 .doesNotContain("tenant@example.com", "50000000");
+    }
+
+    @ParameterizedTest(name = "[{index}] {0}")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "LoginRequest[email=a@b.com, password=secret1!]   | password=***       | secret1!",
+                "ChangeRequest[newPassword=newSecret2@]           | newPassword=***    | newSecret2@",
+                "User[passwordHash=$2a$10$abcdefghijklmnopqrstuv] | passwordHash=***   | $2a$10$abcdefghijklmnopqrstuv",
+                "row: password_hash=$2a$10$abcdefghijklmnopqrstuv | password_hash=***  | $2a$10$abcdefghijklmnopqrstuv",
+                "UserAuth[providerId=a@b.com]                     | providerId=***     | a@b.com"
+            })
+    @DisplayName("인증 정보 키-값을 가린다 — 비밀번호 · 해시 · 제공자 ID")
+    void masksCredentialKeyValue(String message, String expectedFragment, String secret) {
+        String converted = convertMessage(message);
+
+        assertThat(converted).contains(expectedFragment).doesNotContain(secret);
+    }
+
+    @Test
+    @DisplayName("TokenResponse 의 두 토큰을 가리고 tokenType 은 남긴다")
+    void masksTokenResponseButKeepsTokenType() {
+        String converted =
+                convertMessage(
+                        "TokenResponse[accessToken=eyJhbGciOiJIUzI1NiJ9.payload.sig,"
+                                + " refreshToken=abcDEF123456, tokenType=Bearer]");
+
+        assertThat(converted)
+                .contains("accessToken=***", "refreshToken=***", "tokenType=Bearer")
+                .doesNotContain("eyJhbGciOiJIUzI1NiJ9", "abcDEF123456");
+    }
+
+    @ParameterizedTest(name = "[{index}] {0}")
+    @CsvSource(
+            delimiter = '|',
+            value = {
+                "{\"ticket\":\"Xy_abcDEF-123\"}        | Xy_abcDEF-123",
+                "{\"token\":\"tok.value-123\"}         | tok.value-123",
+                "{\"refreshToken\":\"refreshValue99\"} | refreshValue99",
+                "{\"password\":\"secret1!\"}           | secret1!"
+            })
+    @DisplayName("JSON 형태의 토큰 · 티켓 · 비밀번호를 가린다")
+    void masksJsonCredentials(String message, String secret) {
+        String converted = convertMessage(message);
+
+        assertThat(converted).contains("\"***\"").doesNotContain(secret);
+    }
+
+    @Test
+    @DisplayName("pgjdbc 중복 키 오류의 Detail 값을 가리고 열 이름은 남긴다")
+    void masksPgjdbcDuplicateKeyDetail() {
+        String converted =
+                convertMessage(
+                        "ERROR: duplicate key value violates unique constraint \"uk_user_auth_provider\"\n"
+                                + "  Detail: Key (auth_type, provider_id)=(EMAIL, a@b.com) already exists.");
+
+        assertThat(converted)
+                .contains("Key (auth_type, provider_id)=(***) already exists.")
+                .contains("uk_user_auth_provider", "already exists")
+                .doesNotContain("a@b.com", "(EMAIL");
+    }
+
+    @Test
+    @DisplayName("NOT NULL · CHECK 위반 Detail 의 행 값을 가린다")
+    void masksPgFailingRowDetail() {
+        String converted =
+                convertMessage(
+                        "ERROR: null value in column \"phone_number\" of relation \"users\" violates not-null constraint\n"
+                                + "  Detail: Failing row contains (7, a@b.com, 50000000, null).");
+
+        assertThat(converted)
+                .contains("Failing row contains (***).")
+                .doesNotContain("a@b.com", "50000000");
+    }
+
+    @ParameterizedTest(name = "[{index}] {0}")
+    @ValueSource(
+            strings = {
+                "TokenResponse[tokenType=Bearer]",
+                "TokenResponse[tokenExpiresAt=2026-10-07T00:00]",
+                "TokenResponse[expiresIn=1800]",
+                "User[name=홍길동]",
+                "Summary[ticketCount=3]",
+                "{\"tokenType\":\"Bearer\"}"
+            })
+    @DisplayName("이름이 비슷할 뿐인 키는 가리지 않는다")
+    void leavesLookalikeKeysUntouched(String message) {
+        assertThat(convertMessage(message)).isEqualTo(message);
     }
 
     @Test
