@@ -73,3 +73,18 @@ describe('LoginPage 리다이렉트', () => {
     expect(await screen.findByRole('heading', { name: MAIN_HEADING }, NAVIGATION_TIMEOUT)).toBeInTheDocument();
   });
 });
+
+describe('LoginPage 제목 역할 클래스', () => {
+  it('h1 에 원 역할과 모바일 역할 클래스가 함께 붙는다', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createMemoryRouter(routes, { initialEntries: ['/login'] });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+
+    const h1 = await screen.findByRole('heading', { level: 1 });
+    expect(h1).toHaveClass('type-heading-1', 'type-heading-1-mobile');
+  });
+});

@@ -46,7 +46,7 @@ export default function LoginPage() {
   return (
     <section className={styles.page}>
       <CardForm>
-        <h1 className="type-heading-1">로그인</h1>
+        <h1 className="type-heading-1 type-heading-1-mobile">로그인</h1>
         <hr className={styles.divider} />
         {isSignedUp && (
           <Alert variant="info" className={styles.notice}>

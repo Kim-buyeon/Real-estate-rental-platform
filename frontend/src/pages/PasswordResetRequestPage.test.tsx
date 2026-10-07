@@ -96,3 +96,12 @@ describe('PasswordResetRequestPage', () => {
     expect(await screen.findByText(REQUESTED_NOTICE, { exact: false })).toBeInTheDocument();
   });
 });
+
+describe('PasswordResetRequestPage 제목 역할 클래스', () => {
+  it('h1 에 원 역할과 모바일 역할 클래스가 함께 붙는다', async () => {
+    renderAt('/password-reset');
+
+    const h1 = await screen.findByRole('heading', { level: 1 });
+    expect(h1).toHaveClass('type-heading-1', 'type-heading-1-mobile');
+  });
+});

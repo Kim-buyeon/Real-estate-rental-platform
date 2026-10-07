@@ -19,7 +19,7 @@ export default function SignupPage() {
   return (
     <section className={styles.page}>
       <CardForm>
-        <h1 className="type-heading-1">회원가입</h1>
+        <h1 className="type-heading-1 type-heading-1-mobile">회원가입</h1>
         <hr className={styles.divider} />
         <p className={`${styles.lead} type-body-strong`}>가입에 필요한 정보를 입력해 주세요.</p>
         <div className={styles.formSlot}>

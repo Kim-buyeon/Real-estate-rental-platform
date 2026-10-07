@@ -23,7 +23,7 @@ export function SectionLayout() {
   return (
     <div className={styles.section}>
       <div className={styles.head}>
-        <h1 className={`${styles.title} type-display`}>{title}</h1>
+        <h1 className={`${styles.title} type-display type-display-mobile`}>{title}</h1>
         <TabsSegmented label={title}>
           {tabs.map((tab) => (
             <NavLink key={tab.to} to={tab.to} end className={tabClassName}>

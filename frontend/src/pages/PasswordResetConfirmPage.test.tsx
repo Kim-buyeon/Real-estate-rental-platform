@@ -150,3 +150,12 @@ describe('PasswordResetConfirmPage', () => {
     },
   );
 });
+
+describe('PasswordResetConfirmPage 제목 역할 클래스', () => {
+  it('h1 에 원 역할과 모바일 역할 클래스가 함께 붙는다', async () => {
+    renderAt(CONFIRM_PATH);
+
+    const h1 = await screen.findByRole('heading', { level: 1 });
+    expect(h1).toHaveClass('type-heading-1', 'type-heading-1-mobile');
+  });
+});
