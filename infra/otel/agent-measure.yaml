@@ -462,6 +462,19 @@ instrumentation/development:
             - name: isCurrentToken
             - name: delete
             - name: keyOf
+        - class: com.duri.rentalplatform.external.ExternalFallbackLog
+          methods:
+            - name: warn
+            - name: mask
+            - name: masked
+        - class: com.duri.rentalplatform.external.ExternalFallbackLog$MaskedCause
+          methods:
+            - name: toString
+        - class: com.duri.rentalplatform.external.FaultInjection
+          methods:
+            - name: inject
+            - name: min
+            - name: sleep
         - class: com.duri.rentalplatform.external.address.FaultAddressNormalizeClient
           methods:
             - name: normalize
@@ -510,19 +523,6 @@ instrumentation/development:
             - name: parseBody
             - name: providerLimitOf
             - name: parseXml
-        - class: com.duri.rentalplatform.external.ExternalFallbackLog
-          methods:
-            - name: warn
-            - name: mask
-            - name: masked
-        - class: com.duri.rentalplatform.external.ExternalFallbackLog$MaskedCause
-          methods:
-            - name: toString
-        - class: com.duri.rentalplatform.external.FaultInjection
-          methods:
-            - name: inject
-            - name: min
-            - name: sleep
         - class: com.duri.rentalplatform.external.loanrate.FaultJeonseLoanRateClient
           methods:
             - name: findBankLoanRates

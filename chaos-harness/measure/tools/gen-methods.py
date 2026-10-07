@@ -150,7 +150,10 @@ def types(code):
 
 
 def classes():
-    for path in sorted((SRC / BASE).rglob("*.java")):
+    # 경로 조각(str) 튜플로 정렬한다 — Path 끼리의 비교는 Windows 에서 대소문자를 무시하고 Linux 에서 구분해,
+    # 같은 소스에서 순서가 달라진다(Windows 에서 만든 파일이 ubuntu 러너의 --check 에서 1 이 됐다, #379).
+    # str 비교는 코드 포인트 순이라 두 OS 에서 같고, Linux 의 PosixPath 정렬(조각 단위 · 대소문자 구분)과도 같다
+    for path in sorted((SRC / BASE).rglob("*.java"), key=lambda p: p.relative_to(SRC).parts):
         parts = path.relative_to(SRC / BASE).parts
         in_layer = len(parts) >= 3 and parts[0] == "domain" and parts[2] in LAYERS
         in_external = parts[0] == EXTERNAL
@@ -223,6 +226,8 @@ def explain(text, new):
         "  python chaos-harness/measure/tools/gen-methods.py 를 돌려 바뀐 agent-measure.yaml 을 같은 커밋에 넣는다.",
         f"  클래스 +{count(added, True)} -{count(removed, True)} · 메서드 +{count(added, False)} -{count(removed, False)}",
     ]
+    if not added and not removed:
+        lines.append("  항목은 같고 순서 · 서식만 다르다 — 생성기를 다시 돌려 커밋한다.")
     for sign, pairs in (("+", added), ("-", removed)):
         for cls, name in sorted(pairs, key=lambda p: (p[0], p[1] or "")):
             lines.append(f"  {sign} {cls}" + (f".{name}" if name else ""))
