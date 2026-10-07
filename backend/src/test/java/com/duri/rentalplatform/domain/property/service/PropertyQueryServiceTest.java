@@ -359,6 +359,14 @@ class PropertyQueryServiceTest {
         assertInvalidRequest(request, "minLat");
     }
 
+    @Test
+    @DisplayName("반경 값 일부(lat 만)와 표시 영역이 함께 오면 반경 일부 누락(lat)보다 먼저 INVALID_REQUEST(minLat)다")
+    void rejectsPartialRadiusWithBoxAsMinLat() {
+        PropertySearchRequest request = new PropertySearchRequest(null, null, null, null, null, null,
+                null, null, null, 37.0, 38.0, 126.0, 128.0, 37.5, null, null, null, null, null);
+        assertInvalidRequest(request, "minLat");
+    }
+
     private void assertInvalidRequest(PropertySearchRequest request, String expectedField) {
         assertThatThrownBy(() -> service.search(request))
                 .isInstanceOf(BusinessException.class)
@@ -763,6 +771,45 @@ class PropertyQueryServiceTest {
         assertThat(tail.lastDebtRatio()).isEqualByComparingTo("1000");
         assertThat(tail.lastId()).isEqualTo(Long.MIN_VALUE);
         assertThat(page.items()).extracting(PropertyListResponse::propertyId).containsExactly(1L, 9L);
+    }
+
+    private static PropertySearchRequest ratioBoxRequest(String cursor, int size) {
+        return new PropertySearchRequest(null, null, null, null, null, null, null, null, null,
+                37.5, 37.6, 126.9, 127.1, null, null, null, "debtRatio,asc", cursor, size);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 경로의 앞부분 · 끝부분 조건 모두에 표시 영역 네 값이 실린다")
+    void leaseRatioHeadAndTailCarryBox() {
+        when(propertyMapper.selectListByLeaseRatioIndex(any())).thenReturn(List.of(ratioRow(1L, "10.00")));
+        when(propertyMapper.selectList(any())).thenReturn(List.of(ratioRow(9L, null)));
+
+        service.search(ratioBoxRequest(null, 3));
+
+        ArgumentCaptor<PropertySearchCondition> head = ArgumentCaptor.forClass(PropertySearchCondition.class);
+        verify(propertyMapper).selectListByLeaseRatioIndex(head.capture());
+        PropertySearchCondition tail = capturedSelectList(1).get(0);
+        for (PropertySearchCondition c : List.of(head.getValue(), tail)) {
+            assertThat(c.minLat()).isEqualTo(37.5);
+            assertThat(c.maxLat()).isEqualTo(37.6);
+            assertThat(c.minLng()).isEqualTo(126.9);
+            assertThat(c.maxLng()).isEqualTo(127.1);
+        }
+    }
+
+    @Test
+    @DisplayName("끝부분 커서로 바로 selectList 로 가는 경로에도 표시 영역 네 값이 실린다")
+    void cursorInTailKeepsBox() {
+        when(propertyMapper.selectList(any())).thenReturn(List.of(ratioRow(9L, null)));
+
+        service.search(ratioBoxRequest(CursorCodec.encode("DEBT_RATIO,asc", "1000", 8L), 3));
+
+        verify(propertyMapper, never()).selectListByLeaseRatioIndex(any());
+        PropertySearchCondition c = capturedSelectList(1).get(0);
+        assertThat(c.minLat()).isEqualTo(37.5);
+        assertThat(c.maxLat()).isEqualTo(37.6);
+        assertThat(c.minLng()).isEqualTo(126.9);
+        assertThat(c.maxLng()).isEqualTo(127.1);
     }
 
     @Test
