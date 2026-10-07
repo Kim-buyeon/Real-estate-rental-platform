@@ -2,6 +2,8 @@ package com.duri.rentalplatform.domain.property.repository;
 
 import com.duri.rentalplatform.domain.property.entity.Property;
 import com.duri.rentalplatform.domain.property.enums.RiskGrade;
+import com.duri.rentalplatform.domain.property.vo.LoadedPriceRow;
+import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -18,12 +20,33 @@ import org.springframework.data.repository.query.Param;
 public interface PropertyRepository extends JpaRepository<Property, Long> {
 
     /**
-     * 자치구 하나의 적재분을 전부 읽는다. 자연키 집합을 만들어 중복 적재를 거르는 용도다.
+     * 자치구 하나의 적재분 자연키를 전부 읽는다. 중복 적재를 거르는 비교 대상이다.
      *
      * <p>건마다 존재 여부를 묻지 않는 이유는 호출 횟수다. 한 자치구 수천 건에 대해 건별 조회를 하면
      * 왕복이 그만큼 늘어난다. 적재는 자치구 단위로 도므로 한 번 읽어 메모리에서 비교한다.
+     *
+     * <p><b>엔티티가 아니라 생성자 투영인 이유(#383)</b> — 자치구 전체를 엔티티로 읽으면 행마다 매핑된 모든 열의 값 객체와
+     * 영속성 컨텍스트 항목(엔티티 키 · 엔트리)이 트랜잭션 끝까지 힙에 남는다. 자연키 다섯 열만 읽고 영속성 컨텍스트에 올리지
+     * 않는다. 면적 정규화는 자연키 생성자가 하므로 {@code Property#naturalKey} 와 같은 값이 나온다. 정렬은 걸지 않는다(엔티티
+     * 조회 때와 같다).
      */
-    List<Property> findAllByDistrict(String district);
+    @Query("SELECT new com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey("
+            + "p.address, p.areaSqm, p.floor, p.deposit, p.monthlyRent)"
+            + " FROM Property p WHERE p.district = :district")
+    List<PropertyNaturalKey> findNaturalKeysByDistrict(@Param("district") String district);
+
+    /**
+     * 자치구 하나의 적재분 자연키와 저장된 시세를 전부 읽는다. 갱신 적재(RISK-08)가 새 시세와 견주는 비교 대상이다.
+     *
+     * <p>투영인 이유는 {@link #findNaturalKeysByDistrict} 와 같다. 대장 키 없음은 {@code Property#ledgerKey} 가 null 을
+     * 돌려주는 조건(시군구 코드 없음)과 같게 판정한다. 정렬은 걸지 않는다(엔티티 조회 때와 같다).
+     */
+    @Query("SELECT new com.duri.rentalplatform.domain.property.vo.LoadedPriceRow("
+            + "p.address, p.areaSqm, p.floor, p.deposit, p.monthlyRent,"
+            + " p.propertyId, p.marketPrice, p.priceType, p.priceDate,"
+            + " CASE WHEN p.sigunguCode IS NULL THEN true ELSE false END)"
+            + " FROM Property p WHERE p.district = :district")
+    List<LoadedPriceRow> findLoadedPricesByDistrict(@Param("district") String district);
 
     /**
      * 매물 유형 코드를 함께 읽는다. 호출부가 트랜잭션 밖(대출 한도 조회)이라 지연 로딩이 닿지 않는다 — 조인으로 한 번에 가져온다.

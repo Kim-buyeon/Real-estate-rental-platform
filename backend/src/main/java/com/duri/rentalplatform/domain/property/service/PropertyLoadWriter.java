@@ -7,12 +7,14 @@ import com.duri.rentalplatform.domain.property.enums.PropertyStatus;
 import com.duri.rentalplatform.domain.property.repository.PropertyCodeRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
 import com.duri.rentalplatform.domain.property.vo.LedgerKeyFill;
+import com.duri.rentalplatform.domain.property.vo.LoadedPriceRow;
 import com.duri.rentalplatform.domain.property.vo.MarketPriceUpdate;
 import com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey;
 import com.duri.rentalplatform.domain.property.vo.PropertyPriceSnapshot;
 import com.duri.rentalplatform.domain.property.vo.PropertyRegistration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -42,28 +44,26 @@ public class PropertyLoadWriter {
     private final Map<CodeKey, Long> codeIdCache = new HashMap<>();
 
     /**
-     * 이미 적재된 매물의 자연키를 모은다. 중복 적재 차단의 비교 대상이다.
+     * 이미 적재된 매물의 자연키를 모은다. 중복 적재 차단의 비교 대상이다. 엔티티가 아니라 자연키 투영만 읽는다(#383).
      */
     @Transactional(readOnly = true)
     public Set<PropertyNaturalKey> findLoadedNaturalKeys(String district) {
-        return propertyRepository.findAllByDistrict(district).stream()
-                .map(Property::naturalKey)
-                .collect(Collectors.toSet());
+        return new HashSet<>(propertyRepository.findNaturalKeysByDistrict(district));
     }
 
     /**
-     * 이미 적재된 매물의 저장된 시세를 자연키로 모은다. 갱신 적재(RISK-08)가 새 시세와 견주는 비교 대상이다.
+     * 이미 적재된 매물의 저장된 시세를 자연키로 모은다. 갱신 적재(RISK-08)가 새 시세와 견주는 비교 대상이다. 엔티티가 아니라
+     * 자연키 · 시세 투영만 읽는다(#383).
      *
      * <p>자연키가 같은 매물이 둘 이상이면 먼저 읽힌 쪽만 남긴다. 자연키 중복은 적재가 막으므로(자연키 주석) 정상 경로에서는
      * 생기지 않는다.
      */
     @Transactional(readOnly = true)
     public Map<PropertyNaturalKey, PropertyPriceSnapshot> findLoadedPrices(String district) {
-        return propertyRepository.findAllByDistrict(district).stream()
+        return propertyRepository.findLoadedPricesByDistrict(district).stream()
                 .collect(Collectors.toMap(
-                        Property::naturalKey,
-                        property -> new PropertyPriceSnapshot(property.getPropertyId(), property.getMarketPrice(),
-                                property.getPriceType(), property.getPriceDate(), property.ledgerKey() == null),
+                        LoadedPriceRow::naturalKey,
+                        LoadedPriceRow::snapshot,
                         (first, second) -> first));
     }
 
