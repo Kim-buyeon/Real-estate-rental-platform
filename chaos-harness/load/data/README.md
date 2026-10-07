@@ -186,4 +186,4 @@ SELECT relname, seq_scan + coalesce(idx_scan, 0) AS scans, n_tup_upd, n_tup_ins
 
 ## 시험 동안 끄는 배치
 
-`.env.example` 의 `PROPERTY_BATCH_REFRESH_ENABLED` · `RISK_BATCH_REGISTRYREFRESH_ENABLED` · `RISK_BATCH_MOCKLEDGERREPLACE_ENABLED` · `BATCH_STARTUPCATCHUP_ENABLED`. 매물 갱신 배치는 적재기 메모리 수정(#376 계획 12번) 뒤에만 다시 켠다 — 자치구 엔티티 전체를 읽어 500만에서 힙이 넘친다. 등기 재조회는 복사한 등기가 Mock 값과 달라 켜면 관심 매물이 전부 「변동」이 된다(T7 때 별도 이슈).
+`.env.example` 의 `PROPERTY_BATCH_REFRESH_ENABLED` · `RISK_BATCH_REGISTRYREFRESH_ENABLED` · `RISK_BATCH_MOCKLEDGERREPLACE_ENABLED` · `BATCH_STARTUPCATCHUP_ENABLED`. 매물 갱신 배치의 적재기는 자치구 매물 엔티티 전체가 아니라 비교에 필요한 열만 읽도록 바꿨다(#383) — 행당 크기를 필드 수로 어림했을 뿐 힙에 들어가는지는 재지 않았다. 다시 켜는 것은 운영 작업으로 따로 하고, 그때 슬롯 힙과 자치구별 최대 건수를 실측한다. 등기 재조회는 복사한 등기가 Mock 값과 달라 켜면 관심 매물이 전부 「변동」이 된다(T7 때 별도 이슈).
