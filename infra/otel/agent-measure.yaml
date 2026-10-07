@@ -146,7 +146,6 @@ instrumentation/development:
         - class: com.duri.rentalplatform.domain.loan.service.LoanCommandService
           methods:
             - name: calculateLimit
-            - name: representativeProduct
             - name: orZero
         - class: com.duri.rentalplatform.domain.loan.service.LoanProductRefreshService
           methods:
@@ -275,13 +274,13 @@ instrumentation/development:
             - name: findLoadedPrices
             - name: saveAll
             - name: updateMarketPrices
-            - name: completeReanalysis
             - name: fillLedgerKeys
         - class: com.duri.rentalplatform.domain.property.service.PropertyQueryService
           methods:
             - name: getDistrictCounts
             - name: search
             - name: getMapClusters
+            - name: loadMapClusters
             - name: validBox
             - name: getDetail
             - name: searchMarkersInRadius
@@ -299,12 +298,32 @@ instrumentation/development:
             - name: findByUser
         - class: com.duri.rentalplatform.domain.property.store.DistrictCountCacheStore
           methods:
+            - name: ttl
+            - name: find
+            - name: save
+            - name: readGeneration
+            - name: incrementGeneration
+            - name: key
+            - name: filterKey
+            - name: grades
+            - name: str
+        - class: com.duri.rentalplatform.domain.property.store.MapClusterCacheStore
+          methods:
+            - name: ttl
             - name: find
             - name: save
             - name: key
-            - name: grades
-            - name: blankToEmpty
-            - name: str
+            - name: encode
+            - name: decode
+        - class: com.duri.rentalplatform.domain.risk.calculator.CriteriaFingerprintCalculator
+          methods:
+            - name: calculate
+            - name: canonical
+            - name: guarantee
+            - name: band
+            - name: decimal
+            - name: text
+            - name: sha256Hex
         - class: com.duri.rentalplatform.domain.risk.calculator.DocumentConsistencyChecker
           methods:
             - name: check
@@ -373,13 +392,18 @@ instrumentation/development:
             - name: analysisBehindRegistry
         - class: com.duri.rentalplatform.domain.risk.service.RiskAnalysisCommandService
           methods:
+            - name: findLatestOrAnalyze
             - name: analyze
             - name: analyzeWithCollectedLedger
+            - name: findStoredJudgement
+            - name: matchesCurrentCriteria
+            - name: readJudgement
             - name: judge
             - name: judgeAndRecord
             - name: record
+            - name: applyLatestJudgement
+            - name: writeJudgement
             - name: houseType
-            - name: snapshots
             - name: eligible
             - name: firstEligibleGuaranteeId
         - class: com.duri.rentalplatform.domain.risk.service.RiskReanalysisCommandService
@@ -429,6 +453,7 @@ instrumentation/development:
           methods:
             - name: claimSendSlot
             - name: issue
+            - name: find
             - name: consume
             - name: hash
         - class: com.duri.rentalplatform.domain.user.store.RefreshTokenStore
