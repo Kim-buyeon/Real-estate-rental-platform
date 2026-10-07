@@ -12,6 +12,7 @@ import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from . import alerts
 from .util import RESULTS_DIR
 
 KST = timezone(timedelta(hours=9))
@@ -748,8 +749,10 @@ def make_step_round(name, start):
                                              "query_files": ["login.yaml", "endpoints.yaml"]}), encoding="utf-8")
 
     # 알림 상태 이력(alerts.sh 봉투) — 수집 끊김이 회차 시작 150초에 Pending · 200초에 Alerting, 끝난 뒤 10초에 Normal
-    rules_def = json.loads((Path(__file__).resolve().parents[3] / "infra" / "grafana" / "alerting" / "rules-rental-backup.json").read_text(encoding="utf-8"))
-    uid = next(r["uid"] for r in rules_def["rules"] if r["title"] == "수집 끊김")
+    # 올라간 규칙 = 저장소 규칙 파일 전부(alerts.py 와 같은 glob) — 파일이 늘면 같이 는다
+    rules_all = [r for p in sorted(Path(__file__).resolve().parents[3].glob(alerts.RULES_GLOB))
+                 for r in json.loads(p.read_text(encoding="utf-8"))["rules"]]
+    uid = next(r["uid"] for r in rules_all if r["title"] == "수집 끊김")
     j0 = (t0 + 0.05) * 1000          # JMeter 첫 표본 = 통계 구간 시작
     tr = [(j0 + 150_000, "Normal", "Pending"), (j0 + 200_000, "Pending", "Alerting"), ((t0 + total + 10) * 1000, "Alerting", "Normal (MissingSeries)")]
     hist = {"schema": {"fields": [{"name": "time", "type": "time"}, {"name": "line", "type": "other"}, {"name": "labels", "type": "other"}]},
@@ -757,7 +760,7 @@ def make_step_round(name, start):
                                 [{"schemaVersion": 1, "previous": p, "current": c, "ruleTitle": "수집 끊김", "ruleUID": uid,
                                   "labels": {"node": "app-02", "job": "node"}} for _, p, c in tr],
                                 [{"folderUID": "fq8pjr", "group": "rental-backup", "orgID": "1"} for _ in tr]]}}
-    rules_live = [{"uid": r["uid"], "title": r["title"], "ruleGroup": r["ruleGroup"]} for r in rules_def["rules"]]
+    rules_live = [{"uid": r["uid"], "title": r["title"], "ruleGroup": r["ruleGroup"]} for r in rules_all]
     (d / "alerts.json").write_text(json.dumps({"captured_utc": iso(t0 + total + 700), "from_ms": int((t0 - 5) * 1000),
                                                "to_ms": int((t0 + total + 605) * 1000), "history": hist, "history_error": None,
                                                "annotations": None, "annotations_error": "HTTP 403", "rules": rules_live,
