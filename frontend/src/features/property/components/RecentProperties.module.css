@@ -1,7 +1,7 @@
 /*
- * 최근 등록 매물 그리드. 배치의 정본은 레이아웃 맵 home 「구역 4 — 추천 매물 4열 그리드」다 —
- * 4열 · 가로 갭 20 {spacing.lg} · 세로 갭 ≈30(→ 격자의 {spacing.2xl} 32) · 줄 피치 28 ·
- * 줄 역할 넷(가격 {typography.heading-3} · 유형 · 주소 · 스펙).
+ * 최근 등록 매물 그리드. 배치의 정본은 레이아웃 맵 home 「1007 계측 · 구역 4」다 —
+ * 4열 · 가로 갭 20 {spacing.lg} · 행 갭 24 {spacing.xl} · 줄 역할 넷(가격 {typography.heading-3} · 유형 · 주소 · 스펙).
+ * 그리드를 감싸는 추천 래퍼({colors.surface-recessed} 면)는 쓰는 화면(MainPage)이 갖는다.
  * 붕괴는 그 문서의 「제안(미관측)」 — 태블릿 2열 · 모바일 1열.
  *
  * 컬럼 폭은 px 로 적지 않는다. 정의서 4절 Grid & Container 가 「repeat(4, 1fr) + gap {spacing.lg}」로
@@ -66,7 +66,7 @@
 @media (min-width: 768px) {
   .grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--spacing-2xl) var(--spacing-lg);
+    gap: var(--spacing-xl) var(--spacing-lg);
   }
 }
 

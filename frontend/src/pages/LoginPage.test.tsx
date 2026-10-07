@@ -16,7 +16,8 @@ import { notificationHandlers } from '../test/msw/handlers/notification';
 import { propertyHandlers } from '../test/msw/handlers/property';
 import { server } from '../test/msw/server';
 
-const MAIN_HEADING = '전세사기 위험도를 지도에서 확인합니다';
+// h1 은 줄바꿈(<br />)으로 두 줄이라 접근 이름에 공백이 들어가지 않는다 — 공백 유무와 무관하게 맞춘다
+const MAIN_HEADING = /전세사기 위험도,\s*계약 전에 확인하세요/;
 
 /**
  * 로그인 상태로 만든 뒤 그 경로에 렌더한다 — LoginPage 마운트 시점에 이미 isAuthenticated가 참이다.

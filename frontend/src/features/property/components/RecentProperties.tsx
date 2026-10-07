@@ -13,14 +13,20 @@ import styles from './RecentProperties.module.css';
 /** 한 줄에 놓이는 수와 같다 — 레이아웃 맵 home 「구역 4 — 추천 매물 4열 그리드」 */
 const RECENT_COUNT = 4;
 
-/**
- * 조건 없는 조회다. 모듈 상수로 두어 쿼리 키가 렌더마다 바뀌지 않게 한다 —
- * 지도 화면의 필터와는 별개이며, 메인은 필터를 갖지 않는다.
- */
+/** 조건 없는 조회 — filter 를 주지 않았을 때. 모듈 상수로 두어 쿼리 키가 렌더마다 바뀌지 않게 한다 */
 const NO_FILTER: PropertyFilter = {};
 
+interface RecentPropertiesProps {
+  /**
+   * 목록 조회의 공통 필터(명세 1.1). 메인의 칩 줄이 고른 조건이다 — 지도 화면의 필터와는 별개다.
+   * **쓰는 쪽이 같은 조건에 같은 객체를 넘긴다**(모듈 상수). 객체가 렌더마다 새로 만들어져도 쿼리 키는 값으로
+   * 비교되어 요청이 늘지는 않지만, 조건이 바뀐 것과 아닌 것이 코드에서 갈려 보이게 한다.
+   */
+  filter?: PropertyFilter;
+}
+
 /**
- * 최근 등록 매물 (PROP-01). 데이터를 부르는 컴포넌트다.
+ * 최근 등록 매물 (PROP-01). 데이터를 부르는 컴포넌트다. 조건은 filter prop 하나로 받는다.
  *
  * 목록 조회의 기본 정렬이 등록일 최신순이라(명세 1.3 · domain/property.ts
  * PROPERTY_SORT_DEFAULT_LABEL) 정렬 값을 보내지 않고 첫 쪽의 앞 네 건만 보여준다 —
@@ -32,10 +38,10 @@ const NO_FILTER: PropertyFilter = {};
  *
  * 등급 · 전세가율은 서버 값을 표시만 한다. 미분석(null) 문구는 domain/risk.ts가 갖는다.
  */
-export function RecentProperties() {
-  const listQuery = useInfiniteQuery(propertyQueries.list(NO_FILTER));
+export function RecentProperties({ filter = NO_FILTER }: RecentPropertiesProps) {
+  const listQuery = useInfiniteQuery(propertyQueries.list(filter));
 
-  // 첫 쪽에서 앞 네 건만 쓴다 — 여기서는 다음 쪽을 잇지 않는다(「전체 보기」가 지도로 보낸다)
+  // 첫 쪽에서 앞 네 건만 쓴다 — 다음 쪽을 잇지 않는다. 더 찾는 길은 상단 내비게이션의 지도다(이슈 487)
   const items = useMemo(
     () => (listQuery.data?.pages[0]?.items ?? []).slice(0, RECENT_COUNT),
     [listQuery.data],

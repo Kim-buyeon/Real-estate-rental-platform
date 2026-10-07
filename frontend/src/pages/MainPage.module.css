@@ -1,38 +1,53 @@
 /*
- * 메인 화면. 섹션 순서 · 그리드 · 여백 리듬의 정본은 레이아웃 맵 design/examples/home/layout.md 다.
- * 아래 주석의 「구역 n」은 그 문서의 번호이고, 붕괴 값은 그 문서의 「제안(미관측)」이다 — 계측값이 아니다.
+ * 메인 화면. 구역 순서 · 크기 · 여백 리듬의 정본은 레이아웃 맵 design/examples/home/layout.md 의 「1007 계측」이다
+ * (2026-10-07 결정 — 기준 컨테이너 1180, 우리 컨테이너 1200 은 그대로). 아래 「구역 n」은 그 문서의 번호다.
  *
- *   구역 2 hero          위 68 / 아래 28 → 데스크톱 제안 위 {spacing.4xl} 64 · 아래 {spacing.xl} 24,
- *                        모바일 제안 위 {spacing.2xl} 32 · 아래 24. 요소 폭은 컨테이너의 58%
- *   섹션 리듬            앞 구역 ↔ 다음 제목 {spacing.4xl} 64(모바일 · 태블릿 제안 {spacing.3xl} 48),
- *                        제목 ↔ 내용 {spacing.3xl} 48(태블릿 {spacing.2xl} 32 · 모바일 {spacing.xl} 24)
- *   구역 4 그리드 래퍼   면 {colors.surface-muted} · {rounded.lg} · 패딩 {spacing.xl} 24
+ *   구역 2 hero        회색 면 {colors.surface-muted}(2 · 3 이 한 면) · top-nav ↔ 검색 바 58 · 검색 바 680 × 48 = 컨테이너의 58% ·
+ *                      {rounded.pill} · {colors.surface} · 좌 패딩 ≈ 24 · 아이콘 20 · 아이콘 ↔ 글자 16 {spacing.md}(M-08 유지) ·
+ *                      검색 바 ↔ 카드 22 → {spacing.xl}
+ *   구역 3 카테고리    좌 681 + 갭 16 + 우 482 — 비율을 그리드 트랙(681fr 482fr)으로 옮긴다. 좌는 6열 서브그리드 ·
+ *                      1행 2장(각 3열) · 2행 3장(각 2열) · 가로 갭 {spacing.md} · 세로 갭 18 → {spacing.md} ·
+ *                      카드 높이 1행 175 · 2행 170. 우 레일은 큰 배너 + 갭 16 + {components.promo-panel}(99).
+ *                      카드 하단 ↔ 회색 면 끝 {spacing.section-tight} 56
+ *   구역 4 recommend   회색 면 끝 ↔ 제목 {spacing.4xl} 64 · 제목 ↔ 칩 줄 ≈ 30(글자 하단 기준 — section-title 행간 여유 ≈ 8 을
+ *                      빼면 22 → {spacing.lg}) · 칩 줄 ↔ 래퍼 {spacing.xl}(Tabs pill 이 갖는다) · 래퍼 {colors.surface-recessed} +
+ *                      1px {colors.border} · {rounded.md} · 패딩 좌우 {spacing.lg} · 위아래 {spacing.xl}(M-05) ·
+ *                      래퍼 하단 ↔ 어두운 띠 {spacing.section-tight} 56
+ *   구역 5 띠          {colors.block-feature} 화면 전폭 · 띠 안 위 87 → {spacing.5xl} · 제목 ↔ 카드 {spacing.3xl} ·
+ *                      카드 하단 ↔ 띠 하단은 맵이 화면 작업에 넘겼다 — 위와 같은 {spacing.5xl}
+ *   구역 6 콘텐츠      띠 ↔ 제목 {spacing.4xl} 64 · 제목 ↔ 카드 44 → {spacing.3xl} 48(M-10 경계 · 기존 값) · 5열 · 갭 {spacing.2xs}
+ *   구역 7 · 8         푸터가 갖는다(앞 섹션 ↔ 사이트맵 64 포함 — AppFooter.module.css). 여기서 다시 주지 않는다
  *
- * 위 두 값이 만나는 자리는 히어로 ↔ 첫 섹션 제목 하나다. 여기는 섹션 리듬이 지배한다 —
- * 맵이 구역 2 총 높이를 68 + 48 + 28 로 셈하므로 「히어로 아래 24」는 띠 안쪽 값이고 이음매가 아니다.
- * 이음매는 「앞 구역 하단 ↔ 다음 섹션 제목 상단 {spacing.4xl} 64」 행이며, 우리 구역 3 은 참고 사이트와
- * 달리 섹션 제목으로 시작하므로 그 행이 그대로 맞는다. 띠 안쪽 24 는 .hero 가, 이음매 64(모바일 ·
- * 태블릿 제안 48)는 .sections 가 갖는다 — 두 값을 더해 48 로 만들지 않는다 (이슈 117 검토).
+ * 맵에서 따르지 않은 것 —
+ *   - 큰 배너(482 × 249)는 관측이 사진 · 광고다. 사진을 쓰지 않으므로 서비스 소개 글자를 둔다. 면은 {colors.surface} 다 —
+ *     {colors.primary} 큰 면은 정의서 8절 Don't 의 예외가 {components.promo-panel} 한 곳뿐이라(K-34) 배너에 쓸 수 없다
+ *   - 추천 래퍼 안 제목 1줄 · 선택 칩 아래 삼각 꼭지(1회 관측 장식) · 띠의 「더 보기」 링크 · 페이지 표시(미채택)는 두지 않는다
+ *   - 카테고리 카드 설명 줄 피치 24 는 body-sm 행간(≈ 20)으로 둔다 — 행간은 역할 클래스만 정한다
  *
- * 구역 3 은 맵의 {colors.surface-muted} 를 따르지 않고 페이지 배경 위에 둔다. 사유는 구조 하나다 —
- *   구역 3 · 4 가 같은 컨테이너 안에 있어 여기 주는 면은 컨테이너 폭에서 끊긴다. 히어로의 면은
- *   화면 전폭이라 좌우 끝이 어긋나 참고 사이트에 없는 단이 생긴다. 맵대로 한 덩어리로 이으려면
- *   구역 3 을 컨테이너 밖 전폭 섹션으로 빼야 하고, 그것은 MainPage.tsx 의 구조 변경이다.
- *   그때는 히어로와 한 면이 되어 띠 경계가 사라지므로 위 이음매 64 도 함께 되돌려야 한다
+ * 붕괴(~1023)는 맵의 「제안(미관측)」을 따른다 — 2단 → 1단, 카드 · 그리드 열 수를 줄이고 고정 높이를 푼다.
  *
- * 컨테이너 최대 폭은 정의서 9절이 정한 값이고 global.css 의 --container-max 하나를 참조한다.
- * 좌우 패딩은 헤더 · 푸터와 같은 모바일 16 · 태블릿 이상 24 다 — 세 줄의 끝이 맞아야 한다.
- * 앞 섹션 ↔ 푸터 64 는 푸터가 갖는다 (AppFooter.module.css). 여기서 다시 주지 않는다.
- *
- * px 리터럴은 미디어 쿼리 조건 둘뿐이고 정본은 global.css 머리말이다.
+ * px 리터럴 — 미디어 쿼리 조건 둘(정본은 global.css 머리말), 1px 보더, 그리고 .page 의 지역 변수에 모은
+ * 레이아웃 맵 계측값(top-nav ↔ 검색 바 58 · 검색 바 높이 48)과 정의서가 지정한 치수(카드 행 높이 175 / 170 · 검색 아이콘 20).
+ * 컨테이너 최대 폭 · 터치 타겟 하한은 global.css 의 --container-max · --touch-target-min 을 쓴다.
  */
 
 .page {
+  /* 레이아웃 맵 1007 구역 2 — top-nav 하단 ↔ 검색 바 상단 */
+  --main-search-top: 58px;
+  /* 레이아웃 맵 1007 구역 2 — 검색 바 높이 */
+  --main-search-height: 48px;
+  /* 정의서 6절 Icon — hero 검색 바 아이콘 20 */
+  --main-search-icon: 20px;
+  /* 정의서 7절 {components.card-category} — 높이 1행 175 · 2행 170 */
+  --main-category-row-1: 175px;
+  --main-category-row-2: 170px;
+
   display: flex;
   flex: 1;
   flex-direction: column;
 }
 
+/* 헤더 · 푸터와 같은 컨테이너 — 모바일 좌우 16 · 태블릿 이상 24. 세 줄의 끝이 맞아야 한다 */
 .container {
   width: 100%;
   max-width: var(--container-max);
@@ -40,107 +55,224 @@
   padding-inline: var(--spacing-md);
 }
 
-/* 구역 2 — hero. 배경은 화면 전폭, 내용은 컨테이너다 */
-.hero {
-  padding-block: var(--spacing-2xl) var(--spacing-xl);
+.sectionTitle {
+  margin: 0 0 var(--spacing-lg);
+  color: var(--color-text);
+}
+
+/* ── 구역 2 · 3 — 한 회색 면 ── */
+
+.top {
+  padding-block: var(--spacing-2xl) var(--spacing-section-tight);
   background: var(--color-surface-muted);
 }
 
-.heroInner {
+/* 검색 바 — 배치라 정의서 컴포넌트가 아니다(정의서 7절 「추천 래퍼 · 띠 · hero 검색 바는 배치」) */
+.search {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
+  height: var(--main-search-height);
+  margin: 0 auto var(--spacing-xl);
+  /* 왼쪽 — 아이콘 버튼(44)의 안쪽 여백 12 와 합쳐 아이콘이 좌 끝에서 24 에 선다 */
+  padding-inline: var(--spacing-sm) var(--spacing-xl);
+  border-radius: var(--rounded-pill);
+  background: var(--color-surface);
 }
 
-.heroTitle {
-  margin: 0;
-  color: var(--color-text);
-}
-
-.heroLead {
-  margin: var(--spacing-md) 0 var(--spacing-xl);
-  color: var(--color-text-secondary);
-}
-
-/*
- * 섹션 사이 리듬 — 맵 「섹션 사이 리듬」 표. 히어로 띠 안쪽 여백은 히어로가 갖고,
- * 띠 하단 ↔ 첫 섹션 제목 이음매는 여기 위 패딩이다. 섹션 사이 간격과 같은 값을 쓴다
- */
-.sections {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-3xl);
-  padding-block: var(--spacing-3xl) 0;
-}
-
-.section {
-  display: flex;
-  flex-direction: column;
-}
-
-/* 섹션 제목 줄. 「전체 보기」는 오른쪽 끝이고 제목과 같은 줄에 선다 */
-.sectionHead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--spacing-xs);
-  margin-bottom: var(--spacing-xl);
-}
-
-.sectionTitle {
-  margin: 0;
-  color: var(--color-text);
-}
-
-.moreLink {
-  color: var(--color-primary);
-}
-
-.moreLink:focus-visible {
+/* 입력의 포커스 링을 바 전체에 건다 — 정의서 7절 -focus 와 같은 두께 · 오프셋 */
+.search:focus-within {
   outline: var(--spacing-3xs) solid var(--color-focus);
   outline-offset: var(--spacing-3xs);
 }
 
-/* 구역 4 — 그리드 래퍼. 썸네일이 없는 카드 묶음을 한 면으로 묶는다 */
-.gridWrapper {
-  padding: var(--spacing-md);
-  border-radius: var(--rounded-lg);
-  background: var(--color-surface-muted);
+.searchButton {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--rounded-pill);
+  background: none;
+  color: var(--color-text-tertiary);
 }
+
+.searchButton > svg {
+  width: var(--main-search-icon);
+  height: var(--main-search-icon);
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  /* 아이콘 버튼 오른쪽 여백 12 + 4 = 아이콘 ↔ 글자 16 {spacing.md}(M-08) */
+  padding: 0 0 0 var(--spacing-2xs);
+  border: 0;
+  background: none;
+  color: var(--color-text);
+}
+
+.searchInput:focus {
+  outline: none;
+}
+
+/* 흰 면({colors.surface}) 위라 {colors.text-tertiary} 가 4.54 로 통과한다 — {components.input-placeholder} 와 같다 */
+.searchInput::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* 좌 카드 · 우 레일. 모바일 · 태블릿은 한 단으로 쌓는다(배너 → 카드 → 상담 상자) */
+.categoryArea {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-md);
+}
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xl);
+  border-radius: var(--rounded-lg);
+  background: var(--color-surface);
+}
+
+.bannerEyebrow {
+  margin: 0;
+  color: var(--color-primary);
+}
+
+.bannerTitle {
+  margin: 0;
+  color: var(--color-text);
+}
+
+.bannerLead {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.categories {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-md);
+}
+
+/* ── 구역 4 — recommend ── */
+
+.recommend {
+  padding-top: var(--spacing-4xl);
+}
+
+/* 추천 래퍼. 면은 배치라 레이아웃 맵이 정본이다(M-05). 이 면 위 글자는 {colors.text-secondary} 이상 — 카드가 흰 면을 낸다 */
+.recommendWrapper {
+  padding: var(--spacing-xl) var(--spacing-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-md);
+  background: var(--color-surface-recessed);
+}
+
+/* ── 구역 5 — 어두운 띠. 띠 위 글자는 {colors.on-block-feature} 뿐이다(정의서 8절 Don't) ── */
+
+.band {
+  margin-top: var(--spacing-section-tight);
+  padding-block: var(--spacing-3xl);
+  background: var(--color-block-feature);
+}
+
+.bandTitle {
+  margin: 0 0 var(--spacing-3xl);
+  color: var(--color-on-block-feature);
+}
+
+/* ── 구역 6 — 콘텐츠 카드 ── */
+
+.guides {
+  padding-top: var(--spacing-4xl);
+}
+
+.guides .sectionTitle {
+  margin-bottom: var(--spacing-3xl);
+}
+
+.guideGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-2xs);
+}
+
+/* ── 태블릿 768~1023 ── */
 
 @media (min-width: 768px) {
   .container {
     padding-inline: var(--spacing-xl);
   }
 
-  .hero {
-    padding-block: var(--spacing-4xl) var(--spacing-xl);
+  .top {
+    padding-top: var(--main-search-top);
   }
 
-  .sectionHead {
-    margin-bottom: var(--spacing-2xl);
+  /* 6열 서브그리드 — 1행 2장은 각 3열, 2행 3장은 각 2열 */
+  .categories {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
-  .gridWrapper {
-    padding: var(--spacing-xl);
+  .categoryWide {
+    grid-column: span 3;
+  }
+
+  .categoryNarrow {
+    grid-column: span 2;
+  }
+
+  /* 맵 제안(미관측) 없음 — 5장을 한 줄에 두기에는 좁아 3열(3 + 2) */
+  .guideGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
+/* ── 데스크톱 1024~ ── */
+
 @media (min-width: 1024px) {
-  .sections {
-    gap: var(--spacing-4xl);
-    padding-block: var(--spacing-4xl) 0;
-  }
-
-  .sectionHead {
-    margin-bottom: var(--spacing-3xl);
-  }
-
-  /* 맵 구역 2 — 요소 폭은 컨테이너의 58% 다. 글줄이 화면 폭만큼 길어지지 않는다 */
-  .heroTitle,
-  .heroLead {
+  /* 검색 바 폭은 컨테이너의 58% 다 */
+  .search {
     max-width: 58%;
+  }
+
+  /*
+   * 좌 681 : 우 482. 우 레일은 위 배너가 남는 높이를 갖고 아래 상담 상자는 제 높이(99)다 — 두 단의 높이가 같다(맵 364).
+   * 카드 그리드가 두 행을 가로질러 왼쪽 단 전체를 차지한다
+   */
+  .categoryArea {
+    grid-template-columns: minmax(0, 681fr) minmax(0, 482fr);
+    grid-template-rows: 1fr auto;
+  }
+
+  .categories {
+    grid-row: 1 / 3;
+    grid-column: 1;
+    grid-template-rows: minmax(var(--main-category-row-1), auto) minmax(var(--main-category-row-2), auto);
+  }
+
+  .banner {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .promo {
+    grid-row: 2;
+    grid-column: 2;
+  }
+
+  .band {
+    padding-block: var(--spacing-5xl);
+  }
+
+  .guideGrid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
