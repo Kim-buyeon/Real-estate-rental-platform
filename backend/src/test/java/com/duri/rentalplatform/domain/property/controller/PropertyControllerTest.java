@@ -137,7 +137,7 @@ class PropertyControllerTest {
     // ---------- 지도 마커 (명세 1.3) ----------
 
     @Test
-    @DisplayName("표시 영역 좌표가 오면 서비스가 던진 INVALID_REQUEST를 400으로 전달한다")
+    @DisplayName("표시 영역 검증 위반으로 서비스가 던진 INVALID_REQUEST(minLat)를 400으로 전달한다")
     void boxParamsReturn400() throws Exception {
         when(queryService.search(any(PropertySearchRequest.class)))
                 .thenThrow(new BusinessException(ErrorCode.INVALID_REQUEST, "minLat"));
@@ -149,6 +149,14 @@ class PropertyControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"))
                 .andExpect(jsonPath("$.error.field").value("minLat"));
+
+        // 컨트롤러가 거르지 않고 표시 영역 네 값을 서비스 요청에 그대로 묶어 넘긴다.
+        ArgumentCaptor<PropertySearchRequest> captor = ArgumentCaptor.forClass(PropertySearchRequest.class);
+        verify(queryService).search(captor.capture());
+        assertThat(captor.getValue().minLat()).isEqualTo(37.53);
+        assertThat(captor.getValue().maxLat()).isEqualTo(37.58);
+        assertThat(captor.getValue().minLng()).isEqualTo(126.80);
+        assertThat(captor.getValue().maxLng()).isEqualTo(126.88);
     }
 
     @Test

@@ -324,6 +324,151 @@ class PropertyMapperTest {
         assertThat(rows.get(0)).isEqualTo(fixture[3]);
     }
 
+    // ---------- 목록 + 표시 영역 (명세 1.3) ----------
+
+    /** 표시 영역 시험 영역 — 위도 37.50~37.60, 경도 127.00~127.10. */
+    private static final BoundingBox LIST_BOX = new BoundingBox(37.50, 37.60, 127.00, 127.10);
+
+    /** 표시 영역 · 정렬 · 커서를 인자로 받는 목록 조건. 자치구는 D1 로 좁힌다. */
+    private static PropertySearchCondition boxList(BoundingBox box, PropertySortKey sortKey, boolean ascending,
+            Long lastDeposit, Long lastId, int limit) {
+        return PropertySearchCondition.ofList(filter(D1), box, sortKey, ascending,
+                new BigDecimal(ascending ? "1000" : "-1000"), lastDeposit, null, null, lastId, limit);
+    }
+
+    private static PropertySearchCondition boxRatioList(DistrictCountRequest f, BoundingBox box,
+            BigDecimal lastDebtRatio, Long lastId, int limit) {
+        return PropertySearchCondition.ofList(f, box, PropertySortKey.DEBT_RATIO, false,
+                new BigDecimal("-1000"), null, lastDebtRatio, null, lastId, limit);
+    }
+
+    @Test
+    @DisplayName("목록 표시 영역: 영역 밖 매물은 빠지고 경계 위 매물은 든다")
+    void listWithBoxExcludesOutsideAndKeepsEdges() {
+        long inside = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 127.05, T0);
+        long minEdge = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.50, 127.00, T0);
+        long maxEdge = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.60, 127.10, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.61, 127.05, T0); // 위도 위
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.49, 127.05, T0); // 위도 아래
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 127.11, T0); // 경도 위
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 126.99, T0); // 경도 아래
+
+        List<Long> rows = ids(propertyMapper.selectList(
+                boxList(LIST_BOX, PropertySortKey.DEPOSIT, true, null, null, 100)));
+
+        assertThat(rows).containsExactlyInAnyOrder(inside, minEdge, maxEdge);
+    }
+
+    @Test
+    @DisplayName("목록 표시 영역: 영역이 없으면 좌표로 거르지 않는다")
+    void listWithoutBoxKeepsAllCoordinates() {
+        long a = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 127.05, T0);
+        long b = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.90, 126.50, T0);
+
+        List<Long> rows = ids(propertyMapper.selectList(
+                boxList(null, PropertySortKey.DEPOSIT, true, null, null, 100)));
+
+        assertThat(rows).containsExactlyInAnyOrder(a, b);
+    }
+
+    @Test
+    @DisplayName("목록 표시 영역: 한 점(min = max)이면 같은 좌표 매물이 모두 나오고 이웃은 빠진다")
+    void listWithPointBoxReturnsAllAtSameCoordinate() {
+        long a = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.5543210, 127.0123456, T0);
+        long b = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.5543210, 127.0123456, T0);
+        long c = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 300L, 0L, 37.5543210, 127.0123456, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.5543211, 127.0123456, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.5543210, 127.0123457, T0);
+
+        BoundingBox point = new BoundingBox(37.5543210, 37.5543210, 127.0123456, 127.0123456);
+        for (PropertySortKey key : List.of(PropertySortKey.DEPOSIT, PropertySortKey.REGISTERED_AT)) {
+            assertThat(ids(propertyMapper.selectList(boxList(point, key, true, null, null, 100))))
+                    .as(key.name()).containsExactlyInAnyOrder(a, b, c);
+        }
+    }
+
+    @Test
+    @DisplayName("목록 표시 영역: 한 점 영역을 커서로 한 건씩 이어 읽어도 빠짐 · 중복이 없다")
+    void listWithPointBoxCursorPagesWithoutGapOrDuplicate() {
+        long a = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.55, 127.05, T0);
+        long b = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 200L, 0L, 37.55, 127.05, T0); // 보증금 동률
+        long c = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 127.05, T0);
+        long d = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 300L, 0L, 37.55, 127.05, T0);
+        insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 150L, 0L, 37.56, 127.05, T0); // 영역 밖
+        BoundingBox point = new BoundingBox(37.55, 37.55, 127.05, 127.05);
+
+        List<Long> paged = new ArrayList<>();
+        Long lastId = null;
+        Long lastDeposit = null;
+        for (int i = 0; i < 10; i++) {
+            List<PropertyListResponse> page = propertyMapper.selectList(
+                    boxList(point, PropertySortKey.DEPOSIT, true, lastDeposit, lastId, 1));
+            if (page.isEmpty()) {
+                break;
+            }
+            paged.add(page.get(0).propertyId());
+            lastId = page.get(0).propertyId();
+            lastDeposit = page.get(0).deposit();
+        }
+
+        // 보증금 오름차순, 동률은 id 오름차순
+        assertThat(paged).containsExactly(c, a, b, d);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 목록 표시 영역: 영역 밖 매물은 빠지고 한 점 영역은 같은 좌표를 모두 돌려준다")
+    void leaseRatioIndexListWithBox() {
+        long a = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 127.05, T0);
+        long b = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 127.05, T0);
+        long c = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 127.05, T0);
+        long out = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.56, 127.05, T0);
+        insertRisk(a, "SAFE", "60.00", true, false);
+        insertRisk(b, "CAUTION", "80.00", true, false);
+        insertRisk(c, "DANGER", "95.00", true, false);
+        insertRisk(out, "SAFE", "70.00", true, false);
+        BoundingBox point = new BoundingBox(37.55, 37.55, 127.05, 127.05);
+
+        List<Long> inPoint = ids(propertyMapper.selectListByLeaseRatioIndex(
+                boxRatioList(filter(D1), point, null, null, 100)));
+        List<Long> inBox = ids(propertyMapper.selectListByLeaseRatioIndex(
+                boxRatioList(filter(D1), new BoundingBox(37.50, 37.555, 127.00, 127.10), null, null, 100)));
+
+        assertThat(inPoint).containsExactly(c, b, a);
+        assertThat(inBox).containsExactly(c, b, a);
+    }
+
+    @Test
+    @DisplayName("전세가율 인덱스 목록 표시 영역: 한 점 영역을 커서로 한 건씩 이어 읽어도 빠짐 · 중복이 없다")
+    void leaseRatioIndexListWithPointBoxCursorPages() {
+        long a = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 127.05, T0);
+        long b = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 127.05, T0);
+        long c = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 127.05, T0);
+        long d = insertProperty(D1, "DEPOSIT_ONLY", "APARTMENT", 100L, 0L, 37.55, 127.05, T0);
+        insertRisk(a, "CAUTION", "80.00", true, false);
+        insertRisk(b, "CAUTION", "80.00", true, false); // 전세가율 동률
+        insertRisk(c, "SAFE", "60.00", true, false);
+        insertRisk(d, "DANGER", "95.00", true, false);
+        BoundingBox point = new BoundingBox(37.55, 37.55, 127.05, 127.05);
+
+        List<Long> paged = new ArrayList<>();
+        Long lastId = null;
+        BigDecimal lastRatio = null;
+        for (int i = 0; i < 10; i++) {
+            List<PropertyListResponse> page = propertyMapper.selectListByLeaseRatioIndex(
+                    boxRatioList(filter(D1), point, lastRatio, lastId, 1));
+            if (page.isEmpty()) {
+                break;
+            }
+            PropertyListResponse row = page.get(0);
+            paged.add(row.propertyId());
+            lastId = row.propertyId();
+            lastRatio = row.debtRatio();
+        }
+
+        // 전세가율 내림차순, 동률은 id 내림차순
+        assertThat(paged).containsExactly(d, b, a, c);
+    }
+
     // ---------- 지도 묶음 ----------
 
     /**
@@ -1621,7 +1766,7 @@ class PropertyMapperTest {
     private static PropertySearchCondition list(PropertySortKey sortKey, boolean ascending, Long lastDeposit,
             BigDecimal lastDebtRatio, LocalDateTime lastRegisteredAt, Long lastId, int limit) {
         BigDecimal nullDebtRatio = new BigDecimal(ascending ? "1000" : "-1000");
-        return PropertySearchCondition.ofList(filter(D1), sortKey, ascending, nullDebtRatio,
+        return PropertySearchCondition.ofList(filter(D1), null, sortKey, ascending, nullDebtRatio,
                 lastDeposit, lastDebtRatio, lastRegisteredAt, lastId, limit);
     }
 
@@ -1629,21 +1774,21 @@ class PropertyMapperTest {
     private static PropertySearchCondition listBy(DistrictCountRequest f, PropertySortKey sortKey,
             boolean ascending, BigDecimal lastDebtRatio, Long lastId, int limit) {
         BigDecimal nullDebtRatio = new BigDecimal(ascending ? "1000" : "-1000");
-        return PropertySearchCondition.ofList(f, sortKey, ascending, nullDebtRatio,
+        return PropertySearchCondition.ofList(f, null, sortKey, ascending, nullDebtRatio,
                 null, lastDebtRatio, null, lastId, limit);
     }
 
     /** 보증금순 목록 조건 — 자치구 · 필터를 인자로 받고 보증금 커서를 건다. */
     private static PropertySearchCondition depositListBy(DistrictCountRequest f, boolean ascending,
             Long lastDeposit, Long lastId, int limit) {
-        return PropertySearchCondition.ofList(f, PropertySortKey.DEPOSIT, ascending,
+        return PropertySearchCondition.ofList(f, null, PropertySortKey.DEPOSIT, ascending,
                 new BigDecimal(ascending ? "1000" : "-1000"), lastDeposit, null, null, lastId, limit);
     }
 
     /** 등록일순 목록 조건 — 자치구 · 필터를 인자로 받고 등록일 커서를 건다. */
     private static PropertySearchCondition registeredListBy(DistrictCountRequest f, boolean ascending,
             LocalDateTime lastRegisteredAt, Long lastId, int limit) {
-        return PropertySearchCondition.ofList(f, PropertySortKey.REGISTERED_AT, ascending,
+        return PropertySearchCondition.ofList(f, null, PropertySortKey.REGISTERED_AT, ascending,
                 new BigDecimal(ascending ? "1000" : "-1000"), null, null, lastRegisteredAt, lastId, limit);
     }
 
