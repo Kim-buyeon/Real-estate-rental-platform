@@ -4,6 +4,7 @@ import com.duri.rentalplatform.domain.property.entity.Property;
 import com.duri.rentalplatform.domain.property.entity.PropertyCode;
 import com.duri.rentalplatform.domain.property.enums.CodeGroup;
 import com.duri.rentalplatform.domain.property.enums.PropertyStatus;
+import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.repository.PropertyCodeRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
 import com.duri.rentalplatform.domain.property.vo.LedgerKeyFill;
@@ -39,28 +40,29 @@ public class PropertyLoadWriter {
 
     private final PropertyRepository propertyRepository;
     private final PropertyCodeRepository propertyCodeRepository;
+    private final PropertyMapper propertyMapper;
 
     /** 코드 식별자만 캐시한다. 엔티티를 캐시하면 트랜잭션이 끝난 뒤 준영속 인스턴스를 재사용하게 된다. */
     private final Map<CodeKey, Long> codeIdCache = new HashMap<>();
 
     /**
-     * 이미 적재된 매물의 자연키를 모은다. 중복 적재 차단의 비교 대상이다. 엔티티가 아니라 자연키 투영만 읽는다(#383).
+     * 이미 적재된 매물의 자연키를 모은다. 중복 적재 차단의 비교 대상이다. 엔티티가 아니라 매퍼로 자연키 열만 읽는다(#383).
      */
     @Transactional(readOnly = true)
     public Set<PropertyNaturalKey> findLoadedNaturalKeys(String district) {
-        return new HashSet<>(propertyRepository.findNaturalKeysByDistrict(district));
+        return new HashSet<>(propertyMapper.selectNaturalKeysByDistrict(district));
     }
 
     /**
      * 이미 적재된 매물의 저장된 시세를 자연키로 모은다. 갱신 적재(RISK-08)가 새 시세와 견주는 비교 대상이다. 엔티티가 아니라
-     * 자연키 · 시세 투영만 읽는다(#383).
+     * 매퍼로 자연키 · 시세 열만 읽는다(#383).
      *
      * <p>자연키가 같은 매물이 둘 이상이면 먼저 읽힌 쪽만 남긴다. 자연키 중복은 적재가 막으므로(자연키 주석) 정상 경로에서는
      * 생기지 않는다.
      */
     @Transactional(readOnly = true)
     public Map<PropertyNaturalKey, PropertyPriceSnapshot> findLoadedPrices(String district) {
-        return propertyRepository.findLoadedPricesByDistrict(district).stream()
+        return propertyMapper.selectLoadedPricesByDistrict(district).stream()
                 .collect(Collectors.toMap(
                         LoadedPriceRow::naturalKey,
                         LoadedPriceRow::snapshot,

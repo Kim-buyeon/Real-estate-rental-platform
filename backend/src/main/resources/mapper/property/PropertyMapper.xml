@@ -544,4 +544,64 @@
         ORDER BY p.property_id
         LIMIT #{limit}
     </select>
+
+    <!--
+      적재기(PropertyLoadWriter)의 자치구 단위 비교 대상 두 조회 — 배치용 대량 조회(아키텍처 설계서(영속성 구조) 1.1).
+      자치구 하나의 매물 전부(수천 행)를 엔티티 없이 필요한 열만 읽는다(#383). 행이 많아 이름 지정 <constructor> 로 받는다 —
+      이유는 districtCountRow 위 주석. 정렬은 걸지 않는다(적재기가 집합 · 맵으로 모은다).
+      district 선행 인덱스(idx_property_district_lat_lng 등, V15 · V24)가 있다 — 실행 계획은 미검증.
+      monthly_rent 는 COALESCE 하지 않는다 — 엔티티의 Property#naturalKey 가 저장된 값을 그대로 쓰므로 같은 값이어야 한다.
+    -->
+    <!-- 생성자 매핑이라 PropertyNaturalKey 의 compact 생성자(면적 소수 자릿수 정규화)를 거친다 -->
+    <resultMap id="propertyNaturalKey" type="com.duri.rentalplatform.domain.property.vo.PropertyNaturalKey">
+        <constructor>
+            <arg column="address" name="address" javaType="String"/>
+            <arg column="area_sqm" name="areaSqm" javaType="java.math.BigDecimal"/>
+            <arg column="floor" name="floor" javaType="Integer"/>
+            <arg column="deposit" name="deposit" javaType="Long"/>
+            <arg column="monthly_rent" name="monthlyRent" javaType="Long"/>
+        </constructor>
+    </resultMap>
+
+    <select id="selectNaturalKeysByDistrict" resultMap="propertyNaturalKey">
+        SELECT p.address,
+               p.area_sqm,
+               p.floor,
+               p.deposit,
+               p.monthly_rent
+        FROM property p
+        WHERE p.district = #{district}
+    </select>
+
+    <!-- ledgerKeyMissing 은 원시형 boolean 이라 javaType 이 _boolean(boolean.class)이다. Boolean 으로 두면 생성자를 못 찾아 기동이 실패한다 -->
+    <resultMap id="loadedPriceRow" type="com.duri.rentalplatform.domain.property.vo.LoadedPriceRow">
+        <constructor>
+            <arg column="address" name="address" javaType="String"/>
+            <arg column="area_sqm" name="areaSqm" javaType="java.math.BigDecimal"/>
+            <arg column="floor" name="floor" javaType="Integer"/>
+            <arg column="deposit" name="deposit" javaType="Long"/>
+            <arg column="monthly_rent" name="monthlyRent" javaType="Long"/>
+            <arg column="property_id" name="propertyId" javaType="Long"/>
+            <arg column="market_price" name="marketPrice" javaType="Long"/>
+            <arg column="price_type" name="priceType" javaType="com.duri.rentalplatform.domain.property.enums.PriceType"/>
+            <arg column="price_date" name="priceDate" javaType="java.time.LocalDate"/>
+            <arg column="ledger_key_missing" name="ledgerKeyMissing" javaType="_boolean"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 대장 키 없음은 Property#ledgerKey 가 null 인 조건과 같다 — 조회 키 네 컬럼은 모두 있거나 모두 없으므로(V17 CHECK) sigungu_code 하나로 본다 -->
+    <select id="selectLoadedPricesByDistrict" resultMap="loadedPriceRow">
+        SELECT p.address,
+               p.area_sqm,
+               p.floor,
+               p.deposit,
+               p.monthly_rent,
+               p.property_id,
+               p.market_price,
+               p.price_type,
+               p.price_date,
+               p.sigungu_code IS NULL AS ledger_key_missing
+        FROM property p
+        WHERE p.district = #{district}
+    </select>
 </mapper>

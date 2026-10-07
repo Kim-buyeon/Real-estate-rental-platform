@@ -15,6 +15,7 @@ import com.duri.rentalplatform.domain.property.enums.CodeGroup;
 import com.duri.rentalplatform.domain.property.enums.ContractType;
 import com.duri.rentalplatform.domain.property.enums.PriceType;
 import com.duri.rentalplatform.domain.property.enums.PropertyType;
+import com.duri.rentalplatform.domain.property.mapper.PropertyMapper;
 import com.duri.rentalplatform.domain.property.repository.PropertyCodeRepository;
 import com.duri.rentalplatform.domain.property.repository.PropertyRepository;
 import com.duri.rentalplatform.domain.property.vo.LedgerKeyFill;
@@ -47,13 +48,15 @@ class PropertyLoadWriterTest {
 
     private PropertyRepository propertyRepository;
     private PropertyCodeRepository propertyCodeRepository;
+    private PropertyMapper propertyMapper;
     private PropertyLoadWriter writer;
 
     @BeforeEach
     void setUp() {
         propertyRepository = mock(PropertyRepository.class);
         propertyCodeRepository = mock(PropertyCodeRepository.class);
-        writer = new PropertyLoadWriter(propertyRepository, propertyCodeRepository);
+        propertyMapper = mock(PropertyMapper.class);
+        writer = new PropertyLoadWriter(propertyRepository, propertyCodeRepository, propertyMapper);
     }
 
     private PropertyRegistration registrationOf(String address, Integer floor) {
@@ -156,7 +159,7 @@ class PropertyLoadWriterTest {
         PropertyRegistration reg2 = registrationOf("주소2", 2);
         Property property1 = Property.register(reg1, anyCode, anyCode, anyCode);
         Property property2 = Property.register(reg2, anyCode, anyCode, anyCode);
-        when(propertyRepository.findNaturalKeysByDistrict("강남구"))
+        when(propertyMapper.selectNaturalKeysByDistrict("강남구"))
                 .thenReturn(List.of(property1.naturalKey(), property2.naturalKey()));
 
         Set<PropertyNaturalKey> naturalKeys = writer.findLoadedNaturalKeys("강남구");
@@ -191,7 +194,7 @@ class PropertyLoadWriterTest {
     void mapsExistingPropertiesToStoredPrices() {
         LocalDate priceDate = LocalDate.of(2026, 8, 20);
         Property property = storedProperty(5L, "주소1", 280_000_000L, priceDate);
-        when(propertyRepository.findLoadedPricesByDistrict("강남구")).thenReturn(List.of(loadedRowOf(property)));
+        when(propertyMapper.selectLoadedPricesByDistrict("강남구")).thenReturn(List.of(loadedRowOf(property)));
 
         Map<PropertyNaturalKey, PropertyPriceSnapshot> prices = writer.findLoadedPrices("강남구");
 
@@ -205,7 +208,7 @@ class PropertyLoadWriterTest {
         LocalDate priceDate = LocalDate.of(2026, 8, 20);
         Property first = storedProperty(5L, "주소1", 280_000_000L, priceDate);
         Property second = storedProperty(6L, "주소1", 290_000_000L, priceDate);
-        when(propertyRepository.findLoadedPricesByDistrict("강남구"))
+        when(propertyMapper.selectLoadedPricesByDistrict("강남구"))
                 .thenReturn(List.of(loadedRowOf(first), loadedRowOf(second)));
 
         Map<PropertyNaturalKey, PropertyPriceSnapshot> prices = writer.findLoadedPrices("강남구");
@@ -218,7 +221,7 @@ class PropertyLoadWriterTest {
     @DisplayName("자연키 조회: 같은 자연키 행이 겹쳐도 집합에는 한 번만 든다")
     void collapsesDuplicateNaturalKeys() {
         Property property = storedProperty(5L, "주소1", 280_000_000L, LocalDate.of(2026, 8, 20));
-        when(propertyRepository.findNaturalKeysByDistrict("강남구"))
+        when(propertyMapper.selectNaturalKeysByDistrict("강남구"))
                 .thenReturn(List.of(property.naturalKey(), property.naturalKey()));
 
         assertThat(writer.findLoadedNaturalKeys("강남구")).containsExactly(property.naturalKey());
@@ -291,7 +294,7 @@ class PropertyLoadWriterTest {
     void marksSnapshotWithLedgerKeyAsPresent() {
         Property property = storedProperty(5L, "주소1", 280_000_000L, LocalDate.of(2026, 8, 20));
         property.fillLedgerKey(KEY);
-        when(propertyRepository.findLoadedPricesByDistrict("강남구")).thenReturn(List.of(loadedRowOf(property)));
+        when(propertyMapper.selectLoadedPricesByDistrict("강남구")).thenReturn(List.of(loadedRowOf(property)));
 
         assertThat(writer.findLoadedPrices("강남구").get(property.naturalKey()).ledgerKeyMissing()).isFalse();
     }
