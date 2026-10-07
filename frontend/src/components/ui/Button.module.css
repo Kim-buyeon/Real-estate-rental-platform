@@ -12,12 +12,14 @@
  *                   │ 새 수치를 만들지 않았다              │
  *   secondary       │ h36 — {components.button-secondary-sm} │ h48 — {components.button-secondary}
  *   ghost           │ 높이 없음 — 정의서가 {components.button-ghost} 에 높이를 정하지 않았다. 패딩이 만든다
+ *   icon            │ 크기 하나 — {components.button-icon} 57 × 60. 정의서가 소형을 두지 않아 size 와 무관하다.
+ *                   │ 60 은 button-primary 와 같아 하단 바에서 나란히 선다
  *
  * 터치 타겟 — 정의서 9절은 44 하한을 터치 입력 구간(~767px)에만 적용하고 포인터 구간(768px~)에서는
  * 컴포넌트가 지정한 높이를 따른다. 그래서 44 아래인 h36 만 모바일에서 --touch-target-min 으로
  * 올린다. h48 · h60 은 그대로 충족한다.
  *
- * px 리터럴은 위 높이 셋뿐이다 — 정의서 7절이 지정한 값인데 css-vars export 는 색 · 간격 · 반경만 내므로
+ * px 리터럴은 위 높이 셋과 icon 폭 하나뿐이다 — 정의서 7절이 지정한 값인데 css-vars export 는 색 · 간격 · 반경만 내므로
  * 쓸 토큰이 없다. primary · sm 은 이 파일에만 걸려 .button 의 지역 변수에, secondary(48)는 Toast 도
  * 쓰므로(토글 위로 올라서는 거리 — K-19) global.css 의 --button-height-secondary 에 둔다. --container-max ·
  * --touch-target-min 과 같은 성질이다 (frontend/CLAUDE.md 「스타일」). 그 밖의 색 · 간격 · 반경은
@@ -30,6 +32,8 @@
   /* {components.button-secondary} 48 은 global.css 의 --button-height-secondary — Toast 도 쓴다 */
   /* {components.button-secondary-sm} */
   --button-height-sm: 36px;
+  /* {components.button-icon} 의 폭. 높이 60 은 위 --button-height-primary 와 같다 */
+  --button-icon-width: 57px;
 
   display: inline-flex;
   align-items: center;
@@ -103,6 +107,21 @@
   color: var(--color-text-disabled);
 }
 
+/* {components.button-icon} — {colors.surface} / {colors.primary} + 1px {colors.border} · {rounded.sm}. hover 는 미관측이라 면을 낮춘다(정의서 7절 상태) */
+.icon {
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+  color: var(--color-primary);
+}
+
+.icon:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+}
+
+.icon:disabled {
+  color: var(--color-text-disabled);
+}
+
 /* ── 높이 — 모바일은 44 하한, 768~ 은 정의서가 지정한 높이 (머리말의 표) ── */
 
 .primary.md {
@@ -123,4 +142,13 @@
   .secondary.sm {
     min-height: var(--button-height-sm);
   }
+}
+
+/* 아이콘 버튼은 폭 · 높이가 정해져 있다 — 여백은 가운데 맞춤이 만든다. size 클래스의 좌우 패딩을 지운다 */
+.icon.sm,
+.icon.md {
+  flex: none;
+  width: var(--button-icon-width);
+  min-height: var(--button-height-primary);
+  padding: 0;
 }
