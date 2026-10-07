@@ -1,6 +1,6 @@
 // PropertyFilterBar 필터 조합 로직 검증 — 계약유형 select와 위험 등급 토글이 onChange에
 // 넘기는 필터 모양을 확인한다. userEvent는 devDependencies에 없어 fireEvent를 쓴다.
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PropertyFilter } from '../../../api/property';
 import { PropertyFilterBar } from './PropertyFilterBar';
@@ -32,5 +32,19 @@ describe('PropertyFilterBar', () => {
     fireEvent.click(screen.getByRole('button', { name: '안전' }));
 
     expect(handleChange).toHaveBeenCalledWith({ riskGrade: undefined });
+  });
+
+  it('앞쪽 슬롯에 넣은 것은 같은 필터 줄(검색 영역) 안에 그려진다', () => {
+    render(
+      <PropertyFilterBar
+        filter={{}}
+        onChange={vi.fn()}
+        leading={<button type="button">앞쪽</button>}
+      />,
+    );
+
+    const bar = screen.getByRole('search', { name: '매물 필터' });
+    expect(within(bar).getByRole('button', { name: '앞쪽' })).toBeInTheDocument();
+    expect(within(bar).getByLabelText('계약유형')).toBeInTheDocument();
   });
 });

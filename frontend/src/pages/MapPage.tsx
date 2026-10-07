@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import type { BoundingBox, PropertyFilter } from '../api/property';
-import { Alert, Button, Tabs, type TabItem } from '../components/ui';
+import { Alert, Button, Tabs, visuallyHiddenClassName, type TabItem } from '../components/ui';
 import {
   DistrictPicker,
   MapExplorer,
@@ -226,13 +226,32 @@ export default function MapPage() {
     [filter, stage],
   );
 
+  /**
+   * 필터 줄 앞쪽에 놓는 단계 이동 — 상단 띠를 한 줄로 둔다(레이아웃 맵 map-search filter-bar). 자리만 필터 줄을
+   * 빌리고 상태는 여기 단계가 갖는다 — 단계를 오가도 필터는 그대로다. 필터 줄이 memo 라 노드를 단계가 바뀔 때만 새로 만든다.
+   */
+  const stageDistrict = stage.type === 'district' ? stage.district : null;
+  const stageControls = useMemo(
+    () => (
+      <>
+        {stageDistrict !== null && (
+          <Button type="button" size="sm" variant="ghost" onClick={handleBackToSeoul}>
+            ← 서울 전체
+          </Button>
+        )}
+        <DistrictPicker district={stageDistrict} onSelect={handleSelectDistrict} />
+      </>
+    ),
+    [stageDistrict, handleBackToSeoul, handleSelectDistrict],
+  );
+
   const isMapShown = narrowView === MAP_VIEW;
   // 좁은 화면에서 상세 패널이 보이는 중 — 패널 하단 바({components.action-bar})가 화면 하단에 있어 전환 토글이 그 위로 올라선다
   const isAboveActionBar = !isMapShown && panelTab === DETAIL_TAB && detailPropertyId !== null;
 
   return (
     <section className={styles.page}>
-      <PropertyFilterBar filter={filter} onChange={handleChangeFilter} />
+      <PropertyFilterBar filter={filter} onChange={handleChangeFilter} leading={stageControls} />
 
       {/* 없는 매물 번호로 들어왔을 때. 문구는 서버 error.message 그대로다 */}
       {missingMessage !== null && (
@@ -241,25 +260,14 @@ export default function MapPage() {
         </div>
       )}
 
-      <div className={styles.stageBar}>
-        {stage.type === 'district' && (
-          <Button type="button" size="sm" variant="ghost" onClick={handleBackToSeoul}>
-            ← 서울 전체
-          </Button>
-        )}
-        <DistrictPicker
-          district={stage.type === 'district' ? stage.district : null}
-          onSelect={handleSelectDistrict}
-        />
-        <p className="type-caption">
-          {stage.type === 'seoul'
-            ? '지도의 자치구를 누르거나 위에서 골라 매물을 봅니다'
-            : '지도를 움직이면 보이는 영역의 매물을 다시 조회합니다'}
-        </p>
-      </div>
-
       <div className={`${styles.explore} ${isMapShown ? styles.mapShown : styles.panelShown}`}>
         <div className={styles.mapArea}>
+          {/* 지도 조작 안내. 화면에서는 지도 자체가 보여 주므로 낭독기에만 남긴다 — 지도는 role=application 이라 그 앞에서 읽힌다 */}
+          <p className={visuallyHiddenClassName}>
+            {stage.type === 'seoul'
+              ? '지도의 자치구를 누르거나 위에서 골라 매물을 봅니다'
+              : '지도를 움직이면 보이는 영역의 매물을 다시 조회합니다'}
+          </p>
           <MapExplorer
             filter={filter}
             stage={stage}

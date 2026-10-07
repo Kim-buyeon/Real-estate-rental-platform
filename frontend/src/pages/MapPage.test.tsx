@@ -133,6 +133,21 @@ describe('MapPage', () => {
     tracker.stop();
   });
 
+  it('자치구 선택과 「← 서울 전체」는 필터 줄 안에 있다 — 상단 띠가 한 줄이다', async () => {
+    server.use(...propertyHandlers);
+
+    renderMapPage();
+
+    const filterBar = screen.getByRole('search', { name: '매물 필터' });
+    // 서울 전체 단계에서는 되돌아갈 곳이 없어 버튼이 없다
+    expect(within(filterBar).queryByRole('button', { name: '← 서울 전체' })).not.toBeInTheDocument();
+
+    fireEvent.change(within(filterBar).getByRole('combobox', { name: '자치구' }), { target: { value: '강서구' } });
+
+    expect(await within(filterBar).findByRole('button', { name: '← 서울 전체' })).toBeInTheDocument();
+    expect(within(filterBar).getByRole('combobox', { name: '자치구' })).toHaveValue('강서구');
+  });
+
   it('「← 서울 전체」로 돌아가면 이후 목록 요청에서 district가 빠진다', async () => {
     server.use(...propertyHandlers);
     const tracker = trackRequestedUrls();

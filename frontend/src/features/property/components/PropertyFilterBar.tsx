@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, type ReactNode } from 'react';
 import type { PropertyFilter } from '../../../api/property';
 import { Button, Field, Select } from '../../../components/ui';
 import {
@@ -14,13 +14,18 @@ import styles from './PropertyFilterBar.module.css';
 interface PropertyFilterBarProps {
   filter: PropertyFilter;
   onChange: (filter: PropertyFilter) => void;
+  /**
+   * 필터 앞쪽에 같은 줄로 놓을 것. 지도 화면이 단계 이동(「← 서울 전체」 · 자치구 선택)을 넣는다 —
+   * 상단 띠를 한 줄로 두려고 자리만 빌려 준다. 상태는 넣는 쪽이 갖고, 필터 상태와 섞이지 않는다.
+   */
+  leading?: ReactNode;
 }
 
 /**
  * 공통 검색 필터 — 매물 API 명세 1.1. 자치구 집계와 매물 조회가 같은 조건을 쓰므로
  * 단계를 오가도 그대로 유지된다. 필터 상태는 페이지가 소유한다.
  */
-export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onChange }: PropertyFilterBarProps) {
+export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onChange, leading }: PropertyFilterBarProps) {
   const toggleGrade = useCallback(
     (grade: RiskGrade) => {
       const selected = filter.riskGrade ?? [];
@@ -31,7 +36,9 @@ export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onCha
   );
 
   return (
-    <div className={styles.bar}>
+    <div className={styles.bar} role="search" aria-label="매물 필터">
+      {leading !== undefined && <div className={styles.leading}>{leading}</div>}
+
       <Field label="계약유형">
         {(control) => (
           <Select
