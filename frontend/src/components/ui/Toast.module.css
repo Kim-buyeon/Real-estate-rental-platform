@@ -3,18 +3,8 @@
  * {colors.inverse-surface} / {colors.on-inverse}(오류는 {colors.error} / {colors.on-error}) ·
  * {typography.body} · {rounded.md} · 패딩 {spacing.sm} / {spacing.md}. 새 색 · 새 수치가 없다(K-19).
  *
- * 정의서가 「쓰는 화면에서 정한다」로 넘긴 셋(K-19)을 여기서 정했다 —
- *   1) 위치: 화면 하단 중앙. 누른 자리와 무관하게 늘 같은 자리여서 시선이 한 곳으로 간다. 아래 여백은
- *      지도 화면의 전환 토글(MapPage.module.css .viewToggle)과 같은 {spacing.xl} 이다
- *   2) 지속: 2.5초 — ToastProvider 의 TOAST_DURATION_MS 가 갖는다(CSS 가 아니라 타이머)
- *   3) 겹침 순서(K-13 z-index): 정의서의 육안 순서는 「콘텐츠 < 지도 컨트롤 < 상세 패널 < tooltip < 모달」이고
- *      값은 미확정이다. 토스트는 그 목록에 없어 「어느 화면 위에서도 보이되 모달(미구현)보다는 아래」로 둔다.
- *      지금 코드가 쓰는 층은 CSS 의 지도 전환 토글 1(MapPage.module.css .viewToggle)과, 지도 오버레이가 SDK
- *      setZIndex 로 거는 0 ~ OVERLAY_Z_FRONT 10000(features/property/map 의 constants.ts · overlay.ts,
- *      MapExplorer)이다. 토스트의 100 을 지역 변수 하나에 둔다.
- *      카카오 지도의 쌓임 맥락 안팎에서 100 이 오버레이를 이기는지는 미확인이다 — 지도 화면에서 토스트를 쓰게 될 때
- *      확인한다. 모바일에서는 .viewToggle 과 같은 하단 중앙 자리라 둘이 겹친다는 점도 그때 함께 본다.
- *      값과 층의 정본은 정의서 K-13 · K-19 로 옮겨진다 — 옮겨지면 이 머리말은 그쪽을 가리키기만 한다
+ * 위치(화면 하단 중앙) · 지속(2.5초 — ToastProvider 의 TOAST_DURATION_MS) · 겹침 순서(z-index 100)의 정본은
+ * 정의서 K-19 · K-13 이다. 여기서는 그 값을 쓰기만 한다. 아래 여백은 지도 화면 전환 토글과 같은 {spacing.xl} 이다.
  *
  * 들어오고 나가는 움직임은 두지 않는다 — 정의서 7절 「전환」은 색 전환 150ms 만 정했고 움직임은 미관측(K-11)이다.
  * 그림자도 두지 않는다 — 정의서 5절 레벨 1 은 추정치이고 토큰이 없다.
@@ -24,7 +14,7 @@
 
 /* 화면에 늘 붙어 있는 알림 영역. 내용이 바뀔 때 화면 낭독기가 읽도록 비어 있어도 남겨 둔다 */
 .region {
-  /* 겹침 순서 — 위 머리말 3) */
+  /* 겹침 순서 — 정의서 K-13 */
   --toast-layer: 100;
 
   position: fixed;
