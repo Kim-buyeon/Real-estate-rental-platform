@@ -21,7 +21,7 @@ export const RiskFindings = memo(function RiskFindings({ rightViolations, warnin
 
       <section className={styles.section}>
         <h4 className={`${styles.sectionTitle} type-label`}>권리 침해</h4>
-        <p className={`${styles.note} type-caption`}>등급 판정에 반영된 항목입니다.</p>
+        <p className={`${styles.note} type-caption`}>위험 등급 판정에 반영된 항목입니다.</p>
         {rightViolations.length === 0 ? (
           <p className={`${styles.empty} type-caption`}>없음</p>
         ) : (
@@ -37,7 +37,7 @@ export const RiskFindings = memo(function RiskFindings({ rightViolations, warnin
 
       <section className={styles.section}>
         <h4 className={`${styles.sectionTitle} type-label`}>경고</h4>
-        <p className={`${styles.note} type-caption`}>등급 판정에 반영되지 않은 참고 항목입니다.</p>
+        <p className={`${styles.note} type-caption`}>위험 등급 판정에 반영되지 않은 참고 항목입니다.</p>
         {warnings.length === 0 ? (
           <p className={`${styles.empty} type-caption`}>없음</p>
         ) : (

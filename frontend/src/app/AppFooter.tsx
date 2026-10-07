@@ -55,7 +55,7 @@ const SITEMAP: FooterColumn[] = [
   {
     title: '상담',
     items: [
-      { kind: 'soon', label: '위험도 해설 상담' },
+      { kind: 'soon', label: '위험 등급 해설 상담' },
       { kind: 'soon', label: '상담 이력' },
     ],
   },
@@ -83,12 +83,12 @@ const SITEMAP: FooterColumn[] = [
 const PROJECT_INFO: string[][] = [
   [
     '전월세 부동산 금융 플랫폼',
-    '서울시 전월세 매물의 전세사기 위험도를 등기 · 건축물대장 · 시세 · 보증보험 기준으로 판정합니다.',
+    '서울시 전월세 매물의 전세사기 위험 등급을 등기 · 건축물대장 · 시세 · 보증보험 기준으로 판정합니다.',
   ],
   ['등기 정보는 예시이며, 계약 전 등기부등본 원본을 반드시 확인하세요.'],
 ];
 
-const DISCLAIMER = '위험도 판정과 대출 한도는 공개 데이터에 근거한 참고 정보이며 법적 효력이 없습니다.';
+const DISCLAIMER = '위험 등급 판정과 대출 한도는 공개 데이터에 근거한 참고 정보이며 법적 효력이 없습니다.';
 
 const COPYRIGHT = '© 2026 전월세 부동산 금융 플랫폼';
 
