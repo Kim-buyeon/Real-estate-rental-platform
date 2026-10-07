@@ -22,7 +22,7 @@
 | 알림 전달 구조 | `docs/architecture/notification.md` | 생성과 발송의 분리, SSE 다중 인스턴스 팬아웃, 유실 시 폴백 | NOTI 작업 전량 |
 | 횡단 관심사 | `docs/architecture/spring-aop.md` | 로깅 · 측정 · 분산 락 · 이력 적재, 무상태화 | **AOP·인증 설정 작성**, **USER-02 · NOTI-03 · RISK-08**, 그 밖의 배치 작업 |
 | 성능 및 확장성 | `docs/architecture/performance.md` | 병목별 대응과 검증 방법 | 부하 시험 결과 반영, 쿼리 개선 |
-| 보안 · 암호화 | `docs/architecture/security-crypto.md` | 무엇을 왜 암호화하는가, 알고리즘 후보와 보안 하한, 계층별 CPU 비용 · 가용성 위협, 키 · 인증서 | **HTTPS · 비밀번호 해싱 · JWT 서명 · 컬럼 암호화를 만들거나 바꿀 때**, 인증 설정 작성 · 개인정보 컬럼 추가 |
+| 보안 · 암호화 | `docs/architecture/security-crypto.md` | 무엇을 왜 암호화하는가, 알고리즘 후보와 보안 하한, 계층별 CPU 비용 · 가용성 위협, 키 · 인증서, 로그에 남기지 않는 값 | **HTTPS · 비밀번호 해싱 · JWT 서명 · 컬럼 암호화를 만들거나 바꿀 때**, 인증 설정 작성 · 개인정보 컬럼 추가 · 로그 마스킹 대상을 바꿀 때 |
 | 테스트 전략 | `docs/architecture/testing.md` | 계층별 테스트 범위, Testcontainers 운용, 판정 경계값 케이스 | 테스트 작성, **테스트 지원 클래스 구성** |
 | 개발 환경 | `docs/architecture/dev-environment.md` | 로컬 환경 운용 규칙, 식별된 구현 리스크와 대응 | 환경 구성, 착수 시점 |
 
