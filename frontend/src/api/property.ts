@@ -1,7 +1,8 @@
 // 매물 API 명세 — 명세 표의 행 하나 = 함수 하나. 지금은 자치구 집계(PROP-08) · 매물 목록(PROP-01) ·
 // 지도 묶음(PROP-02) · 상세(PROP-03) · 건축물대장(PROP-04) · 관심 매물 3행(PROP-05)이다.
-// 매물 조회(GET /api/properties)의 좌표 조건 형태(명세 1.3 마커 응답)는 화면이 쓰지 않는다 — 지도 자치구 단계는
-// 지도 묶음 조회(명세 1.12)로 옮겨 갔다. 쓰는 화면이 없는 형태에 함수를 두지 않는다.
+// 매물 조회(GET /api/properties)의 반경 조건 형태(명세 1.3 마커 응답)는 화면이 쓰지 않는다 — 지도 자치구 단계는
+// 지도 묶음 조회(명세 1.12)로 옮겨 갔다. 쓰는 화면이 없는 형태에 함수를 두지 않는다. 목록의 표시 영역(명세 1.3)은
+// 목록 함수가 선택 인자로 받는다 — 응답이 목록 형태 그대로라 함수가 하나다.
 import type { ContractType, LedgerDataSource, PropertySort, PropertyType } from '../domain/property';
 import type { PriceType, RiskGrade } from '../domain/risk';
 import { request } from './client';
@@ -27,7 +28,10 @@ export interface PropertyFilter {
   areaMax?: number;
 }
 
-/** 지도 표시 영역 좌표 — 명세 1.12. 지도 묶음 조회의 필수 파라미터다 */
+/**
+ * 지도 표시 영역 좌표 — 명세 1.12. 지도 묶음 조회의 필수 파라미터이고, 목록 조회에는 선택 파라미터다(명세 1.3 —
+ * 넷 다 주거나 넷 다 주지 않는다. min = max인 한 점도 받는다)
+ */
 export interface BoundingBox {
   minLat: number;
   maxLat: number;
@@ -142,15 +146,17 @@ export interface PropertyListItem {
 }
 
 /**
- * PROP-01 · GET /api/properties (좌표 조건 없음 → 목록 형태) — 지도 옆 패널의 목록 탭.
+ * PROP-01 · GET /api/properties (반경 조건 없음 → 목록 형태) — 지도 옆 패널의 목록 탭.
  *
- * 좌표를 보내면 마커 형태로 응답하므로(명세 1.3) 여기서는 보내지 않는다 —
- * PropertyFilter에 좌표가 없는 것이 그 보장이고, BoundingBox는 지도 묶음 함수만 받는다.
+ * 반경 조건(lat · lng · radiusKm)을 보내면 마커 형태로 응답하므로(명세 1.3) 여기서는 보내지 않는다 —
+ * PropertyFilter에 반경이 없는 것이 그 보장이다. 표시 영역(area)은 선택이다 — 주면 네 값을 모두 보내 그 영역
+ * (경계 포함) 안의 매물만 목록으로 받는다(명세 1.3 「목록의 표시 영역」). 더 확대할 수 없는 묶음 칸 · 같은 좌표에
+ * 겹친 마커의 목록에 쓴다. 없으면 네 값 모두 undefined라 쿼리 문자열에서 빠진다 — 넷 다 주거나 넷 다 주지 않는다.
  * 정렬을 지정하지 않으면 서버가 등록일 내림차순을 적용한다(명세 1.3) — 화면이 기본값을 박지 않는다.
  * size도 보내지 않는다 — 공통 규약 1.4의 기본값 20을 쓴다 (fetchWishlist와 같은 판단).
  */
-export const fetchPropertyList = (filter: PropertyFilter, sort?: PropertySort, cursor?: string) =>
-  request<CursorPage<PropertyListItem>>({ url: '/properties', params: { ...filter, sort, cursor } });
+export const fetchPropertyList = (filter: PropertyFilter, sort?: PropertySort, cursor?: string, area?: BoundingBox) =>
+  request<CursorPage<PropertyListItem>>({ url: '/properties', params: { ...filter, ...area, sort, cursor } });
 
 /**
  * 매물 상세의 최신 위험도 요약 — 명세 1.7 riskSummary.

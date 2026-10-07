@@ -9,6 +9,7 @@ import {
   GRID_MAX_DIVISIONS,
   SEOUL_BOUNDS,
   SEOUL_INITIAL_LEVEL,
+  SET_BOUNDS_DEEPEST_LEVEL,
 } from './constants';
 import type { KakaoMap, KakaoMaps } from './kakao';
 import { isMapSdkReady, loadKakaoMaps } from './loader';
@@ -136,6 +137,14 @@ export function fitBoundingBox(map: KakaoMap, bbox: BoundingBox): void {
   map.setBounds(
     new maps.LatLngBounds(new maps.LatLng(bbox.minLat, bbox.minLng), new maps.LatLng(bbox.maxLat, bbox.maxLng)),
   );
+}
+
+/**
+ * 묶음을 눌렀을 때 setBounds로 더 확대해 들어갈 수 있는가. setBounds는 SET_BOUNDS_DEEPEST_LEVEL보다
+ * 깊이 가지 않으므로(실측 — constants) 그 레벨 이하면 거짓이다. 거짓이면 화면은 그 칸의 목록을 연다.
+ */
+export function canZoomInto(map: KakaoMap): boolean {
+  return map.getLevel() > SET_BOUNDS_DEEPEST_LEVEL;
 }
 
 /** 자치구 단계 진입 — 자치구 경계를 얻을 수단이 없어 중심 좌표와 레벨로 이동한다 */

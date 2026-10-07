@@ -9,6 +9,18 @@
   min-height: 0;
 }
 
+/* 칸 목록 안내 — 정렬 줄 위에 고정된다. 안내 문구와 「전체 목록」이 한 줄에 놓인다 */
+.areaNotice {
+  padding: var(--spacing-sm) var(--spacing-xl) 0;
+}
+
+.areaAlert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
 .toolbar {
   display: flex;
   justify-content: flex-end;

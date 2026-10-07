@@ -219,9 +219,35 @@ export const PROPERTY_LIST_PAGE_2: CursorPage<PropertyListItem> = {
 };
 
 /**
- * 매물 조회는 단일 엔드포인트로 좌표 유무가 응답 형태를 가른다(명세 1.3) — PROP-01은 목록 형태만
- * 쓰므로 여기서는 좌표가 없을 때의 분기만 다룬다. 좌표가 있으면(minLat 존재) 마커 형태가 와야
- * 목록 컴포넌트가 좌표를 잘못 보냈을 때 렌더가 깨져 테스트가 실패로 드러난다 — 빈 items로 충분하다.
+ * 표시 영역(명세 1.3)이 오면 돌려주는 목록 쪽 — 영역 안 매물 하나로, 항목 형태는 응답 예시와 같다.
+ * hasNext: false라 「더 보기」가 없다.
+ */
+export const PROPERTY_LIST_AREA_PAGE: CursorPage<PropertyListItem> = {
+  items: [
+    {
+      propertyId: 3333,
+      district: '강남구',
+      address: '서울특별시 강남구 도곡로 801',
+      propertyType: 'APARTMENT',
+      contractType: 'DEPOSIT_ONLY',
+      deposit: 900000000,
+      monthlyRent: 0,
+      areaSqm: 84.9,
+      floor: 12,
+      riskGrade: 'CAUTION',
+      debtRatio: 71.2,
+      registeredAt: '2026-07-21T10:00:00+09:00',
+    },
+  ],
+  nextCursor: null,
+  hasNext: false,
+};
+
+/**
+ * 매물 조회는 단일 엔드포인트로 반경 조건 유무가 응답 형태를 가른다(명세 1.3) — 반경(lat · lng · radiusKm)이
+ * 있을 때만 마커 형태이고, 그 밖에는 모두 목록 형태다. 표시 영역 네 값(minLat · maxLat · minLng · maxLng)은
+ * 목록의 선택 조건이다 — 오면 그 영역의 목록(CursorPage)을 돌려준다. 영역 안 매물은 PROPERTY_LIST_AREA_PAGE로
+ * 구분한다(영역 없는 목록과 항목이 달라, 영역이 요청에 실렸는지 응답 내용으로도 드러난다).
  * cursor 파라미터로 쪽을 가른다: 없으면 첫 쪽, PROPERTY_LIST_PAGE_1.nextCursor 그대로 오면 둘째 쪽.
  */
 export const propertyHandlers = [
@@ -246,8 +272,12 @@ export const propertyHandlers = [
   http.get('/api/properties/:propertyId', () => HttpResponse.json({ success: true, data: PROPERTY_DETAIL })),
   http.get('/api/properties', ({ request }) => {
     const url = new URL(request.url);
-    if (url.searchParams.has('minLat')) {
+    // 반경 조회만 마커 형태다 — 빈 items로 충분하다(목록 컴포넌트가 반경을 잘못 보내면 렌더가 깨져 드러난다)
+    if (url.searchParams.has('radiusKm')) {
       return HttpResponse.json({ success: true, data: { items: [], count: 0 } });
+    }
+    if (url.searchParams.has('minLat')) {
+      return HttpResponse.json({ success: true, data: PROPERTY_LIST_AREA_PAGE });
     }
     const cursor = url.searchParams.get('cursor');
     const page = cursor === PROPERTY_LIST_PAGE_1.nextCursor ? PROPERTY_LIST_PAGE_2 : PROPERTY_LIST_PAGE_1;

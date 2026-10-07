@@ -29,6 +29,16 @@ export const SEOUL_INITIAL_LEVEL = 9;
 export const DISTRICT_LEVEL = 7;
 
 /**
+ * setBounds가 확대해 들어가는 가장 깊은 레벨. 지도가 이 레벨 이하면 묶음을 눌러도 더 쪼개지지 않으므로
+ * 확대 대신 그 칸의 목록을 연다 (canZoomInto · kakao-map 3장 2단계).
+ *
+ * 근거(실측 2026-10-07, 운영 Chrome · 지도 1261×723): 한 점 영역 · 0.0001 ~ 0.0002도 영역을
+ * 시작 레벨 1 · 3 · 5에서 setBounds 하면 결과는 모두 레벨 2였다 — 레벨 1에서 부르면 2로 멀어진다.
+ * setLevel(1)은 되지만 같은 좌표 단지는 레벨 1에서도 쪼개지지 않아 쓰지 않는다. 모바일 폭은 미실측이다.
+ */
+export const SET_BOUNDS_DEEPEST_LEVEL = 2;
+
+/**
  * 표시 영역 좌표의 소수 자릿수 — 타일 크기(아래 표)를 세는 단위가 10^-BBOX_PRECISION 도다.
  * 맞춘 영역은 이 자릿수를 넘지 않는다.
  */

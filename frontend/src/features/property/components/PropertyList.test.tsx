@@ -6,9 +6,15 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { describe, expect, it, vi } from 'vitest';
 import { PROPERTY_SORT_LABEL, PROPERTY_SORTS } from '../../../domain/property';
 import { debtRatioLabel, riskGradeLabel } from '../../../domain/risk';
-import { PROPERTY_LIST_PAGE_1, PROPERTY_LIST_PAGE_2, propertyHandlers } from '../../../test/msw/handlers/property';
+import {
+  PROPERTY_LIST_AREA_PAGE,
+  PROPERTY_LIST_PAGE_1,
+  PROPERTY_LIST_PAGE_2,
+  propertyHandlers,
+} from '../../../test/msw/handlers/property';
 import { server } from '../../../test/msw/server';
-import { PropertyList } from './PropertyList';
+import type { BoundingBox } from '../../../api/property';
+import { PropertyList, type PropertyListArea } from './PropertyList';
 
 const LIST_ITEM_1 = PROPERTY_LIST_PAGE_1.items[0]!;
 const LIST_ITEM_2 = PROPERTY_LIST_PAGE_2.items[0]!;
@@ -35,8 +41,98 @@ function trackRequestedUrls() {
   };
 }
 
+const AREA_BBOX: BoundingBox = { minLat: 37.545, maxLat: 37.55, minLng: 126.8567, maxLng: 126.8633 };
+const AREA: PropertyListArea = { bbox: AREA_BBOX };
+
+function renderListWithArea(area: PropertyListArea, withClear = true) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const onClearArea = vi.fn();
+  render(
+    <QueryClientProvider client={queryClient}>
+      <PropertyList filter={{}} area={area} onClearArea={withClear ? onClearArea : undefined} onSelect={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  return onClearArea;
+}
+
+describe('PropertyList 칸 목록(area)', () => {
+  it('area가 있으면 요청에 표시 영역 네 값이 실리고 그 영역의 목록이 보인다', async () => {
+    server.use(...propertyHandlers);
+    const tracker = trackRequestedUrls();
+
+    renderListWithArea(AREA);
+
+    await waitFor(() => expect(screen.getByText(PROPERTY_LIST_AREA_PAGE.items[0]!.address)).toBeInTheDocument());
+    const [requestUrl] = tracker.listUrls();
+    const params = new URL(requestUrl!).searchParams;
+    expect(params.get('minLat')).toBe(String(AREA_BBOX.minLat));
+    expect(params.get('maxLat')).toBe(String(AREA_BBOX.maxLat));
+    expect(params.get('minLng')).toBe(String(AREA_BBOX.minLng));
+    expect(params.get('maxLng')).toBe(String(AREA_BBOX.maxLng));
+    // 반경 조건은 보내지 않는다 — 보내면 마커 형태로 응답한다(명세 1.3)
+    expect(params.has('radiusKm')).toBe(false);
+
+    tracker.stop();
+  });
+
+  it('min = max인 한 점 영역도 네 값 모두 실린다', async () => {
+    server.use(...propertyHandlers);
+    const tracker = trackRequestedUrls();
+
+    renderListWithArea({ bbox: { minLat: 37.5, maxLat: 37.5, minLng: 127.1, maxLng: 127.1 } });
+
+    await waitFor(() => expect(tracker.listUrls().length).toBeGreaterThan(0));
+    const params = new URL(tracker.listUrls()[0]!).searchParams;
+    expect(params.get('minLat')).toBe('37.5');
+    expect(params.get('maxLat')).toBe('37.5');
+    expect(params.get('minLng')).toBe('127.1');
+    expect(params.get('maxLng')).toBe('127.1');
+
+    tracker.stop();
+  });
+
+  it('안내(status)가 「이 위치의 매물을 보고 있습니다」를 건수 없이 알린다', async () => {
+    server.use(...propertyHandlers);
+
+    renderListWithArea(AREA);
+
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent('이 위치의 매물을 보고 있습니다');
+    expect(notice).not.toHaveTextContent(/\d+건/);
+  });
+
+  it('「전체 목록」을 누르면 onClearArea가 불린다', async () => {
+    server.use(...propertyHandlers);
+
+    const onClearArea = renderListWithArea(AREA);
+
+    fireEvent.click(await screen.findByRole('button', { name: '전체 목록' }));
+
+    expect(onClearArea).toHaveBeenCalledTimes(1);
+  });
+
+  it('onClearArea가 없으면 「전체 목록」 버튼이 없다', async () => {
+    server.use(...propertyHandlers);
+
+    renderListWithArea(AREA, false);
+
+    await screen.findByRole('status');
+    expect(screen.queryByRole('button', { name: '전체 목록' })).not.toBeInTheDocument();
+  });
+
+  it('area가 없으면 안내도 「전체 목록」도 없다', async () => {
+    server.use(...propertyHandlers);
+
+    renderList();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM_1.address)).toBeInTheDocument());
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '전체 목록' })).not.toBeInTheDocument();
+  });
+});
+
 describe('PropertyList', () => {
-  it('목록 요청에 좌표(minLat · maxLat · minLng · maxLng)를 보내지 않는다', async () => {
+  it('area가 없을 때 목록 요청에 좌표(minLat · maxLat · minLng · maxLng)를 보내지 않는다', async () => {
     server.use(...propertyHandlers);
     const tracker = trackRequestedUrls();
 
