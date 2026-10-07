@@ -162,6 +162,74 @@ class MaskingConverterTest {
     }
 
     @Test
+    @DisplayName("Hibernate 가 감싼 중복 키 오류 — 값만 가리고 SQL 꼬리는 남긴다")
+    void masksHibernateWrappedDuplicateKey() {
+        String converted =
+                convertMessage(
+                        "could not execute statement [ERROR: duplicate key value violates unique constraint \"uk_user_auth_provider\"\n"
+                                + "  Detail: Key (auth_type, provider_id)=(EMAIL, a@b.com) already exists.]"
+                                + " [insert into user_auth (auth_type,provider_id,user_id,password_hash) values (?,?,?,?)]");
+
+        assertThat(converted)
+                .contains("Key (auth_type, provider_id)=(***) already exists.")
+                .contains("[insert into user_auth")
+                .doesNotContain("a@b.com", "(EMAIL");
+    }
+
+    @Test
+    @DisplayName("외래 키 위반 Detail 의 값을 가린다")
+    void masksForeignKeyDetail() {
+        String converted =
+                convertMessage("  Detail: Key (user_id)=(42) is not present in table \"users\".");
+
+        assertThat(converted)
+                .contains("Key (user_id)=(***) is not present in table \"users\".")
+                .doesNotContain("42");
+    }
+
+    @Test
+    @DisplayName("배제 제약 Detail 의 두 값 묶음을 모두 가린다")
+    void masksExclusionConstraintBothKeys() {
+        String converted =
+                convertMessage(
+                        "  Detail: Key (room, during)=(101, [2026-01-01,2026-02-01)) conflicts with"
+                                + " existing key (room, during)=(101, [2026-01-15,2026-03-01)).");
+
+        assertThat(converted)
+                .contains("Key (room, during)=(***) conflicts with existing key (room, during)=(***).")
+                .doesNotContain("101", "2026-01");
+    }
+
+    @Test
+    @DisplayName("식 인덱스 열 목록은 남기고 값만 가린다")
+    void masksExpressionIndexKeepingColumnList() {
+        String converted =
+                convertMessage("  Detail: Key (lower(email::text))=(a@b.com) already exists.");
+
+        assertThat(converted)
+                .contains("Key (lower(email::text))=(***) already exists.")
+                .doesNotContain("a@b.com");
+    }
+
+    @Test
+    @DisplayName("꼬리 없이 끝나는 Key 줄도 값을 가린다")
+    void masksKeyLineWithoutTail() {
+        String converted = convertMessage("  Detail: Key (email)=(a@b.com)");
+
+        assertThat(converted).contains("Key (email)=(***)").doesNotContain("a@b.com");
+    }
+
+    @Test
+    @DisplayName("파티션 키 Detail 의 값을 가린다")
+    void masksPartitionKeyDetail() {
+        String converted =
+                convertMessage(
+                        "  Detail: Partition key of the failing row contains (district) = (강남구).");
+
+        assertThat(converted).doesNotContain("강남구");
+    }
+
+    @Test
     @DisplayName("NOT NULL · CHECK 위반 Detail 의 행 값을 가린다")
     void masksPgFailingRowDetail() {
         String converted =
