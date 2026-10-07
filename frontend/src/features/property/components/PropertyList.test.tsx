@@ -1,6 +1,6 @@
 // PropertyList 검증 — 매물 API 명세 1.3이 좌표 유무로 마커·목록 응답을 가르므로, 목록 조회가
 // 좌표를 보내지 않는지(①)와 기본 정렬을 화면이 만들어 보내지 않는지(②)가 가장 틀리기 쉬운 지점이다.
-// 정렬 전환 · 커서 「더 보기」 · 항목 선택 · 미분석 표기도 함께 본다.
+// 정렬 전환 · 커서 다음 쪽(목록 끝 감시) · 항목 선택 · 미분석 표기도 함께 본다.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
@@ -196,7 +196,8 @@ describe('PropertyList', () => {
     tracker.stop();
   });
 
-  it('「더 보기」를 누르면 다음 요청의 cursor가 이전 쪽 응답의 nextCursor 그대로이고, 마지막 쪽에서 사라진다', async () => {
+  it('목록 끝 감시로 받은 다음 요청의 cursor가 이전 쪽 응답의 nextCursor 그대로이고, 마지막 쪽에서 감시 요소가 사라진다', async () => {
+    const uninstall = installFakeIntersectionObserver();
     server.use(...propertyHandlers);
     const tracker = trackRequestedUrls();
 
@@ -204,7 +205,7 @@ describe('PropertyList', () => {
 
     await waitFor(() => expect(screen.getByText(LIST_ITEM_1.address)).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('button', { name: '더 보기' }));
+    act(() => getIntersectionObserverInstances().at(-1)!.trigger(true));
 
     await waitFor(() => expect(screen.getByText(LIST_ITEM_2.address)).toBeInTheDocument());
 
@@ -212,10 +213,21 @@ describe('PropertyList', () => {
     expect(urls.length).toBeGreaterThanOrEqual(2);
     expect(new URL(urls[1]!).searchParams.get('cursor')).toBe(PROPERTY_LIST_PAGE_1.nextCursor);
 
-    // 둘째 쪽은 hasNext: false라 「더 보기」가 더는 없다
-    expect(screen.queryByRole('button', { name: '더 보기' })).not.toBeInTheDocument();
+    // 둘째 쪽은 hasNext: false라 감시가 더는 걸려 있지 않다
+    expect(getIntersectionObserverInstances().every((observer) => observer.isDisconnected)).toBe(true);
 
     tracker.stop();
+    uninstall();
+  });
+
+  it('「더 보기」 버튼이 없다 — 다음 쪽은 패널 스크롤(목록 끝 감시)로만 잇는다', async () => {
+    server.use(...propertyHandlers);
+    renderList();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM_1.address)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: '더 보기' })).not.toBeInTheDocument();
+    // 실패 전에는 「다시 시도」도 없다
+    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument();
   });
 
   it('목록 끝 감시 요소가 패널 스크롤 영역 안에서 보이면 다음 쪽을 요청한다', async () => {
@@ -241,7 +253,7 @@ describe('PropertyList', () => {
     uninstall();
   });
 
-  it('다음 쪽 요청이 실패한 뒤에는 감시 요소가 보여도 다시 요청하지 않는다 — 다시 시도는 「더 보기」로만', async () => {
+  it('다음 쪽 요청이 실패한 뒤에는 감시 요소가 보여도 다시 요청하지 않는다 — 다시 시도는 「다시 시도」로만', async () => {
     const uninstall = installFakeIntersectionObserver();
     // 둘째 쪽(cursor = 첫 쪽의 nextCursor)만 실패시킨다. 첫 쪽은 기본 핸들러가 준다
     // 앞에 둔 핸들러가 먼저 맞는다 — 실패 핸들러를 기본 핸들러보다 앞에 둔다
@@ -273,8 +285,8 @@ describe('PropertyList', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(nextPageRequests()).toHaveLength(1);
 
-    // 「더 보기」는 남아 있어 손으로 다시 시도할 수 있다
-    fireEvent.click(screen.getByRole('button', { name: '더 보기' }));
+    // 실패한 상태에서만 「다시 시도」가 나와 손으로 다시 요청할 수 있다
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }));
     await waitFor(() => expect(nextPageRequests()).toHaveLength(2));
 
     tracker.stop();
@@ -313,11 +325,12 @@ describe('PropertyList', () => {
   });
 
   it('미분석 매물(riskGrade · debtRatio가 null)은 domain/risk.ts의 문구로 표시되고 깨지지 않는다', async () => {
+    const uninstall = installFakeIntersectionObserver();
     server.use(...propertyHandlers);
     renderList();
 
     await waitFor(() => expect(screen.getByText(LIST_ITEM_1.address)).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: '더 보기' }));
+    act(() => getIntersectionObserverInstances().at(-1)!.trigger(true));
     await waitFor(() => expect(screen.getByText(LIST_ITEM_2.address)).toBeInTheDocument());
 
     // 미분석 매물 항목의 상세 보기 버튼이 렌더된다 — 렌더가 깨지지 않았다는 증거
@@ -333,5 +346,7 @@ describe('PropertyList', () => {
     expect(
       within(item!).getByText((content) => content.includes(`전세가율 ${debtRatioLabel(LIST_ITEM_2.debtRatio)}`)),
     ).toBeInTheDocument();
+
+    uninstall();
   });
 });

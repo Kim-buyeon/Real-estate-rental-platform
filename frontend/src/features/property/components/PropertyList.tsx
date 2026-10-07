@@ -1,7 +1,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { BoundingBox, PropertyFilter } from '../../../api/property';
-import { Alert, Badge, Button, Field, Select, Skeleton, visuallyHiddenClassName } from '../../../components/ui';
+import { Alert, Badge, Button, Field, Select, Skeleton, Spinner, visuallyHiddenClassName } from '../../../components/ui';
 import {
   PROPERTY_SORTS,
   PROPERTY_SORT_DEFAULT_LABEL,
@@ -45,7 +45,7 @@ interface PropertyListProps {
  * 네 값을 함께 보내 그 안의 매물만 받는다 — 지도를 움직여도 따라가지 않고, 「전체 목록」이나 자치구 변경에서 풀린다.
  *
  * 커서 목록이라 다음 쪽을 잇는다 — 전체 건수는 주지 않는다 (공통 규약 1.4). 패널 스크롤이 목록 끝에 닿으면
- * 다음 쪽을 받고, 「더 보기」 버튼은 키보드 사용자와 감시가 안 되는 환경을 위해 남긴다.
+ * 다음 쪽을 받는다. 다음 쪽 요청이 실패했을 때만 목록 끝에 「다시 시도」 버튼이 나온다.
  * 정렬은 화면 상태로 여기가 갖는다. 고르지 않은 상태에서는 값을 보내지 않고, 그때의 순서(등록일
  * 내림차순)는 서버가 만든다 (명세 1.3) — 기본값을 화면에 다시 적지 않는다.
  *
@@ -66,10 +66,10 @@ export function PropertyList({ filter, area = null, onClearArea, onSelect }: Pro
   useEffect(() => {
     const root = scrollRef.current;
     const sentinel = sentinelRef.current;
-    // 감시가 없는 환경(jsdom · 구형 브라우저)에서는 아무것도 하지 않는다 — 「더 보기」 버튼이 남아 있다
+    // 감시가 없는 환경(jsdom · 구형 브라우저)에서는 아무것도 하지 않는다
     if (typeof IntersectionObserver === 'undefined' || !root || !sentinel || !hasNextPage) return;
     // 다음 쪽 요청이 실패했으면 자동으로 다시 부르지 않는다. 감시를 새로 걸면 observe 직후 알림으로 곧바로
-    // 다시 요청해 실패 → 재요청이 끝없이 돈다(재시도 상한 우회). 다시 시도는 「더 보기」 버튼으로만 —
+    // 다시 요청해 실패 → 재요청이 끝없이 돈다(재시도 상한 우회). 다시 시도는 「다시 시도」 버튼으로만 —
     // 그것이 성공하면 이 값이 풀려 감시가 다시 걸린다
     if (isFetchNextPageError) return;
     const observer = new IntersectionObserver(
@@ -177,14 +177,13 @@ export function PropertyList({ filter, area = null, onClearArea, onSelect }: Pro
           </ul>
         )}
 
-        {listQuery.hasNextPage && (
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void listQuery.fetchNextPage()}
-            isLoading={listQuery.isFetchingNextPage}
-          >
-            더 보기
+        {/* 이어받는 중 — 목록 끝의 짧은 대기 */}
+        {listQuery.isFetchingNextPage && <Spinner label="다음 매물을 불러오는 중" />}
+
+        {/* 다음 쪽 요청이 실패했을 때만 — 감시는 자동으로 다시 부르지 않으므로 손으로 다시 시도한다 */}
+        {listQuery.isFetchNextPageError && !listQuery.isFetchingNextPage && (
+          <Button type="button" variant="secondary" onClick={() => void listQuery.fetchNextPage()}>
+            다시 시도
           </Button>
         )}
 
