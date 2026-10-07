@@ -3,9 +3,9 @@
  * 항목 간격 {spacing.md}(16). top-nav 아래 띠는 이 한 줄뿐이다 — 지도 단계 이동(「← 서울 전체」 ·
  * 자치구 선택)도 앞쪽 슬롯(.leading)으로 이 줄에 들어온다.
  *
- * 맵과 다르게 간 곳: 참고 사이트의 pulldown 은 라벨 없는 칩이지만 계약유형 · 보증금 · 위험 등급은
- * Field 의 라벨을 달고 있다. 라벨 줄이 위에 붙어 72 를 고정 높이가 아니라 최소 높이로 두고,
- * 라벨 없는 칸(자치구 — 접근 이름은 숨김 글자)과 바닥을 맞추려고 아래쪽으로 정렬한다.
+ * 참고 사이트처럼 칸은 라벨 없는 칩이다. 계약유형 · 보증금 상한 · 위험 등급의 이름은 숨김 글자(라벨 ·
+ * legend)로 접근 이름만 맡고, 고르지 않은 select 의 보이는 글자가 칸 이름이다 — 자치구 칸과 같은 방식
+ * (이슈 503). 라벨 줄이 없어 줄은 높이 72 고정이고 칸들은 세로 가운데로 선다.
  *
  * 폭과 무관하게 한 줄이다. 넘치면 줄바꿈하지 않고 가로로 스크롤한다 — 모바일은 레이아웃 맵 제안과
  * 같고, 768 이상도 줄이 둘이 되면 지도 높이가 폭에 따라 달라진다.
@@ -29,9 +29,9 @@
 
   display: flex;
   flex-wrap: nowrap;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--spacing-md);
-  min-height: 72px;
+  height: 72px;
   padding: var(--spacing-xs) var(--spacing-md);
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -55,27 +55,29 @@
   border-radius: var(--rounded-pill);
 }
 
-/* 앞쪽 슬롯. 필터 칸들과 같은 간격 · 바닥 정렬로 한 줄에 선다 */
+/* 앞쪽 슬롯. 필터 칸들과 같은 간격 · 가운데 정렬로 한 줄에 선다 */
 .leading {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--spacing-md);
 }
 
-/* 단계 이동 버튼도 pulldown 과 같은 높이에 선다 — 바닥을 맞춰도 키가 다르면 줄이 들쭉날쭉하다 */
+/* 단계 이동 버튼도 pulldown 과 같은 높이에 선다 — 키가 다르면 줄이 들쭉날쭉하다 */
 .leading button {
   min-height: var(--pulldown-height);
 }
 
 .grades {
+  position: relative;
   margin: 0;
   padding: 0;
   border: none;
 }
 
-.legend {
-  padding: 0 0 var(--spacing-2xs);
-  color: var(--color-text-secondary);
+/* 숨김 라벨 글자가 absolute 라서 그 기준을 이 칸으로 잡는다 — 필터 줄의 가로 스크롤 밖으로 새지 않는다 */
+.slot {
+  position: relative;
+  display: flex;
 }
 
 .gradeButtons {
@@ -84,7 +86,7 @@
   gap: var(--spacing-xs);
 }
 
-/* 줄 끝의 초기화 버튼 — pulldown 과 같은 높이로 바닥을 맞춘다. 반경은 ghost 의 {rounded.sm} 그대로 */
+/* 줄 끝의 초기화 버튼 — pulldown 과 같은 높이로 선다. 반경은 ghost 의 {rounded.sm} 그대로 */
 .bar .reset {
   min-height: var(--pulldown-height);
 }

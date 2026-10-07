@@ -48,6 +48,38 @@ describe('PropertyFilterBar', () => {
     expect(within(bar).getByLabelText('계약유형')).toBeInTheDocument();
   });
 
+  it('계약유형 · 보증금 상한은 고르지 않은 상태의 보이는 글자가 칸 이름이다', () => {
+    render(<PropertyFilterBar filter={{}} onChange={vi.fn()} />);
+
+    // 라벨은 숨김 글자로 바뀌었지만 접근 이름은 그대로라 라벨로 찾을 수 있다
+    const contractType = screen.getByLabelText<HTMLSelectElement>('계약유형');
+    const depositMax = screen.getByLabelText<HTMLSelectElement>('보증금 상한');
+
+    expect(contractType.selectedOptions[0]).toHaveTextContent('계약유형');
+    expect(contractType.selectedOptions[0]).toHaveValue('');
+    expect(depositMax.selectedOptions[0]).toHaveTextContent('보증금 상한');
+    expect(depositMax.selectedOptions[0]).toHaveValue('');
+    expect(screen.queryByRole('option', { name: '전체' })).not.toBeInTheDocument();
+  });
+
+  it('보증금 상한 select를 바꾸면 onChange가 depositMax를 숫자로 담아 불린다', () => {
+    const handleChange = vi.fn();
+    render(<PropertyFilterBar filter={{}} onChange={handleChange} />);
+    const depositMax = screen.getByLabelText<HTMLSelectElement>('보증금 상한');
+    const firstAmount = depositMax.options[1]?.value ?? '';
+
+    fireEvent.change(depositMax, { target: { value: firstAmount } });
+
+    expect(handleChange).toHaveBeenCalledWith({ depositMax: Number(firstAmount) });
+  });
+
+  it('위험 등급 버튼 묶음은 숨김 legend로 「위험 등급」 접근 이름을 갖는다', () => {
+    render(<PropertyFilterBar filter={{}} onChange={vi.fn()} />);
+
+    const group = screen.getByRole('group', { name: '위험 등급' });
+    expect(within(group).getByRole('button', { name: '안전' })).toBeInTheDocument();
+  });
+
   it('모든 값이 기본값이면 필터 초기화 버튼은 비활성이다', () => {
     render(<PropertyFilterBar filter={{}} onChange={vi.fn()} />);
 
