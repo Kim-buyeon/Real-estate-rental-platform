@@ -1,7 +1,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import type { BoundingBox, PropertyFilter } from '../../../api/property';
-import { Alert, Badge, Button, Field, Select } from '../../../components/ui';
+import { Alert, Badge, Button, Field, Select, Skeleton, visuallyHiddenClassName } from '../../../components/ui';
 import {
   PROPERTY_SORTS,
   PROPERTY_SORT_DEFAULT_LABEL,
@@ -14,6 +14,9 @@ import { debtRatioLabel, riskGradeLabel, riskGradeToken } from '../../../domain/
 import { formatDate, formatWon } from '../../../lib/format';
 import { propertyQueries } from '../../../queries/property';
 import styles from './PropertyList.module.css';
+
+/** 첫 로딩에 자리를 잡아 둘 행 수. 목록 패널 한 화면에 보이는 정도다 — 실제 건수와 무관하다 */
+const SKELETON_COUNT = 5;
 
 /**
  * 칸 목록 — 지도에서 더 확대할 수 없는 묶음 칸이나 같은 좌표에 겹친 마커를 골랐을 때 목록을 그 영역으로 좁힌다.
@@ -91,7 +94,10 @@ export function PropertyList({ filter, area = null, onClearArea, onSelect }: Pro
       </div>
 
       <div className={styles.body}>
-        {listQuery.isPending && <p className="type-body">불러오는 중입니다.</p>}
+        {/* 첫 로딩은 목록 행 모양의 자리 표시다({components.skeleton}) — 관심 매물 · 알림 목록과 같은 방식 */}
+        {listQuery.isPending && (
+          <Skeleton count={SKELETON_COUNT} className={styles.skeleton} itemClassName={styles.skeletonItem} />
+        )}
 
         {listQuery.error && <Alert variant="error">{listQuery.error.message}</Alert>}
 
@@ -105,38 +111,40 @@ export function PropertyList({ filter, area = null, onClearArea, onSelect }: Pro
               /*
                * 목록 행 — 레이아웃 맵 map-search 「list-panel 내부」. 썸네일은 만들지 않는다
                * (이미지 데이터가 없다). 위계는 맵 그대로 가격 → 유형 → 스펙이다.
+               * 행 자체가 눌린다 — 행 안에 따로 「상세 보기」 버튼을 두지 않는다(이슈 489). 상세는 화면 이동이 아니라
+               * 지도 옆 패널이라 링크가 아니라 버튼이다. 버튼 안에는 문단(<p>)을 둘 수 없어 줄은 전부 <span>이다.
                */
               <li key={item.propertyId} className={styles.item}>
-                <div className={styles.head}>
-                  <p className={`${styles.price} type-heading-3`}>
-                    {formatWon(item.deposit)}
-                    {item.monthlyRent > 0 && ` / ${formatWon(item.monthlyRent)}`}
-                  </p>
-                  <Badge variant={riskGradeToken(item.riskGrade)}>{riskGradeLabel(item.riskGrade)}</Badge>
-                </div>
+                <button
+                  type="button"
+                  className={styles.row}
+                  onClick={() => onSelect(item.propertyId)}
+                >
+                  <span className={styles.head}>
+                    <span className={`${styles.price} type-heading-3`}>
+                      {formatWon(item.deposit)}
+                      {item.monthlyRent > 0 && ` / ${formatWon(item.monthlyRent)}`}
+                    </span>
+                    <Badge variant={riskGradeToken(item.riskGrade)}>{riskGradeLabel(item.riskGrade)}</Badge>
+                  </span>
 
-                <p className={`${styles.kind} type-body`}>
-                  {contractTypeLabel(item.contractType)} · {propertyTypeLabel(item.propertyType)}
-                </p>
+                  <span className={`${styles.kind} type-body`}>
+                    {contractTypeLabel(item.contractType)} · {propertyTypeLabel(item.propertyType)}
+                  </span>
 
-                <p className={`${styles.spec} type-body-sm`}>{item.address}</p>
+                  <span className={`${styles.spec} type-body-sm`}>{item.address}</span>
 
-                <p className={`${styles.spec} type-body-sm`}>
-                  {item.district} · {item.areaSqm}㎡ · {item.floor}층 · 전세가율 {debtRatioLabel(item.debtRatio)} ·{' '}
-                  {formatDate(item.registeredAt)} 등록
-                </p>
+                  <span className={`${styles.spec} type-body-sm`}>
+                    {item.district} · {item.areaSqm}㎡ · {item.floor}층 · 전세가율 {debtRatioLabel(item.debtRatio)} ·{' '}
+                    {formatDate(item.registeredAt)} 등록
+                  </span>
 
-                <div className={styles.actions}>
-                  {/* 주소를 이름에 넣는다 — 「상세 보기」가 목록에 여럿이라 그것만으로는 구분되지 않는다 */}
-                  <Button
-                    type="button"
-                    size="sm"
-                    aria-label={`${item.address} 상세 보기`}
-                    onClick={() => onSelect(item.propertyId)}
-                  >
-                    상세 보기
-                  </Button>
-                </div>
+                  {/*
+                    접근 이름은 행의 글자 전부 + 「상세 보기」다. aria-label 을 두면 가격 · 등급 · 유형 · 스펙이
+                    이름에서 빠진다 — 행이 여럿이라 주소 · 가격으로 구분되고, 끝말로 무엇을 하는 버튼인지 알린다
+                  */}
+                  <span className={visuallyHiddenClassName}>상세 보기</span>
+                </button>
               </li>
             ))}
           </ul>

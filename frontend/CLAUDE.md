@@ -44,6 +44,7 @@ frontend/
     │   └── global.css            리셋 · 폰트 로드 · keep-all · 프로젝트 정의 변수
     └── test/                   setup.ts · msw/handlers/<도메인>.ts — 응답은 API 명세의 예시 그대로
                                 jsdom에 없는 전역의 가짜 — eventSource.ts · kakao.ts · resizeObserver.ts
+                                toast.ts (토스트 영역 도우미) · listRowName.ts (지도 목록 행 버튼 찾기)
 ```
 
 테스트 파일은 대상 옆에 `<이름>.test.tsx`로 둔다. 무엇을 테스트하는지는 테스트 전략 문서가 정한다.

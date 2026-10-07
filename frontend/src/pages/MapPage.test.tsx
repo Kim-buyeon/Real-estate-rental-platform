@@ -24,10 +24,11 @@ import {
 } from '../test/msw/handlers/property';
 import { riskHandlers } from '../test/msw/handlers/risk';
 import { server } from '../test/msw/server';
+import { listRowName } from '../test/listRowName';
 import { installFakeResizeObserver } from '../test/resizeObserver';
 import MapPage from './MapPage';
-
 import { ToastProvider } from '../components/ui';
+
 const LIST_ITEM = PROPERTY_LIST_PAGE_1.items[0]!;
 
 /** 요청 URL을 모으는 관측기 — PropertyDetailPanel.test.tsx와 같은 방식이다 */
@@ -169,7 +170,7 @@ describe('MapPage', () => {
     // 목록의 첫 항목(propertyId 1024)이 매물 상세(PROPERTY_DETAIL, 같은 propertyId)와 같은 매물이다
     expect(LIST_ITEM.propertyId).toBe(PROPERTY_DETAIL.propertyId);
 
-    fireEvent.click(screen.getByRole('button', { name: `${LIST_ITEM.address} 상세 보기` }));
+    fireEvent.click(screen.getByRole('button', { name: listRowName(LIST_ITEM.address) }));
 
     await waitFor(() => expect(screen.getByRole('tab', { name: '상세' })).toHaveAttribute('aria-selected', 'true'));
     // 상세 패널이 그 매물로 열렸다 — 패널에만 있는 「상세 닫기」 버튼으로 확인한다
@@ -207,7 +208,7 @@ describe('MapPage', () => {
     // 상세를 열기 전에는 지도가 보이는 쪽 — 버튼 문구가 「목록」이다
     expect(screen.getByRole('button', { name: '목록' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: `${LIST_ITEM.address} 상세 보기` }));
+    fireEvent.click(screen.getByRole('button', { name: listRowName(LIST_ITEM.address) }));
 
     // 상세가 목록과 같은 자리를 덮으므로 좁은 화면은 패널 쪽(narrowView: 'panel')으로 넘어간다 —
     // 버튼은 지도로 돌아가는 「지도」로 바뀐다
@@ -314,7 +315,7 @@ describe('MapPage', () => {
     const router = renderMapPage();
 
     await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: `${LIST_ITEM.address} 상세 보기` }));
+    fireEvent.click(screen.getByRole('button', { name: listRowName(LIST_ITEM.address) }));
     await waitFor(() => expect(screen.getByRole('button', { name: '상세 닫기' })).toBeInTheDocument());
 
     await router.navigate(-1);
@@ -345,7 +346,7 @@ describe('MapPage', () => {
 
     await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
     // 열기는 push다 — 히스토리: [/map, /map?propertyId=]
-    fireEvent.click(screen.getByRole('button', { name: `${LIST_ITEM.address} 상세 보기` }));
+    fireEvent.click(screen.getByRole('button', { name: listRowName(LIST_ITEM.address) }));
     await waitFor(() => expect(screen.getByRole('button', { name: '상세 닫기' })).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('tab', { name: '목록' }));
@@ -372,7 +373,7 @@ describe('MapPage', () => {
     await waitFor(() => expect(screen.getByText(LIST_ITEM.address)).toBeInTheDocument());
     expect(router.state.location.search).toBe('');
 
-    fireEvent.click(screen.getByRole('button', { name: `${LIST_ITEM.address} 상세 보기` }));
+    fireEvent.click(screen.getByRole('button', { name: listRowName(LIST_ITEM.address) }));
 
     await waitFor(() => expect(screen.getByRole('tab', { name: '상세' })).toHaveAttribute('aria-selected', 'true'));
     expect(new URLSearchParams(router.state.location.search).get('propertyId')).toBe(String(LIST_ITEM.propertyId));
@@ -455,6 +456,9 @@ async function openAreaIn(district: string) {
   fireEvent.click(clusterButton()!);
 }
 
+/** 칸 목록 안내(Alert info)의 문구 — 안내를 role 이 아니라 문구로 특정한다 */
+const AREA_NOTICE = '이 위치의 매물을 보고 있습니다';
+
 describe('MapPage 칸 목록', () => {
   beforeEach(() => {
     server.use(...propertyHandlers);
@@ -476,8 +480,9 @@ describe('MapPage 칸 목록', () => {
 
     await openAreaIn('송파구');
 
-    const notice = await screen.findByRole('status');
-    expect(notice).toHaveTextContent('이 위치의 매물을 보고 있습니다');
+    // 지도 화면에는 Spinner · 토스트 영역도 role=status 다 — 칸 안내는 문구로 특정하고 역할을 본다
+    const notice = await screen.findByText(AREA_NOTICE, { exact: false });
+    expect(notice.closest('[role="status"]')).not.toBeNull();
     expect(screen.getByRole('tab', { name: '목록' })).toHaveAttribute('aria-selected', 'true');
     // 좁은 화면 토글이 패널 쪽(지도로 돌아가는 「지도」 문구)으로 넘어갔다
     expect(screen.getByRole('button', { name: '지도' })).toBeInTheDocument();
@@ -486,14 +491,14 @@ describe('MapPage 칸 목록', () => {
   it('자치구를 바꾸면 칸 목록 안내가 사라진다', async () => {
     renderMapPage();
     await openAreaIn('송파구');
-    await screen.findByRole('status');
+    await screen.findByText(AREA_NOTICE, { exact: false });
 
     const tracker = trackListRequests();
     fireEvent.change(screen.getByLabelText('자치구'), {
       target: { value: '마포구' },
     });
 
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(AREA_NOTICE, { exact: false })).not.toBeInTheDocument());
     await expectBackToFullList(tracker);
     // 구가 바뀌었으니 목록은 그 구로 좁혀진다
     expect(tracker.last().get('district')).toBe('마포구');
@@ -503,17 +508,17 @@ describe('MapPage 칸 목록', () => {
   it('「← 서울 전체」로 돌아가면 칸 목록 안내가 사라진다', async () => {
     renderMapPage();
     await openAreaIn('송파구');
-    await screen.findByRole('status');
+    await screen.findByText(AREA_NOTICE, { exact: false });
 
     fireEvent.click(screen.getByRole('button', { name: '← 서울 전체' }));
 
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(AREA_NOTICE, { exact: false })).not.toBeInTheDocument());
   });
 
   it('필터를 바꿔도 칸 목록 안내가 남고 목록 요청에 영역 네 값과 바꾼 필터가 함께 실린다', async () => {
     renderMapPage();
     await openAreaIn('송파구');
-    await screen.findByRole('status');
+    await screen.findByText(AREA_NOTICE, { exact: false });
 
     const tracker = trackListRequests();
     fireEvent.change(screen.getByLabelText('계약유형'), {
@@ -527,19 +532,19 @@ describe('MapPage 칸 목록', () => {
     expect(params.get('maxLat')).toBe(String(cluster.maxLat));
     expect(params.get('minLng')).toBe(String(cluster.minLng));
     expect(params.get('maxLng')).toBe(String(cluster.maxLng));
-    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.getByText(AREA_NOTICE, { exact: false })).toBeInTheDocument();
     tracker.stop();
   });
 
   it('「전체 목록」을 누르면 안내가 사라진다', async () => {
     renderMapPage();
     await openAreaIn('송파구');
-    await screen.findByRole('status');
+    await screen.findByText(AREA_NOTICE, { exact: false });
 
     const tracker = trackListRequests();
     fireEvent.click(screen.getByRole('button', { name: '전체 목록' }));
 
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(AREA_NOTICE, { exact: false })).not.toBeInTheDocument());
     await expectBackToFullList(tracker);
     tracker.stop();
   });
@@ -564,25 +569,25 @@ describe('MapPage 칸 목록', () => {
     );
     renderMapPage();
     await openAreaIn('송파구');
-    await screen.findByRole('status');
+    await screen.findByText(AREA_NOTICE, { exact: false });
 
     // 칸 목록의 매물을 열면 상세가 강서구를 따라가고 단계 키가 바뀐다
     fireEvent.click(
       await screen.findByRole('button', {
-        name: `${AREA_ITEM_ADDRESS} 상세 보기`,
+        name: listRowName(AREA_ITEM_ADDRESS),
       }),
     );
     await waitFor(() => expect(screen.getByLabelText('자치구')).toHaveValue('강서구'));
     fireEvent.click(screen.getByRole('tab', { name: '목록' }));
     await waitFor(() => expect(screen.getByText(FULL_ITEM_ADDRESS)).toBeInTheDocument());
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(AREA_NOTICE, { exact: false })).not.toBeInTheDocument();
 
     // 다른 매물의 상세가 송파구를 따라가 원래 구로 돌아와도 칸 목록은 되살아나지 않는다
-    fireEvent.click(screen.getByRole('button', { name: `${FULL_ITEM_ADDRESS} 상세 보기` }));
+    fireEvent.click(screen.getByRole('button', { name: listRowName(FULL_ITEM_ADDRESS) }));
     await waitFor(() => expect(screen.getByLabelText('자치구')).toHaveValue('송파구'));
     fireEvent.click(screen.getByRole('tab', { name: '목록' }));
     await waitFor(() => expect(screen.getByText(FULL_ITEM_ADDRESS)).toBeInTheDocument());
     expect(screen.queryByText(AREA_ITEM_ADDRESS)).not.toBeInTheDocument();
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(AREA_NOTICE, { exact: false })).not.toBeInTheDocument();
   });
 });
