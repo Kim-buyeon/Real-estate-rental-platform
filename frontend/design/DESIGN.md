@@ -977,7 +977,7 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 
 - **값은 레이아웃 맵의 반응형 제안(미관측)을 옮긴 프로젝트 정의다.** 모바일 컷이 없으므로 계측값이 아니다. weight · line-height는 원 역할과 같게 둔다.
 - 역할을 새로 두는 이유: 컴포넌트 CSS가 `font-size`를 직접 적지 않는다는 규칙 때문에, 크기를 바꾸려면 바꿀 대상 역할이 정의서에 있어야 한다.
-- 화면 적용(`typography.css` 이관과 미디어 쿼리)은 별도 프론트 작업이다 — 이슈 #130 범위 밖.
+- 화면 적용(`typography.css` 이관과 미디어 쿼리)은 이슈 #130 범위 밖이었고 이슈 497 에서 구현했다 — K-27.
 - 델타 1007의 `{typography.section-title}` · `{typography.content-title}`은 모바일 역할을 두지 않았다 — 모바일 컷이 없다(K-38).
 
 ### Collapsing
@@ -1097,4 +1097,4 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | K-22 | `radio` · `switch` · `textarea` · `date` · `calendar` — 미관측 · 미사용. 필요해지면 정의서에 먼저 넣는다. 1007 컷에도 없다(`dialog` · `checkbox` · `toast` · `select` · `alert` 포함) |
 | K-23 | 차트(실거래가 · 시세)는 차기 범위다. 데이터 시각화 색은 **미사용** |
 | K-24 | `{colors.border-subtle}` · `{colors.focus}` · `{colors.error}` 계열 · `{typography.label}` · `{spacing.3xs}`는 참고 사이트에서 관측되지 않았다. **기존 구현값을 유지**했고 삭제하지 않았다 |
-| K-27 | `{typography.display-mobile}` · `{typography.heading-1-mobile}` — **정의만 있고 미구현.** `typography.css` 이관과 모바일 미디어 쿼리 적용은 별도 프론트 작업이다 (9절 Typography, 이슈 #130) |
+| K-27 | `{typography.display-mobile}` · `{typography.heading-1-mobile}` — **구현됨(이슈 497) — 9절 두 자리.** 페이지 제목(favorites · my-info)과 폼 카드 제목(login · signup · 비밀번호 찾기 · 재설정)만 모바일 크기 → 768 이상 원 역할 크기. 가격 등 다른 자리는 그대로 (9절 Typography, 이슈 #130) |

@@ -18,7 +18,7 @@ export default function PasswordResetRequestPage() {
   return (
     <section className={styles.page}>
       <CardForm>
-        <h1 className="type-heading-1">비밀번호 찾기</h1>
+        <h1 className="type-heading-1 type-heading-1-mobile">비밀번호 찾기</h1>
         <hr className={styles.divider} />
         {isRequested ? (
           <Alert variant="info" className={styles.notice}>

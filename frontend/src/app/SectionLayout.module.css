@@ -8,7 +8,7 @@
  *
  * px 리터럴 — 미디어 쿼리 조건 768(global.css 머리말이 정본)과, spacing 격자에 없는 레이아웃 맵 계측값
  * 107 · 85 — 아래 .head 의 지역 변수에 모았다. 모바일 제안(미관측) 32 · 24 는 격자 값이라 {spacing.2xl} · {spacing.xl} 을 쓴다.
- * 페이지 제목은 모바일에서도 40(type-display)이다 — display-mobile(24)은 정의서에 있으나 typography.css 에 미구현 — K-27.
+ * 페이지 제목 크기는 모바일 24(type-display-mobile) → 768 이상 40(type-display) — 정의서 9절. 구간 전환은 typography.css 가 갖는다.
  */
 .section {
   display: flex;

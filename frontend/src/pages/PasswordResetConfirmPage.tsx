@@ -34,7 +34,7 @@ export default function PasswordResetConfirmPage() {
   return (
     <section className={styles.page}>
       <CardForm>
-        <h1 className="type-heading-1">비밀번호 재설정</h1>
+        <h1 className="type-heading-1 type-heading-1-mobile">비밀번호 재설정</h1>
         <hr className={styles.divider} />
         {token === null || noticeMessage !== null ? (
           <div className={styles.notice}>

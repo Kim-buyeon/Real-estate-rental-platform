@@ -97,3 +97,12 @@ describe('헤더 메뉴의 활성은 라우트 handle 이 정한다', () => {
     expect(active[0]).toHaveTextContent(activeName);
   });
 });
+
+describe('SectionLayout 제목 역할 클래스', () => {
+  it('h1 에 원 역할과 모바일 역할 클래스가 함께 붙는다', async () => {
+    renderAt('/me/wishlist');
+
+    const h1 = await screen.findByRole('heading', { level: 1 });
+    expect(h1).toHaveClass('type-display', 'type-display-mobile');
+  });
+});
