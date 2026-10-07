@@ -1,0 +1,96 @@
+/*
+ * 디자인 토큰 정의서 7절 「델타 1007 — 고유 컴포넌트 둘」 —
+ *   {components.promo-panel}      {colors.primary} 면 / {colors.on-primary} · 높이 99 · {rounded.lg} · 좌 패딩 ≈ 20 ·
+ *                                 좌측 제목(≈ 17/700 — 역할 없음, {typography.heading-3} 근사) + 부제 {typography.body-sm} ·
+ *                                 우측 타일 2개(갭 {spacing.xs} · 우 인셋 ≈ 12)
+ *   {components.promo-panel-tile} {colors.surface} / {colors.text} · 84 × 80 · {rounded.md} ·
+ *                                 아이콘(24) 위 + 라벨({typography.caption} 근사) 아래
+ * 대비 — on-primary on primary 4.52(정의서 11절). 부제 13px 도 4.5 를 넘는다.
+ *
+ * 좌 패딩 ≈ 20 → {spacing.lg}, 우 인셋 ≈ 12 → {spacing.sm}, 타일 상하 인셋 ≈ 10 은 (99 − 80) ÷ 2 라 가운데 맞춤이 만든다.
+ * px 리터럴 — 정의서가 지정했으나 css-vars export 가 내지 않는 높이 99 · 타일 84 × 80 · 아이콘 24(정의서 6절 Icon).
+ * .panel 의 지역 변수에 모았다(Button.module.css 머리말과 같은 사유). 폭은 적지 않는다 — 우 레일 폭이 정한다(정의서 7절).
+ * 타일은 80 높이라 터치 하한 44 를 넘는다.
+ */
+
+.panel {
+  /* {components.promo-panel} — height 99 */
+  --promo-panel-height: 99px;
+  /* {components.promo-panel-tile} — size 84 × 80 */
+  --promo-tile-width: 84px;
+  --promo-tile-height: 80px;
+  /* 정의서 6절 Icon — promo-panel-tile 아이콘 24 */
+  --promo-tile-icon: 24px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  min-height: var(--promo-panel-height);
+  padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-xs) var(--spacing-lg);
+  border-radius: var(--rounded-lg);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+  min-width: 0;
+}
+
+.title,
+.description {
+  margin: 0;
+  color: var(--color-on-primary);
+}
+
+.tiles {
+  display: flex;
+  flex: none;
+  gap: var(--spacing-xs);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2xs);
+  width: var(--promo-tile-width);
+  height: var(--promo-tile-height);
+  padding: var(--spacing-2xs);
+  border: 0;
+  border-radius: var(--rounded-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: center;
+  transition: background-color 0.15s ease;
+}
+
+/* 정의서 7절 -hover 포괄 규칙 — 면을 {colors.surface-muted} 로 낮춘다 */
+.tile:hover {
+  background: var(--color-surface-muted);
+}
+
+/*
+ * 포커스 링 — 정의서 7절 -focus 는 {colors.focus} 링인데 그 값이 {colors.primary} 와 같아 이 면 위에서 보이지 않는다.
+ * 같은 두께 · 오프셋으로 색만 {colors.on-primary} 로 바꾼다
+ */
+.tile:focus-visible {
+  outline: var(--spacing-3xs) solid var(--color-on-primary);
+  outline-offset: var(--spacing-3xs);
+}
+
+.tileIcon {
+  display: inline-flex;
+  width: var(--promo-tile-icon);
+  height: var(--promo-tile-icon);
+  color: var(--color-primary);
+}
+
+.tileIcon > svg {
+  width: 100%;
+  height: 100%;
+}

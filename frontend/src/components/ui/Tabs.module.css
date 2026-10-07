@@ -3,12 +3,13 @@
  * 패널 안쪽의 스크롤은 여기서 정하지 않는다 — 무엇이 넘치는지는 넣는 쪽이 안다.
  *
  * 디자인 토큰 정의서 7절 Containment 의 {components.tabs-underline} 이다 — h58 · 간격 36 ·
- * 선택은 {colors.primary} 글자 + 2px 인디케이터. 정의서의 다른 탭 변형(tabs-segmented · tabs-pill)은
- * 형태가 달라 여기 섞지 않는다. 필요해지면 variant 로 올린다.
+ * 선택은 {colors.primary} 글자 + 2px 인디케이터. {components.tabs-pill} 은 variant="pill" 로 아래
+ * 「pill」 절이 덮어쓴다(메인 칩 줄이 쓰게 되어 올렸다 — 이슈 487). tabs-segmented 는 아직 쓰는 화면이 없다.
  *
  * px 리터럴은 높이 58 과 간격 36 둘이고 사유는 Button.module.css 머리말과 같다 — 정의서가 지정했으나
  * css-vars export 가 내지 않는 값이라 아래 .tabs 의 지역 변수에 모았다. 58 은 정의서 9절의 터치 타겟
  * 하한 44 를 넘고, 가로는 짧은 라벨에서도 44 아래로 내려가지 않게 --touch-target-min 을 하한으로 둔다.
+ * pill 의 높이 30 도 같은 성질이라 .pill 의 지역 변수에 둔다.
  */
 .tabs {
   /* {components.tabs-underline} — h58 */
@@ -70,4 +71,56 @@
   flex: 1;
   flex-direction: column;
   min-height: 0;
+}
+
+/*
+ * ── pill — {components.tabs-pill}(+ -selected) ──
+ * {colors.surface} + 1px {colors.border} / {colors.text} · {typography.body-sm} · {rounded.pill} · h30.
+ * 선택은 반전 {colors.inverse-surface} / {colors.on-inverse}(정의서 7절 「-selected」 — 반전 방식).
+ * 칩 사이 · 칩 좌우 패딩은 정의서 4절 spacing 표의 {spacing.sm}, 칩 줄 ↔ 패널은 같은 표의 「칩 줄↔래퍼」 {spacing.xl} 이다.
+ * h30 은 포인터 구간(768~)의 값이다. 터치 구간(~767)은 정의서 9절대로 44 하한을 따른다 — Button 의 h36 · h32 와 같은 처리다.
+ */
+.pill {
+  /* {components.tabs-pill} — h30 */
+  --tabs-pill-height: 30px;
+
+  gap: var(--spacing-xl);
+}
+
+.pill .list {
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding: 0;
+  border-bottom: 0;
+}
+
+.pillTab {
+  min-height: var(--touch-target-min);
+  padding: 0 var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* 정의서 7절 -hover 포괄 규칙 — 면을 {colors.surface-muted} 로 낮춘다. 선택된 칩은 반전을 유지한다 */
+.pillTab:hover:not(:disabled):not(.selected) {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.pillTab:focus-visible {
+  outline-offset: var(--spacing-3xs);
+}
+
+.pillTab.selected {
+  border-color: var(--color-inverse-surface);
+  background: var(--color-inverse-surface);
+  color: var(--color-on-inverse);
+}
+
+@media (min-width: 768px) {
+  .pillTab {
+    min-height: var(--tabs-pill-height);
+  }
 }

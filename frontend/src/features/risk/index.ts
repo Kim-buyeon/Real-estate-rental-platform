@@ -7,5 +7,6 @@ export { PersonalConditions, type PersonalConditionsProps } from './components/P
 export { ReanalysisButton } from './components/ReanalysisButton';
 export { RegistryTimeline } from './components/RegistryTimeline';
 export { RiskFindings, type RiskFindingsProps } from './components/RiskFindings';
-export { RiskGradeGuide } from './components/RiskGradeGuide';
+export { RiskCriteriaCards } from './components/RiskCriteriaCards';
+export { RiskGradeBadges } from './components/RiskGradeBadges';
 export { RiskVerdict, type RiskVerdictProps } from './components/RiskVerdict';

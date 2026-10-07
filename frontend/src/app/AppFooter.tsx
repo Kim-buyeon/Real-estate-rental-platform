@@ -1,42 +1,80 @@
 import { Link } from 'react-router';
-import { buttonClassName } from '../components/ui';
+import { useComingSoon } from '../components/ui';
 import styles from './AppFooter.module.css';
 
-/** 사이트맵 링크. 내부 이동은 라우터 `Link`(`to`), 외부는 새 탭 `<a>`(`href`) — 둘 중 하나만 갖는다 */
-type FooterLink = { label: string; to: string; href?: never } | { label: string; href: string; to?: never };
+/**
+ * 사이트맵 항목 셋 —
+ *   link  내부 화면으로 가는 라우터 Link
+ *   soon  아직 만들지 않은 기능의 입구. 링크 모양의 버튼이고 누르면 「준비 중」 토스트만 띄운다(이동 없음)
+ *   text  누를 수 없는 이름(데이터 출처)
+ * 외부 링크는 두지 않는다 — 데이터 출처도 이름만 적는다(이슈 487).
+ */
+type FooterItem =
+  | { kind: 'link'; label: string; to: string }
+  | { kind: 'soon'; label: string }
+  | { kind: 'text'; label: string };
 
 interface FooterColumn {
   title: string;
-  links: FooterLink[];
+  items: FooterItem[];
 }
 
 /**
- * 구역 1 sitemap 의 3컬럼. 참고 사이트는 6컬럼이지만 우리 라우트가 7개라 빈 컬럼이 생긴다 (이슈 112 계획).
- * 「내 정보」는 인증 필수 화면이라 비로그인에서 누르면 가드가 `/login` 으로 보낸다 — 숨기지 않는다.
- * 「데이터 출처」는 데이터 적재 방침 문서가 정한 출처다.
+ * 구역 1 sitemap 의 6컬럼(레이아웃 맵 home 구역 7 — 컬럼 6). 이슈 487 계획 —
+ * - 지도로 가는 길은 상단 내비게이션 하나다. 「매물」 컬럼에도 지도 링크를 두지 않는다
+ * - 「내 정보」는 인증 필수 화면이라 비로그인에서 누르면 가드가 `/login` 으로 보낸다 — 숨기지 않는다
+ * - 「매물」 · 「대출」 · 「상담」 · 「고객지원」은 차기 범위이거나 화면이 없는 기능의 입구다 — 준비 중 토스트
+ * - 「데이터 출처」는 데이터 적재 방침 문서가 정한 출처의 이름이다
  */
 const SITEMAP: FooterColumn[] = [
   {
     title: '매물',
-    links: [{ label: '지도 탐색', to: '/map' }],
+    items: [
+      { kind: 'soon', label: '매물 검색' },
+      { kind: 'soon', label: '시세 추이' },
+      { kind: 'soon', label: '전월세 전환율 계산' },
+      { kind: 'soon', label: '보증 신청기한 계산' },
+    ],
   },
   {
     title: '내 정보',
-    links: [
-      { label: '관심 매물', to: '/me/wishlist' },
-      { label: '알림', to: '/notifications' },
-      { label: '알림 설정', to: '/me/notification-subscriptions' },
-      { label: '계정 · 자격 정보', to: '/me/profile' },
+    items: [
+      { kind: 'link', label: '관심 매물', to: '/me/wishlist' },
+      { kind: 'link', label: '알림', to: '/notifications' },
+      { kind: 'link', label: '알림 설정', to: '/me/notification-subscriptions' },
+      { kind: 'link', label: '계정 · 자격 정보', to: '/me/profile' },
+    ],
+  },
+  {
+    title: '대출',
+    items: [
+      { kind: 'soon', label: '대출 상품 추천' },
+      { kind: 'soon', label: '상환 시뮬레이션' },
+    ],
+  },
+  {
+    title: '상담',
+    items: [
+      { kind: 'soon', label: '위험도 해설 상담' },
+      { kind: 'soon', label: '상담 이력' },
+    ],
+  },
+  {
+    title: '고객지원',
+    items: [
+      { kind: 'soon', label: '공지사항' },
+      { kind: 'soon', label: '자주 묻는 질문' },
+      { kind: 'soon', label: '문의하기' },
     ],
   },
   {
     title: '데이터 출처',
-    links: [
-      { label: '국토교통부 실거래가 · 건축물대장', href: 'https://www.data.go.kr' },
-      { label: '도로명주소', href: 'https://business.juso.go.kr' },
-      { label: '카카오 로컬', href: 'https://developers.kakao.com' },
-      { label: '한국은행 ECOS', href: 'https://ecos.bok.or.kr' },
-      { label: '금융상품 통합비교공시', href: 'https://finlife.fss.or.kr' },
+    items: [
+      { kind: 'text', label: '국토교통부 실거래가 · 건축물대장' },
+      { kind: 'text', label: '도로명주소' },
+      { kind: 'text', label: '카카오 로컬' },
+      { kind: 'text', label: '한국은행 ECOS' },
+      { kind: 'text', label: '금융상품 통합비교공시' },
     ],
   },
 ];
@@ -47,13 +85,8 @@ const PROJECT_INFO: string[][] = [
     '전월세 부동산 금융 플랫폼',
     '서울시 전월세 매물의 전세사기 위험도를 등기 · 건축물대장 · 시세 · 보증보험 기준으로 판정합니다.',
   ],
-  [
-    '등기 정보는 현재 시연용 모의 데이터입니다. 실제 계약 전 등기부등본 원본을 반드시 확인하세요.',
-    '개인 학습 · 포트폴리오 목적의 비상업 프로젝트입니다.',
-  ],
+  ['등기 정보는 예시이며, 계약 전 등기부등본 원본을 반드시 확인하세요.'],
 ];
-
-const REPOSITORY_URL = 'https://github.com/Kim-buyeon/Real-estate-rental-platform';
 
 const DISCLAIMER = '위험도 판정과 대출 한도는 공개 데이터에 근거한 참고 정보이며 법적 효력이 없습니다.';
 
@@ -63,11 +96,13 @@ const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
 /**
  * 전 페이지 공통 푸터. 구역 순서 · 여백 리듬 · 구분선 위치의 정본은 `design/examples/home/layout.md` 이고
- * 색 · 컴포넌트는 디자인 토큰 정의서의 `{components.site-footer}` 다. 내용은 우리 것으로 바꿨다 (이슈 112 계획).
+ * 색 · 컴포넌트는 디자인 토큰 정의서의 `{components.site-footer}` 다. 내용은 우리 것으로 바꿨다 (이슈 112 · 487 계획).
  *
  * 지도 화면은 이 푸터를 렌더하지 않는다 — 판정은 라우트 표의 `handle` 을 읽는 `AppShell` 이 한다.
  */
 export function AppFooter() {
+  const comingSoon = useComingSoon();
+
   return (
     <footer className={styles.footer}>
       {/* 구역 1 — sitemap. 유일한 흰 면이다 */}
@@ -77,21 +112,24 @@ export function AppFooter() {
             <section key={column.title}>
               <h2 className={`${styles.columnTitle} type-eyebrow`}>{column.title}</h2>
               <ul>
-                {column.links.map((link) => (
-                  <li key={link.label}>
-                    {link.to !== undefined ? (
-                      <Link to={link.to} className={`${styles.sitemapLink} type-link`}>
-                        {link.label}
+                {column.items.map((item) => (
+                  <li key={item.label}>
+                    {item.kind === 'link' && (
+                      <Link to={item.to} className={`${styles.sitemapLink} type-body-sm`}>
+                        {item.label}
                       </Link>
-                    ) : (
-                      <a
-                        href={link.href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className={`${styles.sitemapLink} type-link`}
+                    )}
+                    {item.kind === 'soon' && (
+                      <button
+                        type="button"
+                        className={`${styles.sitemapLink} ${styles.sitemapButton} type-body-sm`}
+                        onClick={comingSoon}
                       >
-                        {link.label}
-                      </a>
+                        {item.label}
+                      </button>
+                    )}
+                    {item.kind === 'text' && (
+                      <span className={`${styles.sitemapText} type-body-sm`}>{item.label}</span>
                     )}
                   </li>
                 ))}
@@ -115,7 +153,7 @@ export function AppFooter() {
             </button>
           </div>
 
-          {/* 구역 3 · 4 — 프로젝트 정보 · 저장소 버튼 · 저작권. 셋 다 같은 24 리듬이다 */}
+          {/* 구역 3 · 4 — 프로젝트 정보 · 저작권. 문단 사이와 저작권 위가 같은 24 리듬이다 */}
           <div className={styles.projectInfo}>
             {PROJECT_INFO.map((paragraph) => (
               <div key={paragraph.join('')}>
@@ -126,17 +164,6 @@ export function AppFooter() {
                 ))}
               </div>
             ))}
-            <div className={styles.buttonRow}>
-              {/* 버튼처럼 보이는 링크다 — 두 번째 버튼 컴포넌트를 만들지 않고 Button 의 클래스를 입힌다 */}
-              <a
-                href={REPOSITORY_URL}
-                target="_blank"
-                rel="noreferrer"
-                className={`${buttonClassName('footer-primary', 'sm')} ${styles.repositoryButton}`}
-              >
-                GitHub 저장소
-              </a>
-            </div>
             <p className="type-body-sm">{COPYRIGHT}</p>
           </div>
         </div>

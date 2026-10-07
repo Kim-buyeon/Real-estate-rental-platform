@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
+import { COMING_SOON_MESSAGE } from '../components/ui';
 import { propertyHandlers } from '../test/msw/handlers/property';
 import { server } from '../test/msw/server';
 import { routes } from './router';
@@ -61,13 +62,63 @@ describe('AppFooter', () => {
     );
   });
 
-  it('데이터 출처는 새 탭으로 여는 외부 링크다', async () => {
+  it('데이터 출처는 링크가 아닌 텍스트다', async () => {
     const footer = await renderLoginFooter();
-    const ecos = within(footer).getByRole('link', { name: '한국은행 ECOS' });
+    const scoped = within(footer);
 
-    expect(ecos).toHaveAttribute('href', 'https://ecos.bok.or.kr');
-    expect(ecos).toHaveAttribute('target', '_blank');
-    expect(ecos).toHaveAttribute('rel', 'noreferrer');
+    expect(scoped.getByText('한국은행 ECOS')).toBeInTheDocument();
+    expect(scoped.queryByRole('link', { name: '한국은행 ECOS' })).not.toBeInTheDocument();
+    expect(footer.querySelectorAll('a[target="_blank"]')).toHaveLength(0);
+  });
+
+  it('GitHub · 학습 · 포트폴리오 문구가 없다', async () => {
+    const footer = await renderLoginFooter();
+
+    expect(footer).not.toHaveTextContent(/GitHub/i);
+    expect(footer).not.toHaveTextContent('학습');
+    expect(footer).not.toHaveTextContent('포트폴리오');
+  });
+
+  it('등기 안내는 예시임과 원본 확인을 말한다', async () => {
+    const footer = await renderLoginFooter();
+
+    expect(
+      within(footer).getByText('등기 정보는 예시이며, 계약 전 등기부등본 원본을 반드시 확인하세요.'),
+    ).toBeInTheDocument();
+  });
+
+  it('사이트맵은 6열이고 제목이 순서대로 놓인다', async () => {
+    const footer = await renderLoginFooter();
+    const nav = within(footer).getByRole('navigation', { name: '사이트맵' });
+
+    expect(within(nav).getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      '매물',
+      '내 정보',
+      '대출',
+      '상담',
+      '고객지원',
+      '데이터 출처',
+    ]);
+  });
+
+  it('준비 중 항목은 버튼이고 누르면 알림만 뜬다', async () => {
+    const footer = await renderLoginFooter();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+
+    fireEvent.click(within(footer).getByRole('button', { name: '공지사항' }));
+
+    expect(within(screen.getByRole('status')).getByText(COMING_SOON_MESSAGE)).toBeInTheDocument();
+  });
+
+  it('「지도 탐색」 링크가 없다 — 지도로 가는 길은 상단 메뉴 하나다', async () => {
+    const footer = await renderLoginFooter();
+
+    expect(within(footer).queryByRole('link', { name: '지도 탐색' })).not.toBeInTheDocument();
+    expect(within(footer).queryByText('지도 탐색')).not.toBeInTheDocument();
+    const mapHrefs = within(footer)
+      .queryAllByRole('link')
+      .filter((a) => a.getAttribute('href')?.startsWith('/map'));
+    expect(mapHrefs).toHaveLength(0);
   });
 
   it('TOP 을 누르면 문서 최상단으로 올린다', async () => {

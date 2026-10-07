@@ -1,0 +1,6 @@
+/* 등급 배지 셋을 한 줄로. 칩 사이와 같은 {spacing.xs} 다(정의서 4절 spacing 표). px 리터럴은 없다 */
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}

@@ -1,0 +1,92 @@
+/*
+ * 디자인 토큰 정의서 7절의 {components.card-content} —
+ * {colors.surface-sunken} 면 · 상단 2~3px {colors.primary} 선 · {rounded.none} · 높이 330 고정 ·
+ * 라벨 ≈ 12({typography.caption}) {colors.primary-hover} + 1px {colors.primary-line-soft} 밑줄(폭 ≈ 25) ·
+ * 제목 {typography.content-title} {colors.primary-hover} · 좌하단 28 원형 외곽선 버튼({colors.primary}).
+ * 글자가 {colors.primary} 가 아니라 {colors.primary-hover} 인 것은 의도적 이탈이다 — 이 면 위 primary 3.89:1(K-33).
+ *
+ * 레이아웃 맵 home 「1007 계측 · 구역 6」 —
+ *   패딩 좌 ≈ 30 · 아래 ≈ 30 → {spacing.2xl} 32, 위(↔ 라벨 글자 상단) ≈ 40 → 아래 지역 변수
+ *   라벨 ↔ 밑줄 ≈ 17 → {spacing.md} 16 · 밑줄 ↔ 제목 글자 상단 ≈ 26 → {spacing.xl} 24
+ *   상단 선 두께 2 → {spacing.3xs}(탭 인디케이터 · 포커스 링과 같은 2px 토큰)
+ *
+ * px 리터럴 — 정의서가 지정했으나 css-vars export 가 내지 않는 높이 330 · 원 지름 28 · 밑줄 폭 25(정의서 7절),
+ * 격자에 맞지 않는 레이아웃 맵 계측값 위 패딩 40, 셰브런 16(정의서 6절 Icon), 1px 보더. 전부 .card 의 지역 변수다.
+ * 터치 타겟 — 누르는 것은 카드 전체(330 높이)라 원 28 은 9절의 44 하한과 무관하다.
+ */
+
+.card {
+  /* {components.card-content} — height 330 */
+  --card-content-height: 330px;
+  /* 레이아웃 맵 구역 6 — 위 패딩(↔ 라벨 글자 상단) ≈ 40 */
+  --card-content-pad-top: 40px;
+  /* 정의서 7절 — 좌하단 원형 버튼 지름 28 · 6절 Icon 28 */
+  --card-content-circle: 28px;
+  /* 정의서 7절 — 라벨 밑줄 폭 ≈ 25 */
+  --card-content-rule: 25px;
+  /* 정의서 6절 Icon — 셰브런 16 */
+  --card-content-chevron: 16px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  min-height: var(--card-content-height);
+  padding: var(--card-content-pad-top) var(--spacing-2xl) var(--spacing-2xl);
+  border: 0;
+  border-top: var(--spacing-3xs) solid var(--color-primary);
+  border-radius: var(--rounded-none);
+  background: var(--color-surface-sunken);
+  color: var(--color-primary-hover);
+  text-align: left;
+}
+
+/*
+ * hover 는 정의서 7절 포괄 규칙(면을 {colors.surface-muted} 로)을 따르지 않는다 — 이 면({colors.surface-sunken})보다
+ * 밝아져 「낮춘다」가 되지 않는다. 원 버튼을 채워 누를 수 있다는 것만 드러낸다. 채운 면 위 셰브런은 {colors.on-primary} 다
+ */
+.card:hover .circle {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.card:focus-visible {
+  outline: var(--spacing-3xs) solid var(--color-focus);
+  outline-offset: var(--spacing-3xs);
+}
+
+/* 라벨 + 밑줄. 밑줄은 글자가 아니라 장식이라 ::after 로 둔다 */
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.label::after {
+  content: '';
+  width: var(--card-content-rule);
+  border-bottom: 1px solid var(--color-primary-line-soft);
+}
+
+.heading {
+  margin-top: var(--spacing-xl);
+}
+
+/* 좌하단 원 — 남은 높이를 밀어 내고 아래에 붙는다 */
+.circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--card-content-circle);
+  height: var(--card-content-circle);
+  margin-top: auto;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--rounded-pill);
+  color: var(--color-primary);
+  transition: background-color 0.15s ease;
+}
+
+.chevron {
+  width: var(--card-content-chevron);
+  height: var(--card-content-chevron);
+}

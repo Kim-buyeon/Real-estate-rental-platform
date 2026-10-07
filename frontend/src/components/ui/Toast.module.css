@@ -1,0 +1,43 @@
+/*
+ * 디자인 토큰 정의서 7절 Feedback 의 {components.toast} · {components.toast-error} 다 —
+ * {colors.inverse-surface} / {colors.on-inverse}(오류는 {colors.error} / {colors.on-error}) ·
+ * {typography.body} · {rounded.md} · 패딩 {spacing.sm} / {spacing.md}. 새 색 · 새 수치가 없다(K-19).
+ *
+ * 위치(화면 하단 중앙) · 지속(2.5초 — ToastProvider 의 TOAST_DURATION_MS) · 겹침 순서(z-index 100)의 정본은
+ * 정의서 K-19 · K-13 이다. 여기서는 그 값을 쓰기만 한다. 아래 여백은 지도 화면 전환 토글과 같은 {spacing.xl} 이다.
+ *
+ * 들어오고 나가는 움직임은 두지 않는다 — 정의서 7절 「전환」은 색 전환 150ms 만 정했고 움직임은 미관측(K-11)이다.
+ * 그림자도 두지 않는다 — 정의서 5절 레벨 1 은 추정치이고 토큰이 없다.
+ *
+ * px 리터럴은 없다. 폭 상한은 화면 좌우 {spacing.md} 를 남긴다 — 모바일 컨테이너 좌우 패딩과 같다.
+ */
+
+/* 화면에 늘 붙어 있는 알림 영역. 내용이 바뀔 때 화면 낭독기가 읽도록 비어 있어도 남겨 둔다 */
+.region {
+  /* 겹침 순서 — 정의서 K-13 */
+  --toast-layer: 100;
+
+  position: fixed;
+  bottom: var(--spacing-xl);
+  left: 50%;
+  z-index: var(--toast-layer);
+  width: max-content;
+  max-width: calc(100% - var(--spacing-md) * 2);
+  transform: translateX(-50%);
+  /* 비어 있는 영역이 아래 화면의 클릭을 막지 않는다 */
+  pointer-events: none;
+}
+
+.toast {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--rounded-md);
+  background: var(--color-inverse-surface);
+  color: var(--color-on-inverse);
+  text-align: center;
+  pointer-events: auto;
+}
+
+.error {
+  background: var(--color-error);
+  color: var(--color-on-error);
+}

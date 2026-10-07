@@ -1,0 +1,27 @@
+/*
+ * 판정 기준 카드 넷의 그리드. 레이아웃 맵 home 구역 5 는 슬라이드(2장 보기 · 갭 20)를 관측했고, 우리는 슬라이드 없이
+ * 넷을 정적으로 둔다 — 카드 폭은 우리 그리드가 정한다(맵 「카드 폭의 해석」). 데스크톱 4열 · 태블릿 2열 · 모바일 1열,
+ * 갭은 관측 갭 20 의 {spacing.lg}. 컬럼 폭은 px 로 적지 않는다(정의서 4절 repeat(N, 1fr)).
+ *
+ * px 리터럴은 미디어 쿼리 조건 둘뿐이고 정본은 global.css 머리말이다.
+ */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-lg);
+
+  /* 같은 행의 카드를 가장 높은 카드에 맞춰 늘린다 — 카드 안 flex 가 정보부를 아래로 밀어 넷의 정보부가 한 줄에 선다 */
+  align-items: stretch;
+}
+
+@media (min-width: 768px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
