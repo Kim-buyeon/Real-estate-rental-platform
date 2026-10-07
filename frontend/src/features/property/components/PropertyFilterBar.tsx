@@ -1,6 +1,6 @@
 import { memo, useCallback, type ReactNode } from 'react';
 import type { PropertyFilter } from '../../../api/property';
-import { Button, Field, Select } from '../../../components/ui';
+import { Button, Select, visuallyHiddenClassName } from '../../../components/ui';
 import {
   CONTRACT_TYPES,
   DEPOSIT_MAX_OPTIONS,
@@ -56,48 +56,49 @@ export const PropertyFilterBar = memo(function PropertyFilterBar({ filter, onCha
     <div className={styles.bar} role="search" aria-label="매물 필터">
       {leading !== undefined && <div className={styles.leading}>{leading}</div>}
 
-      <Field label="계약유형">
-        {(control) => (
-          <Select
-            {...control}
-            className={styles.pulldown}
-            value={filter.contractType ?? ''}
-            onChange={(event) =>
-              onChange({ ...filter, contractType: (event.target.value || undefined) as ContractType | undefined })
-            }
-          >
-            <option value="">전체</option>
-            {CONTRACT_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {contractTypeLabel(type)}
-              </option>
-            ))}
-          </Select>
-        )}
-      </Field>
+      {/*
+        라벨 없는 pulldown 칸 — 자치구 칸(DistrictPicker)과 같은 방식이다. 칸 이름은 숨김 글자로 접근 이름만
+        맡고, 고르지 않은 상태의 보이는 글자(빈 선택지)가 같은 칸 이름이라 화면에서도 무엇인지 읽힌다.
+      */}
+      <label className={styles.slot}>
+        <span className={visuallyHiddenClassName}>계약유형</span>
+        <Select
+          className={styles.pulldown}
+          value={filter.contractType ?? ''}
+          onChange={(event) =>
+            onChange({ ...filter, contractType: (event.target.value || undefined) as ContractType | undefined })
+          }
+        >
+          <option value="">계약유형</option>
+          {CONTRACT_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {contractTypeLabel(type)}
+            </option>
+          ))}
+        </Select>
+      </label>
 
-      <Field label="보증금 상한">
-        {(control) => (
-          <Select
-            {...control}
-            className={styles.pulldown}
-            value={filter.depositMax ?? ''}
-            onChange={(event) =>
-              onChange({ ...filter, depositMax: event.target.value ? Number(event.target.value) : undefined })
-            }
-          >
-            <option value="">전체</option>
-            {DEPOSIT_MAX_OPTIONS.map((amount) => (
-              <option key={amount} value={amount}>
-                {formatDepositShort(amount)} 이하
-              </option>
-            ))}
-          </Select>
-        )}
-      </Field>
+      <label className={styles.slot}>
+        <span className={visuallyHiddenClassName}>보증금 상한</span>
+        <Select
+          className={styles.pulldown}
+          value={filter.depositMax ?? ''}
+          onChange={(event) =>
+            onChange({ ...filter, depositMax: event.target.value ? Number(event.target.value) : undefined })
+          }
+        >
+          <option value="">보증금 상한</option>
+          {DEPOSIT_MAX_OPTIONS.map((amount) => (
+            <option key={amount} value={amount}>
+              {formatDepositShort(amount)} 이하
+            </option>
+          ))}
+        </Select>
+      </label>
 
       <fieldset className={styles.grades}>
-        <legend className={`${styles.legend} type-label`}>위험 등급</legend>
+        {/* 등급 버튼 글자가 스스로 읽히므로 묶음 이름은 낭독기에만 준다 */}
+        <legend className={visuallyHiddenClassName}>위험 등급</legend>
         <div className={styles.gradeButtons}>
           {RISK_GRADES.map((grade) => {
             const isSelected = (filter.riskGrade ?? []).includes(grade);
