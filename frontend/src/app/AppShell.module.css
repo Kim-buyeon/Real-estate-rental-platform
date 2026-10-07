@@ -24,6 +24,8 @@
 .shellFilled {
   height: 100vh;
   height: 100dvh;
+  /* .shell 의 min-height 100vh 를 푼다 — 남으면 모바일에서 dvh 가 vh 보다 짧을 때 하한이 이겨 페이지가 스크롤한다 */
+  min-height: 0;
 }
 
 .header {

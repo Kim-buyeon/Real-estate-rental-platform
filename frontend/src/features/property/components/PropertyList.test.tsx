@@ -2,7 +2,8 @@
 // 좌표를 보내지 않는지(①)와 기본 정렬을 화면이 만들어 보내지 않는지(②)가 가장 틀리기 쉬운 지점이다.
 // 정렬 전환 · 커서 「더 보기」 · 항목 선택 · 미분석 표기도 함께 본다.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import { describe, expect, it, vi } from 'vitest';
 import { PROPERTY_SORT_LABEL, PROPERTY_SORTS } from '../../../domain/property';
 import { formatWon } from '../../../lib/format';
@@ -13,6 +14,7 @@ import {
   PROPERTY_LIST_PAGE_2,
   propertyHandlers,
 } from '../../../test/msw/handlers/property';
+import { getIntersectionObserverInstances, installFakeIntersectionObserver } from '../../../test/intersectionObserver';
 import { listRowName } from '../../../test/listRowName';
 import { server } from '../../../test/msw/server';
 import type { BoundingBox } from '../../../api/property';
@@ -214,6 +216,69 @@ describe('PropertyList', () => {
     expect(screen.queryByRole('button', { name: '더 보기' })).not.toBeInTheDocument();
 
     tracker.stop();
+  });
+
+  it('목록 끝 감시 요소가 패널 스크롤 영역 안에서 보이면 다음 쪽을 요청한다', async () => {
+    const uninstall = installFakeIntersectionObserver();
+    server.use(...propertyHandlers);
+    const tracker = trackRequestedUrls();
+
+    renderList();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM_1.address)).toBeInTheDocument());
+
+    // 감시의 root 는 목록 스크롤 영역이다 — 페이지(null)가 아니다
+    const observer = getIntersectionObserverInstances().at(-1)!;
+    expect(observer.root).toBeInstanceOf(HTMLElement);
+
+    act(() => observer.trigger(true));
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM_2.address)).toBeInTheDocument());
+    const urls = tracker.listUrls();
+    expect(new URL(urls.at(-1)!).searchParams.get('cursor')).toBe(PROPERTY_LIST_PAGE_1.nextCursor);
+
+    tracker.stop();
+    uninstall();
+  });
+
+  it('다음 쪽 요청이 실패한 뒤에는 감시 요소가 보여도 다시 요청하지 않는다 — 다시 시도는 「더 보기」로만', async () => {
+    const uninstall = installFakeIntersectionObserver();
+    // 둘째 쪽(cursor = 첫 쪽의 nextCursor)만 실패시킨다. 첫 쪽은 기본 핸들러가 준다
+    // 앞에 둔 핸들러가 먼저 맞는다 — 실패 핸들러를 기본 핸들러보다 앞에 둔다
+    server.use(
+      http.get('/api/properties', ({ request }) => {
+        if (new URL(request.url).searchParams.get('cursor') !== PROPERTY_LIST_PAGE_1.nextCursor) return undefined;
+        return HttpResponse.json(
+          { success: false, error: { code: 'INTERNAL_ERROR', message: '일시적인 오류입니다.' } },
+          { status: 500 },
+        );
+      }),
+      ...propertyHandlers,
+    );
+    const tracker = trackRequestedUrls();
+    const nextPageRequests = () =>
+      tracker.listUrls().filter((url) => new URL(url).searchParams.get('cursor') === PROPERTY_LIST_PAGE_1.nextCursor);
+
+    renderList();
+
+    await waitFor(() => expect(screen.getByText(LIST_ITEM_1.address)).toBeInTheDocument());
+    act(() => getIntersectionObserverInstances().at(-1)!.trigger(true));
+    await waitFor(() => expect(screen.getByText('일시적인 오류입니다.')).toBeInTheDocument());
+    expect(nextPageRequests()).toHaveLength(1);
+
+    // 실패 뒤 살아 있는 감시가 있다면 그것이 알려도(observe 직후 알림 흉내) 요청이 나가지 않아야 한다
+    const live = getIntersectionObserverInstances().filter((observer) => !observer.isDisconnected);
+    act(() => live.forEach((observer) => observer.trigger(true)));
+    // 요청이 나갔다면 도착할 시간을 준다
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(nextPageRequests()).toHaveLength(1);
+
+    // 「더 보기」는 남아 있어 손으로 다시 시도할 수 있다
+    fireEvent.click(screen.getByRole('button', { name: '더 보기' }));
+    await waitFor(() => expect(nextPageRequests()).toHaveLength(2));
+
+    tracker.stop();
+    uninstall();
   });
 
   it('항목을 누르면 onSelect가 그 매물의 propertyId로 호출된다', async () => {

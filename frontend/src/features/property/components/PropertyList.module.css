@@ -128,3 +128,9 @@
 .skeletonItem {
   height: var(--spacing-5xl);
 }
+
+/* 목록 끝 감시 요소 — 높이 없이 목록 맨 끝에 놓인다. 스크롤 영역(.body)의 gap 이 붙지 않게 위 여백을 되돌린다 */
+.sentinel {
+  flex: none;
+  margin-top: calc(var(--spacing-sm) * -1);
+}
