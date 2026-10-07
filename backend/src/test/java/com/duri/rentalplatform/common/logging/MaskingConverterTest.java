@@ -220,13 +220,21 @@ class MaskingConverterTest {
     }
 
     @Test
+    @DisplayName("닫는 괄호 없이 줄이 끝나도 값을 줄 끝까지 가린다")
+    void masksKeyLineWithoutClosingParen() {
+        String converted = convertMessage("  Detail: Key (email)=(a@b.com");
+
+        assertThat(converted).contains("Key (email)=(***)").doesNotContain("a@b.com");
+    }
+
+    @Test
     @DisplayName("파티션 키 Detail 의 값을 가린다")
     void masksPartitionKeyDetail() {
         String converted =
                 convertMessage(
                         "  Detail: Partition key of the failing row contains (district) = (강남구).");
 
-        assertThat(converted).doesNotContain("강남구");
+        assertThat(converted).contains("failing row contains (***).").doesNotContain("강남구");
     }
 
     @Test
