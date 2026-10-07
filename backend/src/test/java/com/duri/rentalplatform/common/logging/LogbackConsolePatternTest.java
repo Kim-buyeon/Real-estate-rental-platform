@@ -137,6 +137,16 @@ class LogbackConsolePatternTest {
     }
 
     @Test
+    @DisplayName("패턴을 거친 출력에서 비밀번호와 토큰이 가려진다")
+    void masksCredentials() {
+        String line = render("LoginRequest[email=a@b.com, password=secret1!, tokenType=Bearer]");
+
+        assertThat(line)
+                .contains("password=***", "tokenType=Bearer")
+                .doesNotContain("secret1!", "a@b.com");
+    }
+
+    @Test
     @DisplayName("파일 출력을 두지 않는다 — stdout 만 쓰고 회전은 로그 드라이버가 맡는다")
     void hasNoFileAppender() {
         context.getLogger(Logger.ROOT_LOGGER_NAME)
