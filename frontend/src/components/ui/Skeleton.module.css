@@ -2,8 +2,9 @@
  * 디자인 토큰 정의서 7절 Feedback 의 {components.skeleton} — {colors.surface-muted} 면 · {rounded.sm}.
  * 프로젝트 정의 키다(K-21). 새 색 · 새 수치가 없다.
  *
- * **맥동하지 않는다.** 정의서 K-21 이 맥동 속도를 정하지 않았다 — 정해지면 여기에 넣고
- * prefers-reduced-motion 에서 끈다(Spinner.module.css 와 같은 이유).
+ * 맥동 — 정의서 7절 「상태 · 전환 · 레이어」의 「계속 도는 움직임」(K-21) 값 2s cubic-bezier(0.4, 0, 0.6, 1)
+ * infinite 로, 50% 에서 opacity 0.5 까지 옅어졌다 돌아온다. prefers-reduced-motion: reduce 이면 끄고
+ * 정적 면으로 남는다(Spinner.module.css 와 같은 규칙).
  *
  * 크기 — 기본은 전폭 · 한 줄 높이 {spacing.xl} 의 막대를 {spacing.xs} 간격으로 쌓는다. 실제 내용의
  * 크기 · 배치(카드 그리드 등)는 쓰는 화면이 className · itemClassName 으로 준다 — 화면의 배치를
@@ -20,4 +21,17 @@
   height: var(--spacing-xl);
   border-radius: var(--rounded-sm);
   background: var(--color-surface-muted);
+  animation: skeleton-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item {
+    animation: none;
+  }
 }

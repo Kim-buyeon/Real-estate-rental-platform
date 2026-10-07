@@ -903,6 +903,7 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | `-selected` | 관측됨. 두 방식뿐이다 — 반전(`{components.tabs-segmented-selected}`) 또는 `{colors.primary}` 인디케이터(`{components.tabs-underline-selected}`). 1007의 칩 줄도 반전(`{components.tabs-pill-selected}`)이다 |
 | `-disabled` | 관측된 것은 주 버튼 하나. 8절 참조 |
 | 전환 | 미관측. 색 전환 150ms ease, 회전 120ms ease를 넘지 않는다 (기존 구현값) |
+| 계속 도는 움직임 | **프로젝트 정의(2026-10-08, 이슈 #503) — K-21.** `{components.spinner}`는 회전 `1s linear infinite`(한 바퀴 360°), `{components.skeleton}`은 맥동 `2s cubic-bezier(0.4, 0, 0.6, 1) infinite`(50%에서 opacity 0.5, 처음 · 끝은 1). `prefers-reduced-motion: reduce`이면 둘 다 끈다(정적 모양 그대로). 위 「전환」의 상한은 상태가 한 번 바뀌는 움직임의 것이라 여기에 걸리지 않는다. **근거:** 참고 사이트에서는 로딩 표시가 관찰되지 않았다(보인 것은 장식 배지의 2초 회전뿐 — 로딩이 아니다). 그래서 Tailwind CSS 4.3.3 `theme.css`의 기본값을 따랐다 — 438행 `--animate-spin: spin 1s linear infinite`, 440행 `--animate-pulse: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite` |
 | z-index | 미관측. 육안 순서는 콘텐츠 < 지도 컨트롤 < 상세 패널 < `{components.tooltip}` < `{components.toast}` < 모달. 값은 미확정 — 단 toast 는 **100**으로 정했다(K-13 · K-19) |
 
 ---
@@ -1093,7 +1094,7 @@ stroke는 약 1.5px 라인 아이콘이다(추정). **아이콘의 모양 · 세
 | K-18 | `dialog` — **키 정의됨 · 미구현 · 미관측.** 기존 토큰 조합(사용자 결정 2026-09-19, #150). 뒤 막(scrim)은 기존 토큰에 반투명 값이 없어 정하지 않았다 — 쓰는 화면이 생길 때 정의서에 먼저 넣는다 |
 | K-19 | `toast` · `toast-error` — **구현됨(이슈 487) · 미관측.** 기존 토큰 조합(#150). 앱 셸에 하나(`ToastProvider`)라 전 화면 공통으로 정했다 — **화면 하단 중앙 · 2.5초 · 한 번에 하나(새 알림이 교체) · z-index 100(K-13)**. 화면 하단에 떠 있는 컨트롤(모바일 지도 전환 토글)이 있으면 토스트를 그 높이만큼 위로 올린다 — 그 컨트롤에 `data-toast-avoid` 를 단다(이슈 489, 사용자 확인 필요). 상세 패널 하단 `action-bar` 도 같은 방식으로 피하고, 모바일에서 상세가 열려 있으면 전환 토글이 바 위로 올라서므로 토스트는 둘 다 넘는다(이슈 491) |
 | K-20 | `checkbox` · `-checked` · `-disabled` — **키 정의됨 · 미구현 · 미관측.** 기존 토큰 조합(#150). 알림 구독 화면은 아직 네이티브 `<input>`을 직접 그린다 — 공용 컴포넌트로 옮길 때 이 키를 쓴다. 20px은 터치 타겟(44)이 아니라 상자 크기다 — 터치 구간(`~767px`)에서는 누르는 영역이 44 하한을 채워야 한다(9절). 채우는 방식은 구현 때 정한다 |
-| K-21 | 로딩 표시 `spinner` · `skeleton` — **구현됨(이슈 489) · 정적.** 표준 어휘에 없는 프로젝트 정의, 기존 토큰 조합(#150). 애니메이션(회전 · 맥동)은 넣지 않았다 — 속도가 미정이라 정할 때 붙인다 |
+| K-21 | 로딩 표시 `spinner` · `skeleton` — **구현됨(이슈 489) · 움직임 값(이슈 503).** 표준 어휘에 없는 프로젝트 정의, 기존 토큰 조합(#150). 회전 1s linear · 맥동 2s(50%에서 opacity 0.5), 움직임 줄이기 설정에서는 끈다 — 값과 근거(Tailwind CSS 4.3.3 기본값, 참고 사이트 로딩 표시 미관측)는 7절 「상태 · 전환 · 레이어」의 「계속 도는 움직임」 |
 | K-22 | `radio` · `switch` · `textarea` · `date` · `calendar` — 미관측 · 미사용. 필요해지면 정의서에 먼저 넣는다. 1007 컷에도 없다(`dialog` · `checkbox` · `toast` · `select` · `alert` 포함) |
 | K-23 | 차트(실거래가 · 시세)는 차기 범위다. 데이터 시각화 색은 **미사용** |
 | K-24 | `{colors.border-subtle}` · `{colors.focus}` · `{colors.error}` 계열 · `{typography.label}` · `{spacing.3xs}`는 참고 사이트에서 관측되지 않았다. **기존 구현값을 유지**했고 삭제하지 않았다 |
