@@ -1,6 +1,5 @@
+/* 숨김 라벨 글자가 absolute 라서 그 기준을 이 칸으로 잡는다 — 필터 줄의 가로 스크롤 밖으로 새지 않는다 */
 .picker {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  color: var(--color-text-secondary);
 }
