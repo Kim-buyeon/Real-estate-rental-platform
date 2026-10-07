@@ -125,7 +125,7 @@ export const REANALYZE_RESULT: RiskReanalyzeResult = {
  * 두 배지가 같은 문구라 재조회로 바뀐 것인지 원래 있던 문구인지 구분할 수 없다.
  *
  * 리뷰 #91 F10 — providers 전부가 eligible: false인 채로 insuranceEligible: true였고(명세 1.1 —
- * 3사 중 하나 이상), failedConditions가 낡았으며(담보인정비율 90%에서 안 걸리는 DEBT_RATIO_EXCEEDED가
+ * 보증기관 3곳 중 하나 이상), failedConditions가 낡았으며(담보인정비율 90%에서 안 걸리는 DEBT_RATIO_EXCEEDED가
  * 남아 있었다), debtRatio 82.3이 isNegativeEquity: false · CAUTION과 모순됐다(82.3 > 80이면
  * 깡통전세). 아래는 그 재계산이고, 값은 marketPrice(3억, RISK_ANALYSIS에서 그대로 스프레드)를
  * 고정하고 business-logic.md §2~§4 의사코드로 검산했다.
@@ -135,7 +135,7 @@ export const REANALYZE_RESULT: RiskReanalyzeResult = {
  *   전세가율 > 80이라고 정하므로(§4 「전세가율과 같은 판정이다」) 78.5(≤80)는 isNegativeEquity: false와 맞다.
  * - seniorDebtTotal 2억 — §2 판정 의사코드의 DEBT_RATIO_EXCEEDED·SENIOR_DEBT_RATIO_EXCEEDED 조건: 선순위채권/주택가액이 HUG 선순위한도
  *   60%(GUARANTEE_CRITERIA.senior_debt_ratio_limit)를 넘는지가 기관을 가르는 유일한 축이다(§2 판정 절차의 선순위채권 조건 —
- *   담보인정비율은 3사 90%로 같고, HF·SGI 선순위한도는 미확정이라 이 조건 자체를 검사하지 않는다).
+ *   담보인정비율은 보증기관 3곳 90%로 같고, HF·SGI 선순위한도는 미확정이라 이 조건 자체를 검사하지 않는다).
  *   2억/3억=66.7%는 HUG의 60%는 넘지만 HF·SGI는 검사 대상이 아니라 걸리지 않는다
  *   → HUG만 SENIOR_DEBT_RATIO_EXCEEDED.
  * - DEBT_RATIO_EXCEEDED는 세 기관 모두 붙지 않는다 — §2 판정 의사코드의 DEBT_RATIO_EXCEEDED 조건은 전세가율(=debtRatio) > 담보인정
@@ -144,11 +144,11 @@ export const REANALYZE_RESULT: RiskReanalyzeResult = {
  *   역산하면 약 3,550만 원(78.5%×3억−2억)이고 HUG·HF 수도권 7억 · SGI 10억(§2 판정 절차의 보증금 한도)에 크게 못 미친다.
  * - VIOLATION_BUILDING · RIGHT_VIOLATION · OWNER_MISMATCH · ADDRESS_MISMATCH는 RISK_ANALYSIS에서
  *   그대로 스프레드된 consistency(전부 일치) · rightViolations(빈 배열)와 맞게 어느 기관에도 없다.
- * - insuranceEligible: true — 위 결과로 HF·SGI가 가입 가능해 3사 중 하나 이상(명세 1.1)을 만족한다.
- *   HUG 「한 기관만」 가입 가능한 매물로는 만들 수 없었다 — 3사 담보인정비율이 모두 90%로 같고(§2 판정 절차의 전세가율 조건)
+ * - insuranceEligible: true — 위 결과로 HF·SGI가 가입 가능해 보증기관 3곳 중 하나 이상(명세 1.1)을 만족한다.
+ *   HUG 「한 기관만」 가입 가능한 매물로는 만들 수 없었다 — 보증기관 3곳 담보인정비율이 모두 90%로 같고(§2 판정 절차의 전세가율 조건)
  *   선순위한도는 HUG만 값이 있어(§2 판정 절차의 선순위채권 조건) 기관을 가르는 축이 그것 하나뿐이기 때문이다. 그래서 방침을
  *   「HUG만 불가 · HF·SGI 가능」으로 바꿨다(리뷰 #91 F10).
- * - guaranteeLimit(3사 공통 7,000만) = 3억 × 0.9(담보인정비율, 3사 동일) − 2억(선순위채권) — 명세
+ * - guaranteeLimit(보증기관 3곳 공통 7,000만) = 3억 × 0.9(담보인정비율, 보증기관 3곳 동일) − 2억(선순위채권) — 명세
  *   1.1 guaranteeLimit 정의(주택가격 × 담보인정비율 − 선순위채권). RISK_ANALYSIS의 guaranteeLimit
  *   2,000만(= 3억×0.9−2.5억)이 같은 식의 다른 예다.
  * - estimatedPremium · productName은 명세·business-logic.md 어느 쪽도 값을 정하지 않는다. 여기

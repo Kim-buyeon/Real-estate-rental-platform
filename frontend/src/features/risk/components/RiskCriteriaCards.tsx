@@ -57,7 +57,7 @@ const CRITERIA: readonly Criterion[] = [
 ];
 
 /**
- * 위험도 판정 기준 카드 넷 (RISK-01 설명). 메인의 {colors.block-feature} 띠 안에 놓인다 — 띠와 제목은 쓰는 화면이 갖는다.
+ * 위험 등급 판정 기준 카드 넷 (RISK-01 설명). 메인의 {colors.block-feature} 띠 안에 놓인다 — 띠와 제목은 쓰는 화면이 갖는다.
  * 데이터를 부르지 않는 표현 컴포넌트다.
  */
 export function RiskCriteriaCards() {

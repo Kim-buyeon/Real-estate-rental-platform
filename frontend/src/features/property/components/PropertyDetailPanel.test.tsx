@@ -1,5 +1,5 @@
 // PropertyDetailPanel 렌더링 검증 — 닫기 동작, 미분석 매물 안내, 그 외 오류의 Alert 처리,
-// 정상 판정일 때 다섯 블록(판정 근거 · 보증보험 3사 · 권리 침해/경고 · 정합 · 개인 자격) 노출을 확인한다.
+// 정상 판정일 때 다섯 블록(판정 근거 · 보증기관 3곳 · 권리 침해/경고 · 정합 · 개인 자격) 노출을 확인한다.
 //
 // 열림 흐름(미리보기 카드의 「상세 보기」 → 패널 마운트)은 여기서 다루지 않는다. MapPage.test.tsx는
 // 카카오맵 SDK가 없는 jsdom 상태만 검증하고 있고(window.kakao를 모킹하지 않는다), MapExplorer는 SDK가
@@ -117,7 +117,7 @@ describe('PropertyDetailPanel', () => {
     expect(note.parentElement).toHaveTextContent(PROPERTY_DETAIL.landlordName);
   });
 
-  it('위험도가 RISK_NOT_ANALYZED로 오면 안내를 보여주고 매물 기본 정보는 그대로 보인다', async () => {
+  it('위험 등급이 RISK_NOT_ANALYZED로 오면 안내를 보여주고 매물 기본 정보는 그대로 보인다', async () => {
     // 안내 본문은 서버가 준 error.message다 — 핸들러와 단언이 같은 상수를 본다.
     // 문구를 테스트에 따로 적으면 서버 문구가 바뀔 때 화면이 낡은 것을 잡지 못한다
     const message = '아직 분석되지 않은 매물입니다.';
@@ -142,7 +142,7 @@ describe('PropertyDetailPanel', () => {
   });
 
   it('RISK_NOT_ANALYZED가 아닌 오류는 안내가 아니라 오류 Alert으로 뜬다', async () => {
-    const message = '외부 연동 장애로 위험도를 불러오지 못했습니다.';
+    const message = '외부 연동 장애로 위험 등급을 불러오지 못했습니다.';
     server.use(
       ...propertyHandlers,
       http.get('/api/properties/:propertyId/risk', () =>
@@ -159,14 +159,14 @@ describe('PropertyDetailPanel', () => {
     expect(screen.getByText(PROPERTY_DETAIL.address)).toBeInTheDocument();
   });
 
-  it('위험도가 정상으로 오면 판정 근거 · 보증보험 3사 · 권리 침해/경고 · 정합 · 개인 자격 블록이 렌더된다', async () => {
+  it('위험 등급이 정상으로 오면 판정 근거 · 보증기관 3곳 · 권리 침해/경고 · 정합 · 개인 자격 블록이 렌더된다', async () => {
     server.use(...propertyHandlers, ...riskHandlers);
 
     renderPanel();
 
     // 판정 근거 (RiskVerdict)
     await waitFor(() => expect(screen.getByText(gradeReasonLabel(RISK_ANALYSIS.gradeReason))).toBeInTheDocument());
-    // 보증보험 3사 (InsuranceProviders)
+    // 보증기관 3곳 (InsuranceProviders)
     expect(screen.getByText('보증보험 가입 판정')).toBeInTheDocument();
     // 권리 침해 · 경고 (RiskFindings)
     expect(screen.getByText('등기 검출 항목')).toBeInTheDocument();
