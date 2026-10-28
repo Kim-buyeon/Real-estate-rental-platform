@@ -90,7 +90,7 @@ jobs:
             nginx:1.30-alpine nginx -t
       - name: Shell syntax check
         run: |
-          for f in infra/*.sh infra/backup/*.sh infra/tls/*.sh chaos-harness/measure/node/*.sh chaos-harness/jmeter/*.sh; do
+          for f in infra/*.sh infra/backup/*.sh infra/tls/*.sh chaos-harness/measure/node/*.sh chaos-harness/jmeter/*.sh .githooks/pre-commit .githooks/tests/*.sh; do
             bash -n "$f"
           done
       # 러너 이미지에 ShellCheck 가 이미 있다. 빠진 러너에서도 돌게 없을 때만 설치하고, 설치 실패는 그대로 잡 실패로 둔다.
@@ -103,7 +103,7 @@ jobs:
             sudo apt-get install -y shellcheck
           fi
           shellcheck --version
-          shellcheck --severity=warning infra/*.sh infra/backup/*.sh infra/tls/*.sh chaos-harness/measure/node/*.sh chaos-harness/jmeter/*.sh
+          shellcheck --severity=warning infra/*.sh infra/backup/*.sh infra/tls/*.sh chaos-harness/measure/node/*.sh chaos-harness/jmeter/*.sh .githooks/pre-commit .githooks/tests/*.sh
       # 부하 측정 도구도 노드에서 돌거나(measure/node) 운영 노드에 요청을 보낸다(jmeter) — 위 두 검사에 함께 건다.
       # 옛 k6 도구(chaos-harness/load · report)는 JMeter 로 옮긴 뒤 쓰지 않아 넣지 않는다.
       #
@@ -124,3 +124,19 @@ jobs:
       # 무엇이 다른지는 생성기가 로그에 적는다.
       - name: Measure method list check
         run: python chaos-harness/measure/tools/gen-methods.py --check
+
+  # 커밋 차단 훅(.githooks/pre-commit)을 PR 범위로 다시 돌린다. 훅은 클라이언트 쪽이라 설치하지 않은 클론이나
+  # --no-verify 로 넘긴 커밋은 커밋 시점에 걸리지 않는다 — 여기서 같은 규칙으로 막는다(작업 흐름 2장).
+  # 범위의 공통 조상을 찾아야 해서 이력 전체를 받는다. infra 잡과 나눈 이유가 이것이다 — 그 잡은 얕은 checkout 으로 충분하다.
+  commit-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Commit guard tests
+        run: bash .githooks/tests/pre-commit.test.sh
+      - name: Commit guard on PR range
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: bash .githooks/pre-commit --range "origin/$BASE_REF...HEAD"
