@@ -23,3 +23,5 @@ infra/tls/** text eol=lf
 chaos-harness/load/data/sql/** text eol=lf
 # 부하 시험 측정 — 노드에 올려 실행하는 셸 · 생성기 컨테이너에 마운트하는 수집기 설정(INF-06 #378)
 chaos-harness/measure/node/** text eol=lf
+# 커밋 차단 훅 — Git Bash · CI 의 bash 가 줄 끝  에서 멈춘다(확장자가 없어 *.sh 에 걸리지 않는다).
+.githooks/** text eol=lf

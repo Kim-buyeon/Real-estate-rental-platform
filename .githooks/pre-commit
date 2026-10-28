@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# 커밋 차단 훅 — 자격 증명 · 적용된 마이그레이션 수정 · 금지 의존성 추가를 막는다(작업 흐름 2장).
+# 확인이 아니라 차단이다. 어긋나면 무엇이 어디서 걸렸는지 적고 0 이 아닌 값으로 끝난다.
+#
+#   .githooks/pre-commit                    스테이징된 변경을 본다. git 이 커밋 직전에 부른다
+#   .githooks/pre-commit --range BASE...HEAD  두 커밋 사이를 본다. CI 가 PR 범위로 부른다
+#
+# 설치는 클론마다 한 번 — git config core.hooksPath .githooks (개발 환경 설계서 1.1).
+# 훅은 클라이언트 쪽이라 설치하지 않거나 --no-verify 로 넘길 수 있다. 그래서 CI 가 같은 스크립트를 PR 범위로 다시 돌린다.
+set -u
+
+MIGRATION_DIR=backend/src/main/resources/db/migration
+# 기술 스택 정의서 8장 「쓰지 않는 의존성」 표가 정본이다. 표를 고치면 여기도 고친다.
+FORBIDDEN_DEPS='spring-boot-starter-webflux|spring-kafka|spring-boot-starter-amqp|spring-boot-starter-cache|com\.h2database:h2'
+
+if [ "${1:-}" = --range ]; then
+  range=${2:?--range 다음에 BASE...HEAD 를 준다}
+  diff_args=("$range")
+  # git diff A...B 는 둘의 공통 조상과 B 를 비교한다. 마이그레이션이 이미 있었는지도 같은 공통 조상에서 본다.
+  base=$(git merge-base "${range%%...*}" "${range##*...}") || exit 2
+else
+  diff_args=(--cached)
+  # develop 에 들어간 마이그레이션은 배포로 운영 DB 에 적용된다. 머지 전 자기 브랜치의 V 파일은 고칠 수 있다.
+  base=
+  for ref in origin/develop develop; do
+    if git rev-parse -q --verify "$ref^{commit}" > /dev/null; then
+      base=$ref
+      break
+    fi
+  done
+  if [ -z "$base" ]; then
+    echo "pre-commit: origin/develop · develop 이 없어 적용된 마이그레이션 검사를 건너뛴다" >&2
+  fi
+fi
+
+failed=0
+
+block() {
+  printf '커밋 차단 — %s\n  %s\n  %s\n\n' "$1" "$2" "$3" >&2
+  failed=1
+}
+
+git_diff() {
+  git -c core.quotePath=false diff "${diff_args[@]}" --no-color --no-ext-diff "$@"
+}
+
+# 추가된 줄만 「파일<TAB>줄 번호<TAB>내용」으로 낸다. 지운 파일은 뺀다.
+added_lines() {
+  git_diff -U0 --diff-filter=d -- "$@" | awk '
+    /^\+\+\+ / { file = substr($0, 7); next }
+    /^@@ / { split($3, a, ","); n = substr(a[1], 2) - 1; next }
+    /^\+/ { n++; printf "%s\t%d\t%s\n", file, n, substr($0, 2) }
+  '
+}
+
+is_secret_file() {
+  case $1 in
+    .env.example | */.env.example) return 1 ;;
+    .env | */.env | .env.* | */.env.* | aws.txt | */aws.txt | *.pem | *.key) return 0 ;;
+    chaos-harness/load/tokens*.json | chaos-harness/jmeter/*.csv) return 0 ;;
+  esac
+  return 1
+}
+
+is_migration() {
+  case $1 in
+    "$MIGRATION_DIR"/V*.sql) return 0 ;;
+  esac
+  return 1
+}
+
+# 1 · 2 — 파일 단위: 비밀 파일 추가, 적용된 마이그레이션의 수정 · 삭제 · 이름 변경
+while IFS=$'\t' read -r status path1 path2; do
+  case $status in
+    R*) old=$path1 new=$path2 ;;
+    C*) old= new=$path2 ;;
+    D) old=$path1 new= ;;
+    A) old= new=$path1 ;;
+    *) old=$path1 new=$path1 ;;
+  esac
+
+  if [ -n "$new" ] && is_secret_file "$new"; then
+    block "자격 증명 파일" "$new" ".gitignore 가 제외하는 비밀 파일이다. git add -f 로 넣었으면 git restore --staged 로 뺀다"
+  fi
+
+  if [ -n "$old" ] && [ -n "$base" ] && is_migration "$old" && git cat-file -e "$base:$old" 2> /dev/null; then
+    block "적용된 마이그레이션 수정 ($status)" "$old" "develop 에 이미 있는 마이그레이션이다. 고치지 말고 다음 번호의 V 파일을 새로 만든다"
+  fi
+done < <(git_diff --name-status -M)
+
+# 1 — 내용: 추가된 줄의 키 형태와, .env.example 의 비밀 변수에 값을 채운 dotenv 줄
+# 화면용 카카오 지도 키(VITE_)는 비밀이 아니라 도메인 등록으로 보호되는 값이라 뺀다(화면 CLAUDE.md).
+secret_names=
+if [ -f .env.example ]; then
+  secret_names=$(grep -oE '^[A-Z0-9_]+=' .env.example | tr -d = | grep -E 'PASSWORD|SECRET|TOKEN|WEBHOOK|_KEY$' | grep -v '^VITE_' | paste -sd '|' -)
+fi
+
+while IFS=$'\t' read -r file line content; do
+  if printf '%s\n' "$content" | grep -qE 'AKIA[0-9A-Z]{16}'; then
+    block "자격 증명 — AWS 액세스 키" "$file:$line" "키를 지우고, 이미 커밋 · push 했으면 IAM 에서 키를 폐기한다"
+  fi
+  if printf '%s\n' "$content" | grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----'; then
+    block "자격 증명 — 프라이빗 키" "$file:$line" "키 파일은 저장소 밖에 둔다"
+  fi
+  if [ -n "$secret_names" ] &&
+    printf '%s\n' "$content" | grep -qE "^[[:space:]]*(export[[:space:]]+)?($secret_names)=[\"']?[^\$\"'[:space:]]"; then
+    block "자격 증명 — 비밀 변수 값" "$file:$line" "값은 .env 에만 둔다. 저장소에는 이름만(.env.example)"
+  fi
+done < <(added_lines .)
+
+# 3 — 금지 의존성 추가
+while IFS=$'\t' read -r file line content; do
+  if printf '%s\n' "$content" | grep -qE "$FORBIDDEN_DEPS"; then
+    block "금지 의존성" "$file:$line — $(printf '%s' "$content" | sed 's/^[[:space:]]*//')" "기술 스택 정의서 8장 「쓰지 않는 의존성」 표의 항목이다"
+  fi
+done < <(added_lines 'backend/build.gradle*')
+
+exit "$failed"
