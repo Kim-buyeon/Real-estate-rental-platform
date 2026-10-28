@@ -56,6 +56,8 @@
 │   ├── jmeter/             JMeter 플랜 · 실행 스크립트 · 시험 계정 · 실제 값 EXPLAIN 질의 정의 — 엔드포인트 22개(로그인 포함)
 │   └── measure/            JMeter 부하 시험의 측정 — 회차 수집 · 집계 · 그래프 · 결과 보고서 PDF
 │
+├── .githooks/            커밋 차단 훅 — 자격 증명 · 적용된 마이그레이션 수정 · 쓰지 않는 의존성 추가. 클론마다 한 번 core.hooksPath 로 켠다
+│
 ├── .github/
 │   ├── workflows/          빌드·테스트(ci.yml) · 이미지 빌드·스캔·등록(image.yml)
 │   ├── ISSUE_TEMPLATE/     이슈 템플릿

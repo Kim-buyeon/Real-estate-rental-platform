@@ -156,7 +156,7 @@
 |---|---|---|
 | `spring-boot-starter-webflux` | 2장 Spring Web MVC | 리액티브 대신 MVC + 가상 스레드 |
 | `spring-kafka` · `spring-boot-starter-amqp` | 1장 선정 원칙 | 운영 인력을 전제하는 메시지 브로커는 1인 개발에서 배제 |
-| `spring-boot-starter-cache` | 3장 Redis 캐시 · Caffeine | 캐시는 Store 클래스가 직접 다룬다. 캐시 추상화는 쓰지 않는다 |
+| `spring-boot-starter-cache` | 2장 Redis 캐시 · Caffeine | 캐시는 Store 클래스가 직접 다룬다. 캐시 추상화는 쓰지 않는다 |
 | `com.h2database:h2` | 5장 Testcontainers | 방언 차이로 통과와 실패가 어긋난다 |
 
 프론트는 배제를 명시한 의존성이 없어 비워 둔다. TanStack Query v4 문법 혼용 금지(7장)는 의존성이 아니라 코드 규칙이라 훅이 보지 않는다.
