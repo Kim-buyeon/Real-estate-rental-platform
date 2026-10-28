@@ -76,9 +76,9 @@ is_migration() {
 while IFS=$'\t' read -r status path1 path2; do
   case $status in
     R*) old=$path1 new=$path2 ;;
-    C*) old= new=$path2 ;;
-    D) old=$path1 new= ;;
-    A) old= new=$path1 ;;
+    C*) old='' new=$path2 ;;
+    D) old=$path1 new='' ;;
+    A) old='' new=$path1 ;;
     *) old=$path1 new=$path1 ;;
   esac
 
