@@ -53,13 +53,16 @@ added_lines() {
   '
 }
 
-is_secret_file() {
+# 비밀 파일이면 무엇인지를 내고, 아니면 아무것도 내지 않는다
+secret_file_kind() {
   case $1 in
-    .env.example | */.env.example) return 1 ;;
-    .env | */.env | .env.* | */.env.* | aws.txt | */aws.txt | *.pem | *.key) return 0 ;;
-    chaos-harness/load/tokens*.json | chaos-harness/jmeter/*.csv) return 0 ;;
+    .env.example | */.env.example) ;;
+    .env | */.env | .env.* | */.env.*) echo "실제 환경 변수 값 파일이다. 저장소에는 이름만(.env.example)" ;;
+    aws.txt | */aws.txt | *.pem) echo "배포 자격 증명이다(.gitignore)" ;;
+    *.key) echo "프라이빗 키 파일이다. 저장소 밖에 둔다" ;;
+    chaos-harness/load/tokens*.json) echo "부하 시험 토큰 풀(JWT)이다(.gitignore)" ;;
+    chaos-harness/jmeter/*.csv) echo "시험 계정 CSV 다 — 비밀번호가 들어 있다(.gitignore)" ;;
   esac
-  return 1
 }
 
 is_migration() {
@@ -79,8 +82,10 @@ while IFS=$'\t' read -r status path1 path2; do
     *) old=$path1 new=$path1 ;;
   esac
 
-  if [ -n "$new" ] && is_secret_file "$new"; then
-    block "자격 증명 파일" "$new" ".gitignore 가 제외하는 비밀 파일이다. git add -f 로 넣었으면 git restore --staged 로 뺀다"
+  kind=
+  [ -n "$new" ] && kind=$(secret_file_kind "$new")
+  if [ -n "$kind" ]; then
+    block "자격 증명 파일" "$new" "$kind. 스테이징에서 빼려면 git restore --staged"
   fi
 
   if [ -n "$old" ] && [ -n "$base" ] && is_migration "$old" && git cat-file -e "$base:$old" 2> /dev/null; then

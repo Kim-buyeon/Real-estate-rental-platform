@@ -56,7 +56,7 @@ expect() {
   git clean -fdq
 }
 
-aws_key="AKIA$(printf 'Q%.0s' $(seq 16))"
+aws_key="AKIA$(printf 'Q%.0s' {1..16})"
 private_key="-----BEGIN RSA PRIVATE ""KEY-----"
 
 # 1. 자격 증명 — 파일
@@ -66,6 +66,11 @@ mkdir -p infra && printf 'x\n' > infra/.env && git add -f infra/.env
 expect block "하위 폴더 .env 추가"
 printf 'x\n' > node.pem && git add node.pem
 expect block "*.pem 추가"
+printf 'x\n' > .env.local && git add -f .env.local
+expect block ".env.local 추가"
+mkdir -p chaos-harness/jmeter/accounts && printf 'id,pw\n' > chaos-harness/jmeter/accounts/users.csv
+git add -f chaos-harness/jmeter/accounts/users.csv
+expect block "JMeter 시험 계정 CSV 추가"
 printf 'MAIL_PASSWORD=\n' >> .env.example && git add .env.example
 expect pass ".env.example 에 빈 이름 추가"
 
