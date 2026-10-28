@@ -145,3 +145,18 @@
 | Node.js | 22 LTS | 프론트엔드 빌드 |
 | MSW | v2 | `sse()` 핸들러가 2.x에 있다 |
 | Docker 이미지 | `postgres:17-alpine` · `redis:7-alpine` | 로컬·CI·운영 공통 고정 |
+
+---
+
+## 8. 쓰지 않는 의존성
+
+위 장들이 배제한 기술 중 **의존성 한 줄로 들어올 수 있는 것**이다. 커밋 차단 훅이 `backend/build.gradle`에 추가되는 줄을 이 표로 막고, PR CI가 같은 검사를 다시 돈다. 표를 고치면 훅의 목록도 함께 고친다.
+
+| 좌표 | 배제한 곳 | 사유 |
+|---|---|---|
+| `spring-boot-starter-webflux` | 2장 Spring Web MVC | 리액티브 대신 MVC + 가상 스레드 |
+| `spring-kafka` · `spring-boot-starter-amqp` | 1장 선정 원칙 | 운영 인력을 전제하는 메시지 브로커는 1인 개발에서 배제 |
+| `spring-boot-starter-cache` | 3장 Redis 캐시 · Caffeine | 캐시는 Store 클래스가 직접 다룬다. 캐시 추상화는 쓰지 않는다 |
+| `com.h2database:h2` | 5장 Testcontainers | 방언 차이로 통과와 실패가 어긋난다 |
+
+프론트는 배제를 명시한 의존성이 없어 비워 둔다. TanStack Query v4 문법 혼용 금지(7장)는 의존성이 아니라 코드 규칙이라 훅이 보지 않는다.
