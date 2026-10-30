@@ -27,6 +27,7 @@
 - 스키마를 초기 상태로 되돌릴 때는 볼륨까지 삭제 후 재기동한다. 초기 개발 단계에서는 이 절차가 가장 빠르고 안전하다.
 - 접속 정보는 환경 변수로 주입한다. 배포 환경 전환 시 애플리케이션 코드 변경이 발생하지 않도록 한다.
 - docker-compose.yml은 저장소 루트에 두고 형상 관리한다.
+- 클론한 뒤 한 번 `git config core.hooksPath .githooks`로 커밋 차단 훅을 켠다. 자격 증명 · 적용된 마이그레이션 수정 · 쓰지 않는 의존성 추가(기술 스택 정의서 8장)를 커밋 시점에 막는다. 켜지 않았거나 `--no-verify`로 넘긴 커밋은 PR CI의 같은 검사에 걸린다.
 - 실행 방법은 셋이다.
   - 전체: `docker compose up -d` → `http://localhost:5173`
   - 백엔드 IDE 개발: `docker compose up -d postgres redis` 뒤 IDE · bootRun으로 앱을 띄운다(호스트 8080)
